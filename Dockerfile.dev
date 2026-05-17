@@ -1,0 +1,21 @@
+# syntax=docker/dockerfile:1
+FROM node:20-alpine
+
+WORKDIR /app
+
+ENV PUPPETEER_SKIP_CHROMIUM_DOWNLOAD=true \
+    PUPPETEER_SKIP_DOWNLOAD=true
+
+COPY package*.json ./
+
+# --mount=type=cache persiste ~/.npm entre builds → no re-descarga paquetes
+# npm ci usa el lockfile directamente → más rápido que npm install
+# --no-audit --no-fund omite checks innecesarios en desarrollo
+RUN --mount=type=cache,target=/root/.npm \
+    npm ci --prefer-offline --no-audit --no-fund
+
+COPY . .
+
+EXPOSE 3000
+
+CMD ["sh", "-c", "npx prisma generate && npm run start:dev"]

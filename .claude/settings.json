@@ -1,5 +1,19 @@
 {
   "env": {
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
+  },
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "$c = Get-Content 'skills/using-superpowers/SKILL.md' -Raw; @{hookSpecificOutput=@{hookEventName='SessionStart';additionalContext=$c}} | ConvertTo-Json -Depth 5 -Compress",
+            "shell": "powershell",
+            "statusMessage": "Loading Superpowers bootstrap..."
+          }
+        ]
+      }
+    ]
   }
 }
