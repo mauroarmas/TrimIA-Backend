@@ -1,0 +1,48 @@
+sequenceDiagram
+    actor User as 👤 Usuario (WhatsApp)
+    participant N8N as n8n
+    participant NestJS as NestJS Webhook
+    participant Queue as BullMQ (Redis)
+    participant Orch as Orquestador LangGraph
+    participant Agent as Agente (ej. Sales)
+    participant Gemini as Gemini API
+    participant Chroma as ChromaDB
+    participant PG as PostgreSQL
+    participant Sup as Supervisor (Paperclip)
+
+    User->>N8N: Mensaje WhatsApp
+    N8N->>NestJS: POST /messaging/webhook\n[X-N8N-Secret]
+    NestJS->>NestJS: N8nAuthGuard valida header
+    NestJS->>PG: Crea/recupera Conversation\ngenera threadId (UUID v4)
+    NestJS->>Queue: Encola job { threadId, message }
+    NestJS-->>N8N: 202 Accepted
+
+    Queue->>Orch: Dequeue (concurrency: 1)
+    Orch->>Gemini: classify_intent(message)
+    Gemini-->>Orch: AgentType = SALES
+
+    Orch->>Agent: route_to_agent → SalesGraph
+    Agent->>Chroma: retrieve_context(query, "ventas", topK=4)
+    Chroma-->>Agent: [{doc, score}, ...]
+
+    alt score máximo ≥ 0.7
+        Agent->>Gemini: generate_response(context + message)
+        Gemini-->>Agent: respuesta
+        Agent->>PG: log OrchestrationEvent (ROUTED_TO_AGENT)
+        Agent->>PG: log TokenUsage + durationMs
+        Agent-->>Orch: respuesta final
+        Orch->>N8N: POST /send-whatsapp { to, text }
+        N8N->>User: Respuesta WhatsApp
+    else score < 0.7 → escalate_to_human
+        Agent->>Agent: interrupt() → checkpoint en PG
+        Agent->>PG: status = WAITING_HUMAN
+        Agent->>PG: log OrchestrationEvent (ESCALATED_TO_HUMAN)
+        Note over Queue,Agent: Job completa exitosamente (no queda colgado)
+        Sup->>NestJS: GET /admin/events (polling Paperclip)
+        NestJS-->>Sup: eventos pendientes
+        Sup->>NestJS: POST /admin/conversations/:threadId/resume\n{ supervisorMessage }
+        NestJS->>Queue: Nuevo job { threadId, supervisorMessage }
+        Queue->>Orch: Retoma desde checkpoint
+        Orch->>N8N: Respuesta del supervisor
+        N8N->>User: Respuesta WhatsApp
+    end

@@ -1,99 +1,154 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# TrimIA — Backend
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+Backend del sistema de agentes IA para empresas comerciales. Construido con NestJS + LangGraph + Gemini. Desarrollado como tesis de grado.
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://coveralls.io/github/nestjs/nest?branch=master" target="_blank"><img src="https://coveralls.io/repos/github/nestjs/nest/badge.svg?branch=master#9" alt="Coverage" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
+## Stack
 
-## Description
+| Servicio   | Descripción                              | Puerto (host) |
+|-----------|------------------------------------------|---------------|
+| NestJS    | API principal (hot reload en dev)        | 3000          |
+| PostgreSQL | Base de datos relacional (Prisma + LangGraph checkpointer) | 5433 |
+| Redis     | Cola de mensajes (BullMQ)               | 6379          |
+| ChromaDB  | Vector store para RAG                    | 8000          |
+| n8n       | Orquestador de workflows (WhatsApp)      | 5678          |
 
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
+## Requisitos previos
 
-## Project setup
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) instalado y corriendo
+- Git
+
+No se necesita Node.js ni npm instalados localmente — todo corre dentro de Docker.
+
+## Instalación (primera vez)
+
+### 1. Clonar el repositorio
 
 ```bash
-$ npm install
+git clone <url-del-repo>
+cd trim-ia-backend
 ```
 
-## Compile and run the project
+### 2. Configurar variables de entorno
 
 ```bash
-# development
-$ npm run start
-
-# watch mode
-$ npm run start:dev
-
-# production mode
-$ npm run start:prod
+cp .env.example .env
 ```
 
-## Run tests
+Editar `.env` y completar los valores necesarios. El único que **no tiene default** es:
+
+```
+GOOGLE_API_KEY=your_google_api_key_here   # Obtener en https://aistudio.google.com/apikey
+```
+
+El resto de los valores del `.env.example` funcionan tal cual para desarrollo local.
+
+### 3. Levantar los servicios
 
 ```bash
-# unit tests
-$ npm run test
-
-# e2e tests
-$ npm run test:e2e
-
-# test coverage
-$ npm run test:cov
+docker compose up -d --build
 ```
 
-## Deployment
+La primera vez descarga las imágenes y construye el contenedor de NestJS (~2-3 min). Las siguientes veces es mucho más rápido gracias al caché de npm.
 
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
+### 4. Crear las tablas de la base de datos
 
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
+Solo se hace **una vez** (o cuando se resetea la DB):
 
 ```bash
-$ npm install -g mau
-$ mau deploy
+docker compose exec nestjs npx prisma migrate reset --force
 ```
 
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
+Esto crea todas las tablas de negocio (Prisma) y las tablas del checkpointer de LangGraph.
 
-## Resources
+### 5. Verificar que todo funciona
 
-Check out a few resources that may come in handy when working with NestJS:
+```bash
+curl http://localhost:3000/health
+```
 
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
+Respuesta esperada:
 
-## Support
+```json
+{
+  "status": "ok",
+  "info": {
+    "postgres": { "status": "up" },
+    "redis": { "status": "up" },
+    "memory_heap": { "status": "up" }
+  }
+}
+```
 
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
+También se puede acceder al Swagger en [http://localhost:3000/api](http://localhost:3000/api).
 
-## Stay in touch
+## Uso diario
 
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
+### Levantar todo
 
-## License
+```bash
+docker compose up -d
+```
 
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+### Ver logs de NestJS en tiempo real
+
+```bash
+docker compose logs nestjs -f
+```
+
+### Detener todo
+
+```bash
+docker compose down
+```
+
+### Detener y borrar volúmenes (reset completo de DB)
+
+```bash
+docker compose down -v
+```
+
+## Comandos útiles
+
+### Prisma
+
+```bash
+# Crear una nueva migración después de modificar schema.prisma
+docker compose exec nestjs npx prisma migrate dev --name nombre_de_la_migracion
+
+# Abrir Prisma Studio (explorador visual de la DB)
+docker compose exec nestjs npx prisma studio
+
+# Resetear la DB (borra todos los datos y vuelve a migrar)
+docker compose exec nestjs npx prisma migrate reset --force
+```
+
+### Docker
+
+```bash
+# Ver el estado de todos los contenedores
+docker compose ps
+
+# Reconstruir solo el contenedor de NestJS (tras cambios en Dockerfile o package.json)
+docker compose up -d --build nestjs
+
+# Entrar al contenedor de NestJS
+docker compose exec nestjs sh
+```
+
+## Estructura del proyecto
+
+```
+src/
+├── config/          # Variables de entorno con validación Joi
+├── database/        # PrismaModule (singleton global)
+├── redis/           # RedisModule (ioredis)
+├── ai/
+│   └── checkpointer/  # PostgresSaver de LangGraph (crea sus propias tablas)
+└── health/          # GET /health — estado de postgres, redis y memoria
+```
+
+## Notas importantes
+
+- **`DATABASE_URL` en Docker**: el `docker-compose.yml` inyecta `postgres:5432` automáticamente para que NestJS se conecte por la red interna. El valor en `.env` (`localhost:5433`) es para conectarse desde herramientas externas como pgAdmin.
+- **Tablas de LangGraph**: las tablas `checkpoints`, `checkpoint_blobs`, `checkpoint_writes` y `checkpoint_migrations` son creadas y gestionadas por LangGraph, no por Prisma. No modificarlas manualmente.
+- **Hot reload**: NestJS corre en modo `--watch`. Cualquier cambio en `src/` se compila y recarga automáticamente sin reiniciar el contenedor.

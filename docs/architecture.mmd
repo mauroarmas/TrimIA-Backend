@@ -1,0 +1,75 @@
+flowchart TB
+    subgraph COMM["📡 Capa de Comunicación"]
+        WA["WhatsApp\n(usuario)"]
+        N8N["n8n\n:5678"]
+    end
+
+    subgraph NESTJS["⚙️ NestJS Backend :3000"]
+        WEBHOOK["POST /messaging/webhook\n(N8nAuthGuard)"]
+        BULLMQ["BullMQ Worker\nconcurrency: 1"]
+
+        subgraph ORCH["Orquestador (LangGraph)"]
+            CI["classify_intent\n(Gemini)"]
+            RA["route_to_agent"]
+            LE["log_event"]
+            TT["track_tokens\n+ durationMs"]
+        end
+
+        subgraph AGENTS["Agentes (subgrafos compilados)"]
+            SA["🛒 Sales"]
+            CA["💰 Collections"]
+            LA["🚚 Logistics"]
+            DA["📦 Deposits"]
+        end
+
+        subgraph RAG["Sistema RAG"]
+            RC["retrieve_context\n(KnowledgeService)"]
+            EC["evaluate_confidence\n(threshold: 0.7)"]
+            GR["generate_response\n(Gemini + contexto)"]
+        end
+
+        ADMIN["Admin Endpoints\nGET /admin/events\nPOST /resume"]
+    end
+
+    subgraph DATA["💾 Capa de Datos"]
+        PG[("PostgreSQL :5433\n─────────────\nPrisma → negocio\nPostgresSaver → LangGraph")]
+        REDIS[("Redis :6379\nBullMQ queues")]
+        CHROMA[("ChromaDB :8000\nvectores RAG")]
+    end
+
+    subgraph EXT["🔗 Integraciones Externas"]
+        PALJET["Paljet\n(stock)"]
+        RO["Riesgo Online\n(crédito)"]
+        CRM["CRM\n(prospectos)"]
+    end
+
+    PAPERCLIP["📋 Paperclip\n(panel admin)"]
+    HUMAN["👤 Supervisor"]
+
+    WA -->|mensaje| N8N
+    N8N -->|POST webhook| WEBHOOK
+    WEBHOOK --> BULLMQ
+    BULLMQ --> CI
+    CI --> RA
+    RA --> SA & CA & LA & DA
+    SA & CA & LA & DA --> RC
+    RC --> EC
+    EC -->|score ≥ 0.7| GR
+    EC -->|score < 0.7| HUMAN
+    GR --> LE --> TT
+    TT -->|respuesta| N8N
+    N8N -->|reply| WA
+
+    BULLMQ <--> REDIS
+    CI & GR <-->|Gemini API| GR
+    RC <--> CHROMA
+    LE & TT --> PG
+    ORCH <--> PG
+
+    SA <--> PALJET & CRM
+    CA <--> RO & CRM
+    LA & DA <--> PALJET
+
+    PAPERCLIP -->|polling REST| ADMIN
+    HUMAN -->|POST /resume| ADMIN
+    ADMIN --> BULLMQ
