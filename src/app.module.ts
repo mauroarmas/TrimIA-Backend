@@ -7,6 +7,7 @@ import { AppConfigModule } from './config/config.module';
 import { PrismaModule } from './database/prisma.module';
 import { RedisModule } from './redis/redis.module';
 import { CheckpointerModule } from './ai/checkpointer/checkpointer.module';
+import { LlmModule } from './ai/llm/llm.module';
 import { HealthModule } from './health/health.module';
 import { ConversationsModule } from './conversations/conversations.module';
 import { MessagingModule } from './messaging/messaging.module';
@@ -34,6 +35,7 @@ import { ConfigService } from '@nestjs/config';
     PrismaModule,
     RedisModule,
     CheckpointerModule,
+    LlmModule,
     HealthModule,
     ConversationsModule,
     MessagingModule,
