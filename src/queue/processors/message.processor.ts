@@ -3,6 +3,7 @@ import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
 import { ConversationsService } from '../../conversations/conversations.service';
 import { WhatsappSenderService } from '../../messaging/whatsapp-sender.service';
+import { OrchestratorService } from '../../ai/orchestrator/orchestrator.service';
 
 interface MessageJob {
   threadId: string;
@@ -18,6 +19,7 @@ export class MessageProcessor extends WorkerHost {
   constructor(
     private readonly conversations: ConversationsService,
     private readonly sender: WhatsappSenderService,
+    private readonly orchestrator: OrchestratorService,
   ) {
     super();
   }
@@ -27,11 +29,21 @@ export class MessageProcessor extends WorkerHost {
 
     this.logger.log(`Processing message [threadId=${threadId}]: "${message}"`);
 
-    // Fase 2 — stub: respuesta hardcodeada
-    // Fase 3: reemplazar por llamada al OrchestratorService
-    const response = `Hola! Recibí tu mensaje. En breve te atiendo. [stub]`;
+    // El orquestador clasifica, deriva al agente y registra eventos/tokens.
+    const result = await this.orchestrator.invoke(
+      threadId,
+      message,
+      conversationId,
+    );
+    const response =
+      result.response ?? 'Disculpá, no pude procesar tu mensaje en este momento.';
 
-    await this.conversations.addMessage(conversationId, 'ASSISTANT', response);
+    await this.conversations.addMessage(
+      conversationId,
+      'ASSISTANT',
+      response,
+      result.agentType ?? undefined,
+    );
     await this.sender.send(externalId, response);
 
     this.logger.log(`Response sent to ${externalId}`);
