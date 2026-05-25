@@ -1,5 +1,5 @@
 {
-  "name": "Recepción de Mensaje",
+  "name": "Recepción de Mensaje (A)",
   "nodes": [
     {
       "parameters": {
@@ -19,7 +19,7 @@
     },
     {
       "parameters": {
-        "jsCode": "const body = $input.first().json.body;\n\n// Formato test directo: { phone, message }\nif (body?.phone && body?.message) {\n  return [{ json: { phone: body.phone, message: body.message } }];\n}\n\n// Formato real WhatsApp Business API\nconst message = body?.entry?.[0]?.changes?.[0]?.value?.messages?.[0];\nif (!message || message.type !== 'text') return [];\n\nreturn [{ json: { phone: message.from, message: message.text.body } }];\n"
+        "jsCode": "const body = $input.first().json.body;\n\n// Formato directo (Postman/WEB): { phone, message }\nif (body?.phone && body?.message) {\n  return [{ json: { phone: body.phone, message: body.message, channel: 'WEB' } }];\n}\n\n// Formato real de WhatsApp Business API\nconst message = body?.entry?.[0]?.changes?.[0]?.value?.messages?.[0];\nif (!message || message.type !== 'text') return [];\n\nreturn [{ json: { phone: message.from, message: message.text.body, channel: 'WHATSAPP' } }];\n"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -57,6 +57,10 @@
             {
               "name": "message",
               "value": "={{ $json.message }}"
+            },
+            {
+              "name": "channel",
+              "value": "={{ $json.channel }}"
             }
           ]
         },
@@ -102,7 +106,7 @@
     "executionOrder": "v1",
     "binaryMode": "separate"
   },
-  "versionId": "dd0cd655-133d-4a4b-b877-c71c081a2ad2",
+  "versionId": "d0b23cf9-3663-4d5c-a113-954212830e27",
   "meta": {
     "instanceId": "fa080ee522c314cc4cc184d9e455b3dc24891b5b85accef256539079b2f1612c"
   },
