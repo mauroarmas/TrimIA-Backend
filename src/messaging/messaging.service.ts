@@ -8,38 +8,28 @@ import { WebhookMessageDto } from './dto/webhook-message.dto';
 @Injectable()
 export class MessagingService {
   constructor(
-    @InjectQueue('message-processing') 
+    @InjectQueue('message-processing')
     private readonly queue: Queue,
     private readonly conversations: ConversationsService,
-  ) {}
+  ) { }
+
+  private async prepareConversation(dto: WebhookMessageDto, channel: Channel) {
+    const conversation = await this.conversations.getOrCreate(dto.phone, channel);
+    await this.conversations.addMessage(conversation.id, 'USER', dto.message);
+    return conversation;
+  }
 
   async enqueue(dto: WebhookMessageDto): Promise<void> {
-    const conversation = await this.conversations.getOrCreate(
-      dto.phone,
-      Channel.WHATSAPP,
-    );
-
-    await this.conversations.addMessage(
-      conversation.id,
-      'USER',
-      dto.message,
-    );
+    const channel = dto.channel ?? Channel.WHATSAPP;
+    const conversation = await this.prepareConversation(dto, channel);
 
     await this.queue.add('process-message', {
       threadId: conversation.threadId,
       conversationId: conversation.id,
       externalId: dto.phone,
-      channel: Channel.WHATSAPP,
+      channel,
       message: dto.message,
     });
-
-    
-    //await this.queue.add('process-message', { threadId, ... });
-    //          │        │                   │
-    //          │        │                   └── el contenido del job (data)
-    //          │        └────────────────────── el name (etiqueta)
-    //          └─────────────────────────────── la queue (donde se mete el job)
-    //
-    // Lo que devuelve queue.add() es el JOB recién creado.
   }
+
 }

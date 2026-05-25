@@ -22,20 +22,15 @@ import { ConfigService } from '@nestjs/config';
     LoggerModule.forRoot({
       pinoHttp: {
         level: process.env.NODE_ENV === 'production' ? 'info' : 'debug',
-        // En dev: formato legible y coloreado. En prod: JSON (para agregadores de logs)
-        transport:
-          process.env.NODE_ENV !== 'production'
-            ? {
-                target: 'pino-pretty',
-                options: {
-                  singleLine: true,
-                  // Docker ya antepone el timestamp correcto → ocultamos el de pino
-                  ignore: 'pid,hostname,context,time',
-                  messageFormat: '[{context}] {msg}',
-                },
-              }
-            : undefined,
-        // Recorta los objetos req/res a lo esencial (sin headers gigantes)
+        transport: process.env.NODE_ENV !== 'production' ? {
+          target: 'pino-pretty',
+          options: {
+            singleLine: true,
+            translateTime: 'SYS:HH:MM:ss',
+            messageFormat: '[{context}] {msg}',
+            ignore: 'pid,hostname',
+          },
+        } : undefined,
         serializers: {
           req: (req) => ({ method: req.method, url: req.url }),
           res: (res) => ({ statusCode: res.statusCode }),
@@ -70,4 +65,4 @@ import { ConfigService } from '@nestjs/config';
     },
   ],
 })
-export class AppModule {}
+export class AppModule { }

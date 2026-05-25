@@ -62,7 +62,7 @@ services:
       WEBHOOK_URL: http://localhost:5678/
       GENERIC_TIMEZONE: America/Argentina/Buenos_Aires
     volumes:
-      - n8n_data:/home/node/.n8n
+      - ./n8n/data:/home/node/.n8n
     networks:
       - trimia-net
 
@@ -107,4 +107,4 @@ volumes:
   postgres_data:
   redis_data:
   chroma_data:
-  n8n_data:
+  pgadmin_data:
