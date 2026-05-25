@@ -1,5 +1,6 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { IsNotEmpty, IsString } from 'class-validator';
+import { IsEnum, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { Channel } from '@prisma/client';
 
 export class WebhookMessageDto {
   @ApiProperty({ example: '5491112345678' })
@@ -11,4 +12,9 @@ export class WebhookMessageDto {
   @IsString()
   @IsNotEmpty()
   message: string;
+
+  @ApiProperty({ enum: Channel, default: Channel.WHATSAPP, required: false })
+  @IsEnum(Channel)
+  @IsOptional()
+  channel?: Channel;
 }

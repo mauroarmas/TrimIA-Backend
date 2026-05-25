@@ -1,0 +1,115 @@
+{
+  "name": "Recepción de Mensaje (A)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "whatsapp",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "dd2c4c11-3c97-43c5-b8eb-533edcdd9b33",
+      "name": "Webhook",
+      "webhookId": "b7c32060-009e-461d-92ad-e57b343c4a70"
+    },
+    {
+      "parameters": {
+        "jsCode": "const body = $input.first().json.body;\n\n// Formato directo (Postman/WEB): { phone, message }\nif (body?.phone && body?.message) {\n  return [{ json: { phone: body.phone, message: body.message, channel: 'WEB' } }];\n}\n\n// Formato real de WhatsApp Business API\nconst message = body?.entry?.[0]?.changes?.[0]?.value?.messages?.[0];\nif (!message || message.type !== 'text') return [];\n\nreturn [{ json: { phone: message.from, message: message.text.body, channel: 'WHATSAPP' } }];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        208,
+        0
+      ],
+      "id": "a09a707f-0bc5-469b-9382-97cb6cd2b166",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://nestjs:3000/messaging/webhook",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-n8n-secret",
+              "value": "trimia-app-n8n"
+            }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "phone",
+              "value": "={{ $json.phone }}"
+            },
+            {
+              "name": "message",
+              "value": "={{ $json.message }}"
+            },
+            {
+              "name": "channel",
+              "value": "={{ $json.channel }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        416,
+        0
+      ],
+      "id": "9fd8a56d-1f5b-4624-bc7e-861a107fd22e",
+      "name": "HTTP Request"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "d0b23cf9-3663-4d5c-a113-954212830e27",
+  "meta": {
+    "instanceId": "fa080ee522c314cc4cc184d9e455b3dc24891b5b85accef256539079b2f1612c"
+  },
+  "id": "0MlZHCocUzd1UeBz",
+  "tags": []
+}
