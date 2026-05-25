@@ -1,0 +1,135 @@
+{
+  "name": "Envío de Mensaje B",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "send-whatsapp",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        160
+      ],
+      "id": "9972e24f-c4b8-4316-a186-0b710bb31cc9",
+      "name": "Webhook",
+      "webhookId": "ec9f4296-04df-4bdf-a463-2aa161b66034"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://graph.facebook.com/v22.0/1061041147100905/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{ $json.body.phone.replace(/^549/, '54') }}\",\n  \"type\": \"text\",\n  \"text\": { \"body\": \"{{ $json.body.message }}\" }\n}\n",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        512,
+        48
+      ],
+      "id": "c0862fab-2213-4816-98b2-860e1e6b88f9",
+      "name": "HTTP Request",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "jpRRIOsVecQ4A2WA",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "4185e8b7-3a14-489e-9a29-2882e25d500b",
+              "leftValue": "={{ $json.body.channel }}",
+              "rightValue": "WHATSAPP",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        240,
+        160
+      ],
+      "id": "d208a0b5-8254-4dbc-9feb-aa04fc9c7532",
+      "name": "If"
+    },
+    {
+      "parameters": {},
+      "type": "n8n-nodes-base.noOp",
+      "typeVersion": 1,
+      "position": [
+        512,
+        256
+      ],
+      "id": "9353663f-0d52-4c3f-80c0-db2d025e4c02",
+      "name": "No Operation, do nothing"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "If",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "If": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "No Operation, do nothing",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "2e7f23db-4d30-4d06-9317-f1ee0538bef3",
+  "meta": {
+    "instanceId": "fa080ee522c314cc4cc184d9e455b3dc24891b5b85accef256539079b2f1612c"
+  },
+  "id": "eXDgj3RHr5nW7tRt",
+  "tags": []
+}
