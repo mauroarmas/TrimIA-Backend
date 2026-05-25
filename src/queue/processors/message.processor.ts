@@ -1,6 +1,7 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
+import { Channel } from '@prisma/client';
 import { ConversationsService } from '../../conversations/conversations.service';
 import { WhatsappSenderService } from '../../messaging/whatsapp-sender.service';
 import { OrchestratorService } from '../../ai/orchestrator/orchestrator.service';
@@ -9,6 +10,7 @@ interface MessageJob {
   threadId: string;
   conversationId: string;
   externalId: string;
+  channel: Channel;
   message: string;
 }
 
@@ -25,7 +27,7 @@ export class MessageProcessor extends WorkerHost {
   }
 
   async process(job: Job<MessageJob>): Promise<void> {
-    const { conversationId, externalId, message, threadId } = job.data;
+    const { conversationId, externalId, message, threadId, channel } = job.data;
 
     this.logger.log(`Processing message [threadId=${threadId}]: "${message}"`);
 
@@ -44,7 +46,7 @@ export class MessageProcessor extends WorkerHost {
       response,
       result.agentType ?? undefined,
     );
-    await this.sender.send(externalId, response);
+    await this.sender.send(externalId, response, channel);
 
     this.logger.log(`Response sent to ${externalId}`);
   }
