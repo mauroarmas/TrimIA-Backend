@@ -1,5 +1,5 @@
 import { Injectable, OnModuleInit, Logger } from '@nestjs/common';
-import { AgentType } from '@prisma/client';
+import { AgentType, UserType } from '@prisma/client';
 import { LlmService } from '../llm/llm.service';
 import { AgentsService } from '../agents/agents.service';
 import { OrchestrationLogger } from './orchestration-logger.service';
@@ -40,6 +40,7 @@ export class OrchestratorService implements OnModuleInit {
     message: string,
     conversationId: string | null = null,
     currentAgent: AgentType | null = null,
+    userType: UserType | null = null,
   ): Promise<OrchestratorStateType> {
 
     const state: OrchestratorStateType = {
@@ -47,8 +48,12 @@ export class OrchestratorService implements OnModuleInit {
       message,
       conversationId,
       currentAgent, // agente sticky de la conversación (null = sin asignar)
+      userType, // CLIENTE/EMPLEADO → audiencia del RAG
       agentType: null, // agente resuelto este turno
       response: null, // lo completa el agente
+      context: null,
+      confidence: null,
+      escalated: null,
       scopeChanged: null,
       isGreeting: null,
       isTrivial: null,

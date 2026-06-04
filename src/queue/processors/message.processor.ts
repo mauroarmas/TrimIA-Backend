@@ -31,9 +31,11 @@ export class MessageProcessor extends WorkerHost {
 
     this.logger.log(`Processing message [threadId=${threadId}]: "${message}"`);
 
-    // Sticky: recuperamos el agente que venía atendiendo la conversación.
+    // Sticky: recuperamos el agente que venía atendiendo la conversación
+    // y el tipo de usuario (define la audiencia del RAG).
     const conversation = await this.conversations.findById(conversationId);
     const currentAgent = conversation?.currentAgent ?? null;
+    const userType = conversation?.userType ?? null;
 
     // El orquestador clasifica (o saltea, si hay sticky), deriva y registra.
     const result = await this.orchestrator.invoke(
@@ -41,6 +43,7 @@ export class MessageProcessor extends WorkerHost {
       message,
       conversationId,
       currentAgent,
+      userType,
     );
     const response =
       result.response ?? 'Disculpá, no pude procesar tu mensaje en este momento.';
