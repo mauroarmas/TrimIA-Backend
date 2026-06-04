@@ -28,4 +28,19 @@ export class ConversationsService {
       data: { conversationId, role, content, agentType },
     });
   }
+
+  /** Devuelve la conversación por id (para leer el currentAgent sticky). */
+  findById(conversationId: string): Promise<Conversation | null> {
+    return this.prisma.conversation.findUnique({
+      where: { id: conversationId },
+    });
+  }
+
+  /** Fija el agente sticky de la conversación tras resolver un mensaje. */
+  async setCurrentAgent(conversationId: string, agent: AgentType) {
+    return this.prisma.conversation.update({
+      where: { id: conversationId },
+      data: { currentAgent: agent, agentLockedAt: new Date() },
+    });
+  }
 }

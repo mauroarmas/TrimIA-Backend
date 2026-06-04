@@ -34,14 +34,28 @@ enum MessageRole {
   SYSTEM
 }
 
+// Audiencia del conocimiento: filtra qué puede recuperar el RAG según quién pregunta.
+enum Audience {
+  PUBLICO // accesible por clientes y empleados
+  INTERNO // solo empleados
+}
+
+// Tipo de usuario que interactúa: define audiencia y agentes habilitados.
+enum UserType {
+  CLIENTE // externo → solo conocimiento PUBLICO, agentes SALES/COLLECTIONS
+  EMPLEADO // interno → conocimiento PUBLICO + INTERNO, los 5 agentes
+}
+
 model Conversation {
   id         String     @id @default(uuid())
   threadId   String     @unique
   channel    Channel
   externalId String
-  status     ConvStatus @default(ACTIVE)
-  agentType  AgentType?
-  createdAt  DateTime   @default(now())
+  status        ConvStatus @default(ACTIVE)
+  currentAgent  AgentType? // agente "sticky" que atiende la conversación (null = sin asignar)
+  agentLockedAt DateTime? // cuándo se fijó el currentAgent
+  userType      UserType   @default(CLIENTE) // determina audiencia e intents permitidas
+  createdAt     DateTime   @default(now())
   updatedAt  DateTime   @updatedAt
 
   messages   Message[]
@@ -83,18 +97,21 @@ model TokenUsage {
 }
 
 model KnowledgeDocument {
-  id        String   @id @default(uuid())
+  id        String     @id @default(uuid())
   title     String
   content   String
   category  String
+  audience  Audience   @default(INTERNO) // público/interno para filtrar el RAG
+  agentType AgentType? // agente dueño del doc (null = general, para todos)
   vectorId  String?
-  version   Int      @default(1)
+  version   Int        @default(1)
   checksum  String?
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
 
   @@index([category])
   @@index([category, version])
+  @@index([audience])
 }
 
 model OrchestrationEvent {
