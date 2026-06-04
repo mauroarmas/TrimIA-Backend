@@ -13,10 +13,16 @@ export const OrchestratorState = Annotation.Root({
   message: Annotation<string>,
   threadId: Annotation<string>,
   conversationId: Annotation<string | null>, // FK de negocio para vincular eventos/tokens
+  currentAgent: Annotation<AgentType | null>, // agente sticky de la conversación (entrada)
 
   // --- Salidas (las van completando los nodos; arrancan en null) ---
-  agentType: Annotation<AgentType | null>, // lo decide classify_intent
+  agentType: Annotation<AgentType | null>, // agente resuelto para este turno
   response: Annotation<string | null>, // lo completa el agente
+
+  // --- Control del ruteo sticky ---
+  scopeChanged: Annotation<boolean | null>, // lo setea scope_check (mismo/cambio)
+  isGreeting: Annotation<boolean | null>, // lo setea classify_intent
+  isTrivial: Annotation<boolean | null>, // lo setea trivial_response (regex)
 
   // --- Métricas (las llenan classify_intent y track_tokens) ---
   startedAt: Annotation<number | null>, // timestamp de inicio para calcular durationMs

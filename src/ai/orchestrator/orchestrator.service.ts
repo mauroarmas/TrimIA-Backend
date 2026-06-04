@@ -1,4 +1,5 @@
 import { Injectable, OnModuleInit, Logger } from '@nestjs/common';
+import { AgentType } from '@prisma/client';
 import { LlmService } from '../llm/llm.service';
 import { AgentsService } from '../agents/agents.service';
 import { OrchestrationLogger } from './orchestration-logger.service';
@@ -38,17 +39,22 @@ export class OrchestratorService implements OnModuleInit {
     threadId: string,
     message: string,
     conversationId: string | null = null,
+    currentAgent: AgentType | null = null,
   ): Promise<OrchestratorStateType> {
-    
+
     const state: OrchestratorStateType = {
       threadId,
       message,
       conversationId,
-      agentType: null, // lo decide classify_intent
+      currentAgent, // agente sticky de la conversación (null = sin asignar)
+      agentType: null, // agente resuelto este turno
       response: null, // lo completa el agente
-      startedAt: null, // lo setea classify_intent
-      inputTokens: null, // lo setea classify_intent
-      outputTokens: null, // lo setea classify_intent
+      scopeChanged: null,
+      isGreeting: null,
+      isTrivial: null,
+      startedAt: null,
+      inputTokens: null,
+      outputTokens: null,
     };
 
     return this.graph.invoke(state);

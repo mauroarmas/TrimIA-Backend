@@ -24,6 +24,7 @@ import * as Joi from 'joi';
 
         GOOGLE_API_KEY: Joi.string().required(),
         GEMINI_MODEL: Joi.string().default('gemini-3.1-flash-lite'),
+        EMBEDDING_MODEL: Joi.string().default('gemini-embedding-001'),
 
         CHROMA_URL: Joi.string().uri().required(),
 
