@@ -24,13 +24,14 @@ import * as Joi from 'joi';
 
         GOOGLE_API_KEY: Joi.string().required(),
         GEMINI_MODEL: Joi.string().default('gemini-3.1-flash-lite'),
+        EMBEDDING_MODEL: Joi.string().default('gemini-embedding-001'),
 
         CHROMA_URL: Joi.string().uri().required(),
 
         N8N_WEBHOOK_SECRET: Joi.string().required(),
         N8N_BASE_URL: Joi.string().uri().required(),
 
-        RAG_CONFIDENCE_THRESHOLD: Joi.number().min(0).max(1).default(0.7),
+        RAG_CONFIDENCE_THRESHOLD: Joi.number().min(0).max(1).default(0.65),
       }),
       validationOptions: {
         allowUnknown: true,
