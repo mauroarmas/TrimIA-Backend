@@ -1,5 +1,6 @@
 import { Annotation } from '@langchain/langgraph';
-import { AgentType } from '@prisma/client';
+import { AgentType, UserType } from '@prisma/client';
+import { ConversationTurn } from '../../conversations/conversations.service';
 
 /**
  * El State es el objeto que viaja por todo el grafo.
@@ -13,10 +14,23 @@ export const OrchestratorState = Annotation.Root({
   message: Annotation<string>,
   threadId: Annotation<string>,
   conversationId: Annotation<string | null>, // FK de negocio para vincular eventos/tokens
+  currentAgent: Annotation<AgentType | null>, // agente sticky de la conversación (entrada)
+  userType: Annotation<UserType | null>, // CLIENTE/EMPLEADO → define la audiencia del RAG
+  history: Annotation<ConversationTurn[]>, // turnos previos USER/ASSISTANT (memoria conversacional)
 
   // --- Salidas (las van completando los nodos; arrancan en null) ---
-  agentType: Annotation<AgentType | null>, // lo decide classify_intent
+  agentType: Annotation<AgentType | null>, // agente resuelto para este turno
   response: Annotation<string | null>, // lo completa el agente
+
+  // --- Flujo RAG del agente ---
+  context: Annotation<string | null>, // chunks recuperados por retrieve_context
+  confidence: Annotation<number | null>, // score del mejor chunk (0-1)
+  escalated: Annotation<boolean | null>, // true si se derivó a humano por baja confianza
+
+  // --- Control del ruteo sticky ---
+  scopeChanged: Annotation<boolean | null>, // lo setea scope_check (mismo/cambio)
+  isGreeting: Annotation<boolean | null>, // lo setea classify_intent
+  isTrivial: Annotation<boolean | null>, // lo setea trivial_response (regex)
 
   // --- Métricas (las llenan classify_intent y track_tokens) ---
   startedAt: Annotation<number | null>, // timestamp de inicio para calcular durationMs

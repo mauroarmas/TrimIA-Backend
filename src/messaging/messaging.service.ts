@@ -23,13 +23,24 @@ export class MessagingService {
     const channel = dto.channel ?? Channel.WHATSAPP;
     const conversation = await this.prepareConversation(dto, channel);
 
-    await this.queue.add('process-message', {
-      threadId: conversation.threadId,
-      conversationId: conversation.id,
-      externalId: dto.phone,
-      channel,
-      message: dto.message,
-    });
+    await this.queue.add(
+      'process-message',
+      {
+        threadId: conversation.threadId,
+        conversationId: conversation.id,
+        externalId: dto.phone,
+        channel,
+        message: dto.message,
+      },
+      {
+        // Reintentos ante fallos transitorios (Gemini/Chroma/red) con backoff.
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 2000 },
+        // Higiene de Redis: no acumular jobs terminados indefinidamente.
+        removeOnComplete: { count: 100 },
+        removeOnFail: { count: 500 },
+      },
+    );
   }
 
 }
