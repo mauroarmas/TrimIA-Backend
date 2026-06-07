@@ -90,14 +90,9 @@ services:
       chromadb:
         condition: service_healthy
 
-  # paperclip:   <- Fase 5 / Administración
-  #   image: ...
-  #   ports:
-  #     - "4000:4000"
-  #   networks:
-  #     - trimia-net
-  #   depends_on:
-  #     - nestjs
+  # El Panel del Supervisor (gobernanza) NO es un contenedor aparte: es un
+  # módulo del frontend React (E4) que consume los endpoints /supervisor/* del
+  # backend NestJS. Por eso acá no hay un servicio dedicado.
 
 networks:
   trimia-net:

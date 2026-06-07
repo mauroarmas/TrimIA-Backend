@@ -79,8 +79,10 @@ model Message {
   @@index([conversationId, createdAt])
 }
 
-// Las tablas del PostgresSaver (checkpoints, checkpoint_writes, checkpoint_blobs)
-// son creadas y gestionadas por LangGraph. Prisma no las toca.
+// NOTA: Tablas huérfanas de checkpoint (checkpoints, checkpoint_writes, checkpoint_blobs,
+// checkpoint_migrations). Fueron creadas por el checkpointer de LangGraph (ahora desactivado).
+// Existen en la DB pero sin modelos Prisma. Se recablearán en Fase 5 para interrupt/resume
+// del flujo de venta financiada (human-in-the-loop). Hasta entonces, no se usan.
 
 model TokenUsage {
   id             String        @id @default(uuid())

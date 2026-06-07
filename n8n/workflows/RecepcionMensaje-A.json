@@ -3,31 +3,15 @@
   "nodes": [
     {
       "parameters": {
-        "httpMethod": "POST",
-        "path": "whatsapp",
-        "options": {}
-      },
-      "type": "n8n-nodes-base.webhook",
-      "typeVersion": 2.1,
-      "position": [
-        0,
-        0
-      ],
-      "id": "dd2c4c11-3c97-43c5-b8eb-533edcdd9b33",
-      "name": "Webhook",
-      "webhookId": "b7c32060-009e-461d-92ad-e57b343c4a70"
-    },
-    {
-      "parameters": {
         "jsCode": "const body = $input.first().json.body;\n\n// Formato directo (Postman/WEB): { phone, message }\nif (body?.phone && body?.message) {\n  return [{ json: { phone: body.phone, message: body.message, channel: 'WEB' } }];\n}\n\n// Formato real de WhatsApp Business API\nconst message = body?.entry?.[0]?.changes?.[0]?.value?.messages?.[0];\nif (!message || message.type !== 'text') return [];\n\nreturn [{ json: { phone: message.from, message: message.text.body, channel: 'WHATSAPP' } }];\n"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        208,
+        224,
         0
       ],
-      "id": "a09a707f-0bc5-469b-9382-97cb6cd2b166",
+      "id": "dffa3345-d84b-4371-97da-caacd1ce7b8a",
       "name": "Code in JavaScript"
     },
     {
@@ -69,16 +53,74 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        416,
+        448,
         0
       ],
-      "id": "9fd8a56d-1f5b-4624-bc7e-861a107fd22e",
+      "id": "194322d9-394a-4515-b3d9-308269e4a231",
       "name": "HTTP Request"
+    },
+    {
+      "parameters": {
+        "respondWith": "text",
+        "responseBody": "=={{ $json.query[\"hub.challenge\"] }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        224,
+        224
+      ],
+      "id": "f673d385-7540-4c46-aa21-81b557ad9564",
+      "name": "Respond to Webhook"
+    },
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "whatsapp",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        0
+      ],
+      "id": "ba7e64ec-9d0d-4541-8f24-92e976d4b3c7",
+      "name": "Recibir Mensaje",
+      "webhookId": "b7c32060-009e-461d-92ad-e57b343c4a70"
+    },
+    {
+      "parameters": {
+        "path": "whatsapp",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        0,
+        224
+      ],
+      "id": "29eef725-b5b2-4ec0-a747-b7259d4f546e",
+      "name": "Verificación META",
+      "webhookId": "ef9211f4-d877-40c5-aca5-47dad020a981"
     }
   ],
   "pinData": {},
   "connections": {
-    "Webhook": {
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Recibir Mensaje": {
       "main": [
         [
           {
@@ -89,11 +131,11 @@
         ]
       ]
     },
-    "Code in JavaScript": {
+    "Verificación META": {
       "main": [
         [
           {
-            "node": "HTTP Request",
+            "node": "Respond to Webhook",
             "type": "main",
             "index": 0
           }
@@ -106,10 +148,11 @@
     "executionOrder": "v1",
     "binaryMode": "separate"
   },
-  "versionId": "d0b23cf9-3663-4d5c-a113-954212830e27",
+  "versionId": "50810fc6-db83-46c1-bc04-97134b94a897",
   "meta": {
-    "instanceId": "fa080ee522c314cc4cc184d9e455b3dc24891b5b85accef256539079b2f1612c"
+    "instanceId": "dfd902cdb7991f61a4293a03371b908ff48fcfc8ce98150c917724065174c796"
   },
-  "id": "0MlZHCocUzd1UeBz",
+  "nodeGroups": [],
+  "id": "EpZPBrdRQJQN2fVC",
   "tags": []
 }

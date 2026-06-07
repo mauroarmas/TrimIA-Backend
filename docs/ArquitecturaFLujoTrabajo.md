@@ -37,13 +37,13 @@ Donde el sistema busca el contexto corporativo y guarda el historial de lo suced
 
 La interfaz humana para auditar y controlar a los agentes.
 
-- **Paperclip:** El entorno visual para los **supervisores**. Permite **monitorear** el gasto de tokens, leer el historial exacto de las derivaciones de LangGraph, pausar agentes o tomar el control manual del chat ( *Human-in-the-loop* ) en casos críticos, será la interfaz principal del supervisor para gestionar los agentesl, las conversaciones y **será dónde este cargue la documentación para alimentar al RAG**.
+- **el Panel de Gobernanza:** El entorno visual para los **supervisores**. Permite **monitorear** el gasto de tokens, leer el historial exacto de las derivaciones de LangGraph, pausar agentes o tomar el control manual del chat ( *Human-in-the-loop* ) en casos críticos, será la interfaz principal del supervisor para gestionar los agentesl, las conversaciones y **será dónde este cargue la documentación para alimentar al RAG**.
 
 #### **5. Capa de Infraestructura y Despliegue (Los Cimientos)**
 
 El entorno físico y virtual donde vive todo el código.
 
-- **Docker & Docker Compose:** Contenedores que empaquetan NestJS, Redis, PostgresDB, ChromaDB, Paperclip y n8n, asegurando que funcionen idénticamente en desarrollo y en producción.
+- **Docker & Docker Compose:** Contenedores que empaquetan NestJS, Redis, PostgresDB, ChromaDB y n8n, asegurando que funcionen idénticamente en desarrollo y en producción.
 - **Google Cloud Platform (GCP) (AÚN A DECIDIR):** El proveedor de infraestructura en la nube donde se alojarán los contenedores para garantizar alta disponibilidad operativa.
 
 ---
@@ -108,7 +108,7 @@ El rol de capacitación es central en el proyecto: cada agente conoce los proces
 
 **SALES** maneja la conversación comercial pero **no decide sobre crédito ni cierra la venta**: cuando aparece una financiación deriva a **ADMIN** para la verificación, y para cerrar deriva a un humano con toda la info ya recopilada (productos, medio de pago, resultado del crédito).
 
-**ADMIN** es el agente más crítico y auditable: es el **único con acceso a Riesgo Online**. Aísla el otorgamiento de crédito para que el supervisor controle, desde Paperclip, cada verificación y decisión de aptitud.
+**ADMIN** es el agente más crítico y auditable: es el **único con acceso a Riesgo Online**. Aísla el otorgamiento de crédito para que el supervisor controle, desde el Panel de Gobernanza, cada verificación y decisión de aptitud.
 
 **COLLECTIONS** trabaja sobre deudas que **ya existen** (cuotas de ventas financiadas); no aprueba crédito (eso es ADMIN, antes de la venta).
 
@@ -172,7 +172,7 @@ n8n formaliza todo y llama al backend con un formato limpio y controlado. **El b
 "Sí, ¿tienen stock?"                            ← rol: USER
 ```
 
-Esto es el historial legible, para que el panel de Paperclip lo muestre al supervisor.
+Esto es el historial legible, para que el Panel de Gobernanza lo muestre al supervisor.
 
 - **Lo que guarda LangGraph via `threadId` (PostgresSaver):** Es el *estado interno* del grafo, en qué nodo estaba, qué variables tenía cargadas, si estaba esperando confirmación, qué tool había llamado, etc. Es la "memoria de trabajo" del agente. **Entonces cuando el mismo número escribe de nuevo...**
 
@@ -308,10 +308,10 @@ WorkerHost con concurrency: 1
 
 #### Human-in-the-loop y la cola
 
-Hay un caso especial: cuando un agente escala a humano y llama a `interrupt()`, **el job termina exitosamente** (no queda colgado en Redis). La conversación queda en estado `WAITING_HUMAN` en Postgres. Cuando el supervisor responde desde Paperclip:
+Hay un caso especial: cuando un agente escala a humano y llama a `interrupt()`, **el job termina exitosamente** (no queda colgado en Redis). La conversación queda en estado `WAITING_HUMAN` en Postgres. Cuando el supervisor responde desde el Panel de Gobernanza:
 
 ```jsx
-POST /admin/conversations/:threadId/resume
+POST /supervisor/conversations/:threadId/resume
         │
         ▼
 AdminModule crea un NUEVO job en BullMQ
@@ -491,7 +491,7 @@ Estos dos nodos son los que conectan LangGraph con Prisma (la capa de negocio):
 }
 ```
 
-Estos datos son lo que **Paperclip** muestra en el panel de métricas (`GET /admin/metrics/tokens`). El conteo de tokens será importante a la hora de estimar costos.
+Estos datos son lo que **el Panel de Gobernanza** muestra en el panel de métricas (`GET /supervisor/metrics/tokens`). El conteo de tokens será importante a la hora de estimar costos.
 
 ---
 
@@ -671,7 +671,7 @@ La Parte 5 es el sistema RAG en profundidad: cómo se cargan los documentos, có
 RAG significa **Retrieval-Augmented Generation**: en lugar de que Gemini responda desde su conocimiento general (que no incluye los productos y políticas de la empresa), el sistema primero **recupera** documentos relevantes de una base propia y se los da como contexto. El agente genera la respuesta basada en esos documentos. Hay dos flujos bien separados:
 
 ```jsx
-FLUJO 1 — CARGA (supervisor carga documentos desde Paperclip)
+FLUJO 1 — CARGA (supervisor carga documentos desde el Panel de Gobernanza)
 
   Supervisor
       │
@@ -764,7 +764,7 @@ Cuando `retrieve_context` del agente de Ventas consulta, solo busca en la colecc
 #### Flujo completo de carga de un documento
 
 ```jsx
-POST /knowledge/documents //Desde Paperclip
+POST /knowledge/documents //Desde el Panel de Gobernanza
 {
   "title": "Catálogo de Productos 2024",
   "content": "...(texto completo)...",
@@ -865,14 +865,14 @@ DERIVACIÓN:
         ├─► OrchestrationEvent: "ESCALATED_TO_HUMAN" (Prisma)
         └─► job BullMQ termina EXITOSAMENTE ✓
 
-        [supervisor ve la conversación en Paperclip]
+        [supervisor ve la conversación en el Panel de Gobernanza]
 
 REANUDACIÓN:
 
-  Supervisor responde en Paperclip
+  Supervisor responde en el Panel de Gobernanza
         │
         ▼
-  POST /admin/conversations/:threadId/resume
+  POST /supervisor/conversations/:threadId/resume
   { "supervisorMessage": "El producto X cuesta $1500..." }
         │
         ▼
@@ -952,7 +952,7 @@ Mientras LangGraph guarda su estado interno en PostgresSaver, el sistema tambié
 // Conversation actualizada:
 {
   threadId: "550e8400-...",
-  status:   ConvStatus.WAITING_HUMAN,   ← Paperclip filtra por esto
+  status:   ConvStatus.WAITING_HUMAN,   ← el Panel de Gobernanza filtra por esto
   agentType: AgentType.SALES
 }
 
@@ -970,11 +970,11 @@ Mientras LangGraph guarda su estado interno en PostgresSaver, el sistema tambié
 }
 ```
 
-Estos datos son los que Paperclip consume para mostrar al supervisor qué conversaciones están esperando atención y por qué se escalaron.
+Estos datos son los que el Panel de Gobernanza consume para mostrar al supervisor qué conversaciones están esperando atención y por qué se escalaron.
 
-#### El supervisor ve la conversación en Paperclip
+#### El supervisor ve la conversación en el Panel de Gobernanza
 
-Paperclip hace polling a `GET /admin/events` y `GET /admin/conversations?status=WAITING_HUMAN`. El supervisor ve:
+el Panel de Gobernanza hace polling a `GET /supervisor/events` y `GET /supervisor/conversations?status=WAITING_HUMAN`. El supervisor ve:
 
 ```jsx
 ┌─────────────────────────────────────────────────────┐
@@ -996,7 +996,7 @@ El supervisor puede ver el historial completo de la conversación (tabla `Messag
 Cuando el supervisor hace clic en "Responder" y escribe la respuesta:
 
 ```jsx
-POST /admin/conversations/550e8400-.../resume
+POST /supervisor/conversations/550e8400-.../resume
 { "supervisorMessage": "El producto X cuesta $1500 en la lista vigente." }
 ```
 
@@ -1063,17 +1063,17 @@ Gemini genera una respuesta natural que integra la información del supervisor. 
 | --- | --- |
 | `src/ai/agents/sales/sales.graph.ts` | Nodo `escalate_to_human` con `interrupt()` |
 | `src/ai/checkpointer/checkpointer.service.ts` | PostgresSaver guarda/recupera checkpoints |
-| `src/admin/admin.controller.ts` | `POST /admin/conversations/:threadId/resume` |
-| `src/admin/admin.service.ts` | Lógica de reanudación, crea nuevo job BullMQ |
+| `src/supervisor/supervisor.controller.ts` | `POST /supervisor/conversations/:threadId/resume` |
+| `src/supervisor/supervisor.service.ts` | Lógica de reanudación, crea nuevo job BullMQ |
 | `src/queue/processors/message.processor.ts` | Detecta `isHumanResume`, llama a `graph.invoke()` correctamente |
 
 ---
 
-Parte 7 cubre el logging y métricas: cómo cada paso del flujo queda registrado en `OrchestrationEvent` y `TokenUsage`, y qué datos expone el panel de Paperclip para analizar el rendimiento del sistema.
+Parte 7 cubre el logging y métricas: cómo cada paso del flujo queda registrado en `OrchestrationEvent` y `TokenUsage`, y qué datos expone el Panel de Gobernanza para analizar el rendimiento del sistema.
 
 ## **Parte 7 — Logging y Métricas**
 
-Cada paso relevante del flujo queda registrado en Prisma en dos tablas: `OrchestrationEvent` (qué pasó y cuándo) y `TokenUsage` (cuánto costó en tokens y tiempo). Estos datos alimentan el panel de Paperclip y son fundamentales para la tesis: permiten analizar si el sistema es económicamente viable y dónde están los cuellos de botella.
+Cada paso relevante del flujo queda registrado en Prisma en dos tablas: `OrchestrationEvent` (qué pasó y cuándo) y `TokenUsage` (cuánto costó en tokens y tiempo). Estos datos alimentan el Panel de Gobernanza y son fundamentales para la tesis: permiten analizar si el sistema es económicamente viable y dónde están los cuellos de botella.
 
 ```jsx
 Flujo de un mensaje (completo):
@@ -1232,11 +1232,11 @@ const durationMs = Date.now() - state.startedAt;
 
 ---
 
-#### Lo que Paperclip consume
+#### Lo que el Panel de Gobernanza consume
 
 Con estos datos, el panel de administración expone:
 
- **`GET /admin/events?threadId=&after=&eventType=`**
+ **`GET /supervisor/events?threadId=&after=&eventType=`**
 
 ```jsx
 [
@@ -1252,9 +1252,9 @@ Con estos datos, el panel de administración expone:
 ]
 ```
 
-Paperclip usa esto para mostrar el historial detallado de cada conversación: qué hizo el sistema en cada paso.
+el Panel de Gobernanza usa esto para mostrar el historial detallado de cada conversación: qué hizo el sistema en cada paso.
 
-**`GET /admin/metrics/tokens?from=&to=&agentType=`**
+**`GET /supervisor/metrics/tokens?from=&to=&agentType=`**
 
 ```jsx
 {
@@ -1298,8 +1298,8 @@ Si fueran una sola tabla, las queries de métricas (GROUP BY agentType, SUM toke
 | Archivo | Qué hace |
 | --- | --- |
 | `src/ai/orchestrator/orchestrator-logger.service.ts` | `logEvent()` y `trackTokens()`, escribe en Prisma |
-| `src/admin/admin.controller.ts` | `GET /admin/events`, `GET /admin/metrics/tokens` |
-| `src/admin/admin.service.ts` | Queries agregadas sobre `TokenUsage` y `OrchestrationEvent` |
+| `src/supervisor/supervisor.controller.ts` | `GET /supervisor/events`, `GET /supervisor/metrics/tokens` |
+| `src/supervisor/supervisor.service.ts` | Queries agregadas sobre `TokenUsage` y `OrchestrationEvent` |
 | `prisma/schema.prisma` | Modelos `OrchestrationEvent` y `TokenUsage` con índices |
 
 Parte 8 cubre las integraciones externas: cómo Paljet, Riesgo Online y CRM se conectan como herramientas disponibles para los agentes, y cómo el sistema las invoca dentro del grafo LangGraph.
@@ -1478,36 +1478,36 @@ En producción, `baseUrl` viene de env vars (`PALJET_API_URL`, `PALJET_API_KEY`,
 
 ---
 
-Parte 9 (final) cubre el panel de administración completo: todos los endpoints que Paperclip consume, cómo se navega el historial de conversaciones, y cómo el sistema queda cerrado de punta a punta
+Parte 9 (final) cubre el panel de administración completo: todos los endpoints que el Panel de Gobernanza consume, cómo se navega el historial de conversaciones, y cómo el sistema queda cerrado de punta a punta
 
-## **Parte 9 — Panel de Administración (Paperclip + Admin Endpoints)**
+## **Parte 9 — Panel del Supervisor (el Panel de Gobernanza + Endpoints del Supervisor)**
 
-> `OrchestrationEvent`, `TokenUsage` + `durationMs`, cómo Paperclip consume todo esto via polling REST
+> `OrchestrationEvent`, `TokenUsage` + `durationMs`, cómo el Panel de Gobernanza consume todo esto via polling REST
 > 
 
-Paperclip es el panel web desde donde los supervisores operan el sistema. **No tiene lógica propia**: consume endpoints REST del **backend**. El `AdminModule` es la capa que expone todo lo que Paperclip necesita: conversaciones, eventos, métricas, gestión de la base de conocimiento, y el mecanismo de reanudación human-in-the-loop.
+el Panel de Gobernanza es el panel web desde donde los supervisores operan el sistema. **No tiene lógica propia**: consume endpoints REST del **backend**. El `AdminModule` es la capa que expone todo lo que el Panel de Gobernanza necesita: conversaciones, eventos, métricas, gestión de la base de conocimiento, y el mecanismo de reanudación human-in-the-loop.
 
 ```jsx
-Paperclip (panel web)
+el Panel de Gobernanza (panel web)
       │
-      ├── GET  /admin/conversations                    → lista de conversaciones
-      ├── GET  /admin/conversations/:threadId          → detalle + historial
-      ├── POST /admin/conversations/:threadId/resume   → reanudar escalada
-      ├── POST /admin/conversations/:threadId/takeover → modo manual
+      ├── GET  /supervisor/conversations                    → lista de conversaciones
+      ├── GET  /supervisor/conversations/:threadId          → detalle + historial
+      ├── POST /supervisor/conversations/:threadId/resume   → reanudar escalada
+      ├── POST /supervisor/conversations/:threadId/takeover → modo manual
       │
-      ├── GET  /admin/events                           → eventos de orquestación
-      ├── GET  /admin/metrics/tokens                   → costos y latencias
+      ├── GET  /supervisor/events                           → eventos de orquestación
+      ├── GET  /supervisor/metrics/tokens                   → costos y latencias
       │
       ├── POST /knowledge/documents                    → cargar documento
       ├── GET  /knowledge/documents                    → listar documentos
       └── PUT  /knowledge/documents/:id                → actualizar documento
 ```
 
-#### `GET /admin/conversations` — lista con filtros
+#### `GET /supervisor/conversations` — lista con filtros
 
-El endpoint principal que Paperclip muestra al abrir el panel:
+El endpoint principal que el Panel de Gobernanza muestra al abrir el panel:
 
-`GET /admin/conversations?status=WAITING_HUMAN&page=1&limit=20`
+`GET /supervisor/conversations?status=WAITING_HUMAN&page=1&limit=20`
 
 ```jsx
 Respuesta:
@@ -1531,12 +1531,12 @@ Respuesta:
 
 Filtros disponibles: `status` (ACTIVE / WAITING_HUMAN / CLOSED), `agentType`, `channel`, rango de fechas.
 
-#### `GET /admin/conversations/:threadId` — detalle completo
+#### `GET /supervisor/conversations/:threadId` — detalle completo
 
-Cuando el supervisor hace clic en una conversación, Paperclip carga el historial completo:
+Cuando el supervisor hace clic en una conversación, el Panel de Gobernanza carga el historial completo:
 
 ```jsx
-GET /admin/conversations/550e8400-.../
+GET /supervisor/conversations/550e8400-.../
 
 Respuesta:
 {
@@ -1560,23 +1560,23 @@ Respuesta:
 
 Esto le da al supervisor todo el contexto: qué dijo el usuario, qué intentó responder el agente, y por qué se escaló.
 
-#### `POST /admin/conversations/:threadId/resume` — reanudar
+#### `POST /supervisor/conversations/:threadId/resume` — reanudar
 
 Ya explicado en Parte 6. El supervisor escribe su respuesta y este endpoint crea un nuevo job en BullMQ:
 
 ```jsx
-POST /admin/conversations/550e8400-.../resume
+POST /supervisor/conversations/550e8400-.../resume
 { "supervisorMessage": "El producto X cuesta $1500 en lista vigente." }
 
 → 202 Accepted
 ```
 
-#### `POST /admin/conversations/:threadId/takeover` — modo manual
+#### `POST /supervisor/conversations/:threadId/takeover` — modo manual
 
 Un caso adicional: el supervisor decide responder directamente sin pasar por el agente IA. Útil cuando la consulta es muy sensible o el supervisor prefiere manejarla personalmente:
 
 ```jsx
-POST /admin/conversations/550e8400-.../takeover
+POST /supervisor/conversations/550e8400-.../takeover
 { "message": "Hola Juan, te contacto directamente para coordinar..." }
 
 → AdminService:
@@ -1591,12 +1591,12 @@ La diferencia con `resume`:
 - `takeover` envía el mensaje del supervisor **directamente** al usuario sin pasar por LangGraph.
 - `resume` le da el input al grafo para que Gemini genere una respuesta.
 
-#### `GET /admin/events` — historial de orquestación
+#### `GET /supervisor/events` — historial de orquestación
 
-Paperclip usa esto para mostrar el "log de actividad" de cada conversación:
+el Panel de Gobernanza usa esto para mostrar el "log de actividad" de cada conversación:
 
 ```jsx
-GET /admin/events?threadId=550e8400-...&after=2024-01-15T10:00:00Z
+GET /supervisor/events?threadId=550e8400-...&after=2024-01-15T10:00:00Z
 
 [
   { "eventType": "INTENT_CLASSIFIED", "agentType": "SALES",   "createdAt": "10:23:41" },
@@ -1606,14 +1606,14 @@ GET /admin/events?threadId=550e8400-...&after=2024-01-15T10:00:00Z
 ]
 ```
 
-El parámetro `after` permite polling incremental: Paperclip guarda el `createdAt` del último evento recibido y en cada poll solo pide los nuevos.
+El parámetro `after` permite polling incremental: el Panel de Gobernanza guarda el `createdAt` del último evento recibido y en cada poll solo pide los nuevos.
 
-#### `GET /admin/metrics/tokens` — análisis económico
+#### `GET /supervisor/metrics/tokens` — análisis económico
 
 El endpoint más relevante para la tesis: permite demostrar que el sistema es viable en términos de costo y latencia:
 
 ```jsx
-GET /admin/metrics/tokens?from=2024-01-01&to=2024-01-31
+GET /supervisor/metrics/tokens?from=2024-01-01&to=2024-01-31
 
 {
   "period": { "from": "2024-01-01", "to": "2024-01-31" },
@@ -1657,8 +1657,8 @@ n8n recibe esto, lo formatea según la API de WhatsApp Business, y lo entrega al
 
 | Archivo | Qué hace |
 | --- | --- |
-| `src/admin/admin.controller.ts` | Todos los endpoints admin |
-| `src/admin/admin.service.ts` | Lógica: queries Prisma, crea jobs BullMQ, llama sender |
+| `src/supervisor/supervisor.controller.ts` | Todos los endpoints del supervisor |
+| `src/supervisor/supervisor.service.ts` | Lógica: queries Prisma, crea jobs BullMQ, llama sender |
 | `src/messaging/messaging.controller.ts` | Webhook + sender hacia n8n |
 | `src/rag/knowledge/knowledge.controller.ts` | Endpoints de base de conocimiento |
 
@@ -1698,7 +1698,7 @@ n8n recibe esto, lo formatea según la API de WhatsApp Business, y lo entrega al
     escalate_to_human → interrupt() → checkpoint en PostgresSaver
     Conversation.status = WAITING_HUMAN
     job BullMQ termina OK
-    [supervisor ve en Paperclip → POST /admin/.../resume]
+    [supervisor ve en el Panel de Gobernanza → POST /supervisor/.../resume]
     → nuevo job → LangGraph retoma → generate_response → WhatsApp ✓
 
 [7] En cada nodo relevante:
@@ -1710,10 +1710,10 @@ n8n recibe esto, lo formatea según la API de WhatsApp Business, y lo entrega al
     → servicio externo → resultado → contexto adicional
     → OrchestrationEvent: TOOL_CALLED
 
-[9] Paperclip consume:
-    GET /admin/conversations     → gestión de conversaciones
-    GET /admin/events            → auditoría
-    GET /admin/metrics/tokens    → análisis económico
+[9] el Panel de Gobernanza consume:
+    GET /supervisor/conversations     → gestión de conversaciones
+    GET /supervisor/events            → auditoría
+    GET /supervisor/metrics/tokens    → análisis económico
     POST /knowledge/documents    → base de conocimiento
 ```
 
