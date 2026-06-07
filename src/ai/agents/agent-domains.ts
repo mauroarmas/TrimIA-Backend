@@ -1,3 +1,4 @@
+import { UserType } from '@prisma/client';
 import { SpecializedAgent } from './agents.service';
 
 /**
@@ -19,3 +20,21 @@ export const AGENT_DOMAINS: Record<SpecializedAgent, string> = {
   DEPOSITS:
     'stock, disponibilidad de productos, pedido de fotos o videos de un producto',
 };
+
+/** Los 5 agentes especializados. */
+export const ALL_AGENTS: SpecializedAgent[] = [
+  'SALES',
+  'ADMIN',
+  'COLLECTIONS',
+  'LOGISTICS',
+  'DEPOSITS',
+];
+
+/**
+ * Agentes a los que puede acceder cada tipo de usuario.
+ * - CLIENTE externo: solo Ventas y Cobranzas (el stock lo responde Ventas).
+ * - EMPLEADO: los 5 (incluye Depósito/Logística para capacitación interna).
+ */
+export function allowedAgentsFor(userType: UserType | null): SpecializedAgent[] {
+  return userType === 'EMPLEADO' ? ALL_AGENTS : ['SALES', 'COLLECTIONS'];
+}

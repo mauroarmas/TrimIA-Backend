@@ -1,29 +1,24 @@
-import { Logger } from '@nestjs/common';
-import { StateGraph, START, END } from '@langchain/langgraph';
 import {
-  OrchestratorState,
-  OrchestratorStateType,
-} from '../../orchestrator/orchestrator.state';
+  AgentGraphDeps,
+  buildRagAgentGraph,
+} from '../shared/rag-agent.graph';
+import { COLLECTIONS_PROMPT } from './collections.prompt';
 
 /**
- * Agente de COBRANZAS (stub).
+ * Agente de COBRANZAS (Fase 4 Inc. 2) — flujo RAG sobre la fábrica común.
  *
- *   [START] → generate_response → [END]
- *
- * En Fase 4 manejará el cobro de cuotas, vencimientos y comprobantes de pago
- * (rol "cobrador online" de Credimisión).
+ * Maneja cuotas, vencimientos, deudas y avisos de pago (rol "cobrador online"
+ * de Credimisión). La confirmación de pago la valida un humano: el agente solo
+ * recibe el aviso/comprobante y deriva (ver flujo de confirmación de pago).
  */
-export function buildCollectionsGraph(logger: Logger) {
-  const generateResponse = async (_state: OrchestratorStateType) => {
-    logger.log('[COLLECTIONS] generando respuesta (stub)');
-    return {
-      response: 'Hola, soy el agente de Cobranzas.',
-    };
-  };
-
-  return new StateGraph(OrchestratorState)
-    .addNode('generate_response', generateResponse)
-    .addEdge(START, 'generate_response')
-    .addEdge('generate_response', END)
-    .compile();
+export function buildCollectionsGraph(deps: AgentGraphDeps) {
+  return buildRagAgentGraph(
+    {
+      agentType: 'COLLECTIONS',
+      prompt: COLLECTIONS_PROMPT,
+      escalationMessage:
+        'Dejame verificarlo con el área de cobranzas y te confirmo a la brevedad. 🙌',
+    },
+    deps,
+  );
 }

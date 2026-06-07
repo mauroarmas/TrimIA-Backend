@@ -5,15 +5,20 @@ import { AgentsService } from '../agents/agents.service';
 import { OrchestrationLogger } from './orchestration-logger.service';
 import { buildOrchestratorGraph } from './orchestrator.graph';
 import { OrchestratorStateType } from './orchestrator.state';
+import { ConversationTurn } from '../../conversations/conversations.service';
 
 @Injectable()
 export class OrchestratorService implements OnModuleInit {
+  private readonly logger = new Logger(OrchestratorService.name);
+
+  // El grafo compilado. Se arma una sola vez al iniciar y se reutiliza.
+  private graph!: ReturnType<typeof buildOrchestratorGraph>;
 
   constructor(
     private readonly llm: LlmService,
     private readonly agents: AgentsService,
     private readonly orchestrationLogger: OrchestrationLogger,
-  ) { }
+  ) {}
 
   onModuleInit() {
     // Compilar el grafo es costoso → se hace una vez al arrancar, no por mensaje
@@ -26,11 +31,6 @@ export class OrchestratorService implements OnModuleInit {
     this.logger.log('Grafo del orquestador compilado');
   }
 
-    // El grafo compilado. Se arma una sola vez al iniciar y se reutiliza.
-  private graph!: ReturnType<typeof buildOrchestratorGraph>;
-
-  private readonly logger = new Logger(OrchestratorService.name);
-
   /**
    * Procesa un mensaje a través del grafo.
    * Devuelve el state final (con agentType y response).
@@ -41,16 +41,17 @@ export class OrchestratorService implements OnModuleInit {
     conversationId: string | null = null,
     currentAgent: AgentType | null = null,
     userType: UserType | null = null,
+    history: ConversationTurn[] = [],
   ): Promise<OrchestratorStateType> {
-
     const state: OrchestratorStateType = {
       threadId,
       message,
       conversationId,
-      currentAgent, // agente sticky de la conversación (null = sin asignar)
-      userType, // CLIENTE/EMPLEADO → audiencia del RAG
-      agentType: null, // agente resuelto este turno
-      response: null, // lo completa el agente
+      currentAgent,
+      userType,
+      history,
+      agentType: null,
+      response: null,
       context: null,
       confidence: null,
       escalated: null,

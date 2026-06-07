@@ -74,15 +74,69 @@ export class KnowledgeService implements OnModuleInit {
     this.logger.log(`Colección Chroma "${COLLECTION}" lista`);
   }
 
-  /** Parte un texto largo en chunks de ~1000 chars con solapamiento. */
+  /**
+   * Parte un texto en chunks semánticos de ~`size` chars.
+   *
+   * Estrategia: prioriza cortar en límites naturales del texto para no
+   * partir oraciones a la mitad (lo que degrada la calidad del embedding).
+   *   1. Si el texto cabe entero → un solo chunk.
+   *   2. Divide por párrafos dobles (\n\n) y los agrupa hasta `size`.
+   *   3. Si un párrafo supera `size`, lo subdivide por oración (`. `, `? `, `! `).
+   *   4. Solo como último recurso corta por índice de char.
+   *
+   * El solapamiento `overlap` añade los últimos N chars del chunk anterior
+   * al inicio del siguiente para preservar contexto en el borde.
+   */
   private chunk(text: string, size = 1000, overlap = 150): string[] {
     const clean = text.replace(/\r\n/g, '\n').trim();
     if (clean.length <= size) return [clean];
-    const chunks: string[] = [];
-    for (let i = 0; i < clean.length; i += size - overlap) {
-      chunks.push(clean.slice(i, i + size));
+
+    // Divide por párrafos y luego por oraciones si el párrafo es muy largo.
+    const sentences: string[] = [];
+    for (const para of clean.split(/\n\n+/)) {
+      const trimmed = para.trim();
+      if (!trimmed) continue;
+      if (trimmed.length <= size) {
+        sentences.push(trimmed);
+      } else {
+        // Partir el párrafo largo por límites de oración.
+        const parts = trimmed.split(/(?<=[.?!])\s+/);
+        for (const part of parts) {
+          if (part.trim()) sentences.push(part.trim());
+        }
+      }
     }
-    return chunks;
+
+    // Agrupa oraciones en chunks respetando el límite de tamaño.
+    const chunks: string[] = [];
+    let current = '';
+    for (const sentence of sentences) {
+      const candidate = current ? `${current}\n${sentence}` : sentence;
+      if (candidate.length <= size) {
+        current = candidate;
+      } else {
+        if (current) chunks.push(current);
+        // Si la oración sola supera el límite, corte de emergencia por chars.
+        if (sentence.length > size) {
+          for (let i = 0; i < sentence.length; i += size - overlap) {
+            chunks.push(sentence.slice(i, i + size));
+          }
+          current = '';
+        } else {
+          current = sentence;
+        }
+      }
+    }
+    if (current) chunks.push(current);
+
+    // Aplica solapamiento: prefija cada chunk (salvo el primero) con el
+    // final del chunk anterior para preservar contexto en el borde.
+    return chunks.map((chunk, i) => {
+      if (i === 0 || overlap === 0) return chunk;
+      const prev = chunks[i - 1];
+      const tail = prev.slice(-overlap);
+      return `${tail}\n${chunk}`;
+    });
   }
 
   /**

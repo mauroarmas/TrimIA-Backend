@@ -1,28 +1,24 @@
-import { Logger } from '@nestjs/common';
-import { StateGraph, START, END } from '@langchain/langgraph';
 import {
-  OrchestratorState,
-  OrchestratorStateType,
-} from '../../orchestrator/orchestrator.state';
+  AgentGraphDeps,
+  buildRagAgentGraph,
+} from '../shared/rag-agent.graph';
+import { DEPOSITS_PROMPT } from './deposits.prompt';
 
 /**
- * Agente de DEPÓSITO (stub).
+ * Agente de DEPÓSITO (Fase 4 Inc. 2) — flujo RAG capacitativo.
  *
- *   [START] → generate_response → [END]
- *
- * En Fase 4 manejará consultas de stock, disponibilidad y fotos/videos de productos.
+ * Solo accesible para EMPLEADO. Resuelve consultas internas sobre stock,
+ * disponibilidad y fotos/videos de productos. Sin herramientas externas:
+ * todo el conocimiento viene del corpus (RAG-only).
  */
-export function buildDepositsGraph(logger: Logger) {
-  const generateResponse = async (_state: OrchestratorStateType) => {
-    logger.log('[DEPOSITS] generando respuesta (stub)');
-    return {
-      response: 'Hola, soy el agente de Depósito.',
-    };
-  };
-
-  return new StateGraph(OrchestratorState)
-    .addNode('generate_response', generateResponse)
-    .addEdge(START, 'generate_response')
-    .addEdge('generate_response', END)
-    .compile();
+export function buildDepositsGraph(deps: AgentGraphDeps) {
+  return buildRagAgentGraph(
+    {
+      agentType: 'DEPOSITS',
+      prompt: DEPOSITS_PROMPT,
+      escalationMessage:
+        'No tengo esa información en la base de conocimiento. Te sugiero consultar directamente con el encargado de depósito. 📦',
+    },
+    deps,
+  );
 }

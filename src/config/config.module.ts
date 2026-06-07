@@ -31,7 +31,7 @@ import * as Joi from 'joi';
         N8N_WEBHOOK_SECRET: Joi.string().required(),
         N8N_BASE_URL: Joi.string().uri().required(),
 
-        RAG_CONFIDENCE_THRESHOLD: Joi.number().min(0).max(1).default(0.7),
+        RAG_CONFIDENCE_THRESHOLD: Joi.number().min(0).max(1).default(0.65),
       }),
       validationOptions: {
         allowUnknown: true,

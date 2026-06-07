@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { SpecializedAgent } from '../../agents/agents.service';
 
 /**
  * Esquemas de salida estructurada para los nodos del orquestador.
@@ -6,12 +7,17 @@ import { z } from 'zod';
  * valores — no hay que parsear texto libre.
  */
 
-/** Resultado de classify_intent: un agente o `greeting`. */
-export const classificationSchema = z.object({
-  intent: z
-    .enum(['SALES', 'ADMIN', 'COLLECTIONS', 'LOGISTICS', 'DEPOSITS', 'greeting'])
-    .describe('El agente que debe atender el mensaje, o greeting si es un saludo'),
-});
+/**
+ * Schema de classify_intent acotado a los agentes permitidos para el usuario.
+ * El modelo solo puede elegir entre esos agentes (+ greeting).
+ */
+export function buildClassificationSchema(allowed: SpecializedAgent[]) {
+  return z.object({
+    intent: z
+      .enum([...allowed, 'greeting'] as unknown as [string, ...string[]])
+      .describe('El agente que debe atender el mensaje, o greeting si es un saludo'),
+  });
+}
 
 /** Resultado de scope_check: si el mensaje sigue en el dominio del agente. */
 export const scopeSchema = z.object({

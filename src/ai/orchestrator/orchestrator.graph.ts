@@ -6,9 +6,10 @@ import { LlmService } from '../llm/llm.service';
 import { AgentsService, SpecializedAgent } from '../agents/agents.service';
 import { OrchestrationLogger } from './orchestration-logger.service';
 import { OrchestratorState, OrchestratorStateType } from './orchestrator.state';
-import { CLASSIFY_PROMPT, buildScopePrompt } from './utils/orchestrator.prompts';
-import { classificationSchema, scopeSchema } from './utils/orchestrator.schemas';
+import { buildClassifyPrompt, buildScopePrompt } from './utils/orchestrator.prompts';
+import { buildClassificationSchema, scopeSchema } from './utils/orchestrator.schemas';
 import { isTrivial, cannedReply } from './utils/trivial-filter';
+import { allowedAgentsFor } from '../agents/agent-domains';
 
 const AGENT_KEYS: SpecializedAgent[] = [
   'SALES',
@@ -46,12 +47,14 @@ export function buildOrchestratorGraph(
   // --- NODO: classify_intent (orquestador con Gemini) ---
   const classifyIntent = async (state: OrchestratorStateType) => {
     const startedAt = state.startedAt ?? Date.now();
-    const structured = llm.chat.withStructuredOutput(classificationSchema, {
-      name: 'classify_intent',
-      includeRaw: true,
-    });
+    // Solo se ofrecen los agentes permitidos para este tipo de usuario.
+    const allowed = allowedAgentsFor(state.userType);
+    const structured = llm.chat.withStructuredOutput(
+      buildClassificationSchema(allowed),
+      { name: 'classify_intent', includeRaw: true },
+    );
     const result = await structured.invoke([
-      new SystemMessage(CLASSIFY_PROMPT),
+      new SystemMessage(buildClassifyPrompt(allowed)),
       new HumanMessage(state.message),
     ]);
 
@@ -161,7 +164,16 @@ export function buildOrchestratorGraph(
 
   const entryRouter = (state: OrchestratorStateType): string => {
     if (isTrivial(state.message)) return 'trivial';
-    if (state.currentAgent) return 'sticky';
+    // Sticky solo si el agente fijado sigue permitido para este usuario.
+    // (auto-sana conversaciones pegadas a un agente no permitido, p. ej. un
+    // cliente que quedó en DEPOSITS por datos previos → vuelve a clasificar.)
+    const allowed = allowedAgentsFor(state.userType);
+    if (
+      state.currentAgent &&
+      allowed.includes(state.currentAgent as SpecializedAgent)
+    ) {
+      return 'sticky';
+    }
     return 'orchestrate';
   };
 
