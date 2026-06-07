@@ -10,10 +10,10 @@
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2.1,
       "position": [
-        0,
-        160
+        -512,
+        112
       ],
-      "id": "9972e24f-c4b8-4316-a186-0b710bb31cc9",
+      "id": "0927d45d-a116-477b-a1c2-4162002886b0",
       "name": "Webhook",
       "webhookId": "ec9f4296-04df-4bdf-a463-2aa161b66034"
     },
@@ -25,20 +25,20 @@
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={\n  \"messaging_product\": \"whatsapp\",\n  \"to\": \"{{ $json.body.phone.replace(/^549/, '54') }}\",\n  \"type\": \"text\",\n  \"text\": { \"body\": \"{{ $json.body.message }}\" }\n}\n",
+        "jsonBody": "={{ JSON.stringify({\n  \"messaging_product\": \"whatsapp\",\n  \"to\": $json.body.phone.replace(/^549/, '54'),\n  \"type\": \"text\",\n  \"text\": {\n    \"body\": $json.body.message\n  }\n}) }}",
         "options": {}
       },
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        512,
-        48
+        0,
+        0
       ],
-      "id": "c0862fab-2213-4816-98b2-860e1e6b88f9",
+      "id": "fdca23bf-e947-456c-bb09-5a2889d61ffb",
       "name": "HTTP Request",
       "credentials": {
         "httpHeaderAuth": {
-          "id": "jpRRIOsVecQ4A2WA",
+          "id": "BrSBTQKJ0cgPgcUG",
           "name": "Header Auth account"
         }
       }
@@ -71,10 +71,10 @@
       "type": "n8n-nodes-base.if",
       "typeVersion": 2.3,
       "position": [
-        240,
-        160
+        -272,
+        112
       ],
-      "id": "d208a0b5-8254-4dbc-9feb-aa04fc9c7532",
+      "id": "8b11dd9f-db6d-48d5-889e-2cdd8cf57e2e",
       "name": "If"
     },
     {
@@ -82,10 +82,10 @@
       "type": "n8n-nodes-base.noOp",
       "typeVersion": 1,
       "position": [
-        512,
-        256
+        0,
+        208
       ],
-      "id": "9353663f-0d52-4c3f-80c0-db2d025e4c02",
+      "id": "ad5fc386-79fa-42d2-be1c-28f47fb683d3",
       "name": "No Operation, do nothing"
     }
   ],
@@ -126,10 +126,11 @@
     "executionOrder": "v1",
     "binaryMode": "separate"
   },
-  "versionId": "2e7f23db-4d30-4d06-9317-f1ee0538bef3",
+  "versionId": "cf4835b6-c7c1-469f-9292-0fed43a5cbef",
   "meta": {
-    "instanceId": "fa080ee522c314cc4cc184d9e455b3dc24891b5b85accef256539079b2f1612c"
+    "instanceId": "dfd902cdb7991f61a4293a03371b908ff48fcfc8ce98150c917724065174c796"
   },
-  "id": "eXDgj3RHr5nW7tRt",
+  "nodeGroups": [],
+  "id": "rBb1my8TWRqS3lDl",
   "tags": []
 }
