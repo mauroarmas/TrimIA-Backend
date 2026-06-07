@@ -1,5 +1,6 @@
 import { Annotation } from '@langchain/langgraph';
 import { AgentType, UserType } from '@prisma/client';
+import { ConversationTurn } from '../../conversations/conversations.service';
 
 /**
  * El State es el objeto que viaja por todo el grafo.
@@ -15,6 +16,7 @@ export const OrchestratorState = Annotation.Root({
   conversationId: Annotation<string | null>, // FK de negocio para vincular eventos/tokens
   currentAgent: Annotation<AgentType | null>, // agente sticky de la conversación (entrada)
   userType: Annotation<UserType | null>, // CLIENTE/EMPLEADO → define la audiencia del RAG
+  history: Annotation<ConversationTurn[]>, // turnos previos USER/ASSISTANT (memoria conversacional)
 
   // --- Salidas (las van completando los nodos; arrancan en null) ---
   agentType: Annotation<AgentType | null>, // agente resuelto para este turno

@@ -22,14 +22,18 @@
 | ENTREGABLES DEL PROYECTO |  |  |  |
 | ----- | :---- | :---- | :---- |
 | ENTREGABLE | FECHA PROPUESTA | DESCRIPCIÓN DEL ENTREGABLE | RESPONSABLE |
-| 1- Documentación de Inicio del Proyecto | 03/06/26 | Acta de Constitución, Declaración del Alcance, Matriz de Trazabilidad de Requisitos y Registro de Interesados, aprobados por el cliente y por la cátedra.  | Bazán, Agustina \- Berrondo, Milagros |
-| 2- Arquitectura de la Solución | 12/06/26 | Documento de arquitectura global (vista para no técnicos), arquitectura técnica por capas, diagrama de flujo de mensajes, modelo de datos (ERD), diagrama del grafo del orquestador y registro de decisiones arquitectónicas (ADR). | Armas, Mauro Nahuel |
-| 3- Núcleo Conversacional Operativo | 19/06/26 | Plataforma backend funcionando end-to-end: infraestructura base, recepción de mensajes vía WhatsApp Business, orquestador con clasificación de intención, los 5 agentes especializados respondiendo, registro de eventos y consumo de modelo.  | Albornoz, Silvia Melisa |
-| 4- Base de Conocimiento Dinámica (RAG)  | 03/07/26 | Módulo de carga, vectorización y consulta de documentos corporativos, con filtrado por audiencia (público/interno) y por agente autorizado. Incluye interfaz de administración para supervisores.  | Bazán, Agustina |
-| 5- Integraciones con Sistemas Externos | 26/08/2026 | Conectores funcionales con Paljet (consulta de stock), Riesgo Online (verificación crediticia, exclusiva de Administración) y CRM (registro de prospectos y seguimientos)  | Berrondo, Milagros |
-| 6- Panel Web de Gobernanza | 23/09/26 | Dashboard para supervisores y gerentes con: visualización de métricas operativas en tiempo real, Cola de Prioridades (revisión de casos escalados), módulo de Supervisión de Agentes (auditoría de decisiones), gestión de la whitelist de empleados.  | Armas, Mauro Nahuel |
-| 7- Módulos de Cobranzas y Capacitación | 21/10/26 | Agente de Cobranzas con recordatorios automáticos por WhatsApp y gestión de cuotas pendientes. Módulo de Capacitación Contextual organizada por puesto. Asistente de Captura de Conocimiento que guía al supervisor mediante formularios estructurados con sugerencias de profundización generadas por IA, produciendo documentos validados que alimentan la base de conocimiento. | Albornoz, Silvia Melisa |
-| 8- Despliegue, Validación y Documentación | 06/11/26 | Despliegue en infraestructura cloud (Google Cloud) para validación académica controlada (sin operación comercial real), informe de pruebas funcionales y de integración, manual de uso por rol, documentación técnica completa, presentación e informe final para defensa de tesis. Cubre: criterios de aceptación generales del producto, requisito protocolar de la cátedra. | Bazán, Agustina |
+| 1- Relevamiento y Documentación de Inicio | 01/06/26 | Entrevistas y relevamiento, análisis normativo (Ley 25.326), Acta de Constitución, Registro de Interesados, Declaración del Alcance, Matriz de Trazabilidad y EDT. (TP1, TP2) | Bazán, Agustina \- Berrondo, Milagros |
+| 2- Núcleo Conversacional | 22/07/26 | Backend \+ base de datos, recepción de mensajes (WhatsApp/n8n), orquestador con ruteo sticky y los 5 agentes base con registro de eventos. | Albornoz, Silvia Melisa |
+| 3- Base de Conocimiento Dinámica (RAG)  | 20/08/26 | Base de conocimiento vectorial (ingesta, consulta con filtros de audiencia, identificación de usuario) y carga del corpus. | Bazán, Agustina |
+| 4- Panel Web de Gobernanza y Supervisión | 09/09/26 | Interfaz web base, dashboard de métricas, supervisión/auditoría de agentes, whitelist, Cola de Prioridades y capitalización de resoluciones. | Armas, Mauro Nahuel |
+| 5- Planificación del Proyecto | 23/09/2026 | Cronograma (TP3), Plan Financiero (TP4), Plan de Gestión de Riesgos (TP5) y Plan de Gestión del Proyecto (TP6). | Berrondo, Milagros |
+| 6- Cobranzas y Capacitación | 01/10/26 | Agente de Cobranzas con recordatorios y confirmación de pago, Módulo de Capacitación Contextual y Asistente de Captura de Conocimiento con audio. | Albornoz, Silvia Melisa |
+| 7- Integraciones y Flujos de Trabajo | 02/10/26 | Conectores Paljet (stock), Riesgo Online (crédito) y CRM (prospectos) \+ flujo de venta financiada. | Berrondo, Milagros |
+| 8- Capacitación Técnica del Equipo | 02/10/26 | Aprendizaje de LangChain/LangGraph, Redis+BullMQ, ChromaDB, Paljet, Riesgo Online, CRM, Paperclip+n8n y GCP (just-in-time). | Equipo. |
+| 9- Diseño y Arquitectura | 14/10/26 | Arquitectura global (no técnica), arquitectura técnica por capas y diagrama de flujo de mensajes. (TP7 – Análisis y Diseño) | Armas, Mauro Nahuel |
+| 10- Despliegue y Validación | 22/10/26 | Despliegue en cloud, pruebas funcionales y de integración, y capacitación a usuarios. (TP8 – RELEASE 1 21/10, RELEASE FINAL 02/11) | Bazán, Agustina |
+| 11- Cierre | 18/11/26 | Manual y documentación técnica, informe final, presentación de defensa y lecciones aprendidas. (TP9) | Albornoz, Silvia Melisa |
+| 12- Dirección del Proyecto (transversal) | 04/05/26 \-\> 18/11/26 | Reuniones, control de alcance y cambios, gestión de riesgos, informes de avance e interacción/prompting con IA. | Equipo. |
 
 | EXCLUSIONES DEL PROYECTO |
 | ----- |

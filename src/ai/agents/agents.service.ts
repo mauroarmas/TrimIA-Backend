@@ -42,22 +42,23 @@ export class AgentsService implements OnModuleInit {
       'RAG_CONFIDENCE_THRESHOLD',
     )!;
 
-    this.graphs = {
-      // SALES ya usa el flujo RAG real (Fase 4 Inc. 2).
-      SALES: buildSalesGraph({
-        llm: this.llm,
-        knowledge: this.knowledge,
-        confidenceThreshold,
-        logger: this.logger,
-      }),
-      // El resto sigue como stub hasta sus respectivos incrementos.
-      // (cast: a runtime son todos grafos compilados sobre el mismo state.)
-      ADMIN: buildAdminGraph(this.logger) as unknown as AgentGraph,
-      COLLECTIONS: buildCollectionsGraph(this.logger) as unknown as AgentGraph,
-      LOGISTICS: buildLogisticsGraph(this.logger) as unknown as AgentGraph,
-      DEPOSITS: buildDepositsGraph(this.logger) as unknown as AgentGraph,
+    // Deps de infraestructura comunes a todo agente RAG.
+    const deps = {
+      llm: this.llm,
+      knowledge: this.knowledge,
+      confidenceThreshold,
+      logger: this.logger,
     };
-    this.logger.log('Agentes compilados (SALES con RAG; resto stub)');
+
+    this.graphs = {
+      // SALES, ADMIN y COLLECTIONS usan el flujo RAG real (Fase 4 Inc. 2).
+      SALES: buildSalesGraph(deps),
+      ADMIN: buildAdminGraph(deps),
+      COLLECTIONS: buildCollectionsGraph(deps),
+      LOGISTICS: buildLogisticsGraph(deps),
+      DEPOSITS: buildDepositsGraph(deps),
+    };
+    this.logger.log('Los 5 agentes compilados con flujo RAG');
   }
 
   /** Devuelve el subgrafo compilado de un agente. Lo usa el orquestador. */

@@ -6,7 +6,6 @@ import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { AppConfigModule } from './config/config.module';
 import { PrismaModule } from './database/prisma.module';
 import { RedisModule } from './redis/redis.module';
-import { CheckpointerModule } from './ai/checkpointer/checkpointer.module';
 import { LlmModule } from './ai/llm/llm.module';
 import { KnowledgeModule } from './ai/knowledge/knowledge.module';
 import { AgentsModule } from './ai/agents/agents.module';
@@ -50,7 +49,6 @@ import { ConfigService } from '@nestjs/config';
     }),
     PrismaModule,
     RedisModule,
-    CheckpointerModule,
     LlmModule,
     KnowledgeModule,
     AgentsModule,
