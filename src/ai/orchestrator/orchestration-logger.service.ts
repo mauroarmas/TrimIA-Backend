@@ -14,7 +14,6 @@ export class OrchestrationLogger {
 
   /** Persiste un evento de orquestación (auditoría). */
   async logEvent(params: {
-    threadId: string;
     conversationId?: string | null;
     eventType: string;
     agentType?: AgentType | null;
@@ -22,7 +21,6 @@ export class OrchestrationLogger {
   }) {
     await this.prisma.orchestrationEvent.create({
       data: {
-        threadId: params.threadId,
         conversationId: params.conversationId ?? null,
         eventType: params.eventType,
         agentType: params.agentType ?? null,

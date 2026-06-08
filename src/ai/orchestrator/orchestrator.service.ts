@@ -36,7 +36,6 @@ export class OrchestratorService implements OnModuleInit {
    * Devuelve el state final (con agentType y response).
    */
   async invoke(
-    threadId: string,
     message: string,
     conversationId: string | null = null,
     currentAgent: AgentType | null = null,
@@ -44,7 +43,6 @@ export class OrchestratorService implements OnModuleInit {
     history: ConversationTurn[] = [],
   ): Promise<OrchestratorStateType> {
     const state: OrchestratorStateType = {
-      threadId,
       message,
       conversationId,
       currentAgent,

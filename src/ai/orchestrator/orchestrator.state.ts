@@ -12,8 +12,7 @@ import { ConversationTurn } from '../../conversations/conversations.service';
 export const OrchestratorState = Annotation.Root({
   // --- Entradas (las pone el MessageProcessor al invocar el grafo) ---
   message: Annotation<string>,
-  threadId: Annotation<string>,
-  conversationId: Annotation<string | null>, // FK de negocio para vincular eventos/tokens
+  conversationId: Annotation<string | null>, // FK de la conversación: vincula eventos/tokens y, en Fase 5, será el thread_id de LangGraph
   currentAgent: Annotation<AgentType | null>, // agente sticky de la conversación (entrada)
   userType: Annotation<UserType | null>, // CLIENTE/EMPLEADO → define la audiencia del RAG
   history: Annotation<ConversationTurn[]>, // turnos previos USER/ASSISTANT (memoria conversacional)

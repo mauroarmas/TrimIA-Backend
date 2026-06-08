@@ -224,7 +224,7 @@ mensaje actual. Así el agente resuelve referencias ("¿y esa en cuotas?").
 
 | Modelo | Para qué | Campos clave |
 |--------|----------|--------------|
-| `Conversation` | Hilo de chat por teléfono | `threadId`, `externalId`, `currentAgent` (sticky), `userType` |
+| `Conversation` | Hilo de chat por teléfono | `id`, `externalId`, `currentAgent` (sticky), `userType` |
 | `Message` | Cada mensaje | `role` (USER/ASSISTANT/...), `content`, `agentType` |
 | `KnowledgeDocument` | Metadatos de docs del RAG | `audience` (PUBLICO/INTERNO), `agentType`, `checksum` |
 | `TokenUsage` | Consumo por turno | `inputTokens`, `outputTokens`, `durationMs`, `model` |

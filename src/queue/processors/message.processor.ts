@@ -7,7 +7,6 @@ import { WhatsappSenderService } from '../../messaging/whatsapp-sender.service';
 import { OrchestratorService } from '../../ai/orchestrator/orchestrator.service';
 
 interface MessageJob {
-  threadId: string;
   conversationId: string;
   externalId: string;
   channel: Channel;
@@ -30,9 +29,9 @@ export class MessageProcessor extends WorkerHost {
     'Disculpá, tuve un problema para procesar tu mensaje. Por favor, intentá de nuevo en unos minutos. 🙏';
 
   async process(job: Job<MessageJob>): Promise<void> {
-    const { conversationId, externalId, message, threadId, channel } = job.data;
+    const { conversationId, externalId, message, channel } = job.data;
 
-    this.logger.log(`Processing message [threadId=${threadId}]: "${message}"`);
+    this.logger.log(`Processing message [conv=${conversationId}]: "${message}"`);
 
     try {
       // Sticky + historial: una sola query trae todo lo que necesita el orquestador.
@@ -43,7 +42,6 @@ export class MessageProcessor extends WorkerHost {
 
       // El orquestador clasifica (o saltea, si hay sticky), deriva y registra.
       const result = await this.orchestrator.invoke(
-        threadId,
         message,
         conversationId,
         currentAgent,
@@ -75,7 +73,7 @@ export class MessageProcessor extends WorkerHost {
       // respuesta. Logueamos y relanzamos para que BullMQ reintente; solo
       // avisamos al usuario en el ÚLTIMO intento, para no duplicar mensajes.
       this.logger.error(
-        `Error procesando mensaje [threadId=${threadId}]: ${
+        `Error procesando mensaje [conv=${conversationId}]: ${
           err instanceof Error ? err.message : err
         }`,
       );
