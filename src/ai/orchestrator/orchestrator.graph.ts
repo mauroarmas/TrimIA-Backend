@@ -108,7 +108,6 @@ export function buildOrchestratorGraph(
   // --- NODO: handoff_log (cambió el tema → se loguea el handoff) ---
   const handoffLog = async (state: OrchestratorStateType) => {
     await orchestrationLogger.logEvent({
-      threadId: state.threadId,
       conversationId: state.conversationId,
       eventType: 'agent_handoff',
       agentType: state.currentAgent,
@@ -132,7 +131,6 @@ export function buildOrchestratorGraph(
   // --- NODO: log_event (auditoría del ruteo a agente) ---
   const logEvent = async (state: OrchestratorStateType) => {
     await orchestrationLogger.logEvent({
-      threadId: state.threadId,
       conversationId: state.conversationId,
       eventType: 'ROUTED_TO_AGENT',
       agentType: state.agentType,

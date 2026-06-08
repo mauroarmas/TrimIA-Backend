@@ -65,7 +65,7 @@ Lista de conversaciones para auditar / gestionar escalados.
 ```json
 {
   "items": [
-    { "threadId": "uuid", "externalId": "549...", "currentAgent": "SALES",
+    { "conversationId": "uuid", "externalId": "549...", "currentAgent": "SALES",
       "userType": "CLIENTE", "status": "ACTIVE", "updatedAt": "2026-..." }
   ],
   "page": 1, "limit": 20, "total": 11
@@ -73,20 +73,20 @@ Lista de conversaciones para auditar / gestionar escalados.
 ```
 Filtro clave: `status=WAITING_HUMAN` → conversaciones escaladas esperando supervisor.
 
-### 🔴 `GET /supervisor/conversations/:threadId` (propuesto)
+### 🔴 `GET /supervisor/conversations/:conversationId` (propuesto)
 Detalle + historial de mensajes de una conversación (para leer contexto antes de intervenir).
 ```json
 {
-  "threadId": "uuid", "externalId": "549...", "currentAgent": "COLLECTIONS",
+  "conversationId": "uuid", "externalId": "549...", "currentAgent": "COLLECTIONS",
   "messages": [ { "role": "USER", "content": "...", "createdAt": "..." },
                 { "role": "ASSISTANT", "content": "...", "agentType": "COLLECTIONS", "createdAt": "..." } ]
 }
 ```
 
-### 🔴 `GET /supervisor/events?threadId=&eventType=&after=` (propuesto)
+### 🔴 `GET /supervisor/events?conversationId=&eventType=&after=` (propuesto)
 Historial de orquestación (ruteos, handoffs, escalados) para auditoría (OE-11).
 
-### 🔴 `POST /supervisor/conversations/:threadId/takeover` (propuesto, Fase 5)
+### 🔴 `POST /supervisor/conversations/:conversationId/takeover` (propuesto, Fase 5)
 El supervisor toma control manual del chat (human-in-the-loop). Atado al checkpointer.
 
 ---
