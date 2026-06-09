@@ -38,6 +38,8 @@ const AGENT_KEYS: SpecializedAgent[] = [
  * Los contenidos (prompts, schemas, regex) viven en archivos aparte:
  *   orchestrator.prompts.ts · orchestrator.schemas.ts · trivial-filter.ts
  */
+
+
 export function buildOrchestratorGraph(
   llm: LlmService,
   agents: AgentsService,
@@ -162,6 +164,7 @@ export function buildOrchestratorGraph(
 
   const entryRouter = (state: OrchestratorStateType): string => {
     if (isTrivial(state.message)) return 'trivial';
+    
     // Sticky solo si el agente fijado sigue permitido para este usuario.
     // (auto-sana conversaciones pegadas a un agente no permitido, p. ej. un
     // cliente que quedó en DEPOSITS por datos previos → vuelve a clasificar.)
