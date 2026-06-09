@@ -161,7 +161,6 @@ async enqueue(dto: WebhookMessageDto): Promise<void> {
   await this.conversations.addMessage(conversation.id, 'USER', dto.message);
 
   await this.queue.add('process-message', {           // ← pone el job en la cola
-    threadId: conversation.threadId,
     conversationId: conversation.id,
     externalId: dto.phone,
     channel,
