@@ -48,7 +48,6 @@ enum UserType {
 
 model Conversation {
   id         String     @id @default(uuid())
-  threadId   String     @unique
   channel    Channel
   externalId String
   status        ConvStatus @default(ACTIVE)
@@ -79,8 +78,11 @@ model Message {
   @@index([conversationId, createdAt])
 }
 
-// Las tablas del PostgresSaver (checkpoints, checkpoint_writes, checkpoint_blobs)
-// son creadas y gestionadas por LangGraph. Prisma no las toca.
+// NOTA: el checkpointer de LangGraph (interrupt/resume) está desactivado. Cuando se
+// reactive en Fase 5 (flujo de venta financiada / human-in-the-loop), su PostgresSaver
+// recrea solo sus tablas (checkpoints, checkpoint_writes, checkpoint_blobs,
+// checkpoint_migrations) vía .setup(). No las gestiona Prisma. Usará conversationId
+// como thread_id.
 
 model TokenUsage {
   id             String        @id @default(uuid())
@@ -116,7 +118,6 @@ model KnowledgeDocument {
 
 model OrchestrationEvent {
   id             String        @id @default(uuid())
-  threadId       String
   conversationId String?
   conversation   Conversation? @relation(fields: [conversationId], references: [id])
   eventType      String
@@ -124,7 +125,7 @@ model OrchestrationEvent {
   payload        Json
   createdAt      DateTime      @default(now())
 
-  @@index([threadId])
+  @@index([conversationId])
   @@index([eventType])
   @@index([createdAt])
 }

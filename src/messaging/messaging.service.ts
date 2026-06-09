@@ -26,7 +26,6 @@ export class MessagingService {
     await this.queue.add(
       'process-message',
       {
-        threadId: conversation.threadId,
         conversationId: conversation.id,
         externalId: dto.phone,
         channel,

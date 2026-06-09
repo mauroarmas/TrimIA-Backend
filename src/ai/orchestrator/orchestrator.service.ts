@@ -9,16 +9,6 @@ import { ConversationTurn } from '../../conversations/conversations.service';
 
 @Injectable()
 export class OrchestratorService implements OnModuleInit {
-  private readonly logger = new Logger(OrchestratorService.name);
-
-  // El grafo compilado. Se arma una sola vez al iniciar y se reutiliza.
-  private graph!: ReturnType<typeof buildOrchestratorGraph>;
-
-  constructor(
-    private readonly llm: LlmService,
-    private readonly agents: AgentsService,
-    private readonly orchestrationLogger: OrchestrationLogger,
-  ) {}
 
   onModuleInit() {
     // Compilar el grafo es costoso → se hace una vez al arrancar, no por mensaje
@@ -31,12 +21,25 @@ export class OrchestratorService implements OnModuleInit {
     this.logger.log('Grafo del orquestador compilado');
   }
 
+
+  private readonly logger = new Logger(OrchestratorService.name);
+
+  // El grafo compilado. Se arma una sola vez al iniciar y se reutiliza.
+  private graph!: ReturnType<typeof buildOrchestratorGraph>;
+
+  constructor(
+    private readonly llm: LlmService,
+    private readonly agents: AgentsService,
+    private readonly orchestrationLogger: OrchestrationLogger,
+  ) { }
+
+
+
   /**
    * Procesa un mensaje a través del grafo.
    * Devuelve el state final (con agentType y response).
    */
   async invoke(
-    threadId: string,
     message: string,
     conversationId: string | null = null,
     currentAgent: AgentType | null = null,
@@ -44,7 +47,6 @@ export class OrchestratorService implements OnModuleInit {
     history: ConversationTurn[] = [],
   ): Promise<OrchestratorStateType> {
     const state: OrchestratorStateType = {
-      threadId,
       message,
       conversationId,
       currentAgent,

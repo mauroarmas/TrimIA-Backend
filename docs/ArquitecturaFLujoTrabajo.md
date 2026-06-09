@@ -37,13 +37,13 @@ Donde el sistema busca el contexto corporativo y guarda el historial de lo suced
 
 La interfaz humana para auditar y controlar a los agentes.
 
-- **Paperclip:** El entorno visual para los **supervisores**. Permite **monitorear** el gasto de tokens, leer el historial exacto de las derivaciones de LangGraph, pausar agentes o tomar el control manual del chat ( *Human-in-the-loop* ) en casos críticos, será la interfaz principal del supervisor para gestionar los agentesl, las conversaciones y **será dónde este cargue la documentación para alimentar al RAG**.
+- **el Panel de Gobernanza:** El entorno visual para los **supervisores**. Permite **monitorear** el gasto de tokens, leer el historial exacto de las derivaciones de LangGraph, pausar agentes o tomar el control manual del chat ( *Human-in-the-loop* ) en casos críticos, será la interfaz principal del supervisor para gestionar los agentesl, las conversaciones y **será dónde este cargue la documentación para alimentar al RAG**.
 
 #### **5. Capa de Infraestructura y Despliegue (Los Cimientos)**
 
 El entorno físico y virtual donde vive todo el código.
 
-- **Docker & Docker Compose:** Contenedores que empaquetan NestJS, Redis, PostgresDB, ChromaDB, Paperclip y n8n, asegurando que funcionen idénticamente en desarrollo y en producción.
+- **Docker & Docker Compose:** Contenedores que empaquetan NestJS, Redis, PostgresDB, ChromaDB y n8n, asegurando que funcionen idénticamente en desarrollo y en producción.
 - **Google Cloud Platform (GCP) (AÚN A DECIDIR):** El proveedor de infraestructura en la nube donde se alojarán los contenedores para garantizar alta disponibilidad operativa.
 
 ---
@@ -108,7 +108,7 @@ El rol de capacitación es central en el proyecto: cada agente conoce los proces
 
 **SALES** maneja la conversación comercial pero **no decide sobre crédito ni cierra la venta**: cuando aparece una financiación deriva a **ADMIN** para la verificación, y para cerrar deriva a un humano con toda la info ya recopilada (productos, medio de pago, resultado del crédito).
 
-**ADMIN** es el agente más crítico y auditable: es el **único con acceso a Riesgo Online**. Aísla el otorgamiento de crédito para que el supervisor controle, desde Paperclip, cada verificación y decisión de aptitud.
+**ADMIN** es el agente más crítico y auditable: es el **único con acceso a Riesgo Online**. Aísla el otorgamiento de crédito para que el supervisor controle, desde el Panel de Gobernanza, cada verificación y decisión de aptitud.
 
 **COLLECTIONS** trabaja sobre deudas que **ya existen** (cuotas de ventas financiadas); no aprueba crédito (eso es ADMIN, antes de la venta).
 
@@ -159,10 +159,10 @@ n8n formaliza todo y llama al backend con un formato limpio y controlado. **El b
 - NestJS valida automáticamente la forma del body gracias al `ValidationPipe` global configurado en el main.ts con `whitelist: true` y `forbidNonWhitelisted: true`. Esto significa que:
     - Si falta un campo requerido → `400 Bad Request` automático
     - Si viene un campo extra no declarado en el DTO → se rechaza
-- Cuando llega el primer mensaje de un número de WhatsApp, el sistema crea un registro en la tabla  `Conversation` en PostgreSQL (Guarda en DB) este tiene un `threadId`. Si ese número ya tiene una conversación activa, se reutiliza, el `threadId` es el identificador que LangGraph usa internamente para saber a qué hilo de conversación pertenece cada checkpoint ( es el puente entre el negocio (Prisma) y el estado del agente (PostgresSaver). ) `threadId`  guardo el estado no el historial
+- Cuando llega el primer mensaje de un número de WhatsApp, el sistema crea un registro en la tabla  `Conversation` en PostgreSQL (Guarda en DB) este tiene un `conversationId`. Si ese número ya tiene una conversación activa, se reutiliza, el `conversationId` es el identificador que LangGraph usa internamente para saber a qué hilo de conversación pertenece cada checkpoint ( es el puente entre el negocio (Prisma) y el estado del agente (PostgresSaver). ) `conversationId`  guardo el estado no el historial
     
     `externalId: "+5491122334455"   ← número de WhatsApp
-    threadId:   "a3f7c2d1-..."     ← UUID v4, generado una sola vez, reutilizado siempre`
+    conversationId:   "a3f7c2d1-..."     ← UUID v4, generado una sola vez, reutilizado siempre`
     
 - **Lo que guarda Prisma (tabla `Message`):**
 
@@ -172,23 +172,23 @@ n8n formaliza todo y llama al backend con un formato limpio y controlado. **El b
 "Sí, ¿tienen stock?"                            ← rol: USER
 ```
 
-Esto es el historial legible, para que el panel de Paperclip lo muestre al supervisor.
+Esto es el historial legible, para que el Panel de Gobernanza lo muestre al supervisor.
 
-- **Lo que guarda LangGraph via `threadId` (PostgresSaver):** Es el *estado interno* del grafo, en qué nodo estaba, qué variables tenía cargadas, si estaba esperando confirmación, qué tool había llamado, etc. Es la "memoria de trabajo" del agente. **Entonces cuando el mismo número escribe de nuevo...**
+- **Lo que guarda LangGraph via `conversationId` (PostgresSaver):** Es el *estado interno* del grafo, en qué nodo estaba, qué variables tenía cargadas, si estaba esperando confirmación, qué tool había llamado, etc. Es la "memoria de trabajo" del agente. **Entonces cuando el mismo número escribe de nuevo...**
 
 ```jsx
 Mensaje 1: "quiero comprar el producto X"
-  → LangGraph procesa, guarda checkpoint con threadId "a3f7c2d1"
+  → LangGraph procesa, guarda checkpoint con conversationId "a3f7c2d1"
   → Agente responde
 
 Mensaje 2 (mismo número, 2 horas después): "¿y tienen descuento?"
-  → El sistema detecta que "+5491122..." ya tiene threadId "a3f7c2d1"
+  → El sistema detecta que "+5491122..." ya tiene conversationId "a3f7c2d1"
   → LangGraph retoma DESDE ese checkpoint
   → El agente ya "sabe" que antes se habló del producto X
   → Responde con contexto de la conversación anterior
 ```
 
-Sin el `threadId` reutilizado, cada mensaje sería una conversación nueva → el agente no recordaría nada de lo anterior.
+Sin el `conversationId` reutilizado, cada mensaje sería una conversación nueva → el agente no recordaría nada de lo anterior.
 
 #### Rate limiting
 
@@ -209,7 +209,7 @@ El controller **no espera** a que el agente IA genere una respuesta (Gemini pued
 | `src/messaging/messaging.controller.ts` | recibe el webhook, llama al service |
 | `src/messaging/dto/webhook-message.dto.ts` | define y valida la forma del body |
 | `src/messaging/guards/n8n-auth.guard.ts` | valida `X-N8N-Secret` |
-| `src/conversations/conversations.service.ts` | crea/recupera `Conversation`, genera `threadId` |
+| `src/conversations/conversations.service.ts` | crea/recupera `Conversation`, genera `conversationId` |
 
 ## **Parte 2 — La cola de mensajes**
 
@@ -255,8 +255,8 @@ LangGraph guarda el estado de cada conversación en PostgresSaver (tabla `checkp
 ```jsx
 Sin concurrency: 1:
 
-  Mensaje A ──► worker 1 ──► lee checkpoint threadId-X ──► procesa...
-  Mensaje B ──► worker 2 ──► lee checkpoint threadId-X ──► procesa...
+  Mensaje A ──► worker 1 ──► lee checkpoint conversationId-X ──► procesa...
+  Mensaje B ──► worker 2 ──► lee checkpoint conversationId-X ──► procesa...
                                                            ↑
                                               Ambos leen el mismo checkpoint
                                               El que termina último pisa al otro
@@ -279,7 +279,7 @@ Cada mensaje que entra al webhook se convierte en un job con este payload:
 ```jsx
 // lo que se encola en Redis
 {
-  threadId:   "550e8400-e29b-41d4-a716-446655440000",    // UUID de la conversación
+  conversationId:   "550e8400-e29b-41d4-a716-446655440000",    // UUID de la conversación
   message:    "quiero saber el precio del producto X",   // texto del usuario
   externalId: "+5491112345678",                          // número WhatsApp
   channel:    "WHATSAPP"
@@ -308,10 +308,10 @@ WorkerHost con concurrency: 1
 
 #### Human-in-the-loop y la cola
 
-Hay un caso especial: cuando un agente escala a humano y llama a `interrupt()`, **el job termina exitosamente** (no queda colgado en Redis). La conversación queda en estado `WAITING_HUMAN` en Postgres. Cuando el supervisor responde desde Paperclip:
+Hay un caso especial: cuando un agente escala a humano y llama a `interrupt()`, **el job termina exitosamente** (no queda colgado en Redis). La conversación queda en estado `WAITING_HUMAN` en Postgres. Cuando el supervisor responde desde el Panel de Gobernanza:
 
 ```jsx
-POST /admin/conversations/:threadId/resume
+POST /supervisor/conversations/:conversationId/resume
         │
         ▼
 AdminModule crea un NUEVO job en BullMQ
@@ -348,7 +348,7 @@ El worker de BullMQ entrega el job al **Orquestador**: un grafo de nodos compila
 ```jsx
 MessageProcessor (worker)
       │
-      │  llama a OrchestratorService.process({ threadId, message })
+      │  llama a OrchestratorService.process({ conversationId, message })
       ▼
 ┌─────────────────────────────────────────────────────┐
 │              StateGraph (Orquestador)               │
@@ -389,10 +389,10 @@ export class OrchestratorService implements OnModuleInit {
     });
   }
 
-  async process(input: { threadId: string; message: string }) {
+  async process(input: { conversationId: string; message: string }) {
     // reutiliza this.graph ya compilado, no lo vuelve a crear
     return this.graph.invoke(input, {
-      configurable: { thread_id: input.threadId }
+      configurable: { thread_id: input.conversationId }
     });
   }
 }
@@ -407,7 +407,7 @@ LangGraph necesita un **objeto de estado** que fluye entre nodos. Cada nodo pued
 ```jsx
 // el estado que viaja por todos los nodos del orquestador
 interface OrchestratorState {
-  threadId:    string;        // clave para recuperar checkpoint
+  conversationId:    string;        // clave para recuperar checkpoint
   message:     string;        // mensaje original del usuario
   agentType:   AgentType;     // classify_intent lo llena
   response:    string;        // el agente lo llena
@@ -448,18 +448,18 @@ const routeToAgent = (state: OrchestratorState) => {
 
 LangGraph ejecuta ese subgrafo como si fuera un nodo más del orquestador.
 
-#### El rol del `threadId` + PostgresSaver aquí
+#### El rol del `conversationId` + PostgresSaver aquí
 
-Cuando el orquestador ejecuta `graph.invoke(input, { configurable: { thread_id: threadId } })`, LangGraph:
+Cuando el orquestador ejecuta `graph.invoke(input, { configurable: { thread_id: conversationId } })`, LangGraph:
 
-1. Busca en PostgresSaver si hay un checkpoint para ese `threadId`
+1. Busca en PostgresSaver si hay un checkpoint para ese `conversationId`
 2. Si existe: retoma desde ese punto (el usuario ya había hablado antes)
 3. Si no existe: empieza desde `[START]` (primer mensaje del usuario)
 4. Al terminar cada nodo: guarda el estado actualizado como nuevo checkpoint
 
 ```jsx
 PostgreSQL (tablas de LangGraph, NO Prisma):
-  checkpoints          ← estado completo del grafo por threadId
+  checkpoints          ← estado completo del grafo por conversationId
   checkpoint_writes    ← escrituras intermedias entre nodos
   checkpoint_blobs     ← datos binarios del estado (si los hay)
 ```
@@ -472,7 +472,7 @@ Estos dos nodos son los que conectan LangGraph con Prisma (la capa de negocio):
 
 ```jsx
 {
-  "threadId": "550e8400...",
+  "conversationId": "550e8400...",
   "eventType": "ROUTED_TO_AGENT",
   "agentType": "SALES",
   "payload": { "message": "quiero el precio...", "confidence": 0.92 }
@@ -491,7 +491,7 @@ Estos dos nodos son los que conectan LangGraph con Prisma (la capa de negocio):
 }
 ```
 
-Estos datos son lo que **Paperclip** muestra en el panel de métricas (`GET /admin/metrics/tokens`). El conteo de tokens será importante a la hora de estimar costos.
+Estos datos son lo que **el Panel de Gobernanza** muestra en el panel de métricas (`GET /supervisor/metrics/tokens`). El conteo de tokens será importante a la hora de estimar costos.
 
 ---
 
@@ -671,7 +671,7 @@ La Parte 5 es el sistema RAG en profundidad: cómo se cargan los documentos, có
 RAG significa **Retrieval-Augmented Generation**: en lugar de que Gemini responda desde su conocimiento general (que no incluye los productos y políticas de la empresa), el sistema primero **recupera** documentos relevantes de una base propia y se los da como contexto. El agente genera la respuesta basada en esos documentos. Hay dos flujos bien separados:
 
 ```jsx
-FLUJO 1 — CARGA (supervisor carga documentos desde Paperclip)
+FLUJO 1 — CARGA (supervisor carga documentos desde el Panel de Gobernanza)
 
   Supervisor
       │
@@ -764,7 +764,7 @@ Cuando `retrieve_context` del agente de Ventas consulta, solo busca en la colecc
 #### Flujo completo de carga de un documento
 
 ```jsx
-POST /knowledge/documents //Desde Paperclip
+POST /knowledge/documents //Desde el Panel de Gobernanza
 {
   "title": "Catálogo de Productos 2024",
   "content": "...(texto completo)...",
@@ -865,14 +865,14 @@ DERIVACIÓN:
         ├─► OrchestrationEvent: "ESCALATED_TO_HUMAN" (Prisma)
         └─► job BullMQ termina EXITOSAMENTE ✓
 
-        [supervisor ve la conversación en Paperclip]
+        [supervisor ve la conversación en el Panel de Gobernanza]
 
 REANUDACIÓN:
 
-  Supervisor responde en Paperclip
+  Supervisor responde en el Panel de Gobernanza
         │
         ▼
-  POST /admin/conversations/:threadId/resume
+  POST /supervisor/conversations/:conversationId/resume
   { "supervisorMessage": "El producto X cuesta $1500..." }
         │
         ▼
@@ -928,7 +928,7 @@ Cuando el nodo `escalate_to_human` ejecuta `interrupt()`, LangGraph:
   thread_id: "550e8400-e29b-...",
   checkpoint: {
     state: {
-      threadId:  "550e8400-e29b-...",
+      conversationId:  "550e8400-e29b-...",
       message:   "quiero el precio del producto X",   ← mensaje original
       agentType: "SALES",
       context:   [                                     ← ya buscado en ChromaDB
@@ -951,14 +951,14 @@ Mientras LangGraph guarda su estado interno en PostgresSaver, el sistema tambié
 ```jsx
 // Conversation actualizada:
 {
-  threadId: "550e8400-...",
-  status:   ConvStatus.WAITING_HUMAN,   ← Paperclip filtra por esto
+  conversationId: "550e8400-...",
+  status:   ConvStatus.WAITING_HUMAN,   ← el Panel de Gobernanza filtra por esto
   agentType: AgentType.SALES
 }
 
 // OrchestrationEvent creado:
 {
-  threadId:  "550e8400-...",
+  conversationId:  "550e8400-...",
   eventType: "ESCALATED_TO_HUMAN",
   agentType: AgentType.SALES,
   payload: {
@@ -970,11 +970,11 @@ Mientras LangGraph guarda su estado interno en PostgresSaver, el sistema tambié
 }
 ```
 
-Estos datos son los que Paperclip consume para mostrar al supervisor qué conversaciones están esperando atención y por qué se escalaron.
+Estos datos son los que el Panel de Gobernanza consume para mostrar al supervisor qué conversaciones están esperando atención y por qué se escalaron.
 
-#### El supervisor ve la conversación en Paperclip
+#### El supervisor ve la conversación en el Panel de Gobernanza
 
-Paperclip hace polling a `GET /admin/events` y `GET /admin/conversations?status=WAITING_HUMAN`. El supervisor ve:
+el Panel de Gobernanza hace polling a `GET /supervisor/events` y `GET /supervisor/conversations?status=WAITING_HUMAN`. El supervisor ve:
 
 ```jsx
 ┌─────────────────────────────────────────────────────┐
@@ -996,7 +996,7 @@ El supervisor puede ver el historial completo de la conversación (tabla `Messag
 Cuando el supervisor hace clic en "Responder" y escribe la respuesta:
 
 ```jsx
-POST /admin/conversations/550e8400-.../resume
+POST /supervisor/conversations/550e8400-.../resume
 { "supervisorMessage": "El producto X cuesta $1500 en la lista vigente." }
 ```
 
@@ -1004,12 +1004,12 @@ POST /admin/conversations/550e8400-.../resume
 
 ```jsx
 // 1. Verifica que la conversación existe y está en WAITING_HUMAN
-const conversation = await prisma.conversation.findUnique({ where: { threadId } });
+const conversation = await prisma.conversation.findUnique({ where: { conversationId } });
 if (conversation.status !== ConvStatus.WAITING_HUMAN) throw new BadRequestException();
 
 // 2. Crea nuevo job en BullMQ con el input del supervisor
 await queue.add('message-processing', {
-  threadId:          conversation.threadId,
+  conversationId:          conversation.conversationId,
   message:           supervisorMessage,
   externalId:        conversation.externalId,
   channel:           conversation.channel,
@@ -1018,7 +1018,7 @@ await queue.add('message-processing', {
 
 // 3. Actualiza estado a ACTIVE
 await prisma.conversation.update({
-  where: { threadId },
+  where: { conversationId },
   data: { status: ConvStatus.ACTIVE }
 });
 ```
@@ -1032,7 +1032,7 @@ await prisma.conversation.update({
 
 await graph.invoke(
   { supervisorMessage },                     ← input del supervisor
-  { configurable: { thread_id: threadId } }  ← mismo threadId → LangGraph recupera checkpoint
+  { configurable: { thread_id: conversationId } }  ← mismo conversationId → LangGraph recupera checkpoint
 );
 ```
 
@@ -1063,17 +1063,17 @@ Gemini genera una respuesta natural que integra la información del supervisor. 
 | --- | --- |
 | `src/ai/agents/sales/sales.graph.ts` | Nodo `escalate_to_human` con `interrupt()` |
 | `src/ai/checkpointer/checkpointer.service.ts` | PostgresSaver guarda/recupera checkpoints |
-| `src/admin/admin.controller.ts` | `POST /admin/conversations/:threadId/resume` |
-| `src/admin/admin.service.ts` | Lógica de reanudación, crea nuevo job BullMQ |
+| `src/supervisor/supervisor.controller.ts` | `POST /supervisor/conversations/:conversationId/resume` |
+| `src/supervisor/supervisor.service.ts` | Lógica de reanudación, crea nuevo job BullMQ |
 | `src/queue/processors/message.processor.ts` | Detecta `isHumanResume`, llama a `graph.invoke()` correctamente |
 
 ---
 
-Parte 7 cubre el logging y métricas: cómo cada paso del flujo queda registrado en `OrchestrationEvent` y `TokenUsage`, y qué datos expone el panel de Paperclip para analizar el rendimiento del sistema.
+Parte 7 cubre el logging y métricas: cómo cada paso del flujo queda registrado en `OrchestrationEvent` y `TokenUsage`, y qué datos expone el Panel de Gobernanza para analizar el rendimiento del sistema.
 
 ## **Parte 7 — Logging y Métricas**
 
-Cada paso relevante del flujo queda registrado en Prisma en dos tablas: `OrchestrationEvent` (qué pasó y cuándo) y `TokenUsage` (cuánto costó en tokens y tiempo). Estos datos alimentan el panel de Paperclip y son fundamentales para la tesis: permiten analizar si el sistema es económicamente viable y dónde están los cuellos de botella.
+Cada paso relevante del flujo queda registrado en Prisma en dos tablas: `OrchestrationEvent` (qué pasó y cuándo) y `TokenUsage` (cuánto costó en tokens y tiempo). Estos datos alimentan el Panel de Gobernanza y son fundamentales para la tesis: permiten analizar si el sistema es económicamente viable y dónde están los cuellos de botella.
 
 ```jsx
 Flujo de un mensaje (completo):
@@ -1116,7 +1116,7 @@ Cada evento captura un momento específico del flujo con su contexto:
   eventType: "ROUTED_TO_AGENT",
   agentType: "SALES",
   payload: {
-    threadId: "550e8400-..."
+    conversationId: "550e8400-..."
   }
 }
 
@@ -1201,7 +1201,7 @@ Es un service inyectado en el orquestador y en cada agente. Sus métodos son lla
 // orchestrator-logger.service.ts
 
 async logEvent(dto: {
-  threadId:       string;
+  conversationId:       string;
   conversationId: string;
   eventType:      string;
   agentType?:     AgentType;
@@ -1232,17 +1232,17 @@ const durationMs = Date.now() - state.startedAt;
 
 ---
 
-#### Lo que Paperclip consume
+#### Lo que el Panel de Gobernanza consume
 
 Con estos datos, el panel de administración expone:
 
- **`GET /admin/events?threadId=&after=&eventType=`**
+ **`GET /supervisor/events?conversationId=&after=&eventType=`**
 
 ```jsx
 [
   {
     "id": "uuid",
-    "threadId": "550e8400-...",
+    "conversationId": "550e8400-...",
     "eventType": "ROUTED_TO_AGENT",
     "agentType": "SALES",
     "payload": { ... },
@@ -1252,9 +1252,9 @@ Con estos datos, el panel de administración expone:
 ]
 ```
 
-Paperclip usa esto para mostrar el historial detallado de cada conversación: qué hizo el sistema en cada paso.
+el Panel de Gobernanza usa esto para mostrar el historial detallado de cada conversación: qué hizo el sistema en cada paso.
 
-**`GET /admin/metrics/tokens?from=&to=&agentType=`**
+**`GET /supervisor/metrics/tokens?from=&to=&agentType=`**
 
 ```jsx
 {
@@ -1284,8 +1284,8 @@ Paperclip usa esto para mostrar el historial detallado de cada conversación: qu
 |  | `OrchestrationEvent` | `TokenUsage` |
 | --- | --- | --- |
 | **Para qué** | Auditoría y debugging | Análisis económico |
-| **¿Cuándo se lee?** | Por `threadId` (historial de una conv.) | Agregado por período/agente |
-| **Índice principal** | `[threadId]`, `[eventType]` | `[agentType, createdAt]` |
+| **¿Cuándo se lee?** | Por `conversationId` (historial de una conv.) | Agregado por período/agente |
+| **Índice principal** | `[conversationId]`, `[eventType]` | `[agentType, createdAt]` |
 | **Volumen** | Muchos eventos por conversación | 1-2 registros por conversación |
 | **Quién lo lee** | Supervisor viendo una conv. | Admin viendo métricas globales |
 
@@ -1298,8 +1298,8 @@ Si fueran una sola tabla, las queries de métricas (GROUP BY agentType, SUM toke
 | Archivo | Qué hace |
 | --- | --- |
 | `src/ai/orchestrator/orchestrator-logger.service.ts` | `logEvent()` y `trackTokens()`, escribe en Prisma |
-| `src/admin/admin.controller.ts` | `GET /admin/events`, `GET /admin/metrics/tokens` |
-| `src/admin/admin.service.ts` | Queries agregadas sobre `TokenUsage` y `OrchestrationEvent` |
+| `src/supervisor/supervisor.controller.ts` | `GET /supervisor/events`, `GET /supervisor/metrics/tokens` |
+| `src/supervisor/supervisor.service.ts` | Queries agregadas sobre `TokenUsage` y `OrchestrationEvent` |
 | `prisma/schema.prisma` | Modelos `OrchestrationEvent` y `TokenUsage` con índices |
 
 Parte 8 cubre las integraciones externas: cómo Paljet, Riesgo Online y CRM se conectan como herramientas disponibles para los agentes, y cómo el sistema las invoca dentro del grafo LangGraph.
@@ -1478,43 +1478,43 @@ En producción, `baseUrl` viene de env vars (`PALJET_API_URL`, `PALJET_API_KEY`,
 
 ---
 
-Parte 9 (final) cubre el panel de administración completo: todos los endpoints que Paperclip consume, cómo se navega el historial de conversaciones, y cómo el sistema queda cerrado de punta a punta
+Parte 9 (final) cubre el panel de administración completo: todos los endpoints que el Panel de Gobernanza consume, cómo se navega el historial de conversaciones, y cómo el sistema queda cerrado de punta a punta
 
-## **Parte 9 — Panel de Administración (Paperclip + Admin Endpoints)**
+## **Parte 9 — Panel del Supervisor (el Panel de Gobernanza + Endpoints del Supervisor)**
 
-> `OrchestrationEvent`, `TokenUsage` + `durationMs`, cómo Paperclip consume todo esto via polling REST
+> `OrchestrationEvent`, `TokenUsage` + `durationMs`, cómo el Panel de Gobernanza consume todo esto via polling REST
 > 
 
-Paperclip es el panel web desde donde los supervisores operan el sistema. **No tiene lógica propia**: consume endpoints REST del **backend**. El `AdminModule` es la capa que expone todo lo que Paperclip necesita: conversaciones, eventos, métricas, gestión de la base de conocimiento, y el mecanismo de reanudación human-in-the-loop.
+el Panel de Gobernanza es el panel web desde donde los supervisores operan el sistema. **No tiene lógica propia**: consume endpoints REST del **backend**. El `AdminModule` es la capa que expone todo lo que el Panel de Gobernanza necesita: conversaciones, eventos, métricas, gestión de la base de conocimiento, y el mecanismo de reanudación human-in-the-loop.
 
 ```jsx
-Paperclip (panel web)
+el Panel de Gobernanza (panel web)
       │
-      ├── GET  /admin/conversations                    → lista de conversaciones
-      ├── GET  /admin/conversations/:threadId          → detalle + historial
-      ├── POST /admin/conversations/:threadId/resume   → reanudar escalada
-      ├── POST /admin/conversations/:threadId/takeover → modo manual
+      ├── GET  /supervisor/conversations                    → lista de conversaciones
+      ├── GET  /supervisor/conversations/:conversationId          → detalle + historial
+      ├── POST /supervisor/conversations/:conversationId/resume   → reanudar escalada
+      ├── POST /supervisor/conversations/:conversationId/takeover → modo manual
       │
-      ├── GET  /admin/events                           → eventos de orquestación
-      ├── GET  /admin/metrics/tokens                   → costos y latencias
+      ├── GET  /supervisor/events                           → eventos de orquestación
+      ├── GET  /supervisor/metrics/tokens                   → costos y latencias
       │
       ├── POST /knowledge/documents                    → cargar documento
       ├── GET  /knowledge/documents                    → listar documentos
       └── PUT  /knowledge/documents/:id                → actualizar documento
 ```
 
-#### `GET /admin/conversations` — lista con filtros
+#### `GET /supervisor/conversations` — lista con filtros
 
-El endpoint principal que Paperclip muestra al abrir el panel:
+El endpoint principal que el Panel de Gobernanza muestra al abrir el panel:
 
-`GET /admin/conversations?status=WAITING_HUMAN&page=1&limit=20`
+`GET /supervisor/conversations?status=WAITING_HUMAN&page=1&limit=20`
 
 ```jsx
 Respuesta:
 {
   "data": [
     {
-      "threadId":   "550e8400-...",
+      "conversationId":   "550e8400-...",
       "externalId": "+5491112345678",
       "channel":    "WHATSAPP",
       "status":     "WAITING_HUMAN",
@@ -1531,17 +1531,17 @@ Respuesta:
 
 Filtros disponibles: `status` (ACTIVE / WAITING_HUMAN / CLOSED), `agentType`, `channel`, rango de fechas.
 
-#### `GET /admin/conversations/:threadId` — detalle completo
+#### `GET /supervisor/conversations/:conversationId` — detalle completo
 
-Cuando el supervisor hace clic en una conversación, Paperclip carga el historial completo:
+Cuando el supervisor hace clic en una conversación, el Panel de Gobernanza carga el historial completo:
 
 ```jsx
-GET /admin/conversations/550e8400-.../
+GET /supervisor/conversations/550e8400-.../
 
 Respuesta:
 {
   "conversation": {
-    "threadId":   "550e8400-...",
+    "conversationId":   "550e8400-...",
     "externalId": "+5491112345678",
     "status":     "WAITING_HUMAN",
     "agentType":  "SALES"
@@ -1560,23 +1560,23 @@ Respuesta:
 
 Esto le da al supervisor todo el contexto: qué dijo el usuario, qué intentó responder el agente, y por qué se escaló.
 
-#### `POST /admin/conversations/:threadId/resume` — reanudar
+#### `POST /supervisor/conversations/:conversationId/resume` — reanudar
 
 Ya explicado en Parte 6. El supervisor escribe su respuesta y este endpoint crea un nuevo job en BullMQ:
 
 ```jsx
-POST /admin/conversations/550e8400-.../resume
+POST /supervisor/conversations/550e8400-.../resume
 { "supervisorMessage": "El producto X cuesta $1500 en lista vigente." }
 
 → 202 Accepted
 ```
 
-#### `POST /admin/conversations/:threadId/takeover` — modo manual
+#### `POST /supervisor/conversations/:conversationId/takeover` — modo manual
 
 Un caso adicional: el supervisor decide responder directamente sin pasar por el agente IA. Útil cuando la consulta es muy sensible o el supervisor prefiere manejarla personalmente:
 
 ```jsx
-POST /admin/conversations/550e8400-.../takeover
+POST /supervisor/conversations/550e8400-.../takeover
 { "message": "Hola Juan, te contacto directamente para coordinar..." }
 
 → AdminService:
@@ -1591,12 +1591,12 @@ La diferencia con `resume`:
 - `takeover` envía el mensaje del supervisor **directamente** al usuario sin pasar por LangGraph.
 - `resume` le da el input al grafo para que Gemini genere una respuesta.
 
-#### `GET /admin/events` — historial de orquestación
+#### `GET /supervisor/events` — historial de orquestación
 
-Paperclip usa esto para mostrar el "log de actividad" de cada conversación:
+el Panel de Gobernanza usa esto para mostrar el "log de actividad" de cada conversación:
 
 ```jsx
-GET /admin/events?threadId=550e8400-...&after=2024-01-15T10:00:00Z
+GET /supervisor/events?conversationId=550e8400-...&after=2024-01-15T10:00:00Z
 
 [
   { "eventType": "INTENT_CLASSIFIED", "agentType": "SALES",   "createdAt": "10:23:41" },
@@ -1606,14 +1606,14 @@ GET /admin/events?threadId=550e8400-...&after=2024-01-15T10:00:00Z
 ]
 ```
 
-El parámetro `after` permite polling incremental: Paperclip guarda el `createdAt` del último evento recibido y en cada poll solo pide los nuevos.
+El parámetro `after` permite polling incremental: el Panel de Gobernanza guarda el `createdAt` del último evento recibido y en cada poll solo pide los nuevos.
 
-#### `GET /admin/metrics/tokens` — análisis económico
+#### `GET /supervisor/metrics/tokens` — análisis económico
 
 El endpoint más relevante para la tesis: permite demostrar que el sistema es viable en términos de costo y latencia:
 
 ```jsx
-GET /admin/metrics/tokens?from=2024-01-01&to=2024-01-31
+GET /supervisor/metrics/tokens?from=2024-01-01&to=2024-01-31
 
 {
   "period": { "from": "2024-01-01", "to": "2024-01-31" },
@@ -1657,8 +1657,8 @@ n8n recibe esto, lo formatea según la API de WhatsApp Business, y lo entrega al
 
 | Archivo | Qué hace |
 | --- | --- |
-| `src/admin/admin.controller.ts` | Todos los endpoints admin |
-| `src/admin/admin.service.ts` | Lógica: queries Prisma, crea jobs BullMQ, llama sender |
+| `src/supervisor/supervisor.controller.ts` | Todos los endpoints del supervisor |
+| `src/supervisor/supervisor.service.ts` | Lógica: queries Prisma, crea jobs BullMQ, llama sender |
 | `src/messaging/messaging.controller.ts` | Webhook + sender hacia n8n |
 | `src/rag/knowledge/knowledge.controller.ts` | Endpoints de base de conocimiento |
 
@@ -1670,8 +1670,8 @@ n8n recibe esto, lo formatea según la API de WhatsApp Business, y lo entrega al
 [1] WhatsApp → n8n → POST /messaging/webhook
     N8nAuthGuard valida X-N8N-Secret
     ValidationPipe valida DTO
-    ConversationsService: crea/recupera Conversation, genera threadId
-    Encola job { threadId, message } en BullMQ
+    ConversationsService: crea/recupera Conversation, genera conversationId
+    Encola job { conversationId, message } en BullMQ
     → 202 Accepted a n8n
 
 [2] Redis (BullMQ) → MessageProcessor (concurrency: 1)
@@ -1698,7 +1698,7 @@ n8n recibe esto, lo formatea según la API de WhatsApp Business, y lo entrega al
     escalate_to_human → interrupt() → checkpoint en PostgresSaver
     Conversation.status = WAITING_HUMAN
     job BullMQ termina OK
-    [supervisor ve en Paperclip → POST /admin/.../resume]
+    [supervisor ve en el Panel de Gobernanza → POST /supervisor/.../resume]
     → nuevo job → LangGraph retoma → generate_response → WhatsApp ✓
 
 [7] En cada nodo relevante:
@@ -1710,10 +1710,10 @@ n8n recibe esto, lo formatea según la API de WhatsApp Business, y lo entrega al
     → servicio externo → resultado → contexto adicional
     → OrchestrationEvent: TOOL_CALLED
 
-[9] Paperclip consume:
-    GET /admin/conversations     → gestión de conversaciones
-    GET /admin/events            → auditoría
-    GET /admin/metrics/tokens    → análisis económico
+[9] el Panel de Gobernanza consume:
+    GET /supervisor/conversations     → gestión de conversaciones
+    GET /supervisor/events            → auditoría
+    GET /supervisor/metrics/tokens    → análisis económico
     POST /knowledge/documents    → base de conocimiento
 ```
 

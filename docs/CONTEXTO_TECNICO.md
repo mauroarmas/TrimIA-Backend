@@ -42,7 +42,7 @@ Es una **tesis de grado**. El producto sigue PMBOK (6 fases, 12 entregables E1�
 - **Puertos (host):** NestJS 3000 · Postgres 5433 · Redis 6379 · ChromaDB 8000 · n8n 5678.
 
 > Setup del entorno: ver `README.md` y `setup-prompt.md`. Arquitectura conceptual
-> ampliada (capas, Paperclip, frontend): `docs/ArquitecturaFLujoTrabajo.md`.
+> ampliada (capas, frontend): `docs/ArquitecturaFLujoTrabajo.md`.
 
 ---
 
@@ -106,6 +106,11 @@ src/
 │
 ├── conversations/               # ConversationsService: getOrCreate, addMessage,
 │                                #   getRecentHistory (memoria), setCurrentAgent (sticky)
+│
+├── supervisor/                  # PANEL DEL SUPERVISOR (gobernanza / E4)
+│   ├── supervisor.controller.ts # GET /supervisor (dashboard) + /supervisor/metrics (JSON)
+│   ├── supervisor.service.ts    # queries agregadas (TokenUsage, OrchestrationEvent, Conversation)
+│   └── supervisor-dashboard.html.ts  # página HTML mínima (semilla; la reemplaza el React de E4)
 │
 └── ai/
     ├── llm/                     # LlmService: cliente Gemini compartido
@@ -179,6 +184,22 @@ mensaje de escalado.
 - **Regla de oro:** un cliente NUNCA debe poder recuperar conocimiento `INTERNO` ni
   llegar a un agente no permitido. Cualquier cambio debe preservar esto.
 
+#### 5.3.1 Roles de negocio — SÍ se necesita SUPERVISOR (decisión 2026-06-07)
+El modelo de negocio tiene **tres roles**, en **dos dimensiones distintas**:
+- **Audiencia del RAG / acceso a agentes** (conversacional): `CLIENTE` vs `EMPLEADO`.
+  Vive en `Conversation.userType`. Un supervisor, chateando, es `EMPLEADO` en esta dimensión.
+- **Acceso al Panel del Supervisor** (gobernanza): empleado común vs `SUPERVISOR`.
+  El Panel es **exclusivo de supervisores/gerentes** (Declaración de Alcance); y la confirmación
+  de venta financiada (RF-13), la validación de pagos (RF-04) y la auditoría (OE-11) **requieren**
+  un actor supervisor distinto del empleado común. Por eso SUPERVISOR es parte del modelo
+  **actual**, no un extra futuro.
+
+**Cómo modelarlo (recomendado):** NO agregar `SUPERVISOR` al enum `UserType` (rompería los
+chequeos `=== 'EMPLEADO'` de audiencia/acceso). El rol vive en la **tabla de empleados/whitelist**
+(RF-12): cada empleado tiene `role: EMPLEADO | SUPERVISOR`. La whitelist unifica dos cosas —
+marca el teléfono como interno (→ `userType=EMPLEADO`) y guarda el rol para gatear el Panel.
+Se implementa junto con E4 (whitelist + panel); no hace falta para el flujo conversacional de hoy.
+
 ### 5.4 RAG (base de conocimiento)
 - `KnowledgeService.ingest()`: parte el doc en chunks (corte por párrafo/oración),
   los vectoriza con Gemini y los guarda en ChromaDB + metadatos en Prisma.
@@ -194,7 +215,7 @@ mensaje actual. Así el agente resuelve referencias ("¿y esa en cuotas?").
 
 ### 5.6 Auditoría y métricas
 `OrchestrationLogger` escribe en cada turno:
-- `OrchestrationEvent` (qué pasó: ruteo, handoff) → futura base del panel Paperclip.
+- `OrchestrationEvent` (qué pasó: ruteo, handoff) → base del Panel del Supervisor.
 - `TokenUsage` (tokens in/out, latencia, modelo) → análisis de costos.
 
 ---
@@ -203,7 +224,7 @@ mensaje actual. Así el agente resuelve referencias ("¿y esa en cuotas?").
 
 | Modelo | Para qué | Campos clave |
 |--------|----------|--------------|
-| `Conversation` | Hilo de chat por teléfono | `threadId`, `externalId`, `currentAgent` (sticky), `userType` |
+| `Conversation` | Hilo de chat por teléfono | `id`, `externalId`, `currentAgent` (sticky), `userType` |
 | `Message` | Cada mensaje | `role` (USER/ASSISTANT/...), `content`, `agentType` |
 | `KnowledgeDocument` | Metadatos de docs del RAG | `audience` (PUBLICO/INTERNO), `agentType`, `checksum` |
 | `TokenUsage` | Consumo por turno | `inputTokens`, `outputTokens`, `durationMs`, `model` |
@@ -229,7 +250,7 @@ Enums: `AgentType` (ORCHESTRATOR + 5 agentes), `UserType` (CLIENTE/EMPLEADO),
 | 3.6 | Ruteo sticky (trivial + scope_check + handoff + greeting) | ✅ Completa |
 | 4 | **RAG completo** (ChromaDB, los 5 agentes con RAG, corpus, memoria conversacional) | ✅ Completa |
 | 5 | Integraciones externas + flujos complejos | ⏳ **Próxima** |
-| 6 | Producción (GCP, panel Paperclip, WhatsApp Business productivo) | ⏳ Pendiente |
+| 6 | Producción (GCP, WhatsApp Business productivo) | ⏳ Pendiente |
 
 **Lo que YA funciona end-to-end** (verificado): WhatsApp→n8n→webhook→cola→worker→
 orquestador (sticky)→agente RAG→respuesta, con confidencialidad por audiencia,
@@ -293,11 +314,16 @@ Para repartir. Cada tarea indica el/los archivo(s) o módulo(s) donde trabajar.
   generan módulos de capacitación → alimentan el RAG. Es una funcionalidad del **panel**, no un agente.
 - **Capacitación contextual** (RF-05) y **soporte de audio** (RF-14: transcribir audio a texto).
 
-### Entregable E4 — Panel Web de Gobernanza (frontend React + endpoints)
-- Dashboard de métricas (lee `TokenUsage`/`OrchestrationEvent`).
-- **Whitelist de empleados** → setea `Conversation.userType` (hoy default CLIENTE).
-- **Cola de Prioridades** para escalados a supervisión (human-in-the-loop).
-- Carga de conocimiento con auth de empleado (hoy el `/knowledge` dev está protegido por secreto).
+### Entregable E4 — Panel del Supervisor / Gobernanza (frontend React)
+El frontend es **una sola app React** con módulos gateados por rol (Chat, Carga de docs,
+Entrevistas, Capacitación, Gobernanza). El "Panel del Supervisor" (ex-"Paperclip", descartado
+como producto) es **uno de esos módulos**, no una herramienta aparte. Backend ya iniciado en
+`src/supervisor/`. Contrato de API: ver `docs/CONTRATO_API_Frontend.md`.
+- ✅ **Métricas** — `GET /supervisor/metrics` + dashboard HTML semilla (`GET /supervisor`). Hecho.
+- **Whitelist de empleados + rol** → setea `userType=EMPLEADO` y `role` (EMPLEADO/SUPERVISOR). Pendiente.
+- **Auditoría** — `GET /supervisor/events`, `GET /supervisor/conversations`. Pendiente.
+- **Cola de Prioridades** + tomar control del chat (human-in-the-loop). Pendiente (atado a Fase 5).
+- Carga de conocimiento con auth de supervisor (hoy `/knowledge` protegido por secreto).
 
 ### Entregable E3 — RAG
 - **Ingesta desde Google Drive** (fuente de corpus).
@@ -382,7 +408,7 @@ docker compose exec nestjs npx jest --no-coverage
 |-----------|----------|
 | `README.md` | Setup del entorno paso a paso |
 | `setup-prompt.md` | Prompts listos para pegar en Antigravity (contexto + setup) |
-| `docs/ArquitecturaFLujoTrabajo.md` | Arquitectura conceptual ampliada (capas, Paperclip, frontend) |
+| `docs/ArquitecturaFLujoTrabajo.md` | Arquitectura conceptual ampliada (capas, frontend) |
 | `docs/product.md` | Descripción de producto (visión funcional) |
 | `docs/DeclaracióndeAlcancedeProyecto_TrimIA.md` | Alcance, requisitos, entregables (PMBOK) |
 | `docs/TP2_PMI_Matriz...-requisitos.csv` | Matriz de trazabilidad requisito→entregable→OE |

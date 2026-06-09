@@ -2,6 +2,14 @@
   "env": {
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
   },
+  "permissions": {
+    "allow": [
+      "Bash(docker compose *)",
+      "Bash(curl -s -o /dev/null -w \"GET /supervisor         → HTTP %{http_code} \\(%{content_type}\\)\\\\n\" http://localhost:3000/supervisor)",
+      "Bash(curl -s -o /dev/null -w \"GET /supervisor/metrics → HTTP %{http_code}\\\\n\" http://localhost:3000/supervisor/metrics)",
+      "Bash(curl -s -o /dev/null -w \"GET /admin/metrics      → HTTP %{http_code}\\\\n\" http://localhost:3000/admin/metrics)"
+    ]
+  },
   "hooks": {
     "SessionStart": [
       {
