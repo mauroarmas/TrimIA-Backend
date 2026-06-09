@@ -1,6 +1,6 @@
 # Diagramas de Arquitectura — TrimIA
 
-## 2. Flujo de un Mensaje (entrada → salida)
+## 1. Flujo de un Mensaje (entrada → salida)
 
 ```
                       Meta WhatsApp
@@ -114,76 +114,87 @@
 
 ---
 
-## 3. Frontend React (Módulos + Roles)
-
+## 2. Grafo
 ```
-┌──────────────────────────────────────────────────────────────┐
-│              Frontend React (una sola app)                   │
-│  Build: Vite / Node / React (E4)                             │
-├──────────────────────────────────────────────────────────────┤
-│                                                               │
-│  ┌──────────────────────────────────────────────────────────┐ │
-│  │ Login / Auth                                              │ │
-│  │ ├─ Teléfono + PIN (empleado/supervisor)                 │ │
-│  │ └─ userType=EMPLEADO + role=EMPLEADO|SUPERVISOR         │ │
-│  └─────────────┬────────────────────────────────────────────┘ │
-│                │                                               │
-│   ┌────────────┴────────────────────────────────────────────┐  │
-│   │ Router condicional (CanActivate por role)               │  │
-│   └────────────┬────────────────────────────────────────────┘  │
-│                │                                               │
-│  ┌─────────────┴─────────────────────────────────────┐         │
-│  │            MÓDULOS (gateados por rol)             │         │
-│  │                                                   │         │
-│  │  ┌──────────────────────────────────────────────┐ │         │
-│  │  │ 1. CHAT (ambos roles)                        │ │         │
-│  │  │    /messaging/webhook (entrada WhatsApp)     │ │         │
-│  │  │    /messaging/web (canal web / empleado)     │ │         │
-│  │  │    Hilos + historial + indicador escribiendo │ │         │
-│  │  │    EMPLEADO: solo ver. SUPERVISOR: takeover  │ │         │
-│  │  └──────────────────────────────────────────────┘ │         │
-│  │                                                   │         │
-│  │  ┌──────────────────────────────────────────────┐ │         │
-│  │  │ 2. CARGA DE DOCUMENTOS (solo SUPERVISOR)    │ │         │
-│  │  │    /knowledge (ingest)                       │ │         │
-│  │  │    Subir txt/pdf/docx → fragmentar+vectorizar
-│  │  │    Marcar audience (PUBLICO/INTERNO)         │ │         │
-│  │  │    Asignar a agente (o general)              │ │         │
-│  │  └──────────────────────────────────────────────┘ │         │
-│  │                                                   │         │
-│  │  ┌──────────────────────────────────────────────┐ │         │
-│  │  │ 3. ENTREVISTAS (solo SUPERVISOR)  🔴 Fase 5 │ │         │
-│  │  │    Captura guiada de conocimiento            │ │         │
-│  │  │    → Genera módulos de capacitación          │ │         │
-│  │  │    → Alimenta el RAG automáticamente          │ │         │
-│  │  └──────────────────────────────────────────────┘ │         │
-│  │                                                   │         │
-│  │  ┌──────────────────────────────────────────────┐ │         │
-│  │  │ 4. CAPACITACIÓN (solo EMPLEADO)  🔴 Fase 5  │ │         │
-│  │  │    Módulos de capacitación + interactivos    │ │         │
-│  │  │    Q&A contra el RAG (soporte contextual)     │ │         │
-│  │  │    Seguimiento de progreso                   │ │         │
-│  │  └──────────────────────────────────────────────┘ │         │
-│  │                                                   │         │
-│  │  ┌──────────────────────────────────────────────┐ │         │
-│  │  │ 5. GOBERNANZA (solo SUPERVISOR)              │ │         │
-│  │  │    /supervisor/metrics (dashboard)           │ │         │
-│  │  │    ├─ Tarjetas: conversaciones, tokens       │ │         │
-│  │  │    ├─ Gráficos: consumo por agente           │ │         │
-│  │  │    ├─ Últimos eventos (ruteos, handoffs)     │ │         │
-│  │  │    ├─ Whitelist de empleados (RF-12)         │ │         │
-│  │  │    ├─ Cola de Prioridades (conversaciones    │ │         │
-│  │  │    │   escaladas esperando supervisión)      │ │         │
-│  │  │    └─ Auditoría (OrchestrationEvent detail)  │ │         │
-│  │  └──────────────────────────────────────────────┘ │         │
-│  │                                                   │         │
-│  └───────────────────────────────────────────────────┘         │
-│                                                               │
-└──────────────────────────────────────────────────────────────┘
-        │
-        │ HTTP (Bearer token)
-        ▼
-   Backend NestJS (ver diagrama 1)
+                              ┌─────────┐
+                              │  START  │
+                              └────┬────┘
+                                   │
+                          entryRouter()   
+                                   │
+                                   │
+              ┌────────────────────┼───────────────────────┐
+              │                    │                       │ 
+     trivial  │              sticky│            orchestrate│
+   (regex hola/    (currentAgent ya                    (sin agente o
+    gracias/etc.)   fijado y permitido)                 no permitido)
+              │                    │                       │
+              ▼                    ▼                       │
+     ┌─────────────────┐   ┌──────────────┐                │
+     │ trivial_response│   │ scope_check  │                │
+     │  (canned, 0 LLM)│   │ (Gemini: ¿es │                │
+     └────────┬────────┘   │  del tema?)  │                │
+              │            └──────┬───────┘                │
+              │                   │                        │ 
+              │            scopeRouter()                   │ 
+              │                   │                        │      
+              │           ┌───────┴────────┐               │
+              │      mismo│          cambio│               │
+              │           ▼                ▼               │
+              │   (agente actual)   ┌────────────┐         │
+              │           │         │ handoff_log│         │
+              │           │         │ (Prisma)   │         │
+              │           │         └─────┬──────┘         │
+              │           │               │                │
+              │           │               ▼                ▼
+              │           │         ┌───────────────────────────┐
+              │           │         │     classify_intent       │
+              │           │         │ (Gemini structured output;│
+              │           │         │  solo agentes permitidos) │
+              │           │         └─────────────┬─────────────┘
+              │           │                       │    
+              │           │            classifyRouter()
+              │           │                       │
+              │           │           ┌───────────┴───────────┐
+              │           │   greeting│                 agente│
+              │           │           ▼                       │
+              │           │   ┌──────────────────┐            │
+              │           │   │ greeting_response│            │
+              │           │   │   (canned)       │            │
+              │           │   └────────┬─────────┘            │
+              │           │            │                      │
+              │    ┌───────────────────┘                      │
+              │    │      │                                   │       
+              │    │      ▼                                   ▼
+              │    │   ┌────────────────────────────────────────────────────┐
+              │    │   │   AGENTE RAG  (SALES│ADMIN│COLLECTIONS│LOGI│DEPO)  │
+              │    │   │   1. retrieve_context  (ChromaDB, audiencia/role)  │
+              │    │   │   2. evaluate_confidence  (score ≥ 0.65?)          │
+              │    │   │   3a. generate_response (Gemini+contexto+historial)│
+              │    │   │   3b. escalate_to_human (status=WAITING_HUMAN)     │
+              │    │   └────────────────────────┬───────────────────────────┘
+              │    │                            ▼
+              │    │                     ┌──────────────┐
+              │    │                     │  log_event   │  (OrchestrationEvent → Prisma)
+              │    │                     └──────┬───────┘
+              │    │                            │
+              │    │       ┌────────────────────┘
+              │    ▼       ▼
+              │   ┌──────────────┐
+              │   │ track_tokens │  (TokenUsage → Prisma)
+              │   └──────┬───────┘
+              │          │
+              ▼          ▼
+           ┌─────────────────┐
+           │       END       │
+           └─────────────────┘
+
+Notas:
+• trivial_response va DIRECTO a END (no pasa por track_tokens: gastó 0 tokens).
+• greeting_response → track_tokens → END (el orquestador sí consumió tokens al clasificar).
+• Los routers (entryRouter, scopeRouter, classifyRouter) son funciones puras: deciden el
+  camino SIN llamar a Gemini. Solo classify_intent, scope_check y los agentes gastan tokens.
+
 ```
 
 ---
