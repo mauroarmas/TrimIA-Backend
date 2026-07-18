@@ -391,7 +391,7 @@ docker compose exec nestjs npx jest --no-coverage
 
 ## 12. Gotchas técnicos (ya resueltos — no re-debuggear)
 
-- **Embeddings:** `text-embedding-004` da 404 en esta API. Usar `gemini-embedding-001` (dim 3072).
+- **Embeddings:** Ya está resuelto el problema de 404 del modelo 2. Usar `gemini-embedding-2-preview` (o la nomenclatura V2 actual) como `EMBEDDING_MODEL` en el `.env`. Recordar que al cambiar de modelo hay que limpiar ChromaDB y `KnowledgeDocument`.
 - **ChromaDB 1.x:** no devuelve distancias por defecto → pedir
   `include: ['documents','metadatas','distances']`; precomputar embeddings y pasarlos
   explícitos a `add`/`query`. Espacio coseno → `score = 1 - distancia`.
