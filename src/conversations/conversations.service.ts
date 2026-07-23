@@ -72,4 +72,12 @@ export class ConversationsService {
       data: { currentAgent: agent, agentLockedAt: new Date() },
     });
   }
+
+  /** Actualiza el userType de la conversación (al detectar empleado por whitelist). */
+  async setUserType(conversationId: string, userType: 'CLIENTE' | 'EMPLEADO') {
+    return this.prisma.conversation.update({
+      where: { id: conversationId },
+      data: { userType },
+    });
+  }
 }

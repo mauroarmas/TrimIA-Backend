@@ -5,6 +5,7 @@ import { Channel } from '@prisma/client';
 import { ConversationsService } from '../../conversations/conversations.service';
 import { WhatsappSenderService } from '../../messaging/whatsapp-sender.service';
 import { OrchestratorService } from '../../ai/orchestrator/orchestrator.service';
+import { EmployeesService } from '../../employees/employees.service';
 
 interface MessageJob {
   conversationId: string;
@@ -21,6 +22,7 @@ export class MessageProcessor extends WorkerHost {
     private readonly conversations: ConversationsService,
     private readonly sender: WhatsappSenderService,
     private readonly orchestrator: OrchestratorService,
+    private readonly employees: EmployeesService,
   ) {
     super();
   }
@@ -37,8 +39,24 @@ export class MessageProcessor extends WorkerHost {
       // Sticky + historial: una sola query trae todo lo que necesita el orquestador.
       const conversation = await this.conversations.findById(conversationId);
       const currentAgent = conversation?.currentAgent ?? null;
-      const userType = conversation?.userType ?? null;
       const history = await this.conversations.getRecentHistory(conversationId);
+
+      // Determinar userType real: buscar teléfono en whitelist de empleados (RF12).
+      // Si ya está seteado en la conversación como EMPLEADO, no re-buscar.
+      let userType = conversation?.userType ?? null;
+      if (!userType || userType === 'CLIENTE') {
+        const employee = await this.employees.findByPhone(externalId);
+        if (employee && employee.isActive) {
+          userType = 'EMPLEADO';
+          // Persistir el userType para no buscar en cada mensaje.
+          await this.conversations.setUserType(conversationId, 'EMPLEADO');
+          this.logger.log(
+            `UserType actualizado a EMPLEADO para ${externalId} (${employee.sector.name})`,
+          );
+        } else {
+          userType = 'CLIENTE';
+        }
+      }
 
       // El orquestador clasifica (o saltea, si hay sticky), deriva y registra.
       const result = await this.orchestrator.invoke(

@@ -32,6 +32,8 @@ import * as Joi from 'joi';
         N8N_BASE_URL: Joi.string().uri().required(),
 
         RAG_CONFIDENCE_THRESHOLD: Joi.number().min(0).max(1).default(0.65),
+
+        JWT_SECRET: Joi.string().min(32).required(),
       }),
       validationOptions: {
         allowUnknown: true,

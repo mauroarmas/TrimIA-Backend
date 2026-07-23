@@ -15,6 +15,7 @@ enum Channel {
 enum ConvStatus {
   ACTIVE
   WAITING_HUMAN
+  HUMAN_HANDLING // supervisor tomó control del chat (Sprint 3)
   CLOSED
 }
 
@@ -25,6 +26,40 @@ enum AgentType {
   LOGISTICS
   DEPOSITS
   ADMIN
+}
+
+enum EmployeeRole {
+  EMPLEADO
+  SUPERVISOR
+}
+
+// Sector de la empresa. Gatea qué módulos del panel ve cada empleado.
+model Sector {
+  id        String     @id @default(uuid())
+  name      String     @unique // Ventas, Cobranzas, Administración, Logística, Depósito
+  agentType AgentType? // agente principal asociado al sector (para queries)
+  createdAt DateTime   @default(now())
+
+  employees Employee[]
+}
+
+// Empleado/supervisor autorizado. Determina userType al recibir un mensaje.
+model Employee {
+  id        String       @id @default(uuid())
+  phone     String       @unique // número WhatsApp normalizado
+  email     String       @unique
+  name      String
+  password  String       // hash bcrypt
+  role      EmployeeRole @default(EMPLEADO)
+  isActive  Boolean      @default(true)
+  sectorId  String
+  sector    Sector       @relation(fields: [sectorId], references: [id])
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  @@index([phone])
+  @@index([email])
+  @@index([sectorId])
 }
 
 enum MessageRole {
