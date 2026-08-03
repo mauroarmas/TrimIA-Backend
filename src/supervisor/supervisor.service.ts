@@ -1,6 +1,8 @@
 import { Injectable } from '@nestjs/common';
-import { AgentType, Channel, ConvStatus, UserType } from '@prisma/client';
+import { ConfigService } from '@nestjs/config';
+import { AgentType, Channel, ConvStatus, Prisma, UserType } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
+import { ALL_AGENTS } from '../ai/agents/agent-domains';
 
 export interface GetConversationsFilter {
   status?: ConvStatus;
@@ -46,9 +48,40 @@ export interface SupervisorMetrics {
   }[];
 }
 
+/**
+ * Estado operativo de un agente para el Panel del Supervisor (tarea 2.4).
+ * Todos los valores derivan de datos que el sistema YA persiste; nada se inventa.
+ */
+export interface AgentStatus {
+  agentType: string;
+  /** 'active' si tiene al menos una conversación ACTIVE asignada; si no, 'idle'. */
+  status: 'active' | 'idle';
+  totalConversations: number;
+  activeConversations: number;
+  /** Última vez que se tocó una conversación de este agente (null si ninguna). */
+  lastActivityAt: Date | null;
+  /** Turnos ruteados a este agente (base de las métricas de abajo). */
+  routedTurns: number;
+  /** Confianza RAG promedio (0-1) de los turnos ruteados; null si aún no hay datos. */
+  avgConfidence: number | null;
+  /** Turnos que terminaron escalando a un humano por baja confianza. */
+  escalations: number;
+  /** escalations / routedTurns (0 si no hubo turnos). */
+  escalationRate: number;
+}
+
+export interface AgentsStatusResponse {
+  /** Umbral de confianza vigente (RAG_CONFIDENCE_THRESHOLD), para colorear el panel. */
+  confidenceThreshold: number;
+  agents: AgentStatus[];
+}
+
 @Injectable()
 export class SupervisorService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly config: ConfigService,
+  ) {}
 
   async getMetrics(): Promise<SupervisorMetrics> {
     // Una sola tanda de queries en paralelo (no dependen entre sí).
@@ -242,5 +275,88 @@ export class SupervisorService {
       limit,
       hasMore: skip + data.length < total,
     };
+  }
+
+  /**
+   * Estado de los 5 agentes especializados (tarea 2.4 — mockup del Panel).
+   * Combina:
+   *  - Conversation  → cuántas conversaciones atiende cada agente y su actividad.
+   *  - OrchestrationEvent (ROUTED_TO_AGENT) → confianza RAG promedio y escalados.
+   * La confianza sale del payload del evento, que el orquestador persiste por turno.
+   */
+  async getAgentsStatus(): Promise<AgentsStatusResponse> {
+    const confidenceThreshold = this.config.get<number>(
+      'RAG_CONFIDENCE_THRESHOLD',
+      0.65,
+    );
+
+    // Confianza promedio y escalados por agente, agregados en Postgres sobre el
+    // JSON del payload (AVG ignora los null de eventos previos a la tarea 2.4).
+    const eventStatsPromise = this.prisma.$queryRaw<
+      {
+        agentType: AgentType;
+        avgConfidence: number | null;
+        escalations: bigint;
+        routed: bigint;
+      }[]
+    >(Prisma.sql`
+      SELECT "agentType",
+             AVG((payload->>'confidence')::float)                              AS "avgConfidence",
+             COUNT(*) FILTER (WHERE payload->>'escalated' = 'true')            AS "escalations",
+             COUNT(*)                                                          AS "routed"
+      FROM "OrchestrationEvent"
+      WHERE "eventType" = 'ROUTED_TO_AGENT' AND "agentType" IS NOT NULL
+      GROUP BY "agentType"
+    `);
+
+    const [totalByAgent, activeByAgent, eventStats] = await Promise.all([
+      this.prisma.conversation.groupBy({
+        by: ['currentAgent'],
+        where: { currentAgent: { not: null } },
+        _count: { _all: true },
+        _max: { updatedAt: true },
+      }),
+      this.prisma.conversation.groupBy({
+        by: ['currentAgent'],
+        where: { currentAgent: { not: null }, status: 'ACTIVE' },
+        _count: { _all: true },
+      }),
+      eventStatsPromise,
+    ]);
+
+    const totalMap = new Map(
+      totalByAgent.map((r) => [r.currentAgent, r]),
+    );
+    const activeMap = new Map(
+      activeByAgent.map((r) => [r.currentAgent, r._count._all]),
+    );
+    const statsMap = new Map(eventStats.map((r) => [r.agentType, r]));
+
+    const agents: AgentStatus[] = ALL_AGENTS.map((agentType) => {
+      const total = totalMap.get(agentType);
+      const active = activeMap.get(agentType) ?? 0;
+      const stats = statsMap.get(agentType);
+
+      const routedTurns = stats ? Number(stats.routed) : 0;
+      const escalations = stats ? Number(stats.escalations) : 0;
+      const avgConfidence =
+        stats && stats.avgConfidence != null
+          ? Math.round(stats.avgConfidence * 1000) / 1000
+          : null;
+
+      return {
+        agentType,
+        status: active > 0 ? 'active' : 'idle',
+        totalConversations: total?._count._all ?? 0,
+        activeConversations: active,
+        lastActivityAt: total?._max.updatedAt ?? null,
+        routedTurns,
+        avgConfidence,
+        escalations,
+        escalationRate: routedTurns > 0 ? escalations / routedTurns : 0,
+      };
+    });
+
+    return { confidenceThreshold, agents };
   }
 }

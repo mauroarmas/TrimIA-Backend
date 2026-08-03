@@ -4,16 +4,13 @@
 > que consume cada módulo de la app. Permite trabajar **en paralelo**: lo que ya
 > existe se consume directo; lo pendiente se mockea contra el contrato de abajo.
 >
-> Última actualización: 2026-06-07.
+> Última actualización: 2026-07-19 (Sprint 1 y 2).
 
 ## Generalidades
 
 - **Base URL (dev):** `http://localhost:3000`
-- **Formato:** JSON (`Content-Type: application/json`). El dashboard semilla del
-  supervisor devuelve HTML, pero la app React consume siempre el **JSON**.
-- **Auth (hoy):** endpoints de dev protegidos por header `x-n8n-secret: <N8N_WEBHOOK_SECRET>`.
-  Antes de producción se reemplaza por login real (token de empleado/supervisor).
-  Los endpoints marcados 🔴 todavía no existen: están como **contrato propuesto** para mockear.
+- **Formato:** JSON (`Content-Type: application/json`).
+- **Auth:** La mayoría de los endpoints del panel usan JWT (`Authorization: Bearer <token>`). Los webhooks y RAG internos usan el header `x-n8n-secret: <N8N_WEBHOOK_SECRET>`.
 - **Estado:** ✅ existe · 🟡 parcial · 🔴 pendiente (propuesto)
 
 ## La app es UNA sola, con módulos gateados por rol
@@ -32,10 +29,42 @@
 
 ---
 
+## Módulo Autenticación — `/auth`
+
+### ✅ `POST /auth/login` (Público)
+Autenticación de empleados.
+```json
+// request
+{ "email": "diego.bazan@credimision.com", "password": "..." }
+// response
+{ "accessToken": "eyJhbG..." }
+```
+
+### ✅ `GET /auth/me` (JWT)
+Devuelve los datos del usuario logueado.
+```json
+{ "id": "uuid", "email": "...", "role": "SUPERVISOR", "sectorId": "uuid", "sectorName": "Ventas" }
+```
+
+---
+
+## Módulo Empleados — `/employees`
+
+### ✅ `GET /employees` (JWT + SUPERVISOR)
+Lista la whitelist de empleados con sus sectores.
+
+### ✅ `POST /employees`, `PUT /employees/:id`, `DELETE /employees/:id` (JWT + SUPERVISOR)
+CRUD de empleados.
+
+### ✅ `GET /employees/sectors` (JWT + SUPERVISOR)
+Lista los sectores disponibles.
+
+---
+
 ## Módulo Gobernanza — `/supervisor/*`
 
-### ✅ `GET /supervisor/metrics`
-Métricas agregadas para el dashboard. **Ya funciona.**
+### ✅ `GET /supervisor/metrics` (JWT + SUPERVISOR)
+Métricas agregadas para el dashboard.
 
 Respuesta:
 ```json
@@ -60,31 +89,66 @@ Respuesta:
 }
 ```
 
-### 🔴 `GET /supervisor/conversations?status=&page=&limit=` (propuesto)
-Lista de conversaciones para auditar / gestionar escalados.
+### ✅ `GET /supervisor/conversations?status=&page=&limit=` (JWT + SUPERVISOR)
+Lista de conversaciones para auditar / gestionar escalados. Filtros extra: `channel`, `userType`, `agentType`.
 ```json
 {
-  "items": [
-    { "conversationId": "uuid", "externalId": "549...", "currentAgent": "SALES",
-      "userType": "CLIENTE", "status": "ACTIVE", "updatedAt": "2026-..." }
+  "data": [
+    { "id": "uuid", "externalId": "549...", "currentAgent": "SALES",
+      "userType": "CLIENTE", "status": "ACTIVE", "updatedAt": "2026-...", "_count": { "messages": 10 } }
   ],
-  "page": 1, "limit": 20, "total": 11
+  "page": 1, "limit": 20, "total": 11, "hasMore": false
 }
 ```
-Filtro clave: `status=WAITING_HUMAN` → conversaciones escaladas esperando supervisor.
 
-### 🔴 `GET /supervisor/conversations/:conversationId` (propuesto)
-Detalle + historial de mensajes de una conversación (para leer contexto antes de intervenir).
+### ✅ `GET /supervisor/conversations/:id` (JWT + SUPERVISOR)
+Detalle completo de la conversación, incluyendo mensajes, eventos y uso de tokens.
 ```json
 {
-  "conversationId": "uuid", "externalId": "549...", "currentAgent": "COLLECTIONS",
-  "messages": [ { "role": "USER", "content": "...", "createdAt": "..." },
-                { "role": "ASSISTANT", "content": "...", "agentType": "COLLECTIONS", "createdAt": "..." } ]
+  "id": "uuid", "externalId": "549...", "currentAgent": "COLLECTIONS",
+  "messages": [ { "id": "...", "role": "USER", "content": "...", "createdAt": "..." } ],
+  "events": [ { "id": "...", "eventType": "ROUTED_TO_AGENT", "agentType": "COLLECTIONS", "createdAt": "..." } ],
+  "tokens": { "calls": 2, "totalInput": 100, "totalOutput": 50 }
 }
 ```
 
-### 🔴 `GET /supervisor/events?conversationId=&eventType=&after=` (propuesto)
+### ✅ `GET /supervisor/events?conversationId=&eventType=&after=&page=&limit=` (JWT + SUPERVISOR)
 Historial de orquestación (ruteos, handoffs, escalados) para auditoría (OE-11).
+```json
+{
+  "data": [
+    { "id": "uuid", "eventType": "ROUTED_TO_AGENT", "agentType": "SALES", "createdAt": "...", "payload": {} }
+  ],
+  "page": 1, "limit": 20, "total": 11, "hasMore": false
+}
+```
+
+### ✅ `GET /supervisor/agents/status` (JWT + SUPERVISOR)
+Estado operativo de los 5 agentes: conversaciones asignadas, confianza RAG promedio y escalados.
+Todo deriva de datos ya persistidos (conversaciones + eventos `ROUTED_TO_AGENT`).
+
+Respuesta:
+```json
+{
+  "confidenceThreshold": 0.65,
+  "agents": [
+    {
+      "agentType": "SALES",
+      "status": "active",              // "active" si tiene ≥1 conversación ACTIVE; si no "idle"
+      "totalConversations": 3,
+      "activeConversations": 2,
+      "lastActivityAt": "2026-08-01T10:00:00.000Z",
+      "routedTurns": 4,                // turnos ruteados a este agente
+      "avgConfidence": 0.778,          // confianza RAG promedio (0-1); null si aún no hay datos
+      "escalations": 1,                // turnos derivados a humano por baja confianza
+      "escalationRate": 0.25
+    }
+    // ... ADMIN, COLLECTIONS, LOGISTICS, DEPOSITS (siempre los 5)
+  ]
+}
+```
+> `avgConfidence` puede ser `null` para turnos ruteados antes de que el orquestador
+> empezara a persistir la confianza; el promedio ignora esos casos.
 
 ### 🔴 `POST /supervisor/conversations/:conversationId/takeover` (propuesto, Fase 5)
 El supervisor toma control manual del chat (human-in-the-loop). Atado al checkpointer.

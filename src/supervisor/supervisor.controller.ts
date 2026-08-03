@@ -101,6 +101,20 @@ export class SupervisorController {
     });
   }
 
+
+
+  /**
+   * GET /supervisor/agents/status
+   * Estado de los 5 agentes: conversaciones, confianza RAG promedio y escalados.
+   */
+  @Get('agents/status')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('SUPERVISOR')
+  @ApiOperation({ summary: 'Estado y confianza promedio de cada agente' })
+  getAgentsStatus() {
+    return this.supervisor.getAgentsStatus();
+  }
+
   @Get('metrics')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('SUPERVISOR')

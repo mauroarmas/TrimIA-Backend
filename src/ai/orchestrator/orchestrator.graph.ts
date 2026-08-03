@@ -136,7 +136,14 @@ export function buildOrchestratorGraph(
       conversationId: state.conversationId,
       eventType: 'ROUTED_TO_AGENT',
       agentType: state.agentType,
-      payload: { message: state.message, response: state.response },
+      payload: {
+        message: state.message,
+        response: state.response,
+        // Confianza del RAG y si se derivó a humano: alimentan el estado de
+        // agentes del Panel del Supervisor (GET /supervisor/agents/status).
+        confidence: state.confidence ?? null,
+        escalated: state.escalated ?? false,
+      },
     });
     return {};
   };
