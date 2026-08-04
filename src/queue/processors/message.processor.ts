@@ -38,6 +38,19 @@ export class MessageProcessor extends WorkerHost {
     try {
       // Sticky + historial: una sola query trae todo lo que necesita el orquestador.
       const conversation = await this.conversations.findById(conversationId);
+
+      // Human-in-the-loop (Sprint 3): mientras un caso está pendiente de un
+      // supervisor (WAITING_HUMAN) o alguien tiene el control manual
+      // (HUMAN_HANDLING), el agente de IA no responde. El mensaje ya quedó
+      // persistido por MessagingService.prepareConversation() antes de
+      // encolar — el supervisor lo ve en el contexto sin acción adicional.
+      if (conversation && conversation.status !== 'ACTIVE') {
+        this.logger.log(
+          `Conversación [${conversationId}] en estado ${conversation.status}: no se invoca al agente.`,
+        );
+        return;
+      }
+
       const currentAgent = conversation?.currentAgent ?? null;
       const history = await this.conversations.getRecentHistory(conversationId);
 

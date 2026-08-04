@@ -218,20 +218,56 @@ mensaje actual. Así el agente resuelve referencias ("¿y esa en cuotas?").
 - `OrchestrationEvent` (qué pasó: ruteo, handoff) → base del Panel del Supervisor.
 - `TokenUsage` (tokens in/out, latencia, modelo) → análisis de costos.
 
+### 5.7 Human-in-the-loop (Sprint 3)
+
+Cuando un agente escala por baja confianza, `escalate_to_human`
+(`shared/rag-agent.graph.ts`) crea un `Escalation` real (`EscalationsService`)
+y pone `Conversation.status = WAITING_HUMAN`. Un supervisor lo ve en
+`GET /supervisor/escalations`, lo resuelve (`POST .../resolve`, con
+`teachAgent: true` opcional para ingestarlo al RAG vía el mismo
+`KnowledgeService.ingest` de siempre) o lo delega a otro supervisor
+(`POST .../delegate`).
+
+Independiente de eso, un supervisor puede tomar control manual de
+**cualquier** conversación activa (`POST /supervisor/conversations/:id/takeover`
+→ `status = HUMAN_HANDLING`), responder directo
+(`POST .../reply`) y devolver el control (`POST .../release` → vuelve a
+`ACTIVE`). Mientras el `status` no sea `ACTIVE`, `MessageProcessor.process()`
+corta antes de invocar el orquestador — el agente de IA simplemente no
+responde en esa conversación hasta que se resuelva/libere.
+
+**Decisión importante — sin checkpointer de LangGraph:** la pausa/reanudación
+NO usa `@langchain/langgraph-checkpoint-postgres` (sigue sin cablearse al
+grafo). Cada `invoke()` del orquestador corre de punta a punta dentro de un
+job de BullMQ; acá "pausar" es simplemente no volver a invocar el grafo
+mientras dure la intervención humana, y al reanudar se apoya en la misma
+memoria conversacional de `getRecentHistory()` (§5.5) — no hace falta
+persistir el estado interno del grafo. El checkpointer sigue reservado para
+cuando haga falta pausar *dentro* de una sola ejecución (ej. venta
+financiada, RF-13). Ver `specs/001-human-in-the-loop/research.md` §1 para el
+detalle completo de esta decisión.
+
+`InternalNote` es aparte: comentarios de supervisores/empleados sobre una
+conversación, nunca enviados al usuario ni mezclados con `Message`.
+
 ---
 
 ## 6. Modelo de datos (Prisma — `prisma/schema.prisma`)
 
 | Modelo | Para qué | Campos clave |
 |--------|----------|--------------|
-| `Conversation` | Hilo de chat por teléfono | `id`, `externalId`, `currentAgent` (sticky), `userType` |
+| `Conversation` | Hilo de chat por teléfono | `id`, `externalId`, `currentAgent` (sticky), `userType`, `status`, `handledById`/`handledAt` (control manual, Sprint 3) |
 | `Message` | Cada mensaje | `role` (USER/ASSISTANT/...), `content`, `agentType` |
 | `KnowledgeDocument` | Metadatos de docs del RAG | `audience` (PUBLICO/INTERNO), `agentType`, `checksum` |
 | `TokenUsage` | Consumo por turno | `inputTokens`, `outputTokens`, `durationMs`, `model` |
 | `OrchestrationEvent` | Auditoría de ruteo | `eventType`, `agentType`, `payload` (JSON) |
+| `Escalation` (Sprint 3) | Caso pendiente por baja confianza | `reason`, `status` (PENDING/RESOLVED), `resolvedById`/`resolution`, `delegatedToId`/`delegatedById` |
+| `InternalNote` (Sprint 3) | Comentario interno sobre una conversación | `conversationId`, `authorId`, `content` — nunca visible para el usuario |
 
 Enums: `AgentType` (ORCHESTRATOR + 5 agentes), `UserType` (CLIENTE/EMPLEADO),
-`Audience` (PUBLICO/INTERNO), `Channel` (WHATSAPP/WEB), `ConvStatus`, `MessageRole`.
+`Audience` (PUBLICO/INTERNO), `Channel` (WHATSAPP/WEB),
+`ConvStatus` (ACTIVE/WAITING_HUMAN/HUMAN_HANDLING/CLOSED), `MessageRole`,
+`EscalationStatus` (PENDING/RESOLVED, Sprint 3).
 
 > Migraciones: el proyecto usa **`prisma db push`** (no `migrate`). Las tablas
 > `checkpoint_*` que puedan existir en la DB son remanentes de LangGraph; Prisma no
@@ -255,6 +291,12 @@ Enums: `AgentType` (ORCHESTRATOR + 5 agentes), `UserType` (CLIENTE/EMPLEADO),
 **Lo que YA funciona end-to-end** (verificado): WhatsApp→n8n→webhook→cola→worker→
 orquestador (sticky)→agente RAG→respuesta, con confidencialidad por audiencia,
 memoria conversacional y auditoría/métricas. Hay corpus de prueba cargado para los 5 agentes.
+
+> **Nota:** desde `docs/plan_de_trabajo.md` v4, el trabajo posterior a la Fase 4
+> se organiza en **8 sprints** (no en "Fase 5/6" a secas). Estado real:
+> Sprint 1 (Auth+Whitelist) ✅, Sprint 2 (Panel Supervisor: métricas,
+> conversaciones, `agents/status`) ✅, Sprint 3 (human-in-the-loop, §5.7) ✅.
+> Próximo: Sprint 4 en adelante — ver el plan de trabajo para el detalle.
 
 ---
 

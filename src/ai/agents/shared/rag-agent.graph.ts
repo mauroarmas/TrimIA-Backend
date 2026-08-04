@@ -9,6 +9,7 @@ import {
 import { Audience } from '@prisma/client';
 import { LlmService } from '../../llm/llm.service';
 import { KnowledgeService } from '../../knowledge/knowledge.service';
+import { EscalationsService } from '../../../escalations/escalations.service';
 import {
   OrchestratorState,
   OrchestratorStateType,
@@ -21,6 +22,8 @@ export interface AgentGraphDeps {
   knowledge: KnowledgeService;
   confidenceThreshold: number;
   logger: Logger;
+  /** Crea el caso pendiente cuando la confianza es baja (Sprint 3). */
+  escalations: EscalationsService;
 }
 
 /** Configuración específica de cada agente RAG. */
@@ -52,7 +55,7 @@ export function buildRagAgentGraph(
   deps: AgentGraphDeps,
 ) {
   const { agentType, prompt, escalationMessage = DEFAULT_ESCALATION } = config;
-  const { llm, knowledge, confidenceThreshold, logger } = deps;
+  const { llm, knowledge, confidenceThreshold, logger, escalations } = deps;
   const tag = `[${agentType}]`;
 
   // --- NODO: retrieve_context — busca en la base de conocimiento ---
@@ -112,9 +115,19 @@ export function buildRagAgentGraph(
 
   // --- NODO: escalate_to_human — confianza baja, deriva a un responsable ---
   const escalateToHuman = async (state: OrchestratorStateType) => {
-    logger.log(
-      `${tag} confianza baja (${(state.confidence ?? 0).toFixed(2)}) → escalar a humano`,
-    );
+    const confidence = state.confidence ?? 0;
+    logger.log(`${tag} confianza baja (${confidence.toFixed(2)}) → escalar a humano`);
+
+    // Antes de Sprint 3 esto solo devolvía el mensaje canned y no quedaba
+    // ningún rastro consultable. Ahora crea el caso pendiente real que ve
+    // el supervisor (WAITING_HUMAN + Escalation).
+    if (state.conversationId) {
+      await escalations.create({
+        conversationId: state.conversationId,
+        reason: `${tag} confianza insuficiente (${confidence.toFixed(2)})`,
+      });
+    }
+
     return {
       response: escalationMessage,
       escalated: true,

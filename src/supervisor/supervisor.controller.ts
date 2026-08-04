@@ -1,10 +1,27 @@
-import { Controller, Get, Header, NotFoundException, Param, Query, UseGuards } from '@nestjs/common';
+import {
+  Body,
+  Controller,
+  Get,
+  Header,
+  NotFoundException,
+  Param,
+  Post,
+  Query,
+  Req,
+  UseGuards,
+} from '@nestjs/common';
 import { ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import { AgentType, Channel, ConvStatus, UserType } from '@prisma/client';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard, Roles } from '../auth/guards/roles.guard';
 import { SupervisorService } from './supervisor.service';
 import { DASHBOARD_HTML } from './supervisor-dashboard.html';
+import { EscalationsService } from '../escalations/escalations.service';
+import { ConversationsService } from '../conversations/conversations.service';
+import { ResolveEscalationDto } from '../escalations/dto/resolve-escalation.dto';
+import { DelegateEscalationDto } from '../escalations/dto/delegate-escalation.dto';
+import { ManualReplyDto } from '../conversations/dto/manual-reply.dto';
+import { CreateInternalNoteDto } from '../conversations/dto/create-internal-note.dto';
 
 /**
  * Panel del Supervisor (módulo de gobernanza — entregable E4).
@@ -18,7 +35,11 @@ import { DASHBOARD_HTML } from './supervisor-dashboard.html';
 @ApiTags('supervisor')
 @Controller('supervisor')
 export class SupervisorController {
-  constructor(private readonly supervisor: SupervisorService) {}
+  constructor(
+    private readonly supervisor: SupervisorService,
+    private readonly escalations: EscalationsService,
+    private readonly conversations: ConversationsService,
+  ) {}
 
   /**
    * GET /supervisor/conversations
@@ -102,6 +123,110 @@ export class SupervisorController {
   }
 
 
+
+  // ---------------------------------------------------------------------
+  // Human-in-the-loop (Sprint 3) — cola de escalados y control manual.
+  // Ver specs/001-human-in-the-loop/contracts/supervisor-api.md.
+  // ---------------------------------------------------------------------
+
+  /** POST /supervisor/conversations/:id/takeover — toma el control manual. */
+  @Post('conversations/:id/takeover')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('SUPERVISOR')
+  @ApiOperation({ summary: 'Toma el control manual de una conversación' })
+  takeoverConversation(@Param('id') id: string, @Req() req: any) {
+    return this.conversations.takeover(id, req.user.id);
+  }
+
+  /** POST /supervisor/conversations/:id/release — devuelve el control. */
+  @Post('conversations/:id/release')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('SUPERVISOR')
+  @ApiOperation({ summary: 'Devuelve el control manual de una conversación' })
+  releaseConversation(@Param('id') id: string, @Req() req: any) {
+    return this.conversations.release(id, req.user.id);
+  }
+
+  /** POST /supervisor/conversations/:id/reply — mensaje manual durante el control. */
+  @Post('conversations/:id/reply')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('SUPERVISOR')
+  @ApiOperation({ summary: 'Envía un mensaje manual mientras dura el control' })
+  replyConversation(
+    @Param('id') id: string,
+    @Body() dto: ManualReplyDto,
+    @Req() req: any,
+  ) {
+    return this.conversations.replyManually(id, req.user.id, dto.message);
+  }
+
+  /** POST /supervisor/conversations/:id/notes — nota interna, nunca visible para el usuario. */
+  @Post('conversations/:id/notes')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('SUPERVISOR')
+  @ApiOperation({ summary: 'Agrega una nota interna a una conversación' })
+  addInternalNote(
+    @Param('id') id: string,
+    @Body() dto: CreateInternalNoteDto,
+    @Req() req: any,
+  ) {
+    return this.conversations.addInternalNote(id, req.user.id, dto.content);
+  }
+
+  /** GET /supervisor/escalations?status=&page=&limit= — cola de casos pendientes. */
+  @Get('escalations')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('SUPERVISOR')
+  @ApiOperation({ summary: 'Lista casos escalados (default: pendientes)' })
+  @ApiQuery({ name: 'status', enum: ['PENDING', 'RESOLVED'], required: false })
+  @ApiQuery({ name: 'page', type: Number, required: false })
+  @ApiQuery({ name: 'limit', type: Number, required: false })
+  getEscalations(
+    @Query('status') status?: 'PENDING' | 'RESOLVED',
+    @Query('page') page?: string,
+    @Query('limit') limit?: string,
+  ) {
+    return this.escalations.listPending({
+      status,
+      page: page ? parseInt(page, 10) : undefined,
+      limit: limit ? parseInt(limit, 10) : undefined,
+    });
+  }
+
+  /** GET /supervisor/escalations/:id — detalle de un caso escalado. */
+  @Get('escalations/:id')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('SUPERVISOR')
+  @ApiOperation({ summary: 'Detalle de un caso escalado' })
+  getEscalation(@Param('id') id: string) {
+    return this.escalations.findById(id);
+  }
+
+  /** POST /supervisor/escalations/:id/resolve — responde el caso al usuario. */
+  @Post('escalations/:id/resolve')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('SUPERVISOR')
+  @ApiOperation({ summary: 'Resuelve un caso escalado y responde al usuario' })
+  resolveEscalation(
+    @Param('id') id: string,
+    @Body() dto: ResolveEscalationDto,
+    @Req() req: any,
+  ) {
+    return this.escalations.resolve(id, dto, req.user.id);
+  }
+
+  /** POST /supervisor/escalations/:id/delegate — reasigna el caso a otro supervisor. */
+  @Post('escalations/:id/delegate')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('SUPERVISOR')
+  @ApiOperation({ summary: 'Delega un caso escalado a otro supervisor' })
+  delegateEscalation(
+    @Param('id') id: string,
+    @Body() dto: DelegateEscalationDto,
+    @Req() req: any,
+  ) {
+    return this.escalations.delegate(id, dto, req.user.id);
+  }
 
   /**
    * GET /supervisor/agents/status

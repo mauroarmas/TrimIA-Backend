@@ -193,7 +193,7 @@ export class SupervisorService {
    * Retorna null si no existe (el controller devuelve 404).
    */
   async getConversationDetail(conversationId: string) {
-    const [conversation, messages, events, tokenTotals] = await Promise.all([
+    const [conversation, messages, events, tokenTotals, internalNotes] = await Promise.all([
       this.prisma.conversation.findUnique({
         where: { id: conversationId },
       }),
@@ -227,6 +227,14 @@ export class SupervisorService {
         _sum: { inputTokens: true, outputTokens: true },
         _count: { _all: true },
       }),
+
+      // Notas internas (Sprint 3) — nunca visibles para el usuario final,
+      // solo se agregan acá porque este endpoint ya exige SUPERVISOR.
+      this.prisma.internalNote.findMany({
+        where: { conversationId },
+        orderBy: { createdAt: 'asc' },
+        select: { id: true, authorId: true, content: true, createdAt: true },
+      }),
     ]);
 
     if (!conversation) return null;
@@ -235,6 +243,7 @@ export class SupervisorService {
       ...conversation,
       messages,
       events,
+      internalNotes,
       tokens: {
         calls: tokenTotals._count._all,
         totalInput: tokenTotals._sum.inputTokens ?? 0,

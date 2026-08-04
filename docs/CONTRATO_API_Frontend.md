@@ -4,7 +4,7 @@
 > que consume cada módulo de la app. Permite trabajar **en paralelo**: lo que ya
 > existe se consume directo; lo pendiente se mockea contra el contrato de abajo.
 >
-> Última actualización: 2026-07-19 (Sprint 1 y 2).
+> Última actualización: 2026-08-04 (Sprint 1, 2 y 3).
 
 ## Generalidades
 
@@ -17,11 +17,11 @@
 
 | Módulo | Rol que lo ve | Endpoints |
 |--------|---------------|-----------|
-| Chat | EMPLEADO (canal web) / SUPERVISOR (takeover) | `/messaging/web/*` 🔴 |
+| Chat | EMPLEADO (canal web) / SUPERVISOR (takeover) | `/messaging/web/*` 🔴 · `/supervisor/conversations/:id/takeover\|release\|reply` ✅ |
 | Carga de documentos | SUPERVISOR | `/knowledge` ✅ |
 | Entrevistas | SUPERVISOR | `/interviews/*` 🔴 |
 | Capacitación | EMPLEADO | `/training/*` 🔴 |
-| Gobernanza (Panel del Supervisor) | SUPERVISOR | `/supervisor/*` 🟡 |
+| Gobernanza (Panel del Supervisor) | SUPERVISOR | `/supervisor/*` ✅ |
 
 > Roles: ver `CONTEXTO_TECNICO.md` §5.3.1. `userType` (CLIENTE/EMPLEADO) define audiencia;
 > `role` (EMPLEADO/SUPERVISOR) gatea los módulos de gobernanza. El `role` viene de la
@@ -150,8 +150,66 @@ Respuesta:
 > `avgConfidence` puede ser `null` para turnos ruteados antes de que el orquestador
 > empezara a persistir la confianza; el promedio ignora esos casos.
 
-### 🔴 `POST /supervisor/conversations/:conversationId/takeover` (propuesto, Fase 5)
-El supervisor toma control manual del chat (human-in-the-loop). Atado al checkpointer.
+### ✅ `GET /supervisor/escalations?status=&page=&limit=` (JWT + SUPERVISOR)
+Cola de casos escalados por baja confianza (Sprint 3). `status` default `PENDING`.
+```json
+{
+  "data": [{
+    "id": "uuid", "conversationId": "uuid",
+    "reason": "[SALES] confianza insuficiente (0.53)",
+    "status": "PENDING", "delegatedToId": null,
+    "conversation": { "externalId": "549...", "channel": "WHATSAPP", "userType": "CLIENTE", "currentAgent": "SALES" }
+  }],
+  "page": 1, "limit": 20, "total": 1, "hasMore": false
+}
+```
+
+### ✅ `GET /supervisor/escalations/:id` (JWT + SUPERVISOR)
+Detalle de un caso escalado, incluye la conversación completa.
+
+### ✅ `POST /supervisor/escalations/:id/resolve` (JWT + SUPERVISOR)
+Responde el caso al usuario y opcionalmente enseña la respuesta al RAG.
+```json
+// request
+{ "message": "Sí, la tenemos en 12 cuotas.", "teachAgent": true }
+// response: la Escalation con status "RESOLVED"
+```
+- Envía `message` por el canal de la conversación (WhatsApp; el canal WEB aún
+  no tiene sender — ver módulo Chat más abajo).
+- Vuelve `Conversation.status` a `ACTIVE` y saca el caso de la cola.
+- Si `teachAgent: true`, ingesta `message` al RAG (misma pipeline que
+  `POST /knowledge`), con `audience` PUBLICO/INTERNO según el `userType` de
+  la conversación y `agentType` según el agente que atendía.
+
+### ✅ `POST /supervisor/escalations/:id/delegate` (JWT + SUPERVISOR)
+Reasigna el caso a otro supervisor. `400` si el destino no es supervisor
+activo; `409` si el caso ya estaba resuelto.
+```json
+{ "toEmployeeId": "uuid" }
+```
+
+### ✅ `POST /supervisor/conversations/:conversationId/takeover` (JWT + SUPERVISOR)
+El supervisor toma control manual del chat (Sprint 3). Mientras dura, el
+agente de IA no responde automáticamente en esa conversación. `409` si otro
+supervisor ya la tiene tomada; `400` si está `CLOSED`.
+
+### ✅ `POST /supervisor/conversations/:conversationId/release` (JWT + SUPERVISOR)
+Devuelve el control al agente de IA. `403` si quien lo pide no es quien la
+tomó; `409` si no estaba en control manual.
+
+### ✅ `POST /supervisor/conversations/:conversationId/reply` (JWT + SUPERVISOR)
+Envía un mensaje manual al usuario mientras dura el control manual.
+```json
+{ "message": "Dale, te tomo el pedido yo directamente." }
+```
+
+### ✅ `POST /supervisor/conversations/:conversationId/notes` (JWT + SUPERVISOR)
+Nota interna sobre la conversación — nunca se envía al usuario ni aparece
+entre los `messages`. Se incluye como `internalNotes` en la respuesta de
+`GET /supervisor/conversations/:id` (no hay endpoint `GET` separado).
+```json
+{ "content": "Cliente pidió que lo llamen, no sigue por WhatsApp." }
+```
 
 ---
 
