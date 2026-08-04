@@ -1,24 +1,66 @@
 import { Injectable, NotFoundException, ConflictException, Logger } from '@nestjs/common';
+import {
+  IsBoolean,
+  IsEmail,
+  IsEnum,
+  IsOptional,
+  IsString,
+  MinLength,
+} from 'class-validator';
 import { PrismaService } from '../database/prisma.service';
 import { AuthService } from '../auth/auth.service';
 import { EmployeeRole } from '@prisma/client';
 
-export interface CreateEmployeeDto {
+export class CreateEmployeeDto {
+  @IsString()
   phone: string;
+
+  @IsEmail()
   email: string;
+
+  @IsString()
   name: string;
+
+  @IsString()
+  @MinLength(6)
   password: string;
+
+  @IsOptional()
+  @IsEnum(EmployeeRole)
   role?: EmployeeRole;
+
+  @IsString()
   sectorId: string;
 }
 
-export interface UpdateEmployeeDto {
+export class UpdateEmployeeDto {
+  @IsOptional()
+  @IsString()
   phone?: string;
+
+  @IsOptional()
+  @IsEmail()
   email?: string;
+
+  @IsOptional()
+  @IsString()
   name?: string;
+
+  @IsOptional()
+  @IsString()
+  @MinLength(6)
   password?: string;
+
+  @IsOptional()
+  @IsEnum(EmployeeRole)
   role?: EmployeeRole;
+
+  @IsOptional()
+  @IsString()
   sectorId?: string;
+
+  @IsOptional()
+  @IsBoolean()
   isActive?: boolean;
 }
 
