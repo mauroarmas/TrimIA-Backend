@@ -20,6 +20,11 @@ export interface ConversationTurn {
   content: string;
 }
 
+export interface ConversationTurn {
+  role: 'USER' | 'ASSISTANT';
+  content: string;
+}
+
 @Injectable()
 export class ConversationsService {
   constructor(
