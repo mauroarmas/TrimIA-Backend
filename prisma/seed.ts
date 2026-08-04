@@ -38,10 +38,9 @@ async function main() {
   const [ventas, cobranzas, admin, logistica, deposito] = sectors;
   console.log(`  ✅ ${sectors.length} sectores creados`);
 
-  // ── Empleados ─────────────────────────────────────────────
-  // Contraseña por defecto para dev: "trimia2026"
-  const defaultPassword = await bcrypt.hash('trimia2026', 10);
-
+  // Contraseña por defecto para dev: se puede overridear con SEED_DEFAULT_PASSWORD.
+  const plainPassword = process.env.SEED_DEFAULT_PASSWORD ?? 'trimia2026';
+  const defaultPassword = await bcrypt.hash(plainPassword, 10);
   const employees = [
     {
       phone: '5491100001111',
