@@ -27,9 +27,8 @@
             },
             {
               "name": "x-n8n-secret",
-              "value": "trimia-app-n8n"
+              "value": "={{ $env.N8N_WEBHOOK_SECRET }}"
             }
-          ]
         },
         "sendBody": true,
         "bodyParameters": {
