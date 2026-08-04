@@ -77,14 +77,14 @@ export class MessageProcessor extends WorkerHost {
         );
       }
 
+      await this.sender.send(externalId, response, channel);
+
       await this.conversations.addMessage(
         conversationId,
         'ASSISTANT',
         response,
         result.agentType ?? undefined,
       );
-      await this.sender.send(externalId, response, channel);
-
       this.logger.log(`Response sent to ${externalId}`);
     } catch (err) {
       // Cualquier fallo (Gemini, Chroma, DB) no debe dejar al usuario sin
