@@ -15,6 +15,7 @@ enum Channel {
 enum ConvStatus {
   ACTIVE
   WAITING_HUMAN
+  HUMAN_HANDLING // supervisor tomó control del chat (Sprint 3)
   CLOSED
 }
 
@@ -25,6 +26,51 @@ enum AgentType {
   LOGISTICS
   DEPOSITS
   ADMIN
+}
+
+enum EmployeeRole {
+  EMPLEADO
+  SUPERVISOR
+}
+
+enum EscalationStatus {
+  PENDING
+  RESOLVED
+}
+
+// Sector de la empresa. Gatea qué módulos del panel ve cada empleado.
+model Sector {
+  id        String     @id @default(uuid())
+  name      String     @unique // Ventas, Cobranzas, Administración, Logística, Depósito
+  agentType AgentType? // agente principal asociado al sector (para queries)
+  createdAt DateTime   @default(now())
+
+  employees Employee[]
+}
+
+// Empleado/supervisor autorizado. Determina userType al recibir un mensaje.
+model Employee {
+  id        String       @id @default(uuid())
+  phone     String       @unique // número WhatsApp normalizado
+  email     String       @unique
+  name      String
+  password  String       // hash bcrypt
+  role      EmployeeRole @default(EMPLEADO)
+  isActive  Boolean      @default(true)
+  sectorId  String
+  sector    Sector       @relation(fields: [sectorId], references: [id])
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  delegatedEscalations Escalation[]   @relation("EscalationDelegatedTo")
+  delegationsMade      Escalation[]   @relation("EscalationDelegatedBy")
+  resolvedEscalations  Escalation[]   @relation("EscalationResolvedBy")
+  handledConversations Conversation[] @relation("ConversationHandledBy")
+  internalNotes        InternalNote[] @relation("InternalNoteAuthor")
+
+  @@index([phone])
+  @@index([email])
+  @@index([sectorId])
 }
 
 enum MessageRole {
@@ -57,9 +103,15 @@ model Conversation {
   createdAt     DateTime   @default(now())
   updatedAt  DateTime   @updatedAt
 
-  messages   Message[]
-  tokenUsage TokenUsage[]
-  events     OrchestrationEvent[]
+  handledById String? // supervisor con control manual (Sprint 3, status=HUMAN_HANDLING)
+  handledBy   Employee? @relation("ConversationHandledBy", fields: [handledById], references: [id])
+  handledAt   DateTime? // desde cuándo tiene el control
+
+  messages      Message[]
+  tokenUsage    TokenUsage[]
+  events        OrchestrationEvent[]
+  escalations   Escalation[]
+  internalNotes InternalNote[]
 
   @@index([externalId])
   @@index([status])
@@ -78,11 +130,59 @@ model Message {
   @@index([conversationId, createdAt])
 }
 
-// NOTA: el checkpointer de LangGraph (interrupt/resume) está desactivado. Cuando se
-// reactive en Fase 5 (flujo de venta financiada / human-in-the-loop), su PostgresSaver
-// recrea solo sus tablas (checkpoints, checkpoint_writes, checkpoint_blobs,
-// checkpoint_migrations) vía .setup(). No las gestiona Prisma. Usará conversationId
-// como thread_id.
+// Caso pendiente creado cuando un agente deriva por baja confianza (Sprint 3).
+// PENDING → RESOLVED es la única transición; no se reabre. Solo puede existir
+// una Escalation PENDING por conversación a la vez (regla de aplicación en
+// EscalationsService, no constraint de DB — ver specs/001-human-in-the-loop/data-model.md).
+model Escalation {
+  id             String       @id @default(uuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+  reason         String
+  status         EscalationStatus @default(PENDING)
+
+  delegatedToId String?
+  delegatedTo   Employee? @relation("EscalationDelegatedTo", fields: [delegatedToId], references: [id])
+  delegatedById String?
+  delegatedBy   Employee? @relation("EscalationDelegatedBy", fields: [delegatedById], references: [id])
+  delegatedAt   DateTime?
+
+  resolvedById String?
+  resolvedBy   Employee? @relation("EscalationResolvedBy", fields: [resolvedById], references: [id])
+  resolution   String?
+  resolvedAt   DateTime?
+
+  createdAt DateTime @default(now())
+
+  @@index([conversationId])
+  @@index([status])
+  @@index([createdAt])
+}
+
+// Comentario interno sobre una conversación, visible solo para supervisores/
+// empleados con acceso al panel. Nunca se envía al usuario ni se mezcla con
+// Message (Sprint 3, FR-012).
+model InternalNote {
+  id             String       @id @default(uuid())
+  conversationId String
+  conversation   Conversation @relation(fields: [conversationId], references: [id])
+  authorId       String
+  author         Employee     @relation("InternalNoteAuthor", fields: [authorId], references: [id])
+  content        String
+  createdAt      DateTime     @default(now())
+
+  @@index([conversationId, createdAt])
+}
+
+// NOTA: el checkpointer de LangGraph (interrupt/resume) sigue desactivado. El
+// human-in-the-loop de Sprint 3 (Escalation + HUMAN_HANDLING) se resolvió SIN
+// él: la pausa ocurre entre invocaciones del grafo (message.processor.ts no
+// invoca el orquestador si status != ACTIVE), no a mitad de una — ver
+// specs/001-human-in-the-loop/research.md §1. El checkpointer queda reservado
+// para cuando haga falta pausar *dentro* de una sola ejecución del grafo (ej.
+// venta financiada, RF-13); su PostgresSaver recrea solo sus tablas
+// (checkpoints, checkpoint_writes, checkpoint_blobs, checkpoint_migrations)
+// vía .setup(). No las gestiona Prisma. Usará conversationId como thread_id.
 
 model TokenUsage {
   id             String        @id @default(uuid())
