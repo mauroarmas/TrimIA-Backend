@@ -15,6 +15,9 @@ import { ConversationsModule } from './conversations/conversations.module';
 import { MessagingModule } from './messaging/messaging.module';
 import { QueueModule } from './queue/queue.module';
 import { SupervisorModule } from './supervisor/supervisor.module';
+import { AuthModule } from './auth/auth.module';
+import { EmployeesModule } from './employees/employees.module';
+import { EscalationsModule } from './escalations/escalations.module';
 import { ConfigService } from '@nestjs/config';
 
 @Module({
@@ -59,6 +62,9 @@ import { ConfigService } from '@nestjs/config';
     MessagingModule,
     QueueModule,
     SupervisorModule,
+    AuthModule,
+    EmployeesModule,
+    EscalationsModule,
   ],
   providers: [
     {

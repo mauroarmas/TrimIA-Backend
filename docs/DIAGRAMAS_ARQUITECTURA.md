@@ -333,59 +333,6 @@ Cada agente tiene variantes:
   ├─ allowedFor: solo EMPLEADO
   └─ Escalada: NO (sin herramientas, solo RAG)
 ```
-
----
-
-## 6. Estado Actual de Fases
-
-```
-Fase 1: ✅ COMPLETA
-├─ NestJS + Prisma + Docker + schema inicial
-└─ Fecha: 2026-04-XX
-
-Fase 2: ✅ COMPLETA
-├─ Webhook n8n + Guard + BullMQ (encolado)
-└─ Fecha: 2026-05-XX
-
-Fase 3: ✅ COMPLETA
-├─ LangGraph.js + Gemini
-├─ Orquestador + 5 agentes stub
-├─ classify_intent (trivial)
-└─ Fecha: 2026-05-XX
-
-Fase 3.5: ✅ COMPLETA
-├─ Logging: OrchestrationEvent + TokenUsage
-└─ Fecha: 2026-05-XX
-
-Fase 3.6: ✅ COMPLETA
-├─ Ruteo sticky + scope_check + handoff + greeting intent
-└─ Fecha: 2026-06-03
-
-Fase 4: ✅ COMPLETA (2026-06-06)
-├─ RAG: ChromaDB + embeddings (gemini-embedding-001)
-├─ Los 5 agentes con patrón común (rag-agent.graph.ts)
-├─ Memoria conversacional (Option A: Message table)
-├─ Confidencialidad (audience/userType filtrado)
-├─ Chunking mejorado (párrafo/oración/chars)
-└─ Hardening: guards, timeouts, retry, thresholds
-
-Fase 5: ⏳ PENDIENTE (Integraciones y Flujos)
-├─ Mocks de Riesgo Online / Paljet / CRM
-├─ Flujo de venta financiada (SALES→ADMIN→supervisor)
-├─ Checkpointer: interrupt/resume (human-in-the-loop)
-├─ Confirmación de pagos (COLLECTIONS→supervisor)
-├─ Panel web (E4): frontend React completo
-│  └─ Chat web, Carga docs, Entrevistas, Capacitación, Gobernanza
-└─ Fecha estimada: 2026-07-XX
-
-Fase 6: ⏳ PENDIENTE (Producción)
-├─ GCP deployment
-├─ WhatsApp Business real (token permanente)
-└─ Fecha estimada: 2026-08-XX
-```
-
----
-
 ## Notas Técnicas
 
 ### Gotchas (ya resueltos, NO re-debuggear)

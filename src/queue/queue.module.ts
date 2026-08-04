@@ -3,6 +3,7 @@ import { BullModule } from '@nestjs/bullmq';
 import { ConversationsModule } from '../conversations/conversations.module';
 import { MessagingModule } from '../messaging/messaging.module';
 import { OrchestratorModule } from '../ai/orchestrator/orchestrator.module';
+import { EmployeesModule } from '../employees/employees.module';
 import { MessageProcessor } from './processors/message.processor';
 
 @Module({
@@ -11,6 +12,7 @@ import { MessageProcessor } from './processors/message.processor';
     ConversationsModule,
     MessagingModule,
     OrchestratorModule,
+    EmployeesModule,
   ],
   providers: [MessageProcessor],
 })
