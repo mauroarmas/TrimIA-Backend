@@ -53,16 +53,15 @@ export class ConversationsService {
       where: {
         conversationId,
         role: { in: ['USER', 'ASSISTANT'] },
-        // Excluir el mensaje actual (el último USER todavía no tiene respuesta)
-        // — el processor lo agrega después de invocar el orquestador.
-        // Solo traemos los turnos previos completos (pares USER+ASSISTANT).
       },
       orderBy: { createdAt: 'desc' },
-      take: limit,
+      take: limit + 1,
       select: { role: true, content: true },
     });
-    // Invertir para presentar al LLM en orden cronológico.
-    return rows.reverse() as ConversationTurn[];
+
+    // Si el último mensaje es USER, es el mensaje actual ya persistido por MessagingService → excluirlo del history.
+    const trimmed = rows[0]?.role === 'USER' ? rows.slice(1) : rows;
+    return trimmed.reverse() as ConversationTurn[];
   }
 
   /** Fija el agente sticky de la conversación tras resolver un mensaje. */
