@@ -9,7 +9,8 @@ import {
   UseGuards,
   Req,
 } from '@nestjs/common';
-import { EmployeesService, CreateEmployeeDto, UpdateEmployeeDto } from './employees.service';
+import { EmployeesService } from './employees.service';
+import { CreateEmployeeDto, UpdateEmployeeDto } from './dto/employee.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard, Roles } from '../auth/guards/roles.guard';
 
