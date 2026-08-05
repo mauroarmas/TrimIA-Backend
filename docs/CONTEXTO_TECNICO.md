@@ -271,6 +271,42 @@ detalle completo de esta decisión.
 `InternalNote` es aparte: comentarios de supervisores/empleados sobre una
 conversación, nunca enviados al usuario ni mezclados con `Message`.
 
+### 5.7.1 Quirk de Meta: el `to` saliente en modo sandbox NO es la forma canónica
+
+⚠️ **Solo aplica en desarrollo, con el modo de prueba de WhatsApp (hasta 5
+destinatarios).** Los workflows de n8n `EnvioMensaje-B` y
+`EnvioMensajePlantilla-B2` (`n8n/workflows/`) transforman el teléfono antes de
+mandarlo a la API de Meta:
+
+```js
+$json.body.phone.replace(/^549(\d{4})(\d{6})$/, '54$115$2')
+```
+
+`5493865505362` (canónico, el que usa TODO el resto del sistema) se convierte
+en `54386515505362` — reinserta el `15` local y saca el `9` de móvil. Sin este
+parche, Meta devuelve `(#131030) Recipient phone number not in allowed list`
+con **cualquier** otro formato probado (con `9`, sin `9`), aunque el número
+esté correctamente cargado y verificado en la lista de destinatarios de
+prueba.
+
+Causa probable: al cargar un número a mano en el modo sandbox, Meta lo indexa
+internamente con la forma en que se escribió (con `15`), y el chequeo de
+"recipient in allowed list" hace match contra esa forma exacta, no contra el
+número normalizado. **No es un requisito real de la API en producción** — con
+un número verificado por el flujo normal de WhatsApp (opt-in), no debería
+hacer falta.
+
+El regex asume área de 4 dígitos (`3865`), que es la de los dos números de
+prueba actuales (`DEV_CLIENT_PHONE`, `DEV_COLLECTOR_PHONE`). Con un número de
+otra provincia (área de 2 o 3 dígitos) no haría match y quedaría sin modificar
+— hay que ajustar el regex si se agregan números de prueba con otra área.
+
+**Al pasar a producción (Sprint 8, WA Business real): sacar este parche.**
+`normalizePhone()` (`src/common/phone.ts`) y la forma canónica `549...` NO se
+tocaron — siguen siendo correctas para todo lo demás (storage, matching,
+webhooks entrantes) y deberían ser también lo correcto para el `to` saliente
+una vez fuera del sandbox.
+
 ---
 
 ## 6. Modelo de datos (Prisma — `prisma/schema.prisma`)
