@@ -1,5 +1,6 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
+import { normalizePhone } from '../common/phone';
 
 export interface CreateClientDto {
   name: string;
@@ -12,14 +13,18 @@ export interface CreateClientDto {
 export class ClientsService {
   constructor(private readonly prisma: PrismaService) {}
 
+  // El teléfono se normaliza al guardar y al buscar: es la clave por la que
+  // se cruza el Cliente con el externalId que manda Meta (ver common/phone.ts).
   async getByPhone(phone: string) {
-    return this.prisma.client.findUnique({ where: { phone } });
+    return this.prisma.client.findUnique({
+      where: { phone: normalizePhone(phone) },
+    });
   }
 
   async create(dto: CreateClientDto) {
-    const existing = await this.prisma.client.findUnique({
-      where: { phone: dto.phone },
-    });
+    const phone = normalizePhone(dto.phone);
+
+    const existing = await this.prisma.client.findUnique({ where: { phone } });
     if (existing) {
       throw new ConflictException('Ya existe un cliente con ese teléfono');
     }
@@ -27,7 +32,7 @@ export class ClientsService {
     return this.prisma.client.create({
       data: {
         name: dto.name,
-        phone: dto.phone,
+        phone,
         dni: dto.dni,
         assignedCollectorId: dto.assignedCollectorId,
       },
