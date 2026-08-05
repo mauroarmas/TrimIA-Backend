@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
-import { ProofRejectionReason } from '@prisma/client';
+import { Channel, ProofRejectionReason } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
 import { ConversationsService } from '../conversations/conversations.service';
 import { ClientsService } from '../clients/clients.service';
@@ -26,6 +26,14 @@ const REJECTION_MESSAGES: Record<ProofRejectionReason, string> = {
 };
 
 const ACCEPTED_MESSAGE = '¡Recibido, gracias! 🙌';
+
+// Acuse neutral: NO confirma ni rechaza el pago (Principio III — la IA nunca
+// decide sola sobre un comprobante), solo avisa que llegó y que un humano lo
+// va a revisar. Sin esto el cliente manda la foto y no recibe nada hasta que
+// el cobrador lo acepte o rechace desde el panel, lo que en la práctica podía
+// tardar horas.
+const PROOF_RECEIVED_MESSAGE =
+  '📄 Recibimos tu comprobante, gracias. Lo estamos revisando y te confirmamos en breve.';
 
 const proofInclude = {
   message: true,
@@ -98,7 +106,47 @@ export class PaymentProofsService {
       { attempts: 3, backoff: { type: 'exponential', delay: 2000 } },
     );
 
+    // Ninguno de los dos avisos debe tirar abajo el webhook si el envío por
+    // WhatsApp falla (número fuera de la ventana de sesión, template no
+    // aprobado, etc.) — el comprobante ya quedó guardado y en cola para
+    // Gemini, que es lo que realmente no puede perderse.
+    await this.notifyClientReceived(params.messageId).catch((err) =>
+      this.logger.error(`No se pudo acusar recibo a ${params.phone}: ${err}`),
+    );
+    if (client.assignedCollectorId) {
+      await this.notifyCollectorNewProof(
+        client.assignedCollectorId,
+        client.name,
+      ).catch((err) =>
+        this.logger.error(
+          `No se pudo notificar al cobrador de ${client.name}: ${err}`,
+        ),
+      );
+    }
+
     return proof;
+  }
+
+  private async notifyClientReceived(messageId: string) {
+    const message = await this.prisma.message.findUnique({
+      where: { id: messageId },
+      select: { conversationId: true },
+    });
+    if (!message) return;
+    await this.notifyClient(
+      { message: { conversationId: message.conversationId } },
+      PROOF_RECEIVED_MESSAGE,
+    );
+  }
+
+  private async notifyCollectorNewProof(collectorId: string, clientName: string) {
+    const collector = await this.employees.findById(collectorId).catch(() => null);
+    if (!collector?.isActive) return;
+    await this.sender.send(
+      collector.phone,
+      `📄 Nuevo comprobante de ${clientName} para revisar en el panel de Cobranzas.`,
+      Channel.WHATSAPP,
+    );
   }
 
   private async findOrThrow(id: string) {

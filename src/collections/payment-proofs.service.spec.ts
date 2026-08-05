@@ -23,6 +23,7 @@ describe('PaymentProofsService', () => {
       findFirst: jest.Mock;
     };
     quota: { update: jest.Mock; findFirst: jest.Mock };
+    message: { findUnique: jest.Mock };
   };
   let conversations: {
     findById: jest.Mock;
@@ -65,6 +66,7 @@ describe('PaymentProofsService', () => {
         findFirst: jest.fn().mockResolvedValue(null),
       },
       quota: { update: jest.fn(), findFirst: jest.fn() },
+      message: { findUnique: jest.fn().mockResolvedValue(null) },
     };
     conversations = {
       findById: jest.fn().mockResolvedValue(conversation),
@@ -318,6 +320,128 @@ describe('PaymentProofsService', () => {
 
       expect(prisma.paymentProof.create).not.toHaveBeenCalled();
       expect(result).toBeNull();
+    });
+
+    it('acusa recibo al cliente sin decidir sobre el pago (Principio III)', async () => {
+      clients.getByPhone.mockResolvedValue({ id: 'cust-1', name: 'Comercio Don Pedro' });
+      prisma.quota.findFirst.mockResolvedValue({ id: 'inst-1' });
+      prisma.paymentProof.create.mockResolvedValue({ id: 'proof-1' });
+      prisma.message.findUnique.mockResolvedValue({ conversationId: 'conv-1' });
+
+      await service.receiveFromWhatsapp({
+        phone: '5491100000000',
+        messageId: 'msg-1',
+        imagePath: 'uuid.jpg',
+      });
+
+      expect(sender.send).toHaveBeenCalledWith(
+        '5491100000000',
+        expect.stringContaining('Recibimos tu comprobante'),
+        'WHATSAPP',
+      );
+      const [, ackText] = sender.send.mock.calls[0];
+      expect(ackText).not.toMatch(/aceptad|rechazad/i);
+    });
+
+    it('notifica al cobrador asignado que hay un comprobante nuevo', async () => {
+      clients.getByPhone.mockResolvedValue({
+        id: 'cust-1',
+        name: 'Comercio Don Pedro',
+        assignedCollectorId: 'collector-1',
+      });
+      prisma.quota.findFirst.mockResolvedValue({ id: 'inst-1' });
+      prisma.paymentProof.create.mockResolvedValue({ id: 'proof-1' });
+      prisma.message.findUnique.mockResolvedValue({ conversationId: 'conv-1' });
+      employees.findById.mockResolvedValue({
+        id: 'collector-1',
+        phone: '5493865570995',
+        isActive: true,
+      });
+
+      await service.receiveFromWhatsapp({
+        phone: '5491100000000',
+        messageId: 'msg-1',
+        imagePath: 'uuid.jpg',
+      });
+
+      expect(employees.findById).toHaveBeenCalledWith('collector-1');
+      expect(sender.send).toHaveBeenCalledWith(
+        '5493865570995',
+        expect.stringContaining('Comercio Don Pedro'),
+        'WHATSAPP',
+      );
+    });
+
+    it('no notifica a nadie si el cliente no tiene cobrador asignado', async () => {
+      clients.getByPhone.mockResolvedValue({
+        id: 'cust-1',
+        name: 'Comercio Don Pedro',
+        assignedCollectorId: null,
+      });
+      prisma.quota.findFirst.mockResolvedValue({ id: 'inst-1' });
+      prisma.paymentProof.create.mockResolvedValue({ id: 'proof-1' });
+      prisma.message.findUnique.mockResolvedValue({ conversationId: 'conv-1' });
+
+      await service.receiveFromWhatsapp({
+        phone: '5491100000000',
+        messageId: 'msg-1',
+        imagePath: 'uuid.jpg',
+      });
+
+      expect(employees.findById).not.toHaveBeenCalled();
+      expect(sender.send).toHaveBeenCalledTimes(1); // solo el acuse al cliente
+    });
+
+    it('no notifica si el cobrador asignado está inactivo', async () => {
+      clients.getByPhone.mockResolvedValue({
+        id: 'cust-1',
+        name: 'Comercio Don Pedro',
+        assignedCollectorId: 'collector-1',
+      });
+      prisma.quota.findFirst.mockResolvedValue({ id: 'inst-1' });
+      prisma.paymentProof.create.mockResolvedValue({ id: 'proof-1' });
+      prisma.message.findUnique.mockResolvedValue({ conversationId: 'conv-1' });
+      employees.findById.mockResolvedValue({
+        id: 'collector-1',
+        phone: '5493865570995',
+        isActive: false,
+      });
+
+      await service.receiveFromWhatsapp({
+        phone: '5491100000000',
+        messageId: 'msg-1',
+        imagePath: 'uuid.jpg',
+      });
+
+      expect(sender.send).toHaveBeenCalledTimes(1); // solo el acuse al cliente
+    });
+
+    // Ni el acuse ni el aviso al cobrador pueden tirar abajo el webhook: el
+    // comprobante ya quedó guardado y en cola para Gemini antes de intentar
+    // notificar por WhatsApp.
+    it('sigue devolviendo el comprobante creado si el envío de WhatsApp falla', async () => {
+      clients.getByPhone.mockResolvedValue({
+        id: 'cust-1',
+        name: 'Comercio Don Pedro',
+        assignedCollectorId: 'collector-1',
+      });
+      prisma.quota.findFirst.mockResolvedValue({ id: 'inst-1' });
+      prisma.paymentProof.create.mockResolvedValue({ id: 'proof-1' });
+      prisma.message.findUnique.mockResolvedValue({ conversationId: 'conv-1' });
+      employees.findById.mockResolvedValue({
+        id: 'collector-1',
+        phone: '5493865570995',
+        isActive: true,
+      });
+      sender.send.mockRejectedValue(new Error('Recipient phone number not in allowed list'));
+
+      const result = await service.receiveFromWhatsapp({
+        phone: '5491100000000',
+        messageId: 'msg-1',
+        imagePath: 'uuid.jpg',
+      });
+
+      expect(result?.id).toBe('proof-1');
     });
   });
 
