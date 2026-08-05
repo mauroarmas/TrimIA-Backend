@@ -176,9 +176,23 @@ export class ConversationsService {
   /**
    * Devuelve el control manual al agente de IA (FR-008). Solo puede
    * liberarla quien figura en `handledById` (evita que un tercero corte la
-   * intervención de otro supervisor).
+   * intervención de otro supervisor) — salvo que quien la libera sea
+   * `SUPERVISOR` (`asSupervisor=true`), que puede destrabar cualquier caso.
+   *
+   * Ese bypass hace falta porque `takeover()` se puede disparar desde dos
+   * lugares con distinto nivel de acceso: este mismo endpoint (SUPERVISOR) y
+   * `PaymentProofsService.markManualHandling()` ("voy a manejarlo yo", Sprint
+   * 4), que no exige rol SUPERVISOR — cualquier EMPLEADO puede tomar una
+   * conversación por esa vía. Sin el bypass, ese EMPLEADO queda sin ninguna
+   * salida legítima para liberarla (el endpoint de liberación es
+   * SUPERVISOR-only, y un supervisor distinto era rechazado por no coincidir
+   * el `handledById`) — quedaba en HUMAN_HANDLING para siempre.
    */
-  async release(conversationId: string, employeeId: string) {
+  async release(
+    conversationId: string,
+    employeeId: string,
+    asSupervisor = false,
+  ) {
     const conversation = await this.prisma.conversation.findUnique({
       where: { id: conversationId },
     });
@@ -190,7 +204,7 @@ export class ConversationsService {
         'La conversación no está en control manual',
       );
     }
-    if (conversation.handledById !== employeeId) {
+    if (!asSupervisor && conversation.handledById !== employeeId) {
       throw new ForbiddenException(
         'No tenés el control de esta conversación',
       );

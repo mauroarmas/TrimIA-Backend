@@ -144,7 +144,10 @@ export class SupervisorController {
   @Roles('SUPERVISOR')
   @ApiOperation({ summary: 'Devuelve el control manual de una conversación' })
   releaseConversation(@Param('id') id: string, @Req() req: any) {
-    return this.conversations.release(id, req.user.id);
+    // Un SUPERVISOR puede destrabar cualquier conversación, aunque la haya
+    // tomado un EMPLEADO por otra vía (markManualHandling, Sprint 4) — ver
+    // el comentario en ConversationsService.release().
+    return this.conversations.release(id, req.user.id, true);
   }
 
   /** POST /supervisor/conversations/:id/reply — mensaje manual durante el control. */

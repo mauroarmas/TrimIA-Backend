@@ -218,6 +218,47 @@ describe('ConversationsService — takeover/release/replyManually', () => {
         ConflictException,
       );
     });
+
+    // Bug real: un EMPLEADO toma una conversación vía markManualHandling
+    // ("voy a manejarlo yo", Sprint 4), que no exige SUPERVISOR. Sin este
+    // bypass, esa conversación queda en HUMAN_HANDLING para siempre — el
+    // endpoint de liberación es SUPERVISOR-only, y un supervisor distinto al
+    // que la tomó era rechazado por no coincidir el handledById.
+    it('con asSupervisor=true, libera aunque quien la tomó sea otra persona', async () => {
+      prisma.conversation.findUnique.mockResolvedValue({
+        id: 'conv-1',
+        status: 'HUMAN_HANDLING',
+        handledById: 'empleado-que-la-tomo',
+      });
+      prisma.conversation.update.mockResolvedValue({
+        id: 'conv-1',
+        status: 'ACTIVE',
+        handledById: null,
+      });
+
+      const result = await service.release('conv-1', 'supervisor-1', true);
+
+      expect(prisma.conversation.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'conv-1' },
+          data: expect.objectContaining({ status: 'ACTIVE', handledById: null }),
+        }),
+      );
+      expect(result.status).toBe('ACTIVE');
+    });
+
+    it('sin asSupervisor, sigue rechazando a quien no la tomó (default seguro)', async () => {
+      prisma.conversation.findUnique.mockResolvedValue({
+        id: 'conv-1',
+        status: 'HUMAN_HANDLING',
+        handledById: 'empleado-que-la-tomo',
+      });
+
+      await expect(
+        service.release('conv-1', 'otro-empleado'),
+      ).rejects.toThrow(ForbiddenException);
+      expect(prisma.conversation.update).not.toHaveBeenCalled();
+    });
   });
 
   describe('replyManually', () => {
