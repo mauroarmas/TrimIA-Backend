@@ -22,7 +22,15 @@ export class MessagingService {
   ) { }
 
   private async prepareConversation(dto: WebhookMessageDto, channel: Channel) {
-    const conversation = await this.conversations.getOrCreate(dto.phone, channel);
+    // Si el teléfono corresponde a un cliente dado de alta, la conversación
+    // queda vinculada a él (FK). Si todavía no existe, se resuelve en el
+    // próximo mensaje — ver ConversationsService.getOrCreate().
+    const client = await this.clients.getByPhone(dto.phone);
+    const conversation = await this.conversations.getOrCreate(
+      dto.phone,
+      channel,
+      client?.id,
+    );
     const message = await this.conversations.addMessage(
       conversation.id,
       'USER',

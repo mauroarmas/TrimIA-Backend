@@ -10,7 +10,12 @@ import { OrchestrationLogger } from '../ai/orchestrator/orchestration-logger.ser
 describe('ConversationsService — takeover/release/replyManually', () => {
   let service: ConversationsService;
   let prisma: {
-    conversation: { findUnique: jest.Mock; update: jest.Mock };
+    conversation: {
+      findUnique: jest.Mock;
+      findFirst: jest.Mock;
+      create: jest.Mock;
+      update: jest.Mock;
+    };
     message: { create: jest.Mock };
     internalNote: { create: jest.Mock; findMany: jest.Mock };
   };
@@ -19,7 +24,12 @@ describe('ConversationsService — takeover/release/replyManually', () => {
 
   beforeEach(() => {
     prisma = {
-      conversation: { findUnique: jest.fn(), update: jest.fn() },
+      conversation: {
+        findUnique: jest.fn(),
+        findFirst: jest.fn(),
+        create: jest.fn(),
+        update: jest.fn(),
+      },
       message: { create: jest.fn() },
       internalNote: { create: jest.fn(), findMany: jest.fn() },
     };
@@ -31,6 +41,63 @@ describe('ConversationsService — takeover/release/replyManually', () => {
       sender as unknown as WhatsappSenderService,
       logger as unknown as OrchestrationLogger,
     );
+  });
+
+  // FK Conversation → Client: el vínculo con el cliente deja de resolverse
+  // cruzando `externalId == phone` en cada consulta.
+  describe('getOrCreate — vínculo con Client', () => {
+    it('crea la conversación con el clientId recibido', async () => {
+      prisma.conversation.findFirst.mockResolvedValue(null);
+      prisma.conversation.create.mockResolvedValue({ id: 'conv-1' });
+
+      await service.getOrCreate('549123', 'WHATSAPP', 'client-1');
+
+      expect(prisma.conversation.create).toHaveBeenCalledWith({
+        data: { externalId: '549123', channel: 'WHATSAPP', clientId: 'client-1' },
+      });
+    });
+
+    it('retro-completa el clientId de una conversación abierta que no lo tenía', async () => {
+      prisma.conversation.findFirst.mockResolvedValue({
+        id: 'conv-1',
+        clientId: null,
+      });
+      prisma.conversation.update.mockResolvedValue({
+        id: 'conv-1',
+        clientId: 'client-1',
+      });
+
+      const result = await service.getOrCreate('549123', 'WHATSAPP', 'client-1');
+
+      expect(prisma.conversation.update).toHaveBeenCalledWith({
+        where: { id: 'conv-1' },
+        data: { clientId: 'client-1' },
+      });
+      expect(result.clientId).toBe('client-1');
+    });
+
+    it('no reasigna el cliente si la conversación ya tiene uno', async () => {
+      prisma.conversation.findFirst.mockResolvedValue({
+        id: 'conv-1',
+        clientId: 'client-original',
+      });
+
+      const result = await service.getOrCreate('549123', 'WHATSAPP', 'client-otro');
+
+      expect(prisma.conversation.update).not.toHaveBeenCalled();
+      expect(result.clientId).toBe('client-original');
+    });
+
+    it('sin clientId (contacto desconocido) crea la conversación igual', async () => {
+      prisma.conversation.findFirst.mockResolvedValue(null);
+      prisma.conversation.create.mockResolvedValue({ id: 'conv-1' });
+
+      await service.getOrCreate('549999', 'WHATSAPP', undefined);
+
+      expect(prisma.conversation.create).toHaveBeenCalledWith({
+        data: { externalId: '549999', channel: 'WHATSAPP', clientId: undefined },
+      });
+    });
   });
 
   describe('takeover', () => {

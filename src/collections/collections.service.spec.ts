@@ -89,6 +89,30 @@ describe('CollectionsService', () => {
       expect(Array.isArray(result)).toBe(true);
     });
 
+    it('filtra por la FK Conversation.clientId, no por el teléfono del cliente', async () => {
+      prisma.client.findUnique.mockResolvedValue({
+        id: 'c1',
+        phone: '5491100000000',
+        assignedCollectorId: 'cobrador-1',
+      });
+      prisma.message.findMany.mockResolvedValue([]);
+      prisma.internalNote.findMany.mockResolvedValue([]);
+      prisma.orchestrationEvent.findMany.mockResolvedValue([]);
+
+      await service.getClientHistory('c1', 'cobrador-1', false);
+
+      const expected = { conversation: { clientId: 'c1' } };
+      expect(prisma.message.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expected }),
+      );
+      expect(prisma.internalNote.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expected }),
+      );
+      expect(prisma.orchestrationEvent.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: expected }),
+      );
+    });
+
     it('devuelve timeline unificada de Message + InternalNote + OrchestrationEvent ordenados por createdAt', async () => {
       prisma.client.findUnique.mockResolvedValue({
         id: 'c1',

@@ -10,6 +10,7 @@ describe('MessagingService', () => {
   let service: MessagingService;
   let queue: { add: jest.Mock };
   let conversations: { getOrCreate: jest.Mock; addMessage: jest.Mock };
+  let clients: { getByPhone: jest.Mock };
   let media: { savePaymentProofImage: jest.Mock };
   let paymentProofs: { receiveFromWhatsapp: jest.Mock };
 
@@ -22,16 +23,49 @@ describe('MessagingService', () => {
       getOrCreate: jest.fn().mockResolvedValue(conversation),
       addMessage: jest.fn().mockResolvedValue(message),
     };
+    clients = { getByPhone: jest.fn().mockResolvedValue({ id: 'client-1' }) };
     media = { savePaymentProofImage: jest.fn().mockResolvedValue('uuid.jpg') };
     paymentProofs = { receiveFromWhatsapp: jest.fn() };
 
     service = new MessagingService(
       queue as unknown as Queue,
       conversations as unknown as ConversationsService,
-      {} as ClientsService,
+      clients as unknown as ClientsService,
       media as unknown as WhatsappMediaService,
       paymentProofs as unknown as PaymentProofsService,
     );
+  });
+
+  it('vincula la conversación al Client cuyo teléfono coincide', async () => {
+    await service.enqueue({
+      phone: '5491100000000',
+      message: 'Hola',
+      channel: Channel.WHATSAPP,
+    });
+
+    expect(clients.getByPhone).toHaveBeenCalledWith('5491100000000');
+    expect(conversations.getOrCreate).toHaveBeenCalledWith(
+      '5491100000000',
+      Channel.WHATSAPP,
+      'client-1',
+    );
+  });
+
+  it('con un teléfono desconocido, crea la conversación sin cliente', async () => {
+    clients.getByPhone.mockResolvedValue(null);
+
+    await service.enqueue({
+      phone: '5491199999999',
+      message: 'Hola',
+      channel: Channel.WHATSAPP,
+    });
+
+    expect(conversations.getOrCreate).toHaveBeenCalledWith(
+      '5491199999999',
+      Channel.WHATSAPP,
+      undefined,
+    );
+    expect(queue.add).toHaveBeenCalled();
   });
 
   it('con un mensaje de texto normal, encola process-message y no crea PaymentProof', async () => {

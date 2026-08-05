@@ -28,14 +28,35 @@ export class ConversationsService {
     private readonly orchestrationLogger: OrchestrationLogger,
   ) {}
 
-  async getOrCreate(externalId: string, channel: Channel): Promise<Conversation> {
+  /**
+   * Conversación abierta del contacto, o una nueva.
+   *
+   * `clientId` vincula la conversación con el Cliente ya dado de alta. Es
+   * opcional porque un desconocido puede escribir antes de existir en la DB;
+   * si se da de alta después, la FK se retro-completa en el siguiente mensaje
+   * en vez de quedar huérfana para siempre. Nunca se desasigna: si la
+   * conversación ya tiene cliente, gana el que está.
+   */
+  async getOrCreate(
+    externalId: string,
+    channel: Channel,
+    clientId?: string | null,
+  ): Promise<Conversation> {
     const existing = await this.prisma.conversation.findFirst({
       where: { externalId, channel, status: { not: 'CLOSED' } },
     });
-    if (existing) return existing;
+    if (existing) {
+      if (clientId && !existing.clientId) {
+        return this.prisma.conversation.update({
+          where: { id: existing.id },
+          data: { clientId },
+        });
+      }
+      return existing;
+    }
 
     return this.prisma.conversation.create({
-      data: { externalId, channel },
+      data: { externalId, channel, clientId: clientId ?? undefined },
     });
   }
 

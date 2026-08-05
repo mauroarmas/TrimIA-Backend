@@ -82,18 +82,23 @@ export class CollectionsService {
       );
     }
 
+    // Las tres tablas se filtran por la FK Conversation.clientId, no por
+    // `externalId == client.phone`: el cruce por teléfono se rompía si el
+    // cliente cambiaba de número y no cubría el canal WEB.
+    const conversationFilter = { conversation: { clientId } };
+
     const messages = await this.prisma.message.findMany({
-      where: { conversation: { externalId: client.phone } },
+      where: conversationFilter,
       orderBy: { createdAt: 'desc' },
     });
 
     const notes = await this.prisma.internalNote.findMany({
-      where: { conversation: { externalId: client.phone } },
+      where: conversationFilter,
       orderBy: { createdAt: 'desc' },
     });
 
     const events = await this.prisma.orchestrationEvent.findMany({
-      where: { conversation: { externalId: client.phone } },
+      where: conversationFilter,
       orderBy: { createdAt: 'desc' },
     });
 
