@@ -20,6 +20,7 @@ import { EmployeesModule } from './employees/employees.module';
 import { EscalationsModule } from './escalations/escalations.module';
 import { ClientsModule } from './clients/clients.module';
 import { CollectionsModule } from './collections/collections.module';
+import { DevToolsModule } from './dev-tools/dev-tools.module';
 import { ConfigService } from '@nestjs/config';
 
 @Module({
@@ -69,6 +70,7 @@ import { ConfigService } from '@nestjs/config';
     EscalationsModule,
     ClientsModule,
     CollectionsModule,
+    DevToolsModule,
   ],
   providers: [
     {
