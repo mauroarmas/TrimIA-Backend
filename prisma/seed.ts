@@ -51,11 +51,25 @@ async function main() {
       sectorId: ventas.id,
     },
     {
-      phone: '5491100002222',
+      // El cobrador es el ÚNICO empleado con teléfono real en desarrollo: es
+      // quien recibe por WhatsApp la notificación de un pago que no impactó
+      // (Sprint 4 — US3). Se toma de DEV_COLLECTOR_PHONE (en .env, que está
+      // gitignoreado) para no versionar un número personal.
+      phone: process.env.DEV_COLLECTOR_PHONE || '5491100002222',
       email: 'roberto.sosa@credimision.com',
       name: 'Roberto Sosa',
       role: EmployeeRole.EMPLEADO,
       sectorId: cobranzas.id,
+    },
+    {
+      // Cobradora Controladora: verifica el impacto bancario de los pagos
+      // ya aceptados (Sprint 4 — US3). isController convive con role=EMPLEADO.
+      phone: '5491100007777',
+      email: 'marisa.paz@credimision.com',
+      name: 'Marisa Paz',
+      role: EmployeeRole.EMPLEADO,
+      sectorId: cobranzas.id,
+      isController: true,
     },
     {
       phone: '5491100003333',
@@ -90,7 +104,9 @@ async function main() {
   for (const emp of employees) {
     await prisma.employee.upsert({
       where: { email: emp.email },
-      update: {},
+      // El teléfono SÍ se actualiza: si no, cambiar DEV_COLLECTOR_PHONE no
+      // tendría efecto una vez que el empleado ya existe.
+      update: { phone: emp.phone },
       create: {
         ...emp,
         password: defaultPassword,
@@ -98,6 +114,98 @@ async function main() {
     });
   }
   console.log(`  ✅ ${employees.length} empleados creados (pass: trimia2026)`);
+
+  // ── Venta financiada de ejemplo ───────────────────────────
+  // Recorre el modelo entero tal como lo hace el proceso real:
+  // Cliente → SolicitudCompra → evaluación crediticia → Financiación → Cuotas.
+  const [vendedora, cobrador, administrativa] = await Promise.all([
+    prisma.employee.findUnique({ where: { email: 'laura.gomez@credimision.com' } }),
+    prisma.employee.findUnique({ where: { email: 'roberto.sosa@credimision.com' } }),
+    prisma.employee.findUnique({
+      where: { email: 'graciela.medina@credimision.com' },
+    }),
+  ]);
+
+  // DEV_CLIENT_PHONE = el número cargado en Meta desde el que se prueban los
+  // flujos de WhatsApp. Colgarle la venta financiada de ejemplo permite
+  // recorrer el ciclo de cobranza completo desde ese teléfono.
+  const demoClientPhone = process.env.DEV_CLIENT_PHONE || '5491133334444';
+
+  const demoClient = await prisma.client.upsert({
+    where: { phone: demoClientPhone },
+    update: { name: 'Comercio Don Pedro', assignedCollectorId: cobrador?.id },
+    create: {
+      name: 'Comercio Don Pedro',
+      phone: demoClientPhone,
+      dni: '30111222',
+      assignedCollectorId: cobrador?.id,
+    },
+  });
+
+  const alreadySeeded = await prisma.purchaseRequest.findFirst({
+    where: { clientId: demoClient.id },
+  });
+
+  if (alreadySeeded) {
+    console.log('  ↪️  Venta financiada de ejemplo ya existente, se omite');
+  } else {
+    const request = await prisma.purchaseRequest.create({
+      data: {
+        clientId: demoClient.id,
+        productSummary: 'Heladera exhibidora 2 puertas — 480.000',
+        amount: 480000,
+        modality: 'FINANCED',
+        status: 'APPROVED',
+        reviewedById: vendedora?.id,
+        reviewedAt: new Date(),
+        reviewNote: 'Local verificado. Se aprueba plan de 4 cuotas semanales.',
+      },
+    });
+
+    await prisma.creditAssessment.create({
+      data: {
+        clientId: demoClient.id,
+        purchaseRequestId: request.id,
+        verdict: 'APPROVED',
+        reason:
+          'Sin deudas registradas en Riesgo Online. Antigüedad comercial > 2 años.',
+        source: 'RIESGO_ONLINE',
+        assessedById: administrativa?.id,
+      },
+    });
+
+    const financing = await prisma.financing.create({
+      data: {
+        purchaseRequestId: request.id,
+        totalAmount: 480000,
+        quotaCount: 4,
+        status: 'ACTIVE',
+        collectorId: cobrador?.id,
+      },
+    });
+
+    // Dos cuotas ya cobradas y dos por vencer. `clientId` se replica en cada
+    // cuota (denormalización deliberada — ver comentario en schema.prisma).
+    const today = new Date();
+    await prisma.quota.createMany({
+      data: [1, 2, 3, 4].map((number) => {
+        const dueDate = new Date(today);
+        dueDate.setDate(dueDate.getDate() + (number - 2) * 7);
+        return {
+          clientId: demoClient.id,
+          financingId: financing.id,
+          number,
+          amount: 120000,
+          dueDate,
+          status: number <= 2 ? ('PAID' as const) : ('PENDING' as const),
+        };
+      }),
+    });
+
+    console.log(
+      '  ✅ Venta financiada de ejemplo: solicitud + dictamen crediticio + 4 cuotas',
+    );
+  }
 
   // ── Conocimiento de prueba (para RAG) ─────────────────────
   const knowledgeDocs = [
@@ -188,22 +296,34 @@ async function main() {
     },
   ];
 
-  for (const doc of knowledgeDocs) {
-    await prisma.knowledgeDocument.upsert({
-      where: {
-        id: doc.title.toLowerCase().replace(/\s+/g, '-'), // deterministic but will fail on first run
-      },
-      update: {},
-      create: doc,
-    });
-  }
-  // Use createMany to avoid issues with upsert on non-existent IDs
-  // Actually let's just delete and recreate to keep it simple for dev
-  await prisma.knowledgeDocument.deleteMany({});
-  for (const doc of knowledgeDocs) {
+  // ⚠️ NO borrar y recrear: este seed escribe SOLO en Postgres, mientras que
+  // los vectores viven en ChromaDB y los escribe KnowledgeService.ingest().
+  // Un `deleteMany({})` acá borra también todo lo cargado por POST /knowledge
+  // y deja los chunks de Chroma huérfanos (los dos almacenes se desincronizan
+  // sin que nada falle: el RAG sigue respondiendo, pero el panel no lista los
+  // documentos). Se insertan solo los que faltan, comparando por título.
+  const existingTitles = new Set(
+    (
+      await prisma.knowledgeDocument.findMany({ select: { title: true } })
+    ).map((d) => d.title),
+  );
+
+  const missing = knowledgeDocs.filter((doc) => !existingTitles.has(doc.title));
+  for (const doc of missing) {
     await prisma.knowledgeDocument.create({ data: doc });
   }
-  console.log(`  ✅ ${knowledgeDocs.length} documentos de conocimiento creados`);
+
+  console.log(
+    `  ✅ ${missing.length} documentos de conocimiento creados` +
+      ` (${existingTitles.size} ya existían, intactos)`,
+  );
+  if (missing.length) {
+    console.log(
+      '  ⚠️  Estos documentos quedan sin vectorizar. Para que el RAG los ' +
+        'recupere hay que cargarlos por POST /knowledge, que escribe en ' +
+        'Postgres y en ChromaDB a la vez.',
+    );
+  }
 
   console.log('🌱 Seed completado!');
 }
