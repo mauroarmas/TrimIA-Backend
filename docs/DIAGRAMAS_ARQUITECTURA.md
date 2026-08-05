@@ -663,7 +663,9 @@ Cada agente tiene variantes:
 ```
 ## 4. Modelo de Datos — ER Diagram (Mermaid)
 
-> Esquema de Prisma (PostgreSQL). Agrupa las entidades en subsistemas: conversaciones/mensajes/auditoría (el core), empleados/acceso (control), cobranzas (Sprint 4), y RAG/conocimiento. Omite las tablas de LangGraph checkpointer (viven en PostgreSQL pero sin gestión Prisma) y ChromaDB vectorial (otra DB, no relacional). Fuente: `prisma/schema.prisma`.
+> Esquema de Prisma (PostgreSQL). Agrupa las entidades en subsistemas: conversaciones/mensajes/auditoría (el core), empleados/acceso (control), ventas y financiación, cobranzas (Sprint 4), y RAG/conocimiento. Omite las tablas de LangGraph checkpointer (viven en PostgreSQL pero sin gestión Prisma) y ChromaDB vectorial (otra DB, no relacional). Fuente: `prisma/schema.prisma`.
+>
+> **Agente y Base de Conocimiento no son tablas.** El diagrama de dominio los modela como entidades, pero acá viven como el enum `AgentType`: `Sector.agentType` cubre "Sector 1—1 Agente" y `KnowledgeDocument.agentType` cubre "Agente 1—1 BaseConocimiento → N Documentos". Físicamente hay **una sola colección** de ChromaDB (`trimia_knowledge`) filtrada por metadata `agentType` + `audience`; una colección por agente obligaría a duplicar los documentos generales (`agentType = null`) en las cinco.
 
 ```mermaid
 erDiagram
@@ -671,18 +673,30 @@ erDiagram
     EMPLOYEE ||--o{ CLIENT : asigna_como_cobrador
     EMPLOYEE ||--o{ ESCALATION : delega
     EMPLOYEE ||--o{ ESCALATION : resuelve
-    EMPLOYEE ||--o{ INTERNALROTE : escribe
+    EMPLOYEE ||--o{ INTERNALNOTE : escribe
     EMPLOYEE ||--o{ PAYMENTPROOF : acepta_comprobante
     EMPLOYEE ||--o{ PAYMENTPROOF : verifica_impacto
     EMPLOYEE ||--o{ CONVERSATION : maneja_manual
+    EMPLOYEE ||--o{ PURCHASEREQUEST : aprueba_vendedor
+    EMPLOYEE ||--o{ CREDITASSESSMENT : evalua_administrativo
+    EMPLOYEE ||--o{ FINANCING : gestiona_cobrador
+
+    CLIENT ||--o{ CONVERSATION : conversa
 
     CONVERSATION ||--o{ MESSAGE : contiene
     CONVERSATION ||--o{ TOKENUSAGE : registra_consumo
     CONVERSATION ||--o{ ORCHESTRATIONEVENT : audita
     CONVERSATION ||--o{ ESCALATION : genera
-    CONVERSATION ||--o{ INTERNALROTE : anotaciones
+    CONVERSATION ||--o{ INTERNALNOTE : anotaciones
+    CONVERSATION ||--o{ PURCHASEREQUEST : origina
 
     MESSAGE ||--o{ PAYMENTPROOF : se_vincula
+
+    CLIENT ||--o{ PURCHASEREQUEST : solicita
+    CLIENT ||--o{ CREDITASSESSMENT : es_evaluado
+    PURCHASEREQUEST ||--o{ CREDITASSESSMENT : justifica_dictamen
+    PURCHASEREQUEST ||--o| FINANCING : deriva_en
+    FINANCING ||--o{ QUOTA : se_divide_en
 
     CLIENT ||--o{ QUOTA : tiene_cuotas
     QUOTA ||--o{ PAYMENTPROOF : recibe_comprobantes
@@ -720,6 +734,7 @@ erDiagram
         datetime agentLockedAt
         string handledById FK
         datetime handledAt
+        string clientId FK
         datetime createdAt
         datetime updatedAt
     }
@@ -767,10 +782,11 @@ erDiagram
         datetime createdAt
     }
 
-    INTERNALROTE {
+    INTERNALNOTE {
         string id PK
         string conversationId FK
         string authorId FK
+        enum authorAgentType
         string content
         datetime createdAt
     }
@@ -785,9 +801,49 @@ erDiagram
         datetime updatedAt
     }
 
+    PURCHASEREQUEST {
+        string id PK
+        string clientId FK
+        string conversationId FK
+        string productSummary
+        decimal amount
+        enum modality
+        enum status
+        string reviewedById FK
+        datetime reviewedAt
+        string reviewNote
+        datetime createdAt
+        datetime updatedAt
+    }
+
+    CREDITASSESSMENT {
+        string id PK
+        string clientId FK
+        string purchaseRequestId FK
+        enum verdict
+        string reason
+        string source
+        json rawPayload
+        string assessedById FK
+        datetime createdAt
+    }
+
+    FINANCING {
+        string id PK
+        string purchaseRequestId FK-UK
+        decimal totalAmount
+        int quotaCount
+        enum status
+        string collectorId FK
+        datetime createdAt
+        datetime updatedAt
+    }
+
     QUOTA {
         string id PK
         string clientId FK
+        string financingId FK
+        int number
         decimal amount
         datetime dueDate
         enum status
@@ -851,11 +907,18 @@ erDiagram
 
 1. **Conversaciones y Auditoría (core)**: Conversation → Message, OrchestrationEvent, TokenUsage. Todo queda registrado para análisis post-mortem y métricas del Panel
 2. **Escalada a Humano**: Conversation → Escalation → Employee (delega/resuelve). Cada escalada es un caso auditado
-3. **Notas Internas**: Employee escribe InternalNote sobre Conversation — nunca se envía al usuario
+3. **Notas Internas**: InternalNote sobre una Conversation — nunca se envía al usuario. El autor es un Employee **o** un agente (`authorAgentType`), nunca los dos
 4. **Control Manual (Sprint 3)**: Conversation.handledById + handledAt marcan cuándo un supervisor tomó control
-5. **Cobranzas (Sprint 4)**: Client → Quota (cuota de una venta financiada) → PaymentProof (comprobante enviado por WhatsApp). Employee acepta y verifica impacto
-6. **Recordatorios (Sprint 4)**: ReminderConfig es una fila única editable — agenda automática en BullMQ (reminders processor)
-7. **RAG y Conocimiento**: KnowledgeDocument con audience (PUBLICO/INTERNO) y agentType — ChromaDB almacena vectores, Prisma guarda metadata
+5. **Ventas y financiación**: Client → PurchaseRequest (la "ficha de venta") → Financing → Quota. CreditAssessment cuelga de ambos y guarda el *porqué* del dictamen
+6. **Cobranzas (Sprint 4)**: Quota → PaymentProof (comprobante enviado por WhatsApp). Employee acepta y verifica impacto
+7. **Recordatorios (Sprint 4)**: ReminderConfig es una fila única editable — agenda automática en BullMQ (reminders processor)
+8. **RAG y Conocimiento**: KnowledgeDocument con audience (PUBLICO/INTERNO) y agentType — ChromaDB almacena vectores, Prisma guarda metadata
+
+**Tres decisiones de modelado que no son obvias en el diagrama:**
+
+- **`Quota.clientId` está denormalizado.** El camino normalizado es `Quota → Financing → PurchaseRequest → Client` (3 joins) y todo el panel de Cobranzas filtra por cliente/cobrador. Invariante a sostener al crear la cuota: `quota.clientId == quota.financing.purchaseRequest.clientId`. `financingId` es opcional: hay cuotas sin venta registrada en el sistema (deuda migrada de Paljet).
+- **`CreditAssessment` es histórico (1—N con Client), no un atributo del cliente.** La verificación se dispara por venta, no una vez en la vida; si fuera 1—1 cada compra nueva pisaría el motivo de la anterior, que es justo el registro que exige la auditoría (OE-11).
+- **El cobrador se asigna por financiación** (`Financing.collectorId`), porque en el proceso real recibe la ficha, verifica el local y aprueba la venta. `Client.assignedCollectorId` sigue existiendo como la cartera del cobrador, que es lo que consulta el panel.
 
 **No incluidos (viven afuera o sin Prisma):**
 - Checkpointer de LangGraph: tablas `checkpoints`, `checkpoint_writes`, `checkpoint_blobs` en PostgreSQL, setup automático vía `PostgresSaver`, **no gestionadas por Prisma**

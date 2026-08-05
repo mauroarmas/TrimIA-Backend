@@ -179,8 +179,9 @@ mensaje de escalado.
   - **EMPLEADO** → los 5.
 - La **audiencia del RAG** depende del usuario: EMPLEADO ve `INTERNO`+`PUBLICO`;
   CLIENTE solo `PUBLICO`. Se aplica en `knowledge.search()` y en `rag-agent.graph.ts`.
-- `userType` vive en `Conversation.userType` (hoy default `CLIENTE`; la whitelist de
-  empleados la administrará el panel — E4).
+- `userType` vive en `Conversation.userType` y se **revalida en cada mensaje** contra la
+  whitelist (ver §5.3.2). No es sticky: si a un empleado se le da de baja, su conversación
+  abierta degrada a `CLIENTE` en el mensaje siguiente.
 - **Regla de oro:** un cliente NUNCA debe poder recuperar conocimiento `INTERNO` ni
   llegar a un agente no permitido. Cualquier cambio debe preservar esto.
 
@@ -194,11 +195,31 @@ El modelo de negocio tiene **tres roles**, en **dos dimensiones distintas**:
   un actor supervisor distinto del empleado común. Por eso SUPERVISOR es parte del modelo
   **actual**, no un extra futuro.
 
-**Cómo modelarlo (recomendado):** NO agregar `SUPERVISOR` al enum `UserType` (rompería los
-chequeos `=== 'EMPLEADO'` de audiencia/acceso). El rol vive en la **tabla de empleados/whitelist**
-(RF-12): cada empleado tiene `role: EMPLEADO | SUPERVISOR`. La whitelist unifica dos cosas —
-marca el teléfono como interno (→ `userType=EMPLEADO`) y guarda el rol para gatear el Panel.
-Se implementa junto con E4 (whitelist + panel); no hace falta para el flujo conversacional de hoy.
+**Cómo está modelado:** `SUPERVISOR` NO está en el enum `UserType` (rompería los
+chequeos `=== 'EMPLEADO'` de audiencia/acceso). El rol vive en la tabla de empleados:
+cada empleado tiene `role: EMPLEADO | SUPERVISOR`. Eso unifica dos cosas — marca el
+teléfono como interno (→ `userType=EMPLEADO`) y guarda el rol para gatear el Panel.
+
+#### 5.3.2 La whitelist ES la tabla `Employee` (no hay tabla aparte)
+
+No existe un modelo `Whitelist`, y no debería: sería una segunda fuente de verdad que
+se desincroniza del alta/baja de empleados. La whitelist son dos campos de `Employee`:
+
+- **`phone`** (`@unique`, indexado) — el teléfono habilitado.
+- **`isActive`** — la baja es *soft* (`DELETE /employees/:id` setea `isActive: false`).
+
+`MessageProcessor` la consulta vía `EmployeesService.findByPhone()` en **cada mensaje** y
+deriva el `userType`; solo persiste en `Conversation.userType` cuando cambió. La pantalla
+de gestión de empleados del panel (`/employees`, ya implementada, SUPERVISOR-only) **es**
+la administración de la whitelist: dar de alta un empleado con su teléfono lo habilita.
+
+> ⚠️ **Todo teléfono pasa por `normalizePhone()`** (`src/common/phone.ts`) al guardarse y
+> al buscarse. Sin eso, el mismo número escrito de dos formas (`543865505362` vs
+> `5493865505362`) genera un `findUnique` que no encuentra nada: el empleado queda
+> tratado como cliente **sin ningún error visible**. Ya pasó — quedaron dos filas de
+> `Employee` para la misma persona. Forma canónica: `549` + 10 dígitos, que es la que
+> manda Meta. Para migrar datos viejos: `npx ts-node prisma/normalize-phones.ts`
+> (dry-run por defecto, escribe sólo con `--apply`).
 
 ### 5.4 RAG (base de conocimiento)
 - `KnowledgeService.ingest()`: parte el doc en chunks (corte por párrafo/oración),
@@ -256,22 +277,55 @@ conversación, nunca enviados al usuario ni mezclados con `Message`.
 
 | Modelo | Para qué | Campos clave |
 |--------|----------|--------------|
-| `Conversation` | Hilo de chat por teléfono | `id`, `externalId`, `currentAgent` (sticky), `userType`, `status`, `handledById`/`handledAt` (control manual, Sprint 3) |
+| `Sector` | Sector de la empresa; gatea módulos del panel | `name`, `agentType` (el agente que capacita/da soporte al sector) |
+| `Employee` | Empleado o supervisor autorizado | `phone`, `email`, `password`, `role` (EMPLEADO/SUPERVISOR), `sectorId`, `isController` |
+| `Client` | Cliente externo | `name`, `phone` (UK), `dni`, `assignedCollectorId` (cartera del cobrador) |
+| `Conversation` | Hilo de chat por teléfono | `externalId`, `clientId` (FK al cliente), `currentAgent` (sticky), `userType`, `status`, `handledById`/`handledAt` (control manual, Sprint 3) |
 | `Message` | Cada mensaje | `role` (USER/ASSISTANT/...), `content`, `agentType` |
-| `KnowledgeDocument` | Metadatos de docs del RAG | `audience` (PUBLICO/INTERNO), `agentType`, `checksum` |
+| `PurchaseRequest` | La "ficha de venta" del proceso real | `clientId`, `conversationId`, `productSummary`, `modality` (CASH/FINANCED), `status`, `reviewedById` (vendedor) |
+| `CreditAssessment` | Dictamen crediticio, **histórico** | `clientId`, `purchaseRequestId`, `verdict`, `reason`, `rawPayload` (INTERNO, OE-10) |
+| `Financing` | Plan de cuotas de una venta financiada | `purchaseRequestId` (UK), `totalAmount`, `quotaCount`, `collectorId` |
+| `Quota` (Sprint 4) | Cuota a cobrar | `clientId` (denormalizado), `financingId`, `number`, `dueDate`, `status`, `reminderAttempts` |
+| `PaymentProof` (Sprint 4) | Comprobante enviado por WhatsApp | `quotaId`, `imagePath`, `extracted*` (sugerencia de Gemini), `status`, `impactStatus` |
+| `ReminderConfig` (Sprint 4) | Fila única de configuración | `daysBefore` (7/3/0), `maxAttempts`, `templateApproved` |
+| `KnowledgeDocument` | Metadatos de docs del RAG | `audience` (PUBLICO/INTERNO), `agentType`, `checksum`, `vectorId` |
 | `TokenUsage` | Consumo por turno | `inputTokens`, `outputTokens`, `durationMs`, `model` |
 | `OrchestrationEvent` | Auditoría de ruteo | `eventType`, `agentType`, `payload` (JSON) |
 | `Escalation` (Sprint 3) | Caso pendiente por baja confianza | `reason`, `status` (PENDING/RESOLVED), `resolvedById`/`resolution`, `delegatedToId`/`delegatedById` |
-| `InternalNote` (Sprint 3) | Comentario interno sobre una conversación | `conversationId`, `authorId`, `content` — nunca visible para el usuario |
+| `InternalNote` (Sprint 3) | Comentario interno sobre una conversación | `conversationId`, `authorId` **o** `authorAgentType`, `content` — nunca visible para el usuario |
 
 Enums: `AgentType` (ORCHESTRATOR + 5 agentes), `UserType` (CLIENTE/EMPLEADO),
 `Audience` (PUBLICO/INTERNO), `Channel` (WHATSAPP/WEB),
 `ConvStatus` (ACTIVE/WAITING_HUMAN/HUMAN_HANDLING/CLOSED), `MessageRole`,
-`EscalationStatus` (PENDING/RESOLVED, Sprint 3).
+`EscalationStatus` (PENDING/RESOLVED, Sprint 3), `QuotaStatus`,
+`PaymentProofStatus`, `ProofRejectionReason`, `ImpactStatus` (Sprint 4),
+`PurchaseRequestStatus`, `PaymentModality`, `CreditVerdict`, `FinancingStatus`.
+
+> **Agente y Base de Conocimiento no son tablas.** El diagrama de dominio los
+> modela como entidades, pero acá viven como el enum `AgentType`:
+> `Sector.agentType` cubre "Sector 1—1 Agente" y `KnowledgeDocument.agentType`
+> cubre "Agente 1—1 BaseConocimiento → N Documentos". Físicamente hay **una
+> sola colección** de ChromaDB (`trimia_knowledge`) filtrada por metadata
+> `agentType` + `audience`; una por agente obligaría a duplicar los documentos
+> generales (`agentType = null`) en las cinco. Ver `DIAGRAMAS_ARQUITECTURA.md` §4.
+
+> **Ventas está modelado pero no implementado.** `PurchaseRequest`,
+> `CreditAssessment` y `Financing` existen en la DB para cerrar el modelo de
+> dominio y no tener que migrar `Quota` con datos productivos cargados; la
+> lógica de negocio (endpoints, agentes, integración con Riesgo Online) llega
+> en los Sprints 6-7.
 
 > Migraciones: el proyecto usa **`prisma db push`** (no `migrate`). Las tablas
 > `checkpoint_*` que puedan existir en la DB son remanentes de LangGraph; Prisma no
 > las toca.
+
+> ⚠️ **`prisma/seed.ts` no borra conocimiento.** El seed escribe solo en
+> Postgres, mientras que los vectores viven en ChromaDB y los escribe
+> `KnowledgeService.ingest()`. Un `deleteMany({})` sobre `KnowledgeDocument`
+> borra también lo cargado por `POST /knowledge` y deja los chunks de Chroma
+> huérfanos: los dos almacenes se desincronizan **sin que nada falle** (el RAG
+> sigue respondiendo, pero el panel no lista los documentos). El seed inserta
+> solo los títulos que faltan.
 
 ---
 
@@ -374,7 +428,6 @@ como producto) es **uno de esos módulos**, no una herramienta aparte. Backend y
 
 ### Otros
 - **Seguimiento de prospectos** (RF-03) vía CRM.
-- Cablear `userType` real desde la whitelist en el `MessageProcessor`.
 
 ---
 
@@ -404,10 +457,26 @@ curl -X POST http://localhost:3000/messaging/webhook \
 # Luego ver la respuesta del agente en los logs o en la tabla Message.
 ```
 
-### Marcar un teléfono como empleado (dev, hasta que exista la whitelist)
-```sql
-UPDATE "Conversation" SET "userType" = 'EMPLEADO' WHERE "externalId" = '<telefono>';
+### Dejar al cliente de prueba en una situación (dev)
+```bash
+# RESET limpia comprobantes y cuotas; después se arma el escenario.
+curl -X POST http://localhost:3000/dev/client-fixtures -H "Content-Type: application/json" \
+  -d '{"phone":"5493865505362","fixtures":["RESET","CUOTA_POR_VENCER"]}'
 ```
+Fixtures: `RESET` · `SIN_DEUDA` · `CUOTA_POR_VENCER` · `CUOTA_VENCIDA` (combinables, en orden).
+
+En desarrollo cada número de Meta tiene identidad fija: `DEV_CLIENT_PHONE` es el cliente y
+`DEV_COLLECTOR_PHONE` el cobrador (el seed se lo asigna a Roberto Sosa). El resto de los
+empleados entra por el portal web con las credenciales del seed (pass `trimia2026`).
+Contrato completo en `CONTRATO_API_Frontend.md`.
+
+### Migrar teléfonos al formato canónico (dev)
+```bash
+npx ts-node prisma/normalize-phones.ts           # dry-run: muestra cambios y colisiones
+npx ts-node prisma/normalize-phones.ts --apply   # aplica, en una transacción
+```
+Se niega a aplicar si normalizar generaría colisiones con el índice UNIQUE de
+`Employee.phone` / `Client.phone`: cuál fila sobrevive es una decisión de negocio.
 
 ### Correr los tests
 ```bash

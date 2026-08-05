@@ -36,10 +36,13 @@
 | Capacitación | EMPLEADO | `/training/*` 🔴 |
 | Gobernanza (Panel del Supervisor) | SUPERVISOR | `/supervisor/*` ✅ |
 | Panel de Cobranzas | EMPLEADO (cobrador) / SUPERVISOR (controlador) | `/collections/*` ✅ |
+| Panel de Ventas | EMPLEADO (vendedor) / SUPERVISOR | `/sales/*` 🔴 (modelo de datos ya en DB) |
+| Herramientas de dev | — (solo en dev) | `/dev/client-fixtures` ✅ |
 
 > Roles: ver `CONTEXTO_TECNICO.md` §5.3.1. `userType` (CLIENTE/EMPLEADO) define audiencia;
-> `role` (EMPLEADO/SUPERVISOR) gatea los módulos de gobernanza. El `role` viene de la
-> whitelist de empleados (pendiente).
+> `role` (EMPLEADO/SUPERVISOR) gatea los módulos de gobernanza. El `role` sale de la tabla
+> `Employee`, que **es** la whitelist (§5.3.2) y se administra desde `/employees` — ya
+> implementado. El `userType` se revalida contra ella en cada mensaje.
 
 ---
 
@@ -64,14 +67,51 @@ Devuelve los datos del usuario logueado.
 
 ## Módulo Empleados — `/employees`
 
-### ✅ `GET /employees` (JWT + SUPERVISOR)
-Lista la whitelist de empleados con sus sectores.
+**Esta es la pantalla de gestión de usuarios Y la administración de la whitelist**: son la
+misma cosa. Dar de alta un empleado con su teléfono habilita ese número para que el bot lo
+trate como interno (`userType=EMPLEADO` → conocimiento INTERNO + los 5 agentes).
 
-### ✅ `POST /employees`, `PUT /employees/:id`, `DELETE /employees/:id` (JWT + SUPERVISOR)
-CRUD de empleados.
+### ✅ `GET /employees` (JWT + SUPERVISOR)
+Lista los empleados con su sector. Devuelve activos e inactivos; el hash de la contraseña
+nunca se incluye.
+```json
+[ {
+  "id": "uuid", "phone": "5493865505362", "email": "roberto.sosa@credimision.com",
+  "name": "Roberto Sosa", "role": "EMPLEADO", "isActive": true, "isController": false,
+  "sectorId": "uuid", "sector": { "id": "uuid", "name": "Cobranzas" }
+} ]
+```
+
+### ✅ `POST /employees` (JWT + SUPERVISOR)
+```jsonc
+{
+  "phone": "0381 15 4123456",        // se normaliza a 5493814123456
+  "email": "nuevo@credimision.com",
+  "name": "Nombre Apellido",
+  "password": "min 8 caracteres",
+  "role": "EMPLEADO",                 // opcional, default EMPLEADO
+  "sectorId": "uuid",
+  "isController": false               // opcional; habilita verificación de impacto
+}
+```
+El teléfono se acepta en cualquier formato (`+54 9 …`, `0381 15 …`, con guiones) y se guarda
+canónico: `549` + 10 dígitos. Ver `CONTEXTO_TECNICO.md` §5.3.2.
+
+Errores de validación devuelven 400 con el detalle campo por campo:
+```json
+{ "message": ["email must be an email", "sectorId must be a UUID"],
+  "error": "Bad Request", "statusCode": 400 }
+```
+
+### ✅ `PUT /employees/:id` (JWT + SUPERVISOR)
+Mismos campos, todos opcionales, más `isActive` para **reactivar** a alguien dado de baja.
+
+### ✅ `DELETE /employees/:id` (JWT + SUPERVISOR)
+**Soft delete**: setea `isActive: false`, no borra la fila (se preserva la auditoría de lo
+que esa persona hizo). El empleado deja de estar en la whitelist en el mensaje siguiente.
 
 ### ✅ `GET /employees/sectors` (JWT + SUPERVISOR)
-Lista los sectores disponibles.
+Lista los sectores disponibles, para el combo del formulario.
 
 ---
 
@@ -384,6 +424,44 @@ chat web del empleado hace falta un par de endpoints nuevos que reusen el mismo 
 
 Todavía no tienen backend. Contrato a definir cuando se diseñen (RF-11 entrevistas, RF-05
 capacitación). La compañera puede maquetar la UI con datos mock por ahora.
+
+---
+
+## Herramientas de desarrollo — `/dev` ⚠️ (solo en dev)
+
+Bloqueadas por `DevOnlyGuard`: no existen fuera de desarrollo.
+
+### ✅ `POST /dev/client-fixtures`
+
+Deja al cliente de prueba en una situación concreta para poder repetir un flujo de
+WhatsApp desde cero.
+
+En desarrollo cada número cargado en Meta tiene una identidad **fija**: `DEV_CLIENT_PHONE`
+es siempre el cliente y `DEV_COLLECTOR_PHONE` siempre el cobrador (el seed se lo asigna a
+Roberto Sosa para que reciba las notificaciones de cobranza). El resto de los empleados
+entra por el portal web. Por eso el endpoint no tiene un eje de "rol": sólo la situación.
+
+```jsonc
+// Limpiar y armar el escenario de cobranza de nuevo
+{ "phone": "5493865505362", "fixtures": ["RESET", "CUOTA_POR_VENCER"] }
+
+// Cliente sin deuda (para probar el flujo de Ventas)
+{ "phone": "5493865505362", "fixtures": ["SIN_DEUDA"] }
+
+// → { "phone": "...", "clientId": "uuid", "fixtures": ["RESET", "CUOTA_POR_VENCER"] }
+```
+
+| Fixture | Qué hace |
+|---|---|
+| `RESET` | Borra los comprobantes de prueba y devuelve las cuotas a `PENDING`. **No borra cuotas** (pueden pertenecer a una `Financing`) |
+| `SIN_DEUDA` | Salda todas las cuotas (`PAID`) |
+| `CUOTA_POR_VENCER` | Cuota `PENDING` a 3 días |
+| `CUOTA_VENCIDA` | Cuota `OVERDUE` de hace 10 días |
+
+Se aplican en orden, así que `["RESET", "CUOTA_POR_VENCER"]` limpia y después arma. Son
+idempotentes: llamarlo dos veces reajusta la cuota existente en vez de acumular. Siempre
+se asegura que el `Client` exista (es lo que enlaza `Conversation.clientId`) y se resetea
+el agente sticky de las conversaciones abiertas.
 
 ---
 
