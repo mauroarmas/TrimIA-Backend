@@ -1,0 +1,73 @@
+{
+  "name": "Envío de Plantilla (HSM) B2",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "send-whatsapp-template",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -512,
+        112
+      ],
+      "id": "a3d1f7c2-6e4b-4c8a-9f1d-2b7e5a9c1d40",
+      "name": "Webhook",
+      "webhookId": "b4e2a8d3-7f5c-4d9b-a012-3c8f6b0d2e51"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://graph.facebook.com/v22.0/1061041147100905/messages",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  \"messaging_product\": \"whatsapp\",\n  \"to\": $json.body.phone.replace(/^549/, '54'),\n  \"type\": \"template\",\n  \"template\": {\n    \"name\": $json.body.templateName,\n    \"language\": { \"code\": \"es_AR\" },\n    \"components\": ($json.body.params && $json.body.params.length > 0) ? [{ \"type\": \"body\", \"parameters\": $json.body.params.map(p => ({ \"type\": \"text\", \"text\": p })) }] : []\n  }\n}) }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        -256,
+        112
+      ],
+      "id": "c5f8e3a1-9d6b-4a7c-8e2f-1a4d9c6b3f72",
+      "name": "HTTP Request",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "BrSBTQKJ0cgPgcUG",
+          "name": "Header Auth account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "e7a2c9f4-3b6d-4e81-9c5a-7f2b8d1e4a63",
+  "meta": {
+    "instanceId": "dfd902cdb7991f61a4293a03371b908ff48fcfc8ce98150c917724065174c796"
+  },
+  "nodeGroups": [],
+  "id": "sCc2nz9UXSrT4mEm",
+  "tags": []
+}

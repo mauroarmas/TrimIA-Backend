@@ -7,7 +7,7 @@
 ## Summary
 
 Cerrar el ciclo de cobranza de punta a punta: identificar clientes con nombre
-y cobrador asignado (`Customer`), enviarles recordatorios automáticos de
+y cobrador asignado (`Client`), enviarles recordatorios automáticos de
 cuota vencida por WhatsApp, dejar que envíen el comprobante de pago por el
 mismo canal, que el asistente lea una lectura tentativa (Gemini Vision) como
 sugerencia editable, que el cobrador confirme o rechace, y que — unos días
@@ -15,7 +15,7 @@ después — un Cobrador Controlador verifique si el pago impactó realmente en
 la cuenta de la empresa. Todo queda auditado y visible en un registro de
 actividad y en indicadores del panel.
 
-Enfoque técnico: extender el modelo de datos (`Customer`, `Installment`,
+Enfoque técnico: extender el modelo de datos (`Client`, `Quota`,
 `PaymentProof`, `ReminderConfig`, flag `Employee.isController`), agregar un
 segundo pipeline de entrada para mensajes con imagen de WhatsApp (hoy el
 webhook de n8n **descarta** cualquier mensaje que no sea texto — ver
@@ -90,21 +90,21 @@ specs/002-collections-payments/
 
 ```text
 prisma/
-└── schema.prisma          # + Customer, Installment, PaymentProof, ReminderConfig,
-                            #   Employee.isController, enums InstallmentStatus/
+└── schema.prisma          # + Client, Quota, PaymentProof, ReminderConfig,
+                            #   Employee.isController, enums QuotaStatus/
                             #   PaymentProofStatus/ImpactStatus
 
 src/
-├── customers/                        # NUEVO módulo
-│   ├── customers.module.ts
-│   ├── customers.service.ts          # getOrCreateByPhone, assign, list por cobrador
-│   └── customers.controller.ts       # opcional: ABM básico para el supervisor
+├── clients/                        # NUEVO módulo
+│   ├── clients.module.ts
+│   ├── clients.service.ts          # getOrCreateByPhone, assign, list por cobrador
+│   └── clients.controller.ts       # opcional: ABM básico para el supervisor
 │
 ├── collections/                      # NUEVO módulo (endpoints del panel de cobranzas)
 │   ├── collections.module.ts
 │   ├── collections.service.ts        # KPIs, lista de clientes, historial
 │   ├── collections.controller.ts     # GET /collections/*
-│   ├── installments.service.ts       # transiciones de estado de Installment
+│   ├── quotas.service.ts       # transiciones de estado de Quota
 │   ├── payment-proofs.service.ts     # aceptar/rechazar comprobante, verificar impacto
 │   └── dto/
 │       ├── reject-proof.dto.ts
@@ -144,7 +144,7 @@ n8n/workflows/
 test/ (colocados junto al código, *.spec.ts)
 ```
 
-**Structure Decision**: se agregan dos módulos NestJS nuevos (`customers/`,
+**Structure Decision**: se agregan dos módulos NestJS nuevos (`clients/`,
 `collections/`) siguiendo el patrón ya establecido por `escalations/` y
 `supervisor/` (módulo por dominio, DI por constructor, controller solo
 orquesta). No se crea un módulo separado para el scheduler: vive dentro de

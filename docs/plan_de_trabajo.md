@@ -117,9 +117,9 @@ graph LR
 
 | # | Tarea | Dónde | Criterio |
 |---|-------|-------|---------|
-| 4.1 | **Modelo `Customer`** ⭐ | `schema.prisma` | `name`, `phone` (↔ `Conversation.externalId`), `dni`, `assignedCollectorId`. **Prerequisito de todas las pantallas de Cobranzas y Ventas**: hoy la conversación sólo tiene `externalId`, sin nombre ni cobrador asignado. Postgres es la fuente de verdad; se escribe a Sheets (§6.2) |
+| 4.1 | **Modelo `Client`** ⭐ | `schema.prisma` | `name`, `phone` (↔ `Conversation.externalId`), `dni`, `assignedCollectorId`. **Prerequisito de todas las pantallas de Cobranzas y Ventas**: hoy la conversación sólo tiene `externalId`, sin nombre ni cobrador asignado. Postgres es la fuente de verdad; se escribe a Sheets (§6.2) |
 | 4.2 | **Flag Cobrador Controlador** | `schema.prisma` | `Employee.isController`. `role` (EMPLEADO/SUPERVISOR) + `sector` ya gatean el resto; el Controlador es la única atribución del prototipo no derivable del sector |
-| 4.3 | Modelos `Installment`, `PaymentProof` | `schema.prisma` | Installment: PENDING/AWAITING_CONFIRMATION/PAID/OVERDUE/MANUAL. PaymentProof: `extractedOpCode @unique`, `acceptedById`, `acceptedAt`, `impactStatus`, `impactVerifiedById`, `impactVerifiedAt` |
+| 4.3 | Modelos `Quota`, `PaymentProof` | `schema.prisma` | Quota: PENDING/AWAITING_CONFIRMATION/PAID/OVERDUE/MANUAL. PaymentProof: `extractedOpCode @unique`, `acceptedById`, `acceptedAt`, `impactStatus`, `impactVerifiedById`, `impactVerifiedAt` |
 | 4.4 | Seed cuotas y clientes | `prisma/seed.ts` | Vencimiento día 10. Datos del prototipo |
 | 4.5 | **Plantillas WhatsApp aprobadas** ⚠️ | n8n + Meta | **Bloqueante de 4.6.** Los recordatorios son proactivos y caen fuera de la ventana de 24 h de WA Business → exigen plantillas (HSM) aprobadas por Meta. Se adelanta desde 8.6, que estaba después de este sprint |
 | 4.6 | Scheduler recordatorios | `src/queue/schedulers/` | BullMQ repeatable. 7/3/0 días antes. Máx 3 intentos. Configurable (RF04) |
@@ -312,7 +312,7 @@ graph LR
 | **Audio de las píldoras** | **Se mantiene completo**, con `gemini-3.1-flash-tts-preview` — la misma API de Gemini que ya usamos, sin licencia ni producto nuevo. Multi-speaker de 2 locutores, español, estilo por prompt. El guion generado sirve además como transcripción |
 | **"Confianza de la IA" por documento** | Redefinida como indicador de recuperación real (veces recuperado + score promedio), calculable con datos que ya persistimos |
 | **Consulta crediticia del vendedor** | La pantalla queda, pero por detrás invoca al agente ADMIN y devuelve sólo el dictamen |
-| **Modelo `Customer`** | Se agrega en Postgres como fuente de verdad; el CRM en Sheets se sigue usando (lo comparten otras áreas) y se escribe desde TrimIA |
+| **Modelo `Client`** | Se agrega en Postgres como fuente de verdad; el CRM en Sheets se sigue usando (lo comparten otras áreas) y se escribe desde TrimIA |
 | **Roles** | `role` + `sector` (ya existen) + un flag `isController`. No se infla el enum `EmployeeRole` |
 | **Notificaciones** | Badges por query + WhatsApp en los 2-3 casos críticos. Sin websockets |
 | **"Editar con la IA"** | Va con prioridad normal (tarea 5A.13), siempre con aprobación humana |
@@ -362,7 +362,7 @@ graph LR
 
 > [!IMPORTANT]
 > **Sprints 1, 2 y 3 completos.** El siguiente es el **Sprint 4 (Cobranzas)**, que arranca por el
-> modelo `Customer` (4.1) porque bloquea todas las pantallas de Cobranzas y de Ventas.
+> modelo `Client` (4.1) porque bloquea todas las pantallas de Cobranzas y de Ventas.
 >
 > Camino crítico a vigilar: **la aprobación de plantillas de WhatsApp (4.5)** depende de Meta y no
 > de nosotros. Conviene iniciarla apenas empiece el sprint, en paralelo con el resto de las tareas.

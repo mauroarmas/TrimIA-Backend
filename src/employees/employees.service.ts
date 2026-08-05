@@ -10,6 +10,8 @@ export interface CreateEmployeeDto {
   password: string;
   role?: EmployeeRole;
   sectorId: string;
+  /** Permiso adicional de Cobrador Controlador (Sprint 4). */
+  isController?: boolean;
 }
 
 export interface UpdateEmployeeDto {
@@ -20,6 +22,7 @@ export interface UpdateEmployeeDto {
   role?: EmployeeRole;
   sectorId?: string;
   isActive?: boolean;
+  isController?: boolean;
 }
 
 @Injectable()
@@ -57,6 +60,7 @@ export class EmployeesService {
         password: hashedPassword,
         role: dto.role ?? 'EMPLEADO',
         sectorId: dto.sectorId,
+        isController: dto.isController ?? false,
       },
       include: { sector: true },
     });

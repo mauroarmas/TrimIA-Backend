@@ -49,6 +49,12 @@ lerna-debug.log*
 .temp
 .tmp
 
+# Binarios de comprobantes de pago (Sprint 4) — no se commitean
+/storage/*
+!/storage/payment-proofs/
+storage/payment-proofs/*
+!storage/payment-proofs/.gitkeep
+
 # Runtime data
 pids
 *.pid

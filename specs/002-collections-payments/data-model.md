@@ -3,7 +3,7 @@
 ## Enums nuevos
 
 ```prisma
-enum InstallmentStatus {
+enum QuotaStatus {
   PENDING               // aún no vence, sin acción
   AWAITING_CONFIRMATION // el cliente avisó/envió comprobante, esperando decisión del cobrador
   PAID                  // comprobante aceptado Y verificado con impacto bancario confirmado
@@ -34,7 +34,7 @@ enum ImpactStatus {
 
 ## Entidades
 
-### `Customer` (nuevo modelo)
+### `Client` (nuevo modelo)
 
 | Campo | Tipo | Notas |
 |---|---|---|
@@ -43,10 +43,10 @@ enum ImpactStatus {
 | `phone` | `String @unique` | Se cruza contra `Conversation.externalId` (ver research.md §4); normalizado igual que `Employee.phone` |
 | `dni` | `String?` | Opcional — no todos los clientes lo tienen registrado al momento de alta |
 | `assignedCollectorId` | `String?` | FK a `Employee` (sector Cobranzas). Nullable: un cliente puede existir sin cobrador asignado todavía |
-| `assignedCollector` | `Employee?` | `@relation("CustomerAssignedCollector")` |
+| `assignedCollector` | `Employee?` | `@relation("ClientAssignedCollector")` |
 | `createdAt` / `updatedAt` | `DateTime` | |
 
-Relaciones: `installments Installment[]`.
+Relaciones: `quotas Quota[]`.
 Índices: `@@index([assignedCollectorId])`.
 
 **Regla de aplicación (no constraint de DB):** un cliente tiene a lo sumo un
@@ -60,25 +60,25 @@ reasignaciones en este sprint.
 |---|---|---|
 | `isController` | `Boolean @default(false)` | Permiso adicional de Cobrador Controlador. No es un valor nuevo de `EmployeeRole`: convive con `role: EMPLEADO` + `sector: Cobranzas` |
 
-Relación nueva: `assignedCustomers Customer[] @relation("CustomerAssignedCollector")`.
+Relación nueva: `assignedClients Client[] @relation("ClientAssignedCollector")`.
 
-### `Installment` (nuevo modelo — cuota)
+### `Quota` (nuevo modelo — cuota)
 
 | Campo | Tipo | Notas |
 |---|---|---|
 | `id` | `String @id @default(uuid())` | |
-| `customerId` | `String` | FK a `Customer` |
-| `customer` | `Customer` | |
+| `clientId` | `String` | FK a `Client` |
+| `client` | `Client` | |
 | `amount` | `Decimal` | Monto que corresponde pagar |
 | `dueDate` | `DateTime` | Vencimiento (día 10, seed) |
-| `status` | `InstallmentStatus @default(PENDING)` | Ver transiciones abajo |
+| `status` | `QuotaStatus @default(PENDING)` | Ver transiciones abajo |
 | `reminderAttempts` | `Int @default(0)` | Se incrementa en cada envío del scheduler; tope en `ReminderConfig.maxAttempts` |
 | `lastReminderAt` | `DateTime?` | |
 | `manualHandlingNote` | `String?` | Motivo libre cuando `status = MANUAL` (opcional) |
 | `createdAt` / `updatedAt` | `DateTime` | |
 
 Relación: `paymentProofs PaymentProof[]`.
-Índices: `@@index([customerId])`, `@@index([status])`, `@@index([dueDate])`.
+Índices: `@@index([clientId])`, `@@index([status])`, `@@index([dueDate])`.
 
 **Transiciones válidas de `status`:**
 
@@ -101,8 +101,8 @@ No hay transición de salida desde `PAID` ni desde `MANUAL` en este sprint
 | Campo | Tipo | Notas |
 |---|---|---|
 | `id` | `String @id @default(uuid())` | |
-| `installmentId` | `String` | FK a `Installment` |
-| `installment` | `Installment` | |
+| `quotaId` | `String` | FK a `Quota` |
+| `quota` | `Quota` | |
 | `messageId` | `String?` | FK opcional a `Message` (el mensaje de WhatsApp que trajo la imagen), para poder ver el original |
 | `imagePath` | `String` | Ruta relativa dentro de `storage/payment-proofs/` donde se guardó el binario que n8n reenvió en base64 (ver research.md §1). Servida por un endpoint autenticado, no estática pública |
 | `extractedAmount` | `Decimal?` | Lectura tentativa de Gemini Vision — **sugerencia, nunca verdad** |
@@ -119,7 +119,7 @@ No hay transición de salida desde `PAID` ni desde `MANUAL` en este sprint
 | `impactObservation` | `String?` | Observación opcional del Cobrador Controlador |
 | `createdAt` | `DateTime @default(now())` | |
 
-Índices: `@@index([installmentId])`, `@@index([status])`, `@@index([impactStatus])`.
+Índices: `@@index([quotaId])`, `@@index([status])`, `@@index([impactStatus])`.
 
 **Regla de aplicación:** `extractedOpCode` es `@unique` pero nullable — Prisma
 permite múltiples `null`, así que un comprobante sin código de operación
@@ -144,18 +144,18 @@ Editable solo por `SUPERVISOR` vía `PUT /collections/reminder-config`.
 
 Nuevos `eventType` para auditoría (FR-018):
 
-- `installment_reminder_sent` — payload: `{ installmentId, attempt, daysBefore }`
-- `payment_proof_received` — payload: `{ paymentProofId, installmentId }`
+- `quota_reminder_sent` — payload: `{ quotaId, attempt, daysBefore }`
+- `payment_proof_received` — payload: `{ paymentProofId, quotaId }`
 - `payment_proof_accepted` — payload: `{ paymentProofId, acceptedById }`
 - `payment_proof_rejected` — payload: `{ paymentProofId, reason, rejectedById }`
 - `payment_proof_manual_handling` — payload: `{ paymentProofId }` (dispara además el `takeover` de Sprint 3)
-- `installment_marked_manual` — payload: `{ installmentId, markedById, note }`
+- `quota_marked_manual` — payload: `{ quotaId, markedById, note }`
 - `payment_impact_verified` — payload: `{ paymentProofId, impactStatus, verifiedById }`
 
 ## Diagrama de relaciones (resumen)
 
 ```
-Employee (isController) ──assignedCollector──> Customer ──> Installment ──> PaymentProof
+Employee (isController) ──assignedCollector──> Client ──> Quota ──> PaymentProof
                                                                               │
                                                                               └─ messageId → Message (opcional)
 ReminderConfig  (fila única, sin FK)

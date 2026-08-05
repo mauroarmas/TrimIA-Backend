@@ -27,7 +27,7 @@ porque es el flujo que el prototipo y el negocio consideran el núcleo del
 `package.json` (`@nestjs/bullmq`/`bullmq` ya están — ver `plan.md` Technical
 Context).
 
-- [ ] T001 [P] Crear `src/customers/customers.module.ts` (módulo NestJS vacío,
+- [ ] T001 [P] Crear `src/clients/clients.module.ts` (módulo NestJS vacío,
   aún sin providers) y registrarlo en `src/app.module.ts`.
 - [ ] T002 [P] Crear `src/collections/collections.module.ts` (módulo NestJS
   vacío) y registrarlo en `src/app.module.ts`.
@@ -45,13 +45,13 @@ historias — nada de las fases 3+ compila sin esto.
 **⚠️ CRITICAL**: nada de las fases 3+ corre sin esto completo.
 
 - [ ] T004 Extender `prisma/schema.prisma` según `data-model.md`: enums
-  `InstallmentStatus`, `PaymentProofStatus`, `ProofRejectionReason`,
-  `ImpactStatus`; modelo `Customer` (`name`, `phone @unique`, `dni?`,
+  `QuotaStatus`, `PaymentProofStatus`, `ProofRejectionReason`,
+  `ImpactStatus`; modelo `Client` (`name`, `phone @unique`, `dni?`,
   `assignedCollectorId?`, relación `assignedCollector` a `Employee`);
   `Employee.isController Boolean @default(false)` + relación
-  `assignedCustomers`; modelo `Installment` (`customerId`, `amount`,
+  `assignedClients`; modelo `Quota` (`clientId`, `amount`,
   `dueDate`, `status`, `reminderAttempts`, `lastReminderAt`,
-  `manualHandlingNote?`); modelo `PaymentProof` (`installmentId`,
+  `manualHandlingNote?`); modelo `PaymentProof` (`quotaId`,
   `messageId?`, `imagePath`, `extractedAmount?`, `extractedDate?`,
   `extractedBank?`, `extractedOpCode? @unique`, `status`,
   `rejectionReason?`, `acceptedById?`, `acceptedAt?`, `impactStatus`,
@@ -59,19 +59,19 @@ historias — nada de las fases 3+ compila sin esto.
   `ReminderConfig` (fila única: `daysBefore Int[]`, `maxAttempts`,
   `templateName`, `templateApproved`). Correr `prisma db push` (convención
   del proyecto, no `migrate`) y `prisma generate`.
-- [ ] T005 [P] Implementar `CustomersService` en
-  `src/customers/customers.service.ts`: `getByPhone(phone)`,
+- [ ] T005 [P] Implementar `ClientsService` en
+  `src/clients/clients.service.ts`: `getByPhone(phone)`,
   `create({ name, phone, dni?, assignedCollectorId? })` (rechaza si el
-  `phone` ya existe), `assignCollector(customerId, employeeId)`,
+  `phone` ya existe), `assignCollector(clientId, employeeId)`,
   `listByCollector(employeeId)` / `listAll()` (para `isController`).
   Depende de T004.
-- [ ] T006 [P] Registrar `CustomersService` como provider+export de
-  `src/customers/customers.module.ts`. Depende de T001, T005.
+- [ ] T006 [P] Registrar `ClientsService` como provider+export de
+  `src/clients/clients.module.ts`. Depende de T001, T005.
 - [ ] T007 [P] En `src/employees/employees.service.ts`, exponer
   `isController` en las queries/DTOs de ABM existentes (alta, edición,
   listado) sin romper los tests de Sprint 1. Depende de T004.
 
-**Checkpoint**: schema migrado, `Customer` resoluble por teléfono, flag de
+**Checkpoint**: schema migrado, `Client` resoluble por teléfono, flag de
 Cobrador Controlador disponible. Listo para implementar historias.
 
 ---
@@ -96,17 +96,17 @@ directo.
   validación; uno con `mediaBase64` pero sin `mimeType` es rechazado.
 - [ ] T009 [P] [US1] Test: `MessagingService` con un payload que trae
   `mediaBase64` guarda el binario en `storage/payment-proofs/`, crea un
-  `PaymentProof` en estado `PENDING_REVIEW` vinculado a la `Installment`
-  vigente del `Customer` (por `phone`), y encola el job de lectura —
+  `PaymentProof` en estado `PENDING_REVIEW` vinculado a la `Quota`
+  vigente del `Client` (por `phone`), y encola el job de lectura —
   en `src/messaging/messaging.service.spec.ts` (nuevo). Mockear el
   filesystem.
 - [ ] T010 [P] [US1] Test: `PaymentProofsService.accept()` marca `ACCEPTED`,
-  setea `acceptedById`/`acceptedAt`, deja `Installment.status =
+  setea `acceptedById`/`acceptedAt`, deja `Quota.status =
   AWAITING_CONFIRMATION` y `PaymentProof.impactStatus = PENDING`; rechaza
   (409) si ya estaba resuelto — en
   `src/collections/payment-proofs.service.spec.ts` (nuevo).
 - [ ] T011 [P] [US1] Test: `PaymentProofsService.reject(id, reason)` deja
-  `Installment.status = PENDING` (para que el cliente pueda reenviar) y
+  `Quota.status = PENDING` (para que el cliente pueda reenviar) y
   compone el mensaje correcto según cada uno de los 3 `ProofRejectionReason`
   — mismo archivo que T010.
 - [ ] T012 [P] [US1] Test: `PaymentProofsService.markManualHandling(id,
@@ -136,7 +136,7 @@ directo.
 - [ ] T016 [US1] En `src/messaging/messaging.service.ts`, extender
   `prepareConversation`/`enqueue`: si hay imagen guardada (T015), en vez de
   (o además de) encolar `process-message` normal, resolver la
-  `Installment` vigente del `Customer` (por `CustomersService.getByPhone`)
+  `Quota` vigente del `Client` (por `ClientsService.getByPhone`)
   y crear el `PaymentProof` (`PENDING_REVIEW`) referenciando el `Message`
   persistido; audita `payment_proof_received` vía `OrchestrationLogger`.
   Depende de T005, T015.
@@ -182,9 +182,9 @@ de plantillas (HSM) aprobadas por Meta.
 
 ### Tests for User Story 2
 
-- [ ] T021 [P] [US2] Test: dado un set de `Installment` con distintos
+- [ ] T021 [P] [US2] Test: dado un set de `Quota` con distintos
   `dueDate`, la función que decide "qué cuotas califican hoy" (extraída como
-  función pura, p. ej. `shouldRemindToday(installment, config, now)`)
+  función pura, p. ej. `shouldRemindToday(quota, config, now)`)
   devuelve `true` solo cuando faltan exactamente 7, 3 o 0 días (o los que
   diga `ReminderConfig.daysBefore`) y `reminderAttempts < maxAttempts` — en
   `src/queue/schedulers/reminders.scheduler.spec.ts` (nuevo).
@@ -208,7 +208,7 @@ de plantillas (HSM) aprobadas por Meta.
   `{ phone, templateName, params }`.
 - [ ] T026 [US2] Registrar la cola `'reminders'` en
   `src/queue/queue.module.ts` (`BullModule.registerQueue({ name:
-  'reminders' })`) e importar `CustomersModule`. Depende de T001.
+  'reminders' })`) e importar `ClientsModule`. Depende de T001.
 - [ ] T027 [US2] Implementar `src/queue/schedulers/reminders.scheduler.ts`:
   al iniciar el módulo, registra (o reutiliza si ya existe) un job
   repeatable diario en la cola `'reminders'` (patrón `every`, ver
@@ -216,11 +216,11 @@ de plantillas (HSM) aprobadas por Meta.
 - [ ] T028 [US2] Implementar `src/queue/schedulers/reminders.processor.ts`
   (`@Processor('reminders')`): en cada ciclo, lee `ReminderConfig`; si
   `templateApproved = false`, audita y termina (T022); si es `true`, busca
-  `Installment` con `status IN (PENDING, OVERDUE)` cuyo `dueDate` cae a
+  `Quota` con `status IN (PENDING, OVERDUE)` cuyo `dueDate` cae a
   `daysBefore` días de hoy y `reminderAttempts < maxAttempts`, llama
   `WhatsappSenderService.sendTemplate()` por cada una, incrementa
   `reminderAttempts`/`lastReminderAt`, audita
-  `installment_reminder_sent`; las que superan `maxAttempts` pasan a
+  `quota_reminder_sent`; las que superan `maxAttempts` pasan a
   `OVERDUE` (T023). Depende de T024, T027.
 - [ ] T029 [US2] Agregar a `src/collections/collections.controller.ts`
   (JWT + rol SUPERVISOR): `GET /collections/reminder-config`,
@@ -245,7 +245,7 @@ comprobante aceptado (Historia 1).
 - [ ] T030 [P] [US3] Test: `PaymentProofsService.verifyImpact(id,
   employeeId, { impactStatus, observation })` rechaza (403) si
   `employeeId` no tiene `isController = true`; con `CONFIRMED` deja
-  `Installment.status = PAID`; con `MISSING` no cambia el estado de la
+  `Quota.status = PAID`; con `MISSING` no cambia el estado de la
   cuota pero dispara la notificación al cobrador responsable — en
   `src/collections/payment-proofs.service.spec.ts`.
 - [ ] T031 [P] [US3] Test: `listAcceptedForImpactReview(filter)` solo
@@ -260,9 +260,9 @@ comprobante aceptado (Historia 1).
   dto)`: valida `isController` vía `EmployeesService`, setea
   `impactVerifiedById`/`impactVerifiedAt`/`impactObservation`; si
   `CONFIRMED`, envía confirmación definitiva al cliente
-  (`WhatsappSenderService.send()`) y pasa `Installment.status = PAID`; si
+  (`WhatsappSenderService.send()`) y pasa `Quota.status = PAID`; si
   `MISSING`, envía por `WhatsappSenderService.send()` una notificación al
-  `Employee.phone` del cobrador responsable (`Customer.assignedCollector`)
+  `Employee.phone` del cobrador responsable (`Client.assignedCollector`)
   — reusa el canal existente, no es un mensaje al cliente. Audita
   `payment_impact_verified`. Depende de T018.
 - [ ] T033 [US3] Agregar a `src/collections/collections.controller.ts`:
@@ -281,7 +281,7 @@ historial unificado) sin depender de revisar WhatsApp.
 
 **Independent Test**: `quickstart.md` §5. Testeable con datos sembrados
 directamente (no requiere que Historias 1-3 se hayan ejecutado de punta a
-punta, solo que existan `Customer`/`Installment` — Foundational alcanza).
+punta, solo que existan `Client`/`Quota` — Foundational alcanza).
 
 ### Tests for User Story 4
 
@@ -289,7 +289,7 @@ punta, solo que existan `Customer`/`Installment` — Foundational alcanza).
   solo clientes/comprobantes/pagos del cobrador logueado; con
   `isController = true` cuenta de todos — en
   `src/collections/collections.service.spec.ts` (nuevo).
-- [ ] T035 [P] [US4] Test: `CollectionsService.getCustomerHistory(customerId,
+- [ ] T035 [P] [US4] Test: `CollectionsService.getClientHistory(clientId,
   employeeId)` rechaza (403) si el cliente no es del cobrador y no es
   `isController`; si tiene acceso, devuelve `OrchestrationEvent` + `Message`
   + `InternalNote` combinados y ordenados por `createdAt` — mismo archivo
@@ -299,16 +299,16 @@ punta, solo que existan `Customer`/`Installment` — Foundational alcanza).
 
 - [ ] T036 [US4] Implementar `CollectionsService` en
   `src/collections/collections.service.ts`: `getKpis(employeeId)`
-  (`customersWithPendingInstallments`, `proofsToReview`,
-  `confirmedThisWeek`), `listCustomers(employeeId, filter)`,
-  `getCustomerHistory(customerId, employeeId)` (timeline unificado, patrón
+  (`clientsWithPendingQuotas`, `proofsToReview`,
+  `confirmedThisWeek`), `listClients(employeeId, filter)`,
+  `getClientHistory(clientId, employeeId)` (timeline unificado, patrón
   ya usado en `supervisor.service.ts.getConversationDetail`). Depende de
   T005, T018.
 - [ ] T037 [US4] Registrar `CollectionsService` en
   `src/collections/collections.module.ts`. Depende de T002, T036.
 - [ ] T038 [US4] Agregar a `src/collections/collections.controller.ts`:
-  `GET /collections/kpis`, `GET /collections/customers`,
-  `GET /collections/customers/:id/history`. Depende de T036.
+  `GET /collections/kpis`, `GET /collections/clients`,
+  `GET /collections/clients/:id/history`. Depende de T036.
 
 **Checkpoint**: Historias 1, 2, 3 y 4 funcionan de forma independiente.
 
@@ -324,20 +324,20 @@ sistema (ej. llamada telefónica).
 
 ### Tests for User Story 5
 
-- [ ] T039 [P] [US5] Test: `InstallmentsService.markManual(id, employeeId,
+- [ ] T039 [P] [US5] Test: `QuotasService.markManual(id, employeeId,
   note?)` deja `status = MANUAL` y, desde ese momento,
   `shouldRemindToday()` (T021) devuelve `false` para esa cuota — en
-  `src/collections/installments.service.spec.ts` (nuevo).
+  `src/collections/quotas.service.spec.ts` (nuevo).
 
 ### Implementation for User Story 5
 
-- [ ] T040 [US5] Implementar `InstallmentsService` en
-  `src/collections/installments.service.ts`: `markManual(id, employeeId,
+- [ ] T040 [US5] Implementar `QuotasService` en
+  `src/collections/quotas.service.ts`: `markManual(id, employeeId,
   note?)` (valida alcance por `assignedCollectorId`/`isController`, audita
-  `installment_marked_manual`). Depende de T005.
-- [ ] T041 [US5] Registrar `InstallmentsService` en
+  `quota_marked_manual`). Depende de T005.
+- [ ] T041 [US5] Registrar `QuotasService` en
   `src/collections/collections.module.ts`. Depende de T002, T040.
-- [ ] T042 [US5] Agregar `POST /collections/installments/:id/manual` en
+- [ ] T042 [US5] Agregar `POST /collections/quotas/:id/manual` en
   `src/collections/collections.controller.ts`. Depende de T040.
 
 **Checkpoint**: las 5 historias funcionan de forma independiente. Sprint 4 completo.
@@ -422,7 +422,7 @@ Task: "Test PaymentProofsService.markManualHandling() usa takeover — payment-p
 
 ### Entrega incremental
 
-1. Setup + Foundational → base lista (`Customer`, `Installment`, `isController`).
+1. Setup + Foundational → base lista (`Client`, `Quota`, `isController`).
 2. US1 → validar → comprobantes resueltos de punta a punta.
 3. US2 → validar → recordatorios automáticos (sujeto a que la plantilla de
    Meta ya esté aprobada — si no, se valida el bloqueo explícito de T022).

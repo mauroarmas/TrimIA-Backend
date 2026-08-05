@@ -31,6 +31,25 @@ binario ya en base64 en el body del webhook hacia el backend, junto con
 `mimeType`. `WebhookMessageDto` gana campos opcionales `mediaBase64`/
 `mimeType`; el backend nunca necesita un token de Meta propio.
 
+**Corrección #2 (verificada en vivo contra n8n 2.30.7 real, no solo en código):**
+el primer intento hacía las dos llamadas a la Graph API *dentro* del nodo
+"Code in JavaScript" vía `this.helpers.httpRequestWithAuthentication`. Al
+probarlo con una imagen real, n8n tiró en producción:
+`Error: The function "helpers.httpRequestWithAuthentication" is not
+supported in the Code Node` — el Code Node corre en un Task Runner
+sandboxeado que no expone llamadas HTTP autenticadas con credencial. Se
+rehizo el workflow: el Code Node vuelve a ser JS puro (solo detecta
+`message.type` y extrae `mediaId`/`mimeType`), y las dos llamadas a Meta se
+hacen con dos nodos **HTTP Request** nativos (mismo patrón, mismo credential
+`httpHeaderAuth`, ya probado funcionando en `EnvioMensaje-B.json`), separados
+por un nodo `If` que rutea según `isImage`. El binario descargado por el
+segundo `HTTP Request` (`responseFormat: "file"`) se lee como base64 en un
+segundo Code Node puro vía `$input.first().binary.data.data` — n8n guarda
+internamente todo binario ya en base64, así que no hace falta ninguna
+conversión ni ningún `this.helpers.*`. Confirmado con el flujo de envío de
+plantillas (§2), que sí usa nodos HTTP Request nativos desde el principio y
+funcionó al primer intento contra la Graph API real.
+
 El binario (base64) se pasa como `HumanMessage` multimodal a
 `LlmService.chat` (LangChain `ChatGoogleGenerativeAI` soporta contenido
 `image_url`/`media` en el mismo mensaje que texto) para la lectura tentativa
@@ -126,25 +145,25 @@ IV (procesamiento asíncrono, sin lógica de tiempo en el request HTTP).
   agrega una superficie HTTP nueva solo para disparar el ciclo, cuando BullMQ
   ya resuelve la programación repetible sin infraestructura adicional.
 
-## §4. Relación entre `Customer` y `Conversation` — por qué no es una FK obligatoria
+## §4. Relación entre `Client` y `Conversation` — por qué no es una FK obligatoria
 
 **Hallazgo:** `Conversation.externalId` (el teléfono) **no tiene** constraint
 `@unique` (`@@index([externalId])` solamente) — pueden existir varias
 conversaciones históricas para el mismo teléfono (p. ej. si se cierra y
-reabre). `Customer.phone` sí debe ser único: es la identidad de la persona,
+reabre). `Client.phone` sí debe ser único: es la identidad de la persona,
 independiente de cuántas conversaciones haya tenido.
 
-**Decisión:** `Customer.phone @unique`. `Conversation` no gana una FK
-obligatoria a `Customer`; en su lugar, todo lo que necesita "el cliente de
-esta conversación" (paneles, historial) resuelve por `Customer.phone ==
+**Decisión:** `Client.phone @unique`. `Conversation` no gana una FK
+obligatoria a `Client`; en su lugar, todo lo que necesita "el cliente de
+esta conversación" (paneles, historial) resuelve por `Client.phone ==
 Conversation.externalId` en el momento de la consulta, igual que hoy
 `Employee.phone` se cruza contra `externalId` para resolver `userType`. Esto
 evita una migración de backfill sobre conversaciones históricas y mantiene
-`Customer` como una entidad de negocio (cobranzas/ventas), no una propiedad
+`Client` como una entidad de negocio (cobranzas/ventas), no una propiedad
 técnica de `Conversation`.
 
 **Alternativas consideradas:**
-- *`Conversation.customerId` FK nullable.* Descartada por ahora: exigiría
+- *`Conversation.clientId` FK nullable.* Descartada por ahora: exigiría
   resolver y persistir el vínculo en cada mensaje entrante nuevo (más
   escritura por mensaje) para un beneficio — evitar un join por teléfono —
   que no es un cuello de botella a esta escala. Se puede agregar después si

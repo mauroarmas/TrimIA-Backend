@@ -38,6 +38,35 @@ enum EscalationStatus {
   RESOLVED
 }
 
+// Estado de una cuota (Sprint 4 — Cobranzas). Ver transiciones en
+// specs/002-collections-payments/data-model.md.
+enum QuotaStatus {
+  PENDING               // aún no vence, sin acción
+  AWAITING_CONFIRMATION // el cliente avisó/envió comprobante, esperando decisión del cobrador
+  PAID                  // comprobante aceptado Y verificado con impacto bancario confirmado
+  OVERDUE               // vencida, sin respuesta tras el máximo de intentos de recordatorio
+  MANUAL                // el cobrador la marcó como gestionada manualmente
+}
+
+enum PaymentProofStatus {
+  PENDING_REVIEW   // recién recibido, esperando decisión del cobrador
+  ACCEPTED         // el cobrador lo aceptó
+  REJECTED         // el cobrador marcó un problema (ver ProofRejectionReason)
+  MANUAL_HANDLING  // "otro problema — voy a manejarlo yo" (pausa la IA, ver takeover Sprint 3)
+}
+
+enum ProofRejectionReason {
+  PAST_DATE       // el comprobante es de una fecha anterior
+  WRONG_CBU       // el CBU de destino no es el de la empresa
+  AMOUNT_TOO_LOW  // el monto transferido es menor al que corresponde
+}
+
+enum ImpactStatus {
+  PENDING    // comprobante aceptado, aún no verificado contra la cuenta bancaria
+  CONFIRMED  // el Cobrador Controlador confirmó que el pago impactó
+  MISSING    // el Cobrador Controlador indicó que no impactó
+}
+
 // Sector de la empresa. Gatea qué módulos del panel ve cada empleado.
 model Sector {
   id        String     @id @default(uuid())
@@ -59,6 +88,10 @@ model Employee {
   isActive  Boolean      @default(true)
   sectorId  String
   sector    Sector       @relation(fields: [sectorId], references: [id])
+  // Permiso adicional de Cobrador Controlador (Sprint 4). No es un valor nuevo
+  // de EmployeeRole: convive con role=EMPLEADO + sector=Cobranzas. Ver
+  // specs/002-collections-payments/data-model.md.
+  isController Boolean   @default(false)
   createdAt DateTime     @default(now())
   updatedAt DateTime     @updatedAt
 
@@ -67,10 +100,98 @@ model Employee {
   resolvedEscalations  Escalation[]   @relation("EscalationResolvedBy")
   handledConversations Conversation[] @relation("ConversationHandledBy")
   internalNotes        InternalNote[] @relation("InternalNoteAuthor")
+  assignedClients      Client[]       @relation("ClientAssignedCollector")
+  acceptedProofs       PaymentProof[] @relation("PaymentProofAcceptedBy")
+  verifiedProofs       PaymentProof[] @relation("PaymentProofImpactVerifiedBy")
 
   @@index([phone])
   @@index([email])
   @@index([sectorId])
+}
+
+// Cliente identificado por nombre/teléfono/DNI, con un cobrador asignado
+// (Sprint 4). Prerequisito de las pantallas de Cobranzas y Ventas — hoy la
+// Conversation solo tiene externalId, sin nombre ni cobrador. No lleva FK
+// desde Conversation: se cruza por teléfono en tiempo de consulta (ver
+// specs/002-collections-payments/research.md §4).
+model Client {
+  id                  String    @id @default(uuid())
+  name                String
+  phone               String    @unique
+  dni                 String?
+  assignedCollectorId String?
+  assignedCollector   Employee? @relation("ClientAssignedCollector", fields: [assignedCollectorId], references: [id])
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  quotas Quota[]
+
+  @@index([assignedCollectorId])
+}
+
+// Cuota de un cliente (Sprint 4). Ver transiciones de estado en
+// specs/002-collections-payments/data-model.md.
+model Quota {
+  id                 String       @id @default(uuid())
+  clientId           String
+  client             Client       @relation(fields: [clientId], references: [id])
+  amount             Decimal
+  dueDate            DateTime
+  status             QuotaStatus @default(PENDING)
+  reminderAttempts   Int          @default(0)
+  lastReminderAt     DateTime?
+  manualHandlingNote String?
+  createdAt          DateTime     @default(now())
+  updatedAt          DateTime     @updatedAt
+
+  paymentProofs PaymentProof[]
+
+  @@index([clientId])
+  @@index([status])
+  @@index([dueDate])
+}
+
+// Comprobante de pago enviado por un cliente por WhatsApp (Sprint 4). Los
+// campos extracted* son SIEMPRE una sugerencia editable de Gemini Vision,
+// nunca verdad del sistema — el cobrador decide.
+model PaymentProof {
+  id             String                 @id @default(uuid())
+  quotaId        String
+  quota          Quota                  @relation(fields: [quotaId], references: [id])
+  messageId      String?
+  message        Message?               @relation(fields: [messageId], references: [id])
+  imagePath      String
+  extractedAmount Decimal?
+  extractedDate   DateTime?
+  extractedBank   String?
+  extractedOpCode String?               @unique
+  status          PaymentProofStatus    @default(PENDING_REVIEW)
+  rejectionReason ProofRejectionReason?
+  acceptedById    String?
+  acceptedBy      Employee?             @relation("PaymentProofAcceptedBy", fields: [acceptedById], references: [id])
+  acceptedAt      DateTime?
+  impactStatus       ImpactStatus       @default(PENDING)
+  impactVerifiedById String?
+  impactVerifiedBy   Employee?          @relation("PaymentProofImpactVerifiedBy", fields: [impactVerifiedById], references: [id])
+  impactVerifiedAt   DateTime?
+  impactObservation  String?
+  createdAt          DateTime           @default(now())
+
+  @@index([quotaId])
+  @@index([status])
+  @@index([impactStatus])
+}
+
+// Configuración de recordatorios de cuota (Sprint 4) — fila única, editable
+// por un supervisor. templateApproved bloquea el scheduler de forma
+// explícita mientras Meta no aprobó la plantilla HSM (ver research.md §2).
+model ReminderConfig {
+  id               String   @id @default(uuid())
+  daysBefore       Int[]    @default([7, 3, 0])
+  maxAttempts      Int      @default(3)
+  templateName     String   @default("recordatorio_cuota")
+  templateApproved Boolean  @default(false)
+  updatedAt        DateTime @updatedAt
 }
 
 enum MessageRole {
@@ -126,6 +247,8 @@ model Message {
   content        String
   agentType      AgentType?
   createdAt      DateTime    @default(now())
+
+  paymentProofs PaymentProof[]
 
   @@index([conversationId, createdAt])
 }

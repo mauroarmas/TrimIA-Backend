@@ -9,6 +9,7 @@ export interface JwtPayload {
   role: string; // EMPLEADO | SUPERVISOR
   sectorId: string;
   sectorName: string;
+  isController: boolean; // Cobrador Controlador (Sprint 4)
 }
 
 @Injectable()
@@ -42,6 +43,7 @@ export class AuthService {
       role: employee.role,
       sectorId: employee.sectorId,
       sectorName: employee.sector.name,
+      isController: employee.isController,
     };
 
     return {

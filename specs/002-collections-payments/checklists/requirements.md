@@ -32,7 +32,7 @@
 ## Notes
 
 - No hubo necesidad de marcadores [NEEDS CLARIFICATION]: las decisiones de
-  alcance (Customer como fuente de verdad, plantillas de WhatsApp como
+  alcance (Client como fuente de verdad, plantillas de WhatsApp como
   bloqueante externo, verificación de impacto manual, roles sin inflar el
   enum, notificaciones solo en el caso crítico) ya fueron acordadas
   explícitamente con el usuario en la revisión del plan v5 contra los

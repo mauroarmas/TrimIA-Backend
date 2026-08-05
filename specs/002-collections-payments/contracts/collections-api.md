@@ -10,23 +10,23 @@
 ### `GET /collections/kpis`
 KPIs del cobrador logueado (o globales si `isController`).
 ```json
-{ "customersWithPendingInstallments": 47, "proofsToReview": 3, "confirmedThisWeek": 8 }
+{ "clientsWithPendingQuotas": 47, "proofsToReview": 3, "confirmedThisWeek": 8 }
 ```
 
-### `GET /collections/customers?status=&page=&limit=`
+### `GET /collections/clients?status=&page=&limit=`
 Lista de clientes del cobrador (todos si `isController`), con su cuota más
 relevante y estado.
 ```json
 {
   "data": [
-    { "customerId": "uuid", "name": "Juan Pérez", "phone": "549...", "overdueInstallments": 2,
+    { "clientId": "uuid", "name": "Juan Pérez", "phone": "549...", "overdueQuotas": 2,
       "amountDue": 84000, "lastReminderAt": "2026-08-03T10:00:00Z", "status": "AWAITING_CONFIRMATION" }
   ],
   "page": 1, "limit": 20, "total": 47, "hasMore": true
 }
 ```
 
-### `GET /collections/customers/:id/history`
+### `GET /collections/clients/:id/history`
 Registro de actividad del cliente — timeline unificado (OrchestrationEvent +
 Message + InternalNote), orden cronológico. 403 si el cliente no es del
 cobrador y no es `isController`.
@@ -38,10 +38,10 @@ Cola de comprobantes a revisar del cobrador logueado (todos si `isController`).
 ```json
 {
   "data": [{
-    "id": "uuid", "installmentId": "uuid", "imageUrl": "/collections/proofs/uuid/image",
+    "id": "uuid", "quotaId": "uuid", "imageUrl": "/collections/proofs/uuid/image",
     "extractedAmount": 42000, "extractedDate": "2026-08-04", "extractedBank": "Banco Nación",
     "status": "PENDING_REVIEW",
-    "customer": { "name": "Juan Pérez", "phone": "549..." }
+    "client": { "name": "Juan Pérez", "phone": "549..." }
   }]
 }
 ```
@@ -54,7 +54,7 @@ Sirve el binario original del comprobante desde `storage/payment-proofs/`
 No es un endpoint estático público.
 
 ### `POST /collections/proofs/:id/accept`
-Acepta el comprobante. Envía confirmación al cliente, marca `Installment`
+Acepta el comprobante. Envía confirmación al cliente, marca `Quota`
 como esperando verificación de impacto. 409 si ya estaba resuelto.
 
 ### `POST /collections/proofs/:id/reject`
@@ -84,12 +84,12 @@ desde `acceptedAt`. 403 si `isController` es `false`.
 ```json
 { "impactStatus": "CONFIRMED" | "MISSING", "observation": "opcional" }
 ```
-- `CONFIRMED` → envía confirmación definitiva al cliente, `Installment` pasa a `PAID`.
+- `CONFIRMED` → envía confirmación definitiva al cliente, `Quota` pasa a `PAID`.
 - `MISSING` → notifica por WhatsApp al cobrador responsable del cliente (FR-013).
 
 ## Cuotas
 
-### `POST /collections/installments/:id/manual`
+### `POST /collections/quotas/:id/manual`
 Marca la cuota como `MANUAL`; detiene sus recordatorios. Sin efecto en el
 flujo de comprobante.
 ```json
