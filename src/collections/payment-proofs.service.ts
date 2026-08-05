@@ -11,8 +11,10 @@ import { ProofRejectionReason } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
 import { ConversationsService } from '../conversations/conversations.service';
 import { ClientsService } from '../clients/clients.service';
+import { EmployeesService } from '../employees/employees.service';
 import { WhatsappSenderService } from '../messaging/whatsapp-sender.service';
 import { OrchestrationLogger } from '../ai/orchestrator/orchestration-logger.service';
+import { VerifyImpactDto } from './dto/verify-impact.dto';
 
 const REJECTION_MESSAGES: Record<ProofRejectionReason, string> = {
   PAST_DATE:
@@ -27,7 +29,7 @@ const ACCEPTED_MESSAGE = '¡Recibido, gracias! 🙌';
 
 const proofInclude = {
   message: true,
-  quota: { include: { client: true } },
+  quota: { include: { client: { include: { assignedCollector: true } } } },
 } as const;
 
 @Injectable()
@@ -38,6 +40,7 @@ export class PaymentProofsService {
     private readonly prisma: PrismaService,
     private readonly conversations: ConversationsService,
     private readonly clients: ClientsService,
+    private readonly employees: EmployeesService,
     private readonly sender: WhatsappSenderService,
     private readonly orchestrationLogger: OrchestrationLogger,
     @InjectQueue('receipt-extraction')
@@ -259,6 +262,81 @@ export class PaymentProofsService {
       conversationId: proof.message.conversationId,
       eventType: 'payment_proof_manual_handling',
       payload: { paymentProofId: id },
+    });
+
+    return updated;
+  }
+
+  /** Lista comprobantes aceptados pendientes de verificación de impacto (Phase 5 — US3). */
+  async listAcceptedForImpactReview() {
+    return this.prisma.paymentProof.findMany({
+      where: { status: 'ACCEPTED' },
+      include: proofInclude,
+      orderBy: { acceptedAt: 'desc' },
+    });
+  }
+
+  /**
+   * El Cobrador Controlador verifica si un comprobante aceptado realmente
+   * impactó en la cuenta bancaria de la empresa (Phase 5 — US3).
+   * Si CONFIRMED: cliente recibe confirmación definitiva, Quota → PAID.
+   * Si MISSING: cobrador responsable recibe notificación del problema.
+   */
+  async verifyImpact(
+    id: string,
+    employeeId: string,
+    dto: VerifyImpactDto,
+  ) {
+    const employee = await this.employees.findById(employeeId);
+    if (!employee?.isController) {
+      throw new ForbiddenException(
+        'Solo el Cobrador Controlador puede verificar impacto bancario',
+      );
+    }
+
+    const proof = await this.findOrThrow(id);
+
+    const updated = await this.prisma.paymentProof.update({
+      where: { id },
+      data: {
+        impactStatus: dto.impactStatus,
+        impactVerifiedById: employeeId,
+        impactVerifiedAt: new Date(),
+        impactObservation: dto.observation,
+      },
+      include: proofInclude,
+    });
+
+    if (dto.impactStatus === 'CONFIRMED') {
+      await this.prisma.quota.update({
+        where: { id: proof.quotaId },
+        data: { status: 'PAID' },
+      });
+
+      await this.notifyClient(
+        proof,
+        '¡Confirmado! Tu pago ha sido procesado correctamente. 🎉',
+      );
+    } else if (dto.impactStatus === 'MISSING') {
+      const assignedCollector =
+        proof.quota.client.assignedCollector;
+      if (assignedCollector) {
+        await this.sender.send(
+          assignedCollector.phone,
+          `Atención: El pago del comprobante #${proof.id} no figura en la cuenta de la empresa. Revisá con el cliente.`,
+          'WHATSAPP',
+        );
+      }
+    }
+
+    await this.orchestrationLogger.logEvent({
+      conversationId: proof.message?.conversationId ?? null,
+      eventType: 'payment_impact_verified',
+      payload: {
+        paymentProofId: id,
+        impactStatus: dto.impactStatus,
+        verifiedById: employeeId,
+      },
     });
 
     return updated;

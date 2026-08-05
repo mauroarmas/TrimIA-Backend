@@ -6,6 +6,7 @@ import { ConversationsService } from '../conversations/conversations.service';
 import { ClientsService } from '../clients/clients.service';
 import { WhatsappSenderService } from '../messaging/whatsapp-sender.service';
 import { OrchestrationLogger } from '../ai/orchestrator/orchestration-logger.service';
+import { ImpactStatusDto } from './dto/verify-impact.dto';
 
 /**
  * Tests de PaymentProofsService (Sprint 4 — Historia 1: confirmar comprobante).
@@ -33,6 +34,7 @@ describe('PaymentProofsService', () => {
   let sender: { send: jest.Mock };
   let logger: { logEvent: jest.Mock };
   let receiptQueue: { add: jest.Mock };
+  let employees: { findById: jest.Mock };
 
   const message = { id: 'msg-1', conversationId: 'conv-1' };
   const conversation = {
@@ -71,6 +73,7 @@ describe('PaymentProofsService', () => {
       addInternalNote: jest.fn(),
     };
     clients = { getByPhone: jest.fn() };
+    employees = { findById: jest.fn() };
     sender = { send: jest.fn() };
     logger = { logEvent: jest.fn() };
     receiptQueue = { add: jest.fn() };
@@ -79,6 +82,7 @@ describe('PaymentProofsService', () => {
       prisma as unknown as PrismaService,
       conversations as unknown as ConversationsService,
       clients as unknown as ClientsService,
+      employees as unknown as any,
       sender as unknown as WhatsappSenderService,
       logger as unknown as OrchestrationLogger,
       receiptQueue as unknown as Queue,
@@ -314,6 +318,169 @@ describe('PaymentProofsService', () => {
 
       expect(prisma.paymentProof.create).not.toHaveBeenCalled();
       expect(result).toBeNull();
+    });
+  });
+
+  describe('verifyImpact (Phase 5 — US3)', () => {
+    const acceptedProof = {
+      ...pendingProof,
+      id: 'proof-accepted',
+      status: 'ACCEPTED',
+      acceptedById: 'collector-1',
+      acceptedAt: new Date(),
+      impactStatus: 'PENDING',
+      quota: {
+        id: 'inst-1',
+        client: { id: 'cust-1', assignedCollectorId: 'collector-1' },
+      },
+    };
+
+    it('rechaza (403) si el empleado no tiene isController = true', async () => {
+      prisma.paymentProof.findUnique.mockResolvedValue(acceptedProof);
+      employees.findById.mockResolvedValue({ id: 'collector-2', isController: false });
+
+      await expect(
+        service.verifyImpact('proof-accepted', 'collector-2', {
+          impactStatus: ImpactStatusDto.CONFIRMED,
+          observation: '',
+        }),
+      ).rejects.toThrow('Solo el Cobrador Controlador');
+    });
+
+    it('con impactStatus=CONFIRMED, envía confirmación al cliente y deja Quota.status=PAID', async () => {
+      employees.findById.mockResolvedValue({ id: 'controller-1', isController: true });
+      prisma.paymentProof.findUnique.mockResolvedValue(acceptedProof);
+      prisma.paymentProof.update.mockResolvedValue({
+        ...acceptedProof,
+        impactStatus: ImpactStatusDto.CONFIRMED,
+        impactVerifiedAt: new Date(),
+      });
+
+      const result = await service.verifyImpact('proof-accepted', 'controller-1', {
+        impactStatus: ImpactStatusDto.CONFIRMED,
+        observation: 'Confirmado en la cuenta',
+      });
+
+      expect(prisma.paymentProof.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'proof-accepted' },
+          data: expect.objectContaining({
+            impactStatus: ImpactStatusDto.CONFIRMED,
+            impactVerifiedById: 'controller-1',
+            impactObservation: 'Confirmado en la cuenta',
+          }),
+        }),
+      );
+      expect(prisma.quota.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'inst-1' },
+          data: expect.objectContaining({ status: 'PAID' }),
+        }),
+      );
+      expect(sender.send).toHaveBeenCalledWith(
+        conversation.externalId,
+        expect.any(String),
+        conversation.channel,
+      );
+      expect(logger.logEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ eventType: 'payment_impact_verified' }),
+      );
+    });
+
+    it('con impactStatus=MISSING, notifica al cobrador responsable (sin cambiar estado de Quota)', async () => {
+      const collector = { id: 'collector-1', phone: '5491100000001' };
+      const proofWithCollector = {
+        ...acceptedProof,
+        quota: {
+          ...acceptedProof.quota,
+          client: { ...acceptedProof.quota.client, assignedCollector: collector },
+        },
+      };
+      employees.findById.mockResolvedValue({ id: 'controller-1', isController: true });
+      prisma.paymentProof.findUnique.mockResolvedValue(proofWithCollector);
+      prisma.paymentProof.update.mockResolvedValue({
+        ...proofWithCollector,
+        impactStatus: ImpactStatusDto.MISSING,
+      });
+
+      const result = await service.verifyImpact('proof-accepted', 'controller-1', {
+        impactStatus: ImpactStatusDto.MISSING,
+        observation: 'No figura en la cuenta',
+      });
+
+      expect(prisma.paymentProof.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            impactStatus: ImpactStatusDto.MISSING,
+            impactVerifiedById: 'controller-1',
+          }),
+        }),
+      );
+      // Cuota NO cambia de estado (sigue en AWAITING_CONFIRMATION)
+      expect(prisma.quota.update).not.toHaveBeenCalled();
+      // Notifica al cobrador responsable por WhatsApp
+      expect(sender.send).toHaveBeenCalledWith(
+        collector.phone,
+        expect.any(String),
+        expect.any(String), // channel
+      );
+    });
+
+    it('rechaza (404) si el comprobante no existe', async () => {
+      employees.findById.mockResolvedValue({ id: 'controller-1', isController: true });
+      prisma.paymentProof.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.verifyImpact('no-existe', 'controller-1', {
+          impactStatus: ImpactStatusDto.CONFIRMED,
+        }),
+      ).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  describe('listAcceptedForImpactReview (Phase 5 — US3)', () => {
+    it('devuelve solo comprobantes con status=ACCEPTED', async () => {
+      const accepted = [
+        { id: 'proof-1', status: 'ACCEPTED', impactStatus: 'PENDING' },
+        { id: 'proof-2', status: 'ACCEPTED', impactStatus: 'PENDING' },
+      ];
+      prisma.paymentProof.findMany.mockResolvedValue(accepted);
+
+      const result = await service.listAcceptedForImpactReview();
+
+      expect(prisma.paymentProof.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { status: 'ACCEPTED' },
+        }),
+      );
+      expect(result).toEqual(accepted);
+    });
+
+    it('excluye comprobantes en PENDING_REVIEW, REJECTED y MANUAL_HANDLING', async () => {
+      prisma.paymentProof.findMany.mockResolvedValue([]);
+
+      await service.listAcceptedForImpactReview();
+
+      const callArgs = prisma.paymentProof.findMany.mock.calls[0][0];
+      expect(callArgs.where.status).toBe('ACCEPTED');
+      // Verifica que el where no incluya otros estados
+      expect(callArgs.where).not.toHaveProperty(
+        'status',
+        expect.objectContaining({ in: expect.any(Array) }),
+      );
+    });
+
+    it('ordena por fecha de aceptación descendente (más recientes primero)', async () => {
+      prisma.paymentProof.findMany.mockResolvedValue([]);
+
+      await service.listAcceptedForImpactReview();
+
+      const callArgs = prisma.paymentProof.findMany.mock.calls[0][0];
+      expect(callArgs.orderBy).toBeDefined();
+      // Verifica que haya un orderBy con acceptedAt
+      expect(callArgs.orderBy).toEqual(
+        expect.objectContaining({ acceptedAt: 'desc' }),
+      );
     });
   });
 });

@@ -295,8 +295,9 @@ memoria conversacional y auditoría/métricas. Hay corpus de prueba cargado para
 > **Nota:** desde `docs/plan_de_trabajo.md` v4, el trabajo posterior a la Fase 4
 > se organiza en **8 sprints** (no en "Fase 5/6" a secas). Estado real:
 > Sprint 1 (Auth+Whitelist) ✅, Sprint 2 (Panel Supervisor: métricas,
-> conversaciones, `agents/status`) ✅, Sprint 3 (human-in-the-loop, §5.7) ✅.
-> Próximo: Sprint 4 en adelante — ver el plan de trabajo para el detalle.
+> conversaciones, `agents/status`) ✅, Sprint 3 (human-in-the-loop, §5.7) ✅,
+> Sprint 4 (Cobranzas: comprobantes, recordatorios, verificación de impacto, panel) ✅.
+> Próximo: Sprint 5 en adelante — ver el plan de trabajo para el detalle.
 
 ---
 

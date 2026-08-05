@@ -8,17 +8,21 @@ import {
   Req,
   Res,
   UseGuards,
+  ForbiddenException,
 } from '@nestjs/common';
 import { Response } from 'express';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard, Roles } from '../auth/guards/roles.guard';
 import { PaymentProofsService } from './payment-proofs.service';
+import { CollectionsService } from './collections.service';
+import { QuotasService } from './quotas.service';
 import { ReminderConfigService } from './reminder-config.service';
 import { WhatsappMediaService } from '../messaging/whatsapp-media.service';
 import { RejectProofDto } from './dto/reject-proof.dto';
 import { ManualHandlingProofDto } from './dto/manual-handling-proof.dto';
 import { UpdateReminderConfigDto } from './dto/update-reminder-config.dto';
+import { VerifyImpactDto } from './dto/verify-impact.dto';
 
 /**
  * Panel de Cobranzas (Sprint 4 — entregable E4).
@@ -33,6 +37,8 @@ import { UpdateReminderConfigDto } from './dto/update-reminder-config.dto';
 export class CollectionsController {
   constructor(
     private readonly paymentProofs: PaymentProofsService,
+    private readonly collections: CollectionsService,
+    private readonly quotas: QuotasService,
     private readonly media: WhatsappMediaService,
     private readonly reminderConfig: ReminderConfigService,
   ) {}
@@ -103,5 +109,67 @@ export class CollectionsController {
   @ApiOperation({ summary: 'Actualiza la configuración de recordatorios' })
   updateReminderConfig(@Body() dto: UpdateReminderConfigDto) {
     return this.reminderConfig.update(dto);
+  }
+
+  /** GET /collections/proofs/accepted — Cobrador Controlador verifica impacto. */
+  @Get('proofs/accepted')
+  @ApiOperation({ summary: 'Lista de comprobantes aceptados pendientes de verificación de impacto' })
+  listAcceptedProofs(@Req() req: any) {
+    if (!req.user.isController) {
+      throw new ForbiddenException('Solo el Cobrador Controlador puede acceder a esta lista');
+    }
+    return this.paymentProofs.listAcceptedForImpactReview();
+  }
+
+  /** POST /collections/proofs/:id/verify-impact — Cobrador Controlador verifica. */
+  @Post('proofs/:id/verify-impact')
+  @ApiOperation({ summary: 'Verifica si un pago aceptado impactó en la cuenta bancaria' })
+  verifyImpact(
+    @Param('id') id: string,
+    @Body() dto: VerifyImpactDto,
+    @Req() req: any,
+  ) {
+    return this.paymentProofs.verifyImpact(id, req.user.id, dto);
+  }
+
+  /** GET /collections/kpis — KPIs del panel. */
+  @Get('kpis')
+  @ApiOperation({ summary: 'KPIs del panel de cobranzas (cuotas pendientes, comprobantes, pagos)' })
+  getKpis(@Req() req: any) {
+    return this.collections.getKpis(req.user.id, req.user.isController);
+  }
+
+  /** GET /collections/clients — Lista de mis clientes. */
+  @Get('clients')
+  @ApiOperation({ summary: 'Lista de clientes del cobrador logueado' })
+  listClients(@Req() req: any) {
+    return this.collections.listClients(req.user.id, req.user.isController);
+  }
+
+  /** GET /collections/clients/:id/history — Historial de un cliente. */
+  @Get('clients/:id/history')
+  @ApiOperation({ summary: 'Historial unificado de un cliente (mensajes, comprobantes, notas)' })
+  getClientHistory(@Param('id') clientId: string, @Req() req: any) {
+    return this.collections.getClientHistory(
+      clientId,
+      req.user.id,
+      req.user.isController,
+    );
+  }
+
+  /** POST /collections/quotas/:id/manual — Marcar cuota como manejada manualmente. */
+  @Post('quotas/:id/manual')
+  @ApiOperation({ summary: 'Marca una cuota como gestionada manualmente (detiene recordatorios)' })
+  markQuotaManual(
+    @Param('id') quotaId: string,
+    @Body() dto: { note?: string },
+    @Req() req: any,
+  ) {
+    return this.quotas.markManual(
+      quotaId,
+      req.user.id,
+      req.user.isController,
+      dto.note,
+    );
   }
 }

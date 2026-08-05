@@ -111,9 +111,11 @@ graph LR
 
 ---
 
-### Sprint 4 — Cobranzas 💰
+### ✅ Sprint 4 — Cobranzas 💰 (Completado 2026-08-05)
 
 *Pantallas del prototipo: Panel de Cobranzas (Fig 3), Revisar Comprobante (Fig 4), Control de Comprobantes (Fig 5-6), Registro de Actividad (Fig 7).*
+
+**Estado:** Todas las 5 historias de usuario (US1-US5) implementadas y testeadas. 128 tests pasando. Endpoints documentados en `CONTRATO_API_Frontend.md`.
 
 | # | Tarea | Dónde | Criterio |
 |---|-------|-------|---------|

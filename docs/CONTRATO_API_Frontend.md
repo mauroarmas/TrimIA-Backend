@@ -4,7 +4,7 @@
 > que consume cada módulo de la app. Permite trabajar **en paralelo**: lo que ya
 > existe se consume directo; lo pendiente se mockea contra el contrato de abajo.
 >
-> Última actualización: 2026-08-04 (Sprint 1, 2 y 3).
+> Última actualización: 2026-08-05 (Sprint 1-4 completos).
 
 ## Generalidades
 
@@ -22,6 +22,7 @@
 | Entrevistas | SUPERVISOR | `/interviews/*` 🔴 |
 | Capacitación | EMPLEADO | `/training/*` 🔴 |
 | Gobernanza (Panel del Supervisor) | SUPERVISOR | `/supervisor/*` ✅ |
+| Panel de Cobranzas | EMPLEADO (cobrador) / SUPERVISOR (controlador) | `/collections/*` ✅ |
 
 > Roles: ver `CONTEXTO_TECNICO.md` §5.3.1. `userType` (CLIENTE/EMPLEADO) define audiencia;
 > `role` (EMPLEADO/SUPERVISOR) gatea los módulos de gobernanza. El `role` viene de la
@@ -234,6 +235,118 @@ Buscar en el RAG (útil para previsualizar qué recupera un documento).
 { "query": "cómo pago la cuota", "audience": "PUBLICO", "agentType": "COLLECTIONS", "k": 4 }
 // response
 [ { "documentId": "uuid", "title": "...", "content": "...", "score": 0.75 } ]
+```
+
+---
+
+## Módulo Panel de Cobranzas — `/collections` ✅ (Sprint 4)
+
+### ✅ `GET /collections/proofs` (JWT)
+Cola de comprobantes pendientes de revisión. El cobrador ve solo los suyos;
+el Cobrador Controlador (`isController: true`) ve todos.
+```json
+[ {
+  "id": "uuid", "status": "PENDING_REVIEW",
+  "extractedAmount": 15000, "extractedDate": "2026-08-05", "extractedBank": "Banco XYZ",
+  "acceptedById": null, "acceptedAt": null,
+  "quota": { "id": "uuid", "client": { "id": "uuid", "name": "...", "phone": "..." } },
+  "message": { "id": "uuid", "conversationId": "uuid" }
+} ]
+```
+
+### ✅ `GET /collections/proofs/:id/image` (JWT)
+Descarga la imagen del comprobante (binario JPEG/PNG).
+
+### ✅ `POST /collections/proofs/:id/accept` (JWT)
+El cobrador acepta el comprobante. La cuota pasa a `AWAITING_CONFIRMATION` y
+el cliente recibe confirmación automática.
+```json
+// response: PaymentProof actualizado con status: "ACCEPTED", acceptedAt, acceptedById
+```
+
+### ✅ `POST /collections/proofs/:id/reject` (JWT)
+Rechaza con un motivo predefinido.
+```json
+{ "reason": "PAST_DATE" | "WRONG_CBU" | "AMOUNT_TOO_LOW" }
+// response: PaymentProof con status: "REJECTED", rejectionReason
+// → cliente recibe mensaje explicando el problema
+```
+
+### ✅ `POST /collections/proofs/:id/manual-handling` (JWT)
+Pausa la IA para manejo directo del cobrador (sin enviar mensaje automático al cliente).
+```json
+{ "note": "Cliente prefiere hablar por teléfono." }
+// → takeover automático de la conversación + InternalNote
+```
+
+### ✅ `GET /collections/proofs/accepted` (JWT + isController=true)
+Lista de comprobantes aceptados pendientes de verificación de impacto bancario.
+Solo el Cobrador Controlador accede (`403` sin el flag).
+```json
+[ {
+  "id": "uuid", "status": "ACCEPTED", "acceptedAt": "2026-08-05T...",
+  "acceptedById": "uuid", "impactStatus": "PENDING",
+  "quota": { "client": { "name": "...", "phone": "..." } }
+} ]
+```
+
+### ✅ `POST /collections/proofs/:id/verify-impact` (JWT + isController=true)
+El Cobrador Controlador verifica si el pago impactó en la cuenta bancaria.
+```json
+{ "impactStatus": "CONFIRMED" | "MISSING", "observation": "..." }
+// CONFIRMED → cliente recibe confirmación, Quota pasa a PAID
+// MISSING → cobrador responsable recibe notificación del problema
+```
+
+### ✅ `GET /collections/kpis` (JWT)
+KPIs del panel del cobrador.
+```json
+{
+  "clientsWithPendingQuotas": 3,
+  "proofsToReview": 1,
+  "confirmedThisWeek": 5
+}
+```
+
+### ✅ `GET /collections/clients` (JWT)
+Lista de mis clientes (solo los asignados al cobrador logueado, o todos si `isController: true`).
+```json
+[ {
+  "id": "uuid", "name": "...", "phone": "...", "dni": "...",
+  "quotas": [ { "id": "uuid", "status": "PENDING", "dueDate": "2026-08-10", "amount": 15000 } ]
+} ]
+```
+
+### ✅ `GET /collections/clients/:id/history` (JWT)
+Timeline unificada de un cliente (mensajes, comprobantes, notas internas).
+```json
+[ {
+  "type": "message" | "internal_note" | "event",
+  "id": "uuid", "createdAt": "2026-08-05T...",
+  "content": "...", "author": "..."
+} ]
+```
+- `type: "message"` → usuario o asistente
+- `type: "internal_note"` → nota privada del cobrador
+- `type: "event"` → eventos de sistema (comprobante recibido, cuota marcada manual, etc.)
+
+### ✅ `POST /collections/quotas/:id/manual` (JWT)
+Marca una cuota como gestionada manualmente (detiene recordatorios automáticos).
+```json
+{ "note": "Cliente arregló por teléfono." }
+// response: Quota con status: "MANUAL"
+```
+
+### ✅ `GET /collections/reminder-config` (JWT + SUPERVISOR)
+Configuración vigente de recordatorios automáticos.
+```json
+{ "daysBefore": [7, 3, 0], "maxAttempts": 3, "templateName": "quota_reminder", "templateApproved": true }
+```
+
+### ✅ `PUT /collections/reminder-config` (JWT + SUPERVISOR)
+Actualiza la configuración (solo SUPERVISOR).
+```json
+{ "daysBefore": [7, 3, 0], "maxAttempts": 3 }
 ```
 
 ---
