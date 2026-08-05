@@ -23,7 +23,7 @@ import * as Joi from 'joi';
         REDIS_PORT: Joi.number().default(6379),
 
         GOOGLE_API_KEY: Joi.string().required(),
-        GEMINI_MODEL: Joi.string().default('gemini-3.1-flash-lite'),
+        GEMINI_MODEL: Joi.string().default('gemini-3.5-flash-lite'),
         EMBEDDING_MODEL: Joi.string().default('gemini-embedding-001'),
 
         CHROMA_URL: Joi.string().uri().required(),
