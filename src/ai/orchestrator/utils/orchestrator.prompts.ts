@@ -50,5 +50,11 @@ Decidí si el siguiente mensaje del usuario sigue correspondiendo al agente ACTU
 
 Ejemplo: si el agente actual es de stock/depósito y el usuario dice "quiero comprar" o pregunta precios, eso es Ventas → "cambio".
 Ante la duda, respondé "cambio".
+
+Además, marcá isGreeting: true SOLO si el mensaje es principalmente un saludo o
+cortesía (ej. "gracias!", "buenísimo", "dale, saludos") sin una consulta
+concreta — aunque mencione de pasada algo del dominio del agente actual. Si
+hay una consulta real (aunque venga acompañada de un agradecimiento), marcá
+isGreeting: false.
 `;
 }

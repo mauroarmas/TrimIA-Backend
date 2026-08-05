@@ -1,5 +1,70 @@
 # Diagramas de Arquitectura — TrimIA
 
+## 0. Arquitectura General del Sistema
+
+> Mapa de alto nivel: qué componente habla con cuál y por qué medio. Sirve como punto de entrada antes de los diagramas de detalle (secciones 1-5). Refleja el estado de Sprints 1-3 (revisados en code-review) más la incorporación de Cobranzas (Sprint 4, `sprint-4-cobranzas`, en curso — nodos marcados abajo). Los sistemas externos Paljet/Riesgo Online/CRM están **planeados para Fase 5** (`src/ai/agents/admin/admin.graph.ts` solo los menciona en un comentario, no hay cliente HTTP implementado todavía) — se muestran con línea punteada para no sugerir que ya existen.
+
+```mermaid
+flowchart TD
+    subgraph Canales["Canales"]
+        cliente[Cliente / Empleado<br/>WhatsApp]
+    end
+
+    subgraph Puente["n8n (puente)"]
+        n8n_in[Webhook Recepción<br/>RecepcionMensaje-A]
+        n8n_out[Webhook Envío<br/>EnvioMensaje-B]
+    end
+
+    subgraph Backend["Backend NestJS"]
+        api[API REST + Webhook<br/>Controllers]
+        queue[(BullMQ / Redis<br/>3 colas: message-processing,<br/>receipt-extraction*, reminders*)]
+        supervisor[Panel Supervisor<br/>Human-in-the-loop]
+    end
+
+    subgraph IA["IA (LangGraph)"]
+        orchestrator[Orquestador<br/>sticky agent + sub-clasificador]
+        agents[5 Agentes RAG<br/>Sales / Admin / Collections /<br/>Logistics / Deposits]
+        knowledge[KnowledgeService]
+        llm[LlmService]
+    end
+
+    subgraph Persistencia["Persistencia"]
+        postgres[(PostgreSQL<br/>Prisma)]
+        chroma[(ChromaDB)]
+    end
+
+    subgraph Externos["Externos"]
+        meta[(Meta WhatsApp<br/>Cloud API)]
+        gemini[(Gemini API)]
+        fase5[/Paljet / Riesgo Online / CRM<br/>planeado, Fase 5/]
+    end
+
+    meta -->|webhook entrante| n8n_in
+    n8n_in -->|POST /messaging/webhook<br/>X-N8N-Secret| api
+    api -->|202 Accepted<br/>encola job| queue
+    queue -->|MessageProcessor consume| orchestrator
+    orchestrator -->|clasifica y deriva| agents
+    agents -->|retrieve_context| knowledge
+    knowledge -->|similarity search| chroma
+    agents -->|generate_response| llm
+    llm -->|API call| gemini
+    orchestrator -->|log_event / track_tokens| postgres
+    api -->|CRUD| postgres
+    agents -->|score RAG bajo:<br/>WAITING_HUMAN| supervisor
+    supervisor -->|responde: nuevo job| queue
+    agents -->|respuesta lista| n8n_out
+    n8n_out -->|POST Graph API| meta
+    agents -.->|solo ADMIN, futuro| fase5
+
+    style fase5 stroke-dasharray: 5 5
+```
+
+*Colas `receipt-extraction` y `reminders`: agregadas en Sprint 4 (Cobranzas) para procesar comprobantes de pago recibidos por WhatsApp y disparar recordatorios de cuotas — todavía no pasaron por code-review de equipo.
+
+**Supuestos tomados:** el envío de respuesta (`WhatsappSenderService`) se representa como una flecha directa `agents → n8n_out` porque en el código real ese paso ocurre después de que el orquestador arma la respuesta final, no dentro del subgrafo de cada agente — simplificado acá para no agregar un nodo extra de bajo valor explicativo.
+
+---
+
 ## 1. Flujo de un Mensaje (entrada → salida)
 
 ```
@@ -130,61 +195,63 @@
     gracias/etc.)   fijado y permitido)                 no permitido)
               │                    │                       │
               ▼                    ▼                       │
-     ┌─────────────────┐   ┌──────────────┐                │
-     │ trivial_response│   │ scope_check  │                │
-     │  (canned, 0 LLM)│   │ (Gemini: ¿es │                │
-     └────────┬────────┘   │  del tema?)  │                │
-              │            └──────┬───────┘                │
-              │                   │                        │ 
-              │            scopeRouter()                   │ 
-              │                   │                        │      
-              │           ┌───────┴────────┐               │
-              │      mismo│          cambio│               │
-              │           ▼                ▼               │
-              │   (agente actual)   ┌────────────┐         │
-              │           │         │ handoff_log│         │
-              │           │         │ (Prisma)   │         │
-              │           │         └─────┬──────┘         │
-              │           │               │                │
-              │           │               ▼                ▼
-              │           │         ┌───────────────────────────┐
-              │           │         │     classify_intent       │
-              │           │         │ (Gemini structured output;│
-              │           │         │  solo agentes permitidos) │
-              │           │         └─────────────┬─────────────┘
-              │           │                       │    
-              │           │            classifyRouter()
-              │           │                       │
-              │           │           ┌───────────┴───────────┐
-              │           │   greeting│                 agente│
-              │           │           ▼                       │
-              │           │   ┌──────────────────┐            │
-              │           │   │ greeting_response│            │
-              │           │   │   (canned)       │            │
-              │           │   └────────┬─────────┘            │
-              │           │            │                      │
-              │    ┌───────────────────┘                      │
-              │    │      │                                   │       
-              │    │      ▼                                   ▼
-              │    │   ┌────────────────────────────────────────────────────┐
-              │    │   │   AGENTE RAG  (SALES│ADMIN│COLLECTIONS│LOGI│DEPO)  │
-              │    │   │   1. retrieve_context  (ChromaDB, audiencia/role)  │
-              │    │   │   2. evaluate_confidence  (score ≥ 0.65?)          │
-              │    │   │   3a. generate_response (Gemini+contexto+historial)│
-              │    │   │   3b. escalate_to_human (status=WAITING_HUMAN)     │
-              │    │   └────────────────────────┬───────────────────────────┘
-              │    │                            ▼
-              │    │                     ┌──────────────┐
-              │    │                     │  log_event   │  (OrchestrationEvent → Prisma)
-              │    │                     └──────┬───────┘
-              │    │                            │
-              │    │       ┌────────────────────┘
-              │    ▼       ▼
-              │   ┌──────────────┐
-              │   │ track_tokens │  (TokenUsage → Prisma)
-              │   └──────┬───────┘
-              │          │
-              ▼          ▼
+     ┌─────────────────┐   ┌───────────────┐               │
+     │ trivial_response│   │  scope_check  │               │
+     │  (canned, 0 LLM)│   │ (Gemini: ¿es  │               │
+     └────────┬────────┘   │  del tema? +  │               │
+              │            │  ¿greeting?)  │               │
+              │            └───────┬───────┘               │
+              │                    │                       │ 
+              │             scopeRouter()                  │ 
+              │                    │                       │      
+              │        ┌───────────┼────────────┐          │
+              │  mismo +│      mismo,│      cambio│         │
+              │ greeting│  no greeting│           │         │
+              │        ▼           ▼            ▼          │
+              │        │   (agente actual) ┌────────────┐  │
+              │        │           │        │ handoff_log│  │
+              │        │           │        │ (Prisma)   │  │
+              │        │           │        └─────┬──────┘  │
+              │        │           │              │         │
+              │        │           │              ▼         ▼
+              │        │           │        ┌───────────────────────────┐
+              │        │           │        │     classify_intent       │
+              │        │           │        │ (Gemini structured output;│
+              │        │           │        │  solo agentes permitidos) │
+              │        │           │        └─────────────┬─────────────┘
+              │        │           │                      │    
+              │        │           │           classifyRouter()
+              │        │           │                      │
+              │        │           │          ┌───────────┴───────────┐
+              │        │           │  greeting│                 agente│
+              │        │           │          ▼                       │
+              │        │           │   ┌──────────────────┐           │
+              │        └───────────┼──▶│ greeting_response│           │
+              │                    │   │   (canned)       │           │
+              │                    │   └────────┬─────────┘           │
+              │                    │            │                     │
+              │             ┌──────────────────┘                      │
+              │             │      │                                  │       
+              │             │      ▼                                  ▼
+              │             │   ┌────────────────────────────────────────────────────┐
+              │             │   │   AGENTE RAG  (SALES│ADMIN│COLLECTIONS│LOGI│DEPO)  │
+              │             │   │   1. retrieve_context  (ChromaDB, audiencia/role)  │
+              │             │   │   2. evaluate_confidence  (score ≥ 0.65?)          │
+              │             │   │   3a. generate_response (Gemini+contexto+historial)│
+              │             │   │   3b. escalate_to_human (status=WAITING_HUMAN)     │
+              │             │   └────────────────────────┬───────────────────────────┘
+              │             │                            ▼
+              │             │                     ┌──────────────┐
+              │             │                     │  log_event   │  (OrchestrationEvent → Prisma)
+              │             │                     └──────┬───────┘
+              │             │                            │
+              │             │       ┌────────────────────┘
+              │             ▼       ▼
+              │            ┌──────────────┐
+              │            │ track_tokens │  (TokenUsage → Prisma)
+              │            └──────┬───────┘
+              │                   │
+              ▼                   ▼
            ┌─────────────────┐
            │       END       │
            └─────────────────┘
@@ -194,6 +261,13 @@ Notas:
 • greeting_response → track_tokens → END (el orquestador sí consumió tokens al clasificar).
 • Los routers (entryRouter, scopeRouter, classifyRouter) son funciones puras: deciden el
   camino SIN llamar a Gemini. Solo classify_intent, scope_check y los agentes gastan tokens.
+• FIX (2026-08-04): scope_check devuelve isGreeting en la MISMA llamada estructurada que
+  ya hacía para decidir mismo/cambio (scopeSchema, sin costo extra de tokens). Antes, la
+  rama "mismo" iba directo al agente sticky sin evaluar greeting — un mensaje sticky que
+  fuera mayormente un saludo/cortesía ("buenísimo, gracias! ¿y la cuota 3?") gastaba un
+  turno completo de RAG en vez de resolverse como greeting_response, a diferencia de la
+  rama classify_intent que sí lo detectaba. scopeRouter ahora chequea isGreeting antes de
+  resolver al agente, igual que classifyRouter.
 
 ```
 

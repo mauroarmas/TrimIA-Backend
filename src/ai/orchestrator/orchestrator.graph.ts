@@ -28,8 +28,9 @@ const AGENT_KEYS: SpecializedAgent[] = [
  *     - sticky (currentAgent)  → scope_check
  *     - sin agente             → classify_intent
  *   scope_check → [scopeRouter]
- *     - mismo  → <agente actual>
- *     - cambio → handoff_log → classify_intent
+ *     - mismo + greeting     → greeting_response → track_tokens → END
+ *     - mismo, no greeting   → <agente actual>
+ *     - cambio               → handoff_log → classify_intent
  *   classify_intent → [classifyRouter]
  *     - greeting → greeting_response → track_tokens → END
  *     - agente   → <agente>
@@ -91,16 +92,23 @@ export function buildOrchestratorGraph(
     ]);
 
     const scopeChanged = result.parsed.decision === 'cambio';
+    const isGreeting = result.parsed.isGreeting;
     const usage = (result.raw as AIMessage).usage_metadata as
       | { input_tokens?: number; output_tokens?: number }
       | undefined;
 
-    logger.log(`[scope ${current}] "${state.message}" → ${result.parsed.decision}`);
+    logger.log(
+      `[scope ${current}] "${state.message}" → ${result.parsed.decision}` +
+        (isGreeting ? ' (greeting)' : ''),
+    );
 
     return {
       scopeChanged,
-      // Si sigue en el mismo dominio, el agente resuelto es el sticky actual.
-      agentType: scopeChanged ? null : state.currentAgent,
+      isGreeting,
+      // Si sigue en el mismo dominio y no es un saludo, el agente resuelto
+      // es el sticky actual. Un saludo nunca resuelve a un agente, igual que
+      // en classify_intent (ver scopeRouter).
+      agentType: scopeChanged || isGreeting ? null : state.currentAgent,
       startedAt,
       inputTokens: usage?.input_tokens ?? 0,
       outputTokens: usage?.output_tokens ?? 0,
@@ -186,7 +194,12 @@ export function buildOrchestratorGraph(
   };
 
   const scopeRouter = (state: OrchestratorStateType): string => {
-    return state.scopeChanged ? 'handoff' : (state.currentAgent as string);
+    if (state.scopeChanged) return 'handoff';
+    // Mismo dominio, pero el mensaje es mayormente un saludo/cortesía: no
+    // tiene sentido gastar el turno completo del agente RAG por esto (mismo
+    // criterio que classifyRouter para la rama sin agente sticky).
+    if (state.isGreeting) return 'greeting';
+    return state.currentAgent as string;
   };
 
   const classifyRouter = (state: OrchestratorStateType): string => {
@@ -217,6 +230,7 @@ export function buildOrchestratorGraph(
     .addConditionalEdges('scope_check', scopeRouter, {
       ...agentMap,
       handoff: 'handoff_log',
+      greeting: 'greeting_response',
     })
     .addEdge('handoff_log', 'classify_intent')
     .addConditionalEdges('classify_intent', classifyRouter, {

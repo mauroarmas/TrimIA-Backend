@@ -24,4 +24,7 @@ export const scopeSchema = z.object({
   decision: z
     .enum(['mismo', 'cambio'])
     .describe('mismo = sigue en el dominio del agente actual; cambio = es otro tema'),
+  isGreeting: z
+    .boolean()
+    .describe('true si el mensaje es principalmente un saludo/cortesía sin una consulta concreta'),
 });
