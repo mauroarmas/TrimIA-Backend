@@ -1,7 +1,7 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
-import { Channel } from '@prisma/client';
+import { Channel, UserType } from '@prisma/client';
 import { ConversationsService } from '../../conversations/conversations.service';
 import { WhatsappSenderService } from '../../messaging/whatsapp-sender.service';
 import { OrchestratorService } from '../../ai/orchestrator/orchestrator.service';
@@ -54,21 +54,27 @@ export class MessageProcessor extends WorkerHost {
       const currentAgent = conversation?.currentAgent ?? null;
       const history = await this.conversations.getRecentHistory(conversationId);
 
-      // Determinar userType real: buscar teléfono en whitelist de empleados (RF12).
-      // Si ya está seteado en la conversación como EMPLEADO, no re-buscar.
-      let userType = conversation?.userType ?? null;
-      if (!userType || userType === 'CLIENTE') {
-        const employee = await this.employees.findByPhone(externalId);
-        if (employee && employee.isActive) {
-          userType = 'EMPLEADO';
-          // Persistir el userType para no buscar en cada mensaje.
-          await this.conversations.setUserType(conversationId, 'EMPLEADO');
-          this.logger.log(
-            `UserType actualizado a EMPLEADO para ${externalId} (${employee.sector.name})`,
-          );
-        } else {
-          userType = 'CLIENTE';
-        }
+      // Determinar userType real: buscar el teléfono en la whitelist de
+      // empleados (RF12), que ES la tabla Employee (phone único + isActive).
+      //
+      // Se consulta en CADA mensaje, no solo cuando la conversación figura
+      // como CLIENTE. Antes se salteaba el lookup si ya era EMPLEADO "para no
+      // buscar en cada mensaje", y eso volvía imposible la dirección de
+      // bajada: a un empleado dado de baja se le seguía sirviendo
+      // conocimiento INTERNO hasta que la conversación se cerrara
+      // (OE-10 / RNF-02). El costo es un findUnique indexado al lado de una
+      // llamada al LLM que tarda segundos.
+      const employee = await this.employees.findByPhone(externalId);
+      const userType: UserType =
+        employee && employee.isActive ? 'EMPLEADO' : 'CLIENTE';
+
+      // Solo se persiste cuando cambió, para no escribir en cada turno.
+      if (userType !== conversation?.userType) {
+        await this.conversations.setUserType(conversationId, userType);
+        this.logger.log(
+          `userType de ${externalId}: ${conversation?.userType ?? 'nuevo'} → ${userType}` +
+            (employee?.isActive ? ` (${employee.sector.name})` : ''),
+        );
       }
 
       // El orquestador clasifica (o saltea, si hay sticky), deriva y registra.
