@@ -6,6 +6,19 @@
 >
 > Última actualización: 2026-08-05 (Sprint 1-4 completos).
 
+---
+
+## 📋 Sprint 4 — Documentación Completa
+
+**Sprint 4 (Cobranzas) fue completado el 2026-08-05.** Para un resumen ejecutivo detallado del trabajo realizado:
+
+- 📄 **[RESUMEN_EJECUTIVO.md](sprint-4-summary/RESUMEN_EJECUTIVO.md)** — Documento detallado en Markdown con todas las historias, servicios, endpoints, testing y lecciones aprendidas.
+- 🌐 **[RESUMEN_VISUAL.html](sprint-4-summary/RESUMEN_VISUAL.html)** — Versión visual HTML (puedes abrir en navegador) con estadísticas, flujos, y checklist.
+
+**Status del Sprint:** ✅ Completo (128/128 tests pasando, 13 endpoints nuevos, 5 historias de usuario implementadas)
+
+---
+
 ## Generalidades
 
 - **Base URL (dev):** `http://localhost:3000`
