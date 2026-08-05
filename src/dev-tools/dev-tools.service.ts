@@ -1,17 +1,27 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Injectable, Logger } from '@nestjs/common';
+import { QuotaStatus } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
 import { EmployeesService } from '../employees/employees.service';
 import { ClientsService } from '../clients/clients.service';
-import { TestPersonaScenario } from './dto/set-test-persona.dto';
+import {
+  ClientFixture,
+  SetClientFixturesDto,
+} from './dto/set-client-fixtures.dto';
 
-const DEV_PASSWORD = 'Dev12345!';
-const COBRADOR_SECTOR = 'Cobranzas';
-const ACTED_BY = 'dev-tool';
+const DEFAULT_SECTOR = 'Cobranzas';
+const DEMO_QUOTA_AMOUNT = 15000;
 
 /**
- * Reasigna el único teléfono de prueba cargado en Meta a distintos "roles"
- * del sistema (cliente de Ventas/Cobranzas, cobrador, supervisor) sin editar
- * la DB a mano en cada prueba manual. Solo expuesto vía DevOnlyGuard.
+ * Deja al cliente de prueba en una situación concreta para poder repetir un
+ * flujo de WhatsApp de cero, sin editar la base a mano.
+ *
+ * En desarrollo hay dos números cargados en Meta y cada uno tiene una
+ * identidad fija: el del cliente (el que usa este endpoint) y el del cobrador
+ * (`DEV_COLLECTOR_PHONE`, que el seed asigna a un Employee para que reciba las
+ * notificaciones de cobranza). El resto de los empleados entra por el portal
+ * web. Por eso acá no hay un eje de "rol": el teléfono es siempre un cliente.
+ *
+ * Solo expuesto vía DevOnlyGuard.
  */
 @Injectable()
 export class DevToolsService {
@@ -23,117 +33,133 @@ export class DevToolsService {
     private readonly clients: ClientsService,
   ) {}
 
-  async setTestPersona(
-    phone: string,
-    scenario: TestPersonaScenario,
-    sector: string = COBRADOR_SECTOR,
-  ) {
-    switch (scenario) {
-      case TestPersonaScenario.CLIENTE_VENTAS:
-        await this.deactivateEmployeeIfAny(phone);
-        break;
-      case TestPersonaScenario.CLIENTE_COBRANZAS:
-        await this.deactivateEmployeeIfAny(phone);
-        await this.ensureClientWithQuota(phone);
-        break;
-      case TestPersonaScenario.EMPLEADO_COBRADOR:
-        await this.upsertEmployee(phone, 'EMPLEADO', sector);
-        break;
-      case TestPersonaScenario.SUPERVISOR:
-        await this.upsertEmployee(phone, 'SUPERVISOR', sector);
-        break;
+  async setClientFixtures(dto: SetClientFixturesDto) {
+    const { phone, fixtures } = dto;
+
+    // Si el número quedó cargado como empleado en alguna prueba vieja, se
+    // desactiva: mientras sea el teléfono del cliente no puede resolver a
+    // userType=EMPLEADO en el MessageProcessor.
+    await this.deactivateEmployeeIfAny(phone);
+
+    const client = await this.ensureClient(phone);
+    for (const fixture of fixtures) {
+      await this.applyFixture(client.id, fixture);
     }
+    await this.resetConversations(phone);
 
-    const userType =
-      scenario === TestPersonaScenario.EMPLEADO_COBRADOR ||
-      scenario === TestPersonaScenario.SUPERVISOR
-        ? 'EMPLEADO'
-        : 'CLIENTE';
-    await this.resetConversations(phone, userType);
-
-    this.logger.log(`Persona de prueba "${scenario}" aplicada a ${phone}`);
-    return { phone, scenario };
+    this.logger.log(
+      `Fixtures aplicados a ${phone}: ${fixtures.join(', ')}`,
+    );
+    return { phone, clientId: client.id, fixtures };
   }
 
   private async deactivateEmployeeIfAny(phone: string) {
     const employee = await this.employees.findByPhone(phone);
-    if (employee) {
-      await this.employees.update(employee.id, { isActive: false }, ACTED_BY);
+    if (employee?.isActive) {
+      await this.employees.update(employee.id, { isActive: false }, 'dev-tool');
     }
   }
 
-  private async ensureClientWithQuota(phone: string) {
-    let client = await this.clients.getByPhone(phone);
-    if (!client) {
-      const collector = await this.prisma.employee.findFirst({
-        where: { isActive: true, sector: { name: COBRADOR_SECTOR } },
-      });
-      client = await this.clients.create({
-        name: `Cliente de prueba (${phone})`,
-        phone,
-        assignedCollectorId: collector?.id,
-      });
-    }
+  /** El Client debe existir siempre: es lo que enlaza Conversation.clientId. */
+  private async ensureClient(phone: string) {
+    const existing = await this.clients.getByPhone(phone);
+    if (existing) return existing;
 
-    const hasQuota = await this.prisma.quota.findFirst({
-      where: { clientId: client.id },
+    const collector = await this.prisma.employee.findFirst({
+      where: { isActive: true, sector: { name: DEFAULT_SECTOR } },
     });
-    if (!hasQuota) {
-      const dueDate = new Date();
-      dueDate.setDate(dueDate.getDate() + 3);
-      await this.prisma.quota.create({
+    return this.clients.create({
+      name: `Cliente de prueba (${phone})`,
+      phone,
+      assignedCollectorId: collector?.id,
+    });
+  }
+
+  private async applyFixture(clientId: string, fixture: ClientFixture) {
+    switch (fixture) {
+      case ClientFixture.RESET:
+        return this.reset(clientId);
+      case ClientFixture.SIN_DEUDA:
+        // Se saldan, no se borran: las cuotas pueden tener PaymentProof
+        // colgando y borrarlas rompería la FK.
+        await this.prisma.quota.updateMany({
+          where: { clientId, status: { not: QuotaStatus.PAID } },
+          data: { status: QuotaStatus.PAID },
+        });
+        return;
+      case ClientFixture.CUOTA_POR_VENCER:
+        return this.ensureQuota(clientId, QuotaStatus.PENDING, 3);
+      case ClientFixture.CUOTA_VENCIDA:
+        return this.ensureQuota(clientId, QuotaStatus.OVERDUE, -10);
+    }
+  }
+
+  /**
+   * Vuelve al principio del ciclo de cobranza: borra los comprobantes que
+   * quedaron de corridas anteriores y devuelve las cuotas a PENDING.
+   *
+   * No borra las cuotas — pueden pertenecer a una Financing y dejarían el plan
+   * incompleto. Las imágenes en storage/ quedan huérfanas a propósito: son
+   * archivos de dev y borrarlas no aporta nada.
+   */
+  private async reset(clientId: string) {
+    const { count } = await this.prisma.paymentProof.deleteMany({
+      where: { quota: { clientId } },
+    });
+
+    await this.prisma.quota.updateMany({
+      where: { clientId },
+      data: {
+        status: QuotaStatus.PENDING,
+        reminderAttempts: 0,
+        lastReminderAt: null,
+        manualHandlingNote: null,
+      },
+    });
+
+    this.logger.log(`RESET: ${count} comprobantes borrados`);
+  }
+
+  /**
+   * Idempotente: si ya hay una cuota en ese estado le reajusta el vencimiento
+   * y limpia el rastro de recordatorios, en vez de acumular cuotas nuevas en
+   * cada llamada al endpoint.
+   */
+  private async ensureQuota(
+    clientId: string,
+    status: QuotaStatus,
+    daysFromNow: number,
+  ) {
+    const dueDate = new Date();
+    dueDate.setDate(dueDate.getDate() + daysFromNow);
+
+    const existing = await this.prisma.quota.findFirst({
+      where: { clientId, status },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    if (existing) {
+      return this.prisma.quota.update({
+        where: { id: existing.id },
         data: {
-          clientId: client.id,
-          amount: 15000,
           dueDate,
-          status: 'PENDING',
+          reminderAttempts: 0,
+          lastReminderAt: null,
+          manualHandlingNote: null,
         },
       });
     }
-  }
 
-  private async upsertEmployee(
-    phone: string,
-    role: 'EMPLEADO' | 'SUPERVISOR',
-    sectorName: string,
-  ) {
-    const sector = await this.prisma.sector.findUnique({
-      where: { name: sectorName },
+    return this.prisma.quota.create({
+      data: { clientId, amount: DEMO_QUOTA_AMOUNT, dueDate, status },
     });
-    if (!sector) {
-      throw new NotFoundException(
-        `Sector "${sectorName}" no existe — corré el seed primero`,
-      );
-    }
-
-    const existing = await this.employees.findByPhone(phone);
-    if (existing) {
-      await this.employees.update(
-        existing.id,
-        { role, isActive: true, sectorId: sector.id },
-        ACTED_BY,
-      );
-      return;
-    }
-
-    const digits = phone.replace(/\D/g, '');
-    await this.employees.create(
-      {
-        phone,
-        email: `dev-${digits}@trimia.dev`,
-        name: `Test ${role} (${phone})`,
-        password: DEV_PASSWORD,
-        role,
-        sectorId: sector.id,
-      },
-      ACTED_BY,
-    );
   }
 
-  private async resetConversations(phone: string, userType: 'CLIENTE' | 'EMPLEADO') {
+  /** Limpia el agente sticky para que el próximo mensaje se re-clasifique. */
+  private async resetConversations(phone: string) {
     await this.prisma.conversation.updateMany({
       where: { externalId: phone, status: { not: 'CLOSED' } },
-      data: { userType, currentAgent: null, agentLockedAt: null },
+      data: { userType: 'CLIENTE', currentAgent: null, agentLockedAt: null },
     });
   }
 }

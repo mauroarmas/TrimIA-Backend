@@ -1,46 +1,48 @@
-import { NotFoundException } from '@nestjs/common';
 import { DevToolsService } from './dev-tools.service';
 import { PrismaService } from '../database/prisma.service';
 import { EmployeesService } from '../employees/employees.service';
 import { ClientsService } from '../clients/clients.service';
-import { TestPersonaScenario } from './dto/set-test-persona.dto';
+import { ClientFixture } from './dto/set-client-fixtures.dto';
 
 /**
- * Tests de DevToolsService: endpoint provisorio para reasignar el único
- * teléfono de prueba cargado en Meta a distintos "roles" del sistema
- * (cliente de Ventas/Cobranzas, cobrador, supervisor) sin editar la DB a
- * mano. Todas las dependencias se mockean.
+ * Tests de DevToolsService: deja al cliente de prueba en una situación
+ * concreta para poder repetir un flujo de WhatsApp de cero. Todo mockeado.
  */
 describe('DevToolsService', () => {
-  const phone = '543865505362';
+  const phone = '5493865505362';
 
   let service: DevToolsService;
   let prisma: {
     employee: { findFirst: jest.Mock };
-    quota: { findFirst: jest.Mock; create: jest.Mock };
-    sector: { findUnique: jest.Mock };
+    quota: {
+      findFirst: jest.Mock;
+      create: jest.Mock;
+      update: jest.Mock;
+      updateMany: jest.Mock;
+    };
+    paymentProof: { deleteMany: jest.Mock };
     conversation: { updateMany: jest.Mock };
   };
-  let employees: {
-    findByPhone: jest.Mock;
-    update: jest.Mock;
-    create: jest.Mock;
-  };
+  let employees: { findByPhone: jest.Mock; update: jest.Mock };
   let clients: { getByPhone: jest.Mock; create: jest.Mock };
 
   beforeEach(() => {
     prisma = {
       employee: { findFirst: jest.fn().mockResolvedValue(null) },
-      quota: { findFirst: jest.fn(), create: jest.fn() },
-      sector: { findUnique: jest.fn() },
+      quota: {
+        findFirst: jest.fn().mockResolvedValue(null),
+        create: jest.fn(),
+        update: jest.fn(),
+        updateMany: jest.fn(),
+      },
+      paymentProof: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
       conversation: { updateMany: jest.fn() },
     };
-    employees = {
-      findByPhone: jest.fn().mockResolvedValue(null),
-      update: jest.fn(),
-      create: jest.fn(),
+    employees = { findByPhone: jest.fn().mockResolvedValue(null), update: jest.fn() };
+    clients = {
+      getByPhone: jest.fn().mockResolvedValue({ id: 'client-1', phone }),
+      create: jest.fn().mockResolvedValue({ id: 'client-1', phone }),
     };
-    clients = { getByPhone: jest.fn().mockResolvedValue(null), create: jest.fn() };
 
     service = new DevToolsService(
       prisma as unknown as PrismaService,
@@ -49,145 +51,151 @@ describe('DevToolsService', () => {
     );
   });
 
-  describe('CLIENTE_VENTAS', () => {
-    it('desactiva un Employee existente para ese teléfono y no toca Client', async () => {
-      employees.findByPhone.mockResolvedValue({ id: 'emp-1', isActive: true });
+  // El Client debe existir siempre: es lo que enlaza Conversation.clientId.
+  it('crea el Client si no existe', async () => {
+    clients.getByPhone.mockResolvedValue(null);
 
-      await service.setTestPersona(phone, TestPersonaScenario.CLIENTE_VENTAS);
-
-      expect(employees.update).toHaveBeenCalledWith(
-        'emp-1',
-        { isActive: false },
-        expect.any(String),
-      );
-      expect(clients.create).not.toHaveBeenCalled();
+    await service.setClientFixtures({
+      phone,
+      fixtures: [ClientFixture.CUOTA_POR_VENCER],
     });
 
-    it('resetea userType a CLIENTE y limpia el agente sticky de las conversaciones', async () => {
-      await service.setTestPersona(phone, TestPersonaScenario.CLIENTE_VENTAS);
+    expect(clients.create).toHaveBeenCalledWith(
+      expect.objectContaining({ phone }),
+    );
+  });
 
-      expect(prisma.conversation.updateMany).toHaveBeenCalledWith({
-        where: { externalId: phone, status: { not: 'CLOSED' } },
-        data: { userType: 'CLIENTE', currentAgent: null, agentLockedAt: null },
-      });
+  // Si el número quedó como empleado de una prueba vieja, el MessageProcessor
+  // lo resolvería como userType=EMPLEADO y le daría conocimiento INTERNO.
+  it('desactiva el Employee si ese teléfono había quedado en la whitelist', async () => {
+    employees.findByPhone.mockResolvedValue({ id: 'emp-1', isActive: true });
+
+    await service.setClientFixtures({
+      phone,
+      fixtures: [ClientFixture.SIN_DEUDA],
+    });
+
+    expect(employees.update).toHaveBeenCalledWith(
+      'emp-1',
+      { isActive: false },
+      expect.any(String),
+    );
+  });
+
+  it('no toca al Employee si ya estaba inactivo', async () => {
+    employees.findByPhone.mockResolvedValue({ id: 'emp-1', isActive: false });
+
+    await service.setClientFixtures({
+      phone,
+      fixtures: [ClientFixture.SIN_DEUDA],
+    });
+
+    expect(employees.update).not.toHaveBeenCalled();
+  });
+
+  it('limpia el agente sticky de las conversaciones abiertas', async () => {
+    await service.setClientFixtures({
+      phone,
+      fixtures: [ClientFixture.SIN_DEUDA],
+    });
+
+    expect(prisma.conversation.updateMany).toHaveBeenCalledWith({
+      where: { externalId: phone, status: { not: 'CLOSED' } },
+      data: { userType: 'CLIENTE', currentAgent: null, agentLockedAt: null },
     });
   });
 
-  describe('CLIENTE_COBRANZAS', () => {
-    it('crea un Client y una cuota PENDING cuando no existen', async () => {
-      clients.create.mockResolvedValue({ id: 'cust-1', phone });
+  describe('RESET', () => {
+    it('borra los comprobantes del cliente y devuelve sus cuotas a PENDING', async () => {
+      prisma.paymentProof.deleteMany.mockResolvedValue({ count: 3 });
 
-      await service.setTestPersona(phone, TestPersonaScenario.CLIENTE_COBRANZAS);
+      await service.setClientFixtures({ phone, fixtures: [ClientFixture.RESET] });
 
-      expect(clients.create).toHaveBeenCalledWith(
-        expect.objectContaining({ phone }),
-      );
-      expect(prisma.quota.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          data: expect.objectContaining({ clientId: 'cust-1', status: 'PENDING' }),
+      expect(prisma.paymentProof.deleteMany).toHaveBeenCalledWith({
+        where: { quota: { clientId: 'client-1' } },
+      });
+      expect(prisma.quota.updateMany).toHaveBeenCalledWith({
+        where: { clientId: 'client-1' },
+        data: expect.objectContaining({
+          status: 'PENDING',
+          reminderAttempts: 0,
+          manualHandlingNote: null,
         }),
-      );
+      });
     });
 
-    it('no crea una cuota nueva si el cliente ya tiene una', async () => {
-      clients.getByPhone.mockResolvedValue({ id: 'cust-1', phone });
-      prisma.quota.findFirst.mockResolvedValue({ id: 'inst-1' });
+    // No las borra: pueden pertenecer a una Financing y romperían el plan.
+    it('no borra las cuotas', async () => {
+      await service.setClientFixtures({ phone, fixtures: [ClientFixture.RESET] });
 
-      await service.setTestPersona(phone, TestPersonaScenario.CLIENTE_COBRANZAS);
-
-      expect(clients.create).not.toHaveBeenCalled();
       expect(prisma.quota.create).not.toHaveBeenCalled();
     });
   });
 
-  describe('EMPLEADO_COBRADOR', () => {
-    it('crea un Employee nuevo en el sector Cobranzas cuando no existe', async () => {
-      prisma.sector.findUnique.mockResolvedValue({ id: 'sector-cobranzas' });
-
-      await service.setTestPersona(phone, TestPersonaScenario.EMPLEADO_COBRADOR);
-
-      expect(employees.create).toHaveBeenCalledWith(
-        expect.objectContaining({
-          phone,
-          role: 'EMPLEADO',
-          sectorId: 'sector-cobranzas',
-        }),
-        expect.any(String),
-      );
-    });
-
-    it('actualiza el rol si el Employee ya existe en vez de duplicarlo', async () => {
-      employees.findByPhone.mockResolvedValue({ id: 'emp-1', isActive: false });
-      prisma.sector.findUnique.mockResolvedValue({ id: 'sector-cobranzas' });
-
-      await service.setTestPersona(phone, TestPersonaScenario.EMPLEADO_COBRADOR);
-
-      expect(employees.create).not.toHaveBeenCalled();
-      expect(employees.update).toHaveBeenCalledWith(
-        'emp-1',
-        { role: 'EMPLEADO', isActive: true, sectorId: 'sector-cobranzas' },
-        expect.any(String),
-      );
-    });
-
-    it('lanza NotFoundException si el sector Cobranzas no existe (seed no corrido)', async () => {
-      prisma.sector.findUnique.mockResolvedValue(null);
-
-      await expect(
-        service.setTestPersona(phone, TestPersonaScenario.EMPLEADO_COBRADOR),
-      ).rejects.toThrow(NotFoundException);
-    });
-
-    it('usa el sector indicado (ej. Ventas) en vez del default Cobranzas', async () => {
-      prisma.sector.findUnique.mockResolvedValue({ id: 'sector-ventas' });
-
-      await service.setTestPersona(
+  describe('fixtures de deuda', () => {
+    it('CUOTA_POR_VENCER crea una cuota PENDING con vencimiento futuro', async () => {
+      await service.setClientFixtures({
         phone,
-        TestPersonaScenario.EMPLEADO_COBRADOR,
-        'Ventas',
-      );
-
-      expect(prisma.sector.findUnique).toHaveBeenCalledWith({
-        where: { name: 'Ventas' },
+        fixtures: [ClientFixture.CUOTA_POR_VENCER],
       });
-      expect(employees.create).toHaveBeenCalledWith(
-        expect.objectContaining({ sectorId: 'sector-ventas' }),
-        expect.any(String),
+
+      const data = prisma.quota.create.mock.calls[0][0].data;
+      expect(data).toMatchObject({ clientId: 'client-1', status: 'PENDING' });
+      expect(data.dueDate.getTime()).toBeGreaterThan(Date.now());
+    });
+
+    it('CUOTA_VENCIDA crea una cuota OVERDUE con vencimiento pasado', async () => {
+      await service.setClientFixtures({
+        phone,
+        fixtures: [ClientFixture.CUOTA_VENCIDA],
+      });
+
+      const data = prisma.quota.create.mock.calls[0][0].data;
+      expect(data).toMatchObject({ clientId: 'client-1', status: 'OVERDUE' });
+      expect(data.dueDate.getTime()).toBeLessThan(Date.now());
+    });
+
+    // Idempotencia: llamar dos veces al endpoint no debe acumular cuotas.
+    it('reajusta la cuota existente en vez de crear otra', async () => {
+      prisma.quota.findFirst.mockResolvedValue({ id: 'quota-1' });
+
+      await service.setClientFixtures({
+        phone,
+        fixtures: [ClientFixture.CUOTA_POR_VENCER],
+      });
+
+      expect(prisma.quota.create).not.toHaveBeenCalled();
+      expect(prisma.quota.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'quota-1' },
+          data: expect.objectContaining({ reminderAttempts: 0 }),
+        }),
       );
     });
 
-    it('si el Employee ya existe, también actualiza el sector al indicado (no solo el rol)', async () => {
-      employees.findByPhone.mockResolvedValue({ id: 'emp-1', isActive: false });
-      prisma.sector.findUnique.mockResolvedValue({ id: 'sector-ventas' });
-
-      await service.setTestPersona(
+    it('SIN_DEUDA salda las cuotas en vez de borrarlas (hay comprobantes colgando)', async () => {
+      await service.setClientFixtures({
         phone,
-        TestPersonaScenario.EMPLEADO_COBRADOR,
-        'Ventas',
-      );
+        fixtures: [ClientFixture.SIN_DEUDA],
+      });
 
-      expect(employees.update).toHaveBeenCalledWith(
-        'emp-1',
-        { role: 'EMPLEADO', isActive: true, sectorId: 'sector-ventas' },
-        expect.any(String),
-      );
+      expect(prisma.quota.updateMany).toHaveBeenCalledWith({
+        where: { clientId: 'client-1', status: { not: 'PAID' } },
+        data: { status: 'PAID' },
+      });
+      expect(prisma.paymentProof.deleteMany).not.toHaveBeenCalled();
     });
   });
 
-  describe('SUPERVISOR', () => {
-    it('crea el Employee con rol SUPERVISOR y userType EMPLEADO en la conversación', async () => {
-      prisma.sector.findUnique.mockResolvedValue({ id: 'sector-cobranzas' });
-
-      await service.setTestPersona(phone, TestPersonaScenario.SUPERVISOR);
-
-      expect(employees.create).toHaveBeenCalledWith(
-        expect.objectContaining({ role: 'SUPERVISOR' }),
-        expect.any(String),
-      );
-      expect(prisma.conversation.updateMany).toHaveBeenCalledWith({
-        where: { externalId: phone, status: { not: 'CLOSED' } },
-        data: { userType: 'EMPLEADO', currentAgent: null, agentLockedAt: null },
-      });
+  it('aplica los fixtures en orden: RESET limpia y después se arma el escenario', async () => {
+    const result = await service.setClientFixtures({
+      phone,
+      fixtures: [ClientFixture.RESET, ClientFixture.CUOTA_POR_VENCER],
     });
+
+    const resetCall = prisma.quota.updateMany.mock.invocationCallOrder[0];
+    const createCall = prisma.quota.create.mock.invocationCallOrder[0];
+    expect(resetCall).toBeLessThan(createCall);
+    expect(result.fixtures).toEqual(['RESET', 'CUOTA_POR_VENCER']);
   });
 });

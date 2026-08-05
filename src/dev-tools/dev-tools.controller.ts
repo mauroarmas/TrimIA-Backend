@@ -2,12 +2,10 @@ import { Body, Controller, Post, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { DevOnlyGuard } from './dev-only.guard';
 import { DevToolsService } from './dev-tools.service';
-import { SetTestPersonaDto } from './dto/set-test-persona.dto';
+import { SetClientFixturesDto } from './dto/set-client-fixtures.dto';
 
 /**
  * Herramientas de desarrollo, deshabilitadas fuera de dev (DevOnlyGuard).
- * Permiten reasignar el único teléfono de prueba cargado en Meta a distintos
- * "roles" del sistema sin editar la base a mano en cada prueba manual.
  */
 @ApiTags('dev-tools')
 @Controller('dev')
@@ -15,10 +13,16 @@ import { SetTestPersonaDto } from './dto/set-test-persona.dto';
 export class DevToolsController {
   constructor(private readonly devTools: DevToolsService) {}
 
-  /** POST /dev/test-persona — asigna un teléfono a un rol de prueba. */
-  @Post('test-persona')
-  @ApiOperation({ summary: 'Asigna un teléfono de prueba a un rol (solo dev)' })
-  setTestPersona(@Body() dto: SetTestPersonaDto) {
-    return this.devTools.setTestPersona(dto.phone, dto.scenario, dto.sector);
+  /** POST /dev/client-fixtures — deja al cliente de prueba en una situación. */
+  @Post('client-fixtures')
+  @ApiOperation({
+    summary: 'Deja al cliente de prueba en una situación concreta (solo dev)',
+    description:
+      'Reemplaza a POST /dev/test-persona. En desarrollo el teléfono que ' +
+      'habla por WhatsApp es siempre un cliente, así que ya no hay un eje de ' +
+      'rol: solo se elige su situación de deuda.',
+  })
+  setClientFixtures(@Body() dto: SetClientFixturesDto) {
+    return this.devTools.setClientFixtures(dto);
   }
 }
