@@ -305,7 +305,9 @@ export class PaymentProofsService {
 
     const updated = await this.prisma.paymentProof.update({
       where: { id },
-      data: { status: 'MANUAL_HANDLING' },
+      // `note ?? null`: si no viene nota, la columna queda NULL (no
+      // undefined, que Prisma interpretaría como "no tocar el campo").
+      data: { status: 'MANUAL_HANDLING', manualHandlingNote: note ?? null },
     });
 
     await this.conversations.takeover(proof.message.conversationId, employeeId);

@@ -310,6 +310,12 @@ model PaymentProof {
   extractedOpCode String?               @unique
   status          PaymentProofStatus    @default(PENDING_REVIEW)
   rejectionReason ProofRejectionReason?
+  // Motivo que dejó el cobrador al marcar "voy a manejarlo yo". Vive acá y no
+  // solo como InternalNote de la conversación porque es un atributo de ESTE
+  // comprobante puntual, no de la conversación en general (que puede tener
+  // varias notas por otros motivos). El InternalNote se sigue creando igual,
+  // para el historial del cliente en el panel.
+  manualHandlingNote String?
   acceptedById    String?
   acceptedBy      Employee?             @relation("PaymentProofAcceptedBy", fields: [acceptedById], references: [id])
   acceptedAt      DateTime?

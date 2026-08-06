@@ -242,13 +242,20 @@ describe('PaymentProofsService', () => {
         'collector-1',
         'Cliente prefiere coordinar por teléfono.',
       );
+      expect(prisma.paymentProof.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            manualHandlingNote: 'Cliente prefiere coordinar por teléfono.',
+          }),
+        }),
+      );
       expect(sender.send).not.toHaveBeenCalled();
       expect(logger.logEvent).toHaveBeenCalledWith(
         expect.objectContaining({ eventType: 'payment_proof_manual_handling' }),
       );
     });
 
-    it('no registra nota si no se envía una', async () => {
+    it('no registra nota si no se envía una, y la columna queda null (no undefined)', async () => {
       prisma.paymentProof.findUnique.mockResolvedValue(pendingProof);
       prisma.paymentProof.update.mockResolvedValue({
         ...pendingProof,
@@ -259,6 +266,11 @@ describe('PaymentProofsService', () => {
 
       expect(conversations.takeover).toHaveBeenCalledWith('conv-1', 'collector-1');
       expect(conversations.addInternalNote).not.toHaveBeenCalled();
+      expect(prisma.paymentProof.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ manualHandlingNote: null }),
+        }),
+      );
     });
   });
 
