@@ -30,6 +30,14 @@ export class MessageProcessor extends WorkerHost {
   private static readonly FALLBACK =
     'Disculpá, tuve un problema para procesar tu mensaje. Por favor, intentá de nuevo en unos minutos. 🙏';
 
+  /**
+   * Acuse que se manda si el cliente sigue escribiendo mientras su caso
+   * espera a una persona. Sin esto le hablaba a una pared: el agente está
+   * pausado y no hay ninguna señal de que alguien lo va a atender.
+   */
+  private static readonly WAITING_HUMAN_ACK =
+    'Ya le pasé tu consulta a un responsable 🙌 En cuanto tengamos novedades te escribimos por acá.';
+
   async process(job: Job<MessageJob>): Promise<void> {
     const { conversationId, externalId, message, channel } = job.data;
 
@@ -48,6 +56,12 @@ export class MessageProcessor extends WorkerHost {
         this.logger.log(
           `Conversación [${conversationId}] en estado ${conversation.status}: no se invoca al agente.`,
         );
+        // Solo en WAITING_HUMAN: si un supervisor ya tomó el control
+        // (HUMAN_HANDLING) está mirando la conversación y va a contestar él,
+        // un aviso automático ahí sobra y confunde.
+        if (conversation.status === 'WAITING_HUMAN') {
+          await this.acknowledgeWaitingHuman(conversationId, externalId, channel);
+        }
         return;
       }
 
@@ -123,6 +137,42 @@ export class MessageProcessor extends WorkerHost {
           );
       }
       throw err;
+    }
+  }
+
+  /**
+   * Le confirma al cliente que su caso está en manos de una persona, UNA sola
+   * vez por espera: si vuelve a escribir, no se le repite el mismo mensaje.
+   *
+   * El "una sola vez" se resuelve mirando si el último mensaje del asistente
+   * ya es este acuse, en vez de agregar una columna a Conversation para
+   * llevar la cuenta. Cuando el supervisor responde, ese deja de ser el
+   * último mensaje, así que una espera posterior vuelve a avisar.
+   */
+  private async acknowledgeWaitingHuman(
+    conversationId: string,
+    externalId: string,
+    channel: Channel,
+  ): Promise<void> {
+    const last =
+      await this.conversations.getLastAssistantMessage(conversationId);
+    if (last?.content === MessageProcessor.WAITING_HUMAN_ACK) return;
+
+    try {
+      await this.sender.send(
+        externalId,
+        MessageProcessor.WAITING_HUMAN_ACK,
+        channel,
+      );
+      await this.conversations.addMessage(
+        conversationId,
+        'ASSISTANT',
+        MessageProcessor.WAITING_HUMAN_ACK,
+      );
+    } catch (err) {
+      // No relanzar: el caso ya está escalado y el supervisor lo va a ver
+      // igual. Reintentar el job solo para un acuse sería contraproducente.
+      this.logger.error(`No se pudo enviar el acuse de espera: ${err}`);
     }
   }
 }

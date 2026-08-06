@@ -103,6 +103,19 @@ export class ConversationsService {
     return rows.reverse() as ConversationTurn[];
   }
 
+  /**
+   * Último mensaje del asistente en la conversación. Se usa para no repetir
+   * un aviso automático que ya se mandó (ver el acuse de WAITING_HUMAN en
+   * MessageProcessor).
+   */
+  async getLastAssistantMessage(conversationId: string) {
+    return this.prisma.message.findFirst({
+      where: { conversationId, role: 'ASSISTANT' },
+      orderBy: { createdAt: 'desc' },
+      select: { content: true },
+    });
+  }
+
   /** Fija el agente sticky de la conversación tras resolver un mensaje. */
   async setCurrentAgent(conversationId: string, agent: AgentType) {
     return this.prisma.conversation.update({

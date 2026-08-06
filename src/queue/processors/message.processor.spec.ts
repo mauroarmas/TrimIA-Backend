@@ -17,6 +17,7 @@ describe('MessageProcessor — pausa human-in-the-loop', () => {
     setCurrentAgent: jest.Mock;
     addMessage: jest.Mock;
     setUserType: jest.Mock;
+    getLastAssistantMessage: jest.Mock;
   };
   let sender: { send: jest.Mock };
   let orchestrator: { invoke: jest.Mock };
@@ -40,6 +41,7 @@ describe('MessageProcessor — pausa human-in-the-loop', () => {
       setCurrentAgent: jest.fn(),
       addMessage: jest.fn(),
       setUserType: jest.fn(),
+      getLastAssistantMessage: jest.fn().mockResolvedValue(null),
     };
     sender = { send: jest.fn() };
     orchestrator = { invoke: jest.fn() };
@@ -54,7 +56,7 @@ describe('MessageProcessor — pausa human-in-the-loop', () => {
   });
 
   it.each(['WAITING_HUMAN', 'HUMAN_HANDLING'])(
-    'no invoca al orquestador ni responde si la conversación está %s',
+    'no invoca al orquestador si la conversación está %s',
     async (status) => {
       conversations.findById.mockResolvedValue({
         id: 'conv-1',
@@ -66,9 +68,76 @@ describe('MessageProcessor — pausa human-in-the-loop', () => {
       await processor.process(job);
 
       expect(orchestrator.invoke).not.toHaveBeenCalled();
-      expect(sender.send).not.toHaveBeenCalled();
     },
   );
+
+  /**
+   * Sin esto, el cliente que escribe mientras su caso espera a una persona
+   * le habla a una pared: el agente está pausado y no hay ninguna señal de
+   * que alguien lo va a atender.
+   */
+  describe('acuse de espera (WAITING_HUMAN)', () => {
+    const waitingConversation = {
+      id: 'conv-1',
+      status: 'WAITING_HUMAN',
+      currentAgent: 'SALES',
+      userType: 'CLIENTE',
+    };
+
+    it('avisa que el caso está en manos de un responsable', async () => {
+      conversations.findById.mockResolvedValue(waitingConversation);
+
+      await processor.process(job);
+
+      expect(sender.send).toHaveBeenCalledWith(
+        '5491100000000',
+        expect.stringContaining('responsable'),
+        'WHATSAPP',
+      );
+      // Queda en el historial, para que el supervisor vea qué se le dijo.
+      expect(conversations.addMessage).toHaveBeenCalledWith(
+        'conv-1',
+        'ASSISTANT',
+        expect.stringContaining('responsable'),
+      );
+    });
+
+    it('no lo repite si el cliente vuelve a escribir', async () => {
+      conversations.findById.mockResolvedValue(waitingConversation);
+      // Simula que el acuse ya fue el último mensaje del asistente.
+      conversations.getLastAssistantMessage.mockImplementation(async () => {
+        const sent = sender.send.mock.calls[0]?.[1];
+        return sent ? { content: sent } : null;
+      });
+
+      await processor.process(job); // primer mensaje → avisa
+      await processor.process(job); // segundo → no repite
+
+      expect(sender.send).toHaveBeenCalledTimes(1);
+    });
+
+    // Un supervisor con el control está mirando la conversación y va a
+    // contestar él: un aviso automático ahí sobra y confunde.
+    it('NO avisa si un supervisor ya tomó el control (HUMAN_HANDLING)', async () => {
+      conversations.findById.mockResolvedValue({
+        ...waitingConversation,
+        status: 'HUMAN_HANDLING',
+      });
+
+      await processor.process(job);
+
+      expect(sender.send).not.toHaveBeenCalled();
+    });
+
+    // El caso ya está escalado: reintentar el job entero por un acuse que
+    // no salió sería contraproducente.
+    it('si falla el envío del acuse, no relanza el error', async () => {
+      conversations.findById.mockResolvedValue(waitingConversation);
+      sender.send.mockRejectedValue(new Error('WhatsApp caído'));
+
+      await expect(processor.process(job)).resolves.toBeUndefined();
+    });
+  });
 
   it('sí invoca al orquestador si la conversación está ACTIVE', async () => {
     conversations.findById.mockResolvedValue({
