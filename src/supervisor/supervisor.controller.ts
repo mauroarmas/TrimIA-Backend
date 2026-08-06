@@ -30,7 +30,8 @@ import { CreateInternalNoteDto } from '../conversations/dto/create-internal-note
  * - GET /supervisor/metrics       → métricas agregadas en JSON
  * - GET /supervisor               → la página HTML del dashboard (dev)
  *
- * Todos los endpoints de datos exigen JWT + rol SUPERVISOR.
+ * Todos los endpoints de datos exigen JWT + rol SUPERVISOR, salvo
+ * /release (ver el comentario en el propio endpoint).
  */
 @ApiTags('supervisor')
 @Controller('supervisor')
@@ -138,16 +139,27 @@ export class SupervisorController {
     return this.conversations.takeover(id, req.user.id);
   }
 
-  /** POST /supervisor/conversations/:id/release — devuelve el control. */
+  /**
+   * POST /supervisor/conversations/:id/release — devuelve el control.
+   *
+   * Abierto también a EMPLEADO (no solo SUPERVISOR): un cobrador que tomó
+   * la conversación vía markManualHandling (Sprint 4) no tenía ninguna ruta
+   * legítima para soltarla — quedaba en HUMAN_HANDLING para siempre, porque
+   * este endpoint exigía SUPERVISOR. El service ya sabía resolver esto
+   * (asSupervisor=false valida que sea el mismo empleado que la tomó); solo
+   * faltaba exponerlo. Un SUPERVISOR sigue pudiendo destrabar cualquier
+   * conversación, aunque la haya tomado otro empleado.
+   */
   @Post('conversations/:id/release')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('SUPERVISOR')
+  @Roles('SUPERVISOR', 'EMPLEADO')
   @ApiOperation({ summary: 'Devuelve el control manual de una conversación' })
   releaseConversation(@Param('id') id: string, @Req() req: any) {
-    // Un SUPERVISOR puede destrabar cualquier conversación, aunque la haya
-    // tomado un EMPLEADO por otra vía (markManualHandling, Sprint 4) — ver
-    // el comentario en ConversationsService.release().
-    return this.conversations.release(id, req.user.id, true);
+    return this.conversations.release(
+      id,
+      req.user.id,
+      req.user.role === 'SUPERVISOR',
+    );
   }
 
   /** POST /supervisor/conversations/:id/reply — mensaje manual durante el control. */
