@@ -15,7 +15,11 @@ import {
   OrchestratorStateType,
 } from '../../orchestrator/orchestrator.state';
 import { SpecializedAgent } from '../agents.service';
-import { agentResponseSchema, HANDOFF_INSTRUCTIONS } from './rag-agent.schemas';
+import { agentResponseSchema } from './rag-agent.schemas';
+import {
+  HANDOFF_INSTRUCTIONS,
+  STYLE_RULES,
+} from './rag-agent.instructions';
 
 /** Dependencias de infraestructura comunes a todo agente RAG. */
 export interface AgentGraphDeps {
@@ -106,10 +110,13 @@ export function buildRagAgentGraph(
     });
 
     const result = await structured.invoke([
-      new SystemMessage(`${prompt}\n${HANDOFF_INSTRUCTIONS}`),
+      new SystemMessage(`${prompt}\n${STYLE_RULES}\n${HANDOFF_INSTRUCTIONS}`),
       ...historyMessages,
+      // "Información disponible" y no "contexto de la base de conocimiento":
+      // el modelo copiaba esa etiqueta y se la repetía al cliente ("no lo
+      // tenemos en nuestra base de conocimiento actual").
       new HumanMessage(
-        `Contexto de la base de conocimiento:\n${state.context || '(sin resultados)'}\n\n` +
+        `Información disponible:\n${state.context || '(no hay información sobre esto)'}\n\n` +
           `Consulta del usuario: ${state.message}`,
       ),
     ]);
