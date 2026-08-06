@@ -274,6 +274,34 @@ export class ConversationsService {
     return note;
   }
 
+  /**
+   * Nota interna escrita por un AGENTE de IA, no por una persona.
+   *
+   * La usa el agente al escalar, para dejarle al supervisor un resumen del
+   * caso y que no tenga que reconstruirlo leyendo toda la conversación.
+   * Va en la misma tabla que las notas humanas (aparecen juntas en el
+   * timeline del panel), distinguidas por `authorAgentType` — por eso
+   * `InternalNote.authorId` es opcional en el schema.
+   */
+  async addAgentNote(
+    conversationId: string,
+    agentType: AgentType | null,
+    content: string,
+  ) {
+    const note = await this.prisma.internalNote.create({
+      data: { conversationId, authorAgentType: agentType, content },
+    });
+
+    await this.orchestrationLogger.logEvent({
+      conversationId,
+      eventType: 'internal_note_added',
+      agentType,
+      payload: { authorAgentType: agentType },
+    });
+
+    return note;
+  }
+
   async listInternalNotes(conversationId: string) {
     return this.prisma.internalNote.findMany({
       where: { conversationId },

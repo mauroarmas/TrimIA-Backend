@@ -100,6 +100,27 @@ describe('ConversationsService — takeover/release/replyManually', () => {
     });
   });
 
+  // Las notas de agente y las humanas conviven en la misma tabla (aparecen
+  // juntas en el timeline del panel), distinguidas por authorAgentType.
+  describe('addAgentNote', () => {
+    it('guarda la nota con authorAgentType y sin authorId', async () => {
+      prisma.internalNote.create.mockResolvedValue({ id: 'note-1' });
+
+      await service.addAgentNote('conv-1', 'SALES', 'Resumen del caso');
+
+      expect(prisma.internalNote.create).toHaveBeenCalledWith({
+        data: {
+          conversationId: 'conv-1',
+          authorAgentType: 'SALES',
+          content: 'Resumen del caso',
+        },
+      });
+      expect(logger.logEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ eventType: 'internal_note_added' }),
+      );
+    });
+  });
+
   describe('takeover', () => {
     it('toma el control de una conversación ACTIVE', async () => {
       prisma.conversation.findUnique.mockResolvedValue({

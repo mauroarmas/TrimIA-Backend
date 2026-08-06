@@ -1,5 +1,5 @@
 import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
-import { Audience } from '@prisma/client';
+import { AgentType, Audience } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
 import { ConversationsService } from '../conversations/conversations.service';
 import { WhatsappSenderService } from '../messaging/whatsapp-sender.service';
@@ -42,15 +42,31 @@ export class EscalationsService {
    * cual en vez de duplicarla (regla de aplicación, no constraint de DB —
    * ver data-model.md).
    */
-  async create(params: { conversationId: string; reason: string }) {
+  async create(params: {
+    conversationId: string;
+    reason: string;
+    /** Agente que escaló; queda como autor de la nota interna. */
+    agentType?: AgentType;
+    /** Resumen del caso para el supervisor que lo tome. */
+    internalNote?: string;
+  }) {
     const existing = await this.prisma.escalation.findFirst({
       where: { conversationId: params.conversationId, status: 'PENDING' },
     });
+    // Si ya hay un caso pendiente, tampoco se duplica la nota.
     if (existing) return existing;
 
     const escalation = await this.prisma.escalation.create({
       data: { conversationId: params.conversationId, reason: params.reason },
     });
+
+    if (params.internalNote) {
+      await this.conversations.addAgentNote(
+        params.conversationId,
+        params.agentType ?? null,
+        params.internalNote,
+      );
+    }
 
     await this.conversations.setStatus(params.conversationId, 'WAITING_HUMAN');
 

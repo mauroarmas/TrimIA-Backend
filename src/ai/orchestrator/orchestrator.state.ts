@@ -24,7 +24,16 @@ export const OrchestratorState = Annotation.Root({
   // --- Flujo RAG del agente ---
   context: Annotation<string | null>, // chunks recuperados por retrieve_context
   confidence: Annotation<number | null>, // score del mejor chunk (0-1)
-  escalated: Annotation<boolean | null>, // true si se derivó a humano por baja confianza
+  escalated: Annotation<boolean | null>, // true si se derivó a humano (por baja confianza O a pedido del agente)
+
+  // --- Derivación decidida por el propio agente (no por el score del RAG) ---
+  // Las completa generate_response con su salida estructurada. Cubren el caso
+  // que el umbral de confianza no detecta: el RAG encontró contexto suficiente,
+  // pero igual hace falta una persona (el cliente lo pide, o el agente prometió
+  // consultarlo). Ver rag-agent.schemas.ts.
+  needsHuman: Annotation<boolean | null>,
+  handoffReason: Annotation<string | null>, // motivo, para el campo `reason` de la Escalation
+  internalNote: Annotation<string | null>, // resumen del caso para el supervisor
 
   // --- Control del ruteo sticky ---
   scopeChanged: Annotation<boolean | null>, // lo setea scope_check (mismo/cambio)
