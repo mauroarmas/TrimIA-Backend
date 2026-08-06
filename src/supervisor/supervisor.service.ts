@@ -230,10 +230,19 @@ export class SupervisorService {
 
       // Notas internas (Sprint 3) — nunca visibles para el usuario final,
       // solo se agregan acá porque este endpoint ya exige SUPERVISOR.
+      // El autor es o un Employee (author) o un agente de IA (authorAgentType)
+      // — nunca ambos, ver el comentario del modelo en schema.prisma — así que
+      // el frontend decide el ícono/color mirando cuál de los dos vino.
       this.prisma.internalNote.findMany({
         where: { conversationId },
         orderBy: { createdAt: 'asc' },
-        select: { id: true, authorId: true, content: true, createdAt: true },
+        select: {
+          id: true,
+          content: true,
+          createdAt: true,
+          authorAgentType: true,
+          author: { select: { id: true, name: true } },
+        },
       }),
     ]);
 
