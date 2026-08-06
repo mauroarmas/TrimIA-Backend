@@ -7,7 +7,7 @@ import {
 } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
-import { Channel, ProofRejectionReason } from '@prisma/client';
+import { Channel, PaymentProofStatus, ProofRejectionReason } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
 import { ConversationsService } from '../conversations/conversations.service';
 import { ClientsService } from '../clients/clients.service';
@@ -198,10 +198,21 @@ export class PaymentProofsService {
     }
   }
 
-  async listPendingReview(employeeId: string, isController: boolean) {
+  /**
+   * `status` es opcional y por default PENDING_REVIEW (comportamiento
+   * original): sin esto, un comprobante que el cobrador marcó MANUAL_HANDLING
+   * o REJECTED salía de su cola y no tenía ningún endpoint que lo devolviera
+   * — el "voy a manejarlo yo" no tenía vuelta atrás en el producto, aunque en
+   * la base el comprobante seguía ahí.
+   */
+  async listPendingReview(
+    employeeId: string,
+    isController: boolean,
+    status: PaymentProofStatus = PaymentProofStatus.PENDING_REVIEW,
+  ) {
     return this.prisma.paymentProof.findMany({
       where: {
-        status: 'PENDING_REVIEW',
+        status,
         ...(isController
           ? {}
           : { quota: { client: { assignedCollectorId: employeeId } } }),

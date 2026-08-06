@@ -607,4 +607,45 @@ describe('PaymentProofsService', () => {
       );
     });
   });
+
+  // Sin filtro devolvía PENDING_REVIEW; ahora el status es un parámetro, para
+  // que el cobrador pueda ver lo que sacó de su cola al resolverlo (antes no
+  // había ningún endpoint que devolviera MANUAL_HANDLING/REJECTED).
+  describe('listPendingReview', () => {
+    it('sin status pedido, filtra por PENDING_REVIEW (default)', async () => {
+      prisma.paymentProof.findMany.mockResolvedValue([]);
+
+      await service.listPendingReview('collector-1', false);
+
+      const { where } = prisma.paymentProof.findMany.mock.calls[0][0];
+      expect(where.status).toBe('PENDING_REVIEW');
+    });
+
+    it('con status explícito, filtra por ese status', async () => {
+      prisma.paymentProof.findMany.mockResolvedValue([]);
+
+      await service.listPendingReview('collector-1', false, 'MANUAL_HANDLING' as any);
+
+      const { where } = prisma.paymentProof.findMany.mock.calls[0][0];
+      expect(where.status).toBe('MANUAL_HANDLING');
+    });
+
+    it('cobrador sin isController solo ve sus clientes asignados', async () => {
+      prisma.paymentProof.findMany.mockResolvedValue([]);
+
+      await service.listPendingReview('collector-1', false);
+
+      const { where } = prisma.paymentProof.findMany.mock.calls[0][0];
+      expect(where.quota.client.assignedCollectorId).toBe('collector-1');
+    });
+
+    it('controlador ve todos, sin filtro de cobrador asignado', async () => {
+      prisma.paymentProof.findMany.mockResolvedValue([]);
+
+      await service.listPendingReview('controller-1', true);
+
+      const { where } = prisma.paymentProof.findMany.mock.calls[0][0];
+      expect(where).not.toHaveProperty('quota');
+    });
+  });
 });

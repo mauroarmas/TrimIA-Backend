@@ -5,6 +5,7 @@ import {
   Post,
   Put,
   Body,
+  Query,
   Req,
   Res,
   UseGuards,
@@ -20,6 +21,7 @@ import { QuotasService } from './quotas.service';
 import { ReminderConfigService } from './reminder-config.service';
 import { WhatsappMediaService } from '../messaging/whatsapp-media.service';
 import { RejectProofDto } from './dto/reject-proof.dto';
+import { ListProofsQueryDto } from './dto/list-proofs-query.dto';
 import { ManualHandlingProofDto } from './dto/manual-handling-proof.dto';
 import { UpdateReminderConfigDto } from './dto/update-reminder-config.dto';
 import { VerifyImpactDto } from './dto/verify-impact.dto';
@@ -43,11 +45,20 @@ export class CollectionsController {
     private readonly reminderConfig: ReminderConfigService,
   ) {}
 
-  /** GET /collections/proofs — cola de comprobantes a revisar. */
+  /**
+   * GET /collections/proofs — cola de comprobantes. Sin `?status`, devuelve
+   * PENDING_REVIEW (comportamiento original). Con `?status=MANUAL_HANDLING`
+   * o `?status=REJECTED`, el cobrador puede volver a ver lo que sacó de su
+   * cola al resolverlo — antes no había ningún endpoint que lo devolviera.
+   */
   @Get('proofs')
-  @ApiOperation({ summary: 'Cola de comprobantes pendientes de revisión' })
-  listProofs(@Req() req: any) {
-    return this.paymentProofs.listPendingReview(req.user.id, req.user.isController);
+  @ApiOperation({ summary: 'Cola de comprobantes, filtrable por status' })
+  listProofs(@Req() req: any, @Query() query: ListProofsQueryDto) {
+    return this.paymentProofs.listPendingReview(
+      req.user.id,
+      req.user.isController,
+      query.status,
+    );
   }
 
   /** GET /collections/proofs/:id/image — binario del comprobante. */
