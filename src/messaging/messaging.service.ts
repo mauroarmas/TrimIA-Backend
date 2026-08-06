@@ -66,6 +66,8 @@ export class MessagingService {
         externalId: dto.phone,
         channel,
         message: dto.message ?? '',
+        // Para que el processor lo saque del historial: ya está persistido.
+        messageId: message.id,
       },
       {
         // Reintentos ante fallos transitorios (Gemini/Chroma/red) con backoff.

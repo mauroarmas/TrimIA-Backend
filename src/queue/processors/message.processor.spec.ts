@@ -29,6 +29,7 @@ describe('MessageProcessor — pausa human-in-the-loop', () => {
       externalId: '5491100000000',
       channel: 'WHATSAPP',
       message: 'hola, sigo esperando',
+      messageId: 'msg-actual',
     },
     attemptsMade: 0,
     opts: { attempts: 3 },
@@ -159,6 +160,27 @@ describe('MessageProcessor — pausa human-in-the-loop', () => {
       '5491100000000',
       'Sí, tenemos stock.',
       'WHATSAPP',
+    );
+  });
+
+  // El mensaje ya está persistido cuando llega el job: si no se excluye, el
+  // agente lo lee dos veces (en el historial y en la consulta).
+  it('pide el historial sin el mensaje que está procesando', async () => {
+    conversations.findById.mockResolvedValue({
+      id: 'conv-1',
+      status: 'ACTIVE',
+      currentAgent: null,
+      userType: 'CLIENTE',
+    });
+    employees.findByPhone.mockResolvedValue(null);
+    orchestrator.invoke.mockResolvedValue({ response: 'ok', agentType: null });
+
+    await processor.process(job);
+
+    expect(conversations.getRecentHistory).toHaveBeenCalledWith(
+      'conv-1',
+      undefined,
+      'msg-actual',
     );
   });
 });

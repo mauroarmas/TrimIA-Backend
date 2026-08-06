@@ -82,18 +82,24 @@ export class ConversationsService {
    * Devuelve los últimos `limit` turnos USER/ASSISTANT de la conversación,
    * ordenados del más antiguo al más reciente (orden natural para el LLM).
    * Se excluyen roles SYSTEM y TOOL para no filtrar internos al modelo.
+   *
+   * `excludeMessageId` saca el mensaje que se está procesando ahora. Hace
+   * falta porque el mensaje del cliente se persiste ANTES de encolar el job,
+   * así que sin esto el agente lo recibía dos veces: una en el historial y
+   * otra en el HumanMessage de la consulta. Se excluye por id y no "el
+   * último USER" porque si el cliente manda dos mensajes seguidos hay dos
+   * jobs en vuelo y cada uno tiene que sacar el suyo, no el más nuevo.
    */
   async getRecentHistory(
     conversationId: string,
     limit = 6,
+    excludeMessageId?: string,
   ): Promise<ConversationTurn[]> {
     const rows = await this.prisma.message.findMany({
       where: {
         conversationId,
         role: { in: ['USER', 'ASSISTANT'] },
-        // Excluir el mensaje actual (el último USER todavía no tiene respuesta)
-        // — el processor lo agrega después de invocar el orquestador.
-        // Solo traemos los turnos previos completos (pares USER+ASSISTANT).
+        ...(excludeMessageId ? { id: { not: excludeMessageId } } : {}),
       },
       orderBy: { createdAt: 'desc' },
       take: limit,

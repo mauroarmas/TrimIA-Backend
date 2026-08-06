@@ -16,7 +16,7 @@ describe('ConversationsService — takeover/release/replyManually', () => {
       create: jest.Mock;
       update: jest.Mock;
     };
-    message: { create: jest.Mock };
+    message: { create: jest.Mock; findMany: jest.Mock };
     internalNote: { create: jest.Mock; findMany: jest.Mock };
   };
   let sender: { send: jest.Mock };
@@ -30,7 +30,7 @@ describe('ConversationsService — takeover/release/replyManually', () => {
         create: jest.fn(),
         update: jest.fn(),
       },
-      message: { create: jest.fn() },
+      message: { create: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
       internalNote: { create: jest.fn(), findMany: jest.fn() },
     };
     sender = { send: jest.fn() };
@@ -97,6 +97,41 @@ describe('ConversationsService — takeover/release/replyManually', () => {
       expect(prisma.conversation.create).toHaveBeenCalledWith({
         data: { externalId: '549999', channel: 'WHATSAPP', clientId: undefined },
       });
+    });
+  });
+
+  /**
+   * El mensaje del cliente se persiste ANTES de encolar el job, así que sin
+   * excluirlo el agente lo recibía dos veces: en el historial y en la
+   * consulta.
+   */
+  describe('getRecentHistory — mensaje actual', () => {
+    it('excluye el mensaje que se está procesando', async () => {
+      await service.getRecentHistory('conv-1', 6, 'msg-actual');
+
+      expect(prisma.message.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ id: { not: 'msg-actual' } }),
+        }),
+      );
+    });
+
+    it('sin excludeMessageId no agrega ningún filtro por id', async () => {
+      await service.getRecentHistory('conv-1');
+
+      const { where } = prisma.message.findMany.mock.calls[0][0];
+      expect(where).not.toHaveProperty('id');
+    });
+
+    it('devuelve los turnos del más antiguo al más reciente', async () => {
+      prisma.message.findMany.mockResolvedValue([
+        { role: 'ASSISTANT', content: 'nuevo' },
+        { role: 'USER', content: 'viejo' },
+      ]);
+
+      const history = await service.getRecentHistory('conv-1');
+
+      expect(history.map((t) => t.content)).toEqual(['viejo', 'nuevo']);
     });
   });
 

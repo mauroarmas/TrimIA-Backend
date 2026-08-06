@@ -12,6 +12,11 @@ interface MessageJob {
   externalId: string;
   channel: Channel;
   message: string;
+  /**
+   * Id del Message ya persistido que dispara este job. Opcional porque los
+   * jobs encolados antes de existir el campo no lo traen.
+   */
+  messageId?: string;
 }
 
 @Processor('message-processing', { concurrency: 1 })
@@ -39,7 +44,8 @@ export class MessageProcessor extends WorkerHost {
     'Ya le pasé tu consulta a un responsable 🙌 En cuanto tengamos novedades te escribimos por acá.';
 
   async process(job: Job<MessageJob>): Promise<void> {
-    const { conversationId, externalId, message, channel } = job.data;
+    const { conversationId, externalId, message, channel, messageId } =
+      job.data;
 
     this.logger.log(`Processing message [conv=${conversationId}]: "${message}"`);
 
@@ -66,7 +72,13 @@ export class MessageProcessor extends WorkerHost {
       }
 
       const currentAgent = conversation?.currentAgent ?? null;
-      const history = await this.conversations.getRecentHistory(conversationId);
+      // Sin el messageId, el mensaje actual vendría también dentro del
+      // historial y el agente lo leería duplicado.
+      const history = await this.conversations.getRecentHistory(
+        conversationId,
+        undefined,
+        messageId,
+      );
 
       // Determinar userType real: buscar el teléfono en la whitelist de
       // empleados (RF12), que ES la tabla Employee (phone único + isActive).
