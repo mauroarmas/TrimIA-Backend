@@ -11,6 +11,7 @@ import { EmployeesModule } from '../employees/employees.module';
 import { WhatsappSenderModule } from '../messaging/whatsapp-sender.module';
 import { WhatsappMediaModule } from '../messaging/whatsapp-media.module';
 import { OrchestrationLoggerModule } from '../ai/orchestrator/orchestration-logger.module';
+import { EscalationsModule } from '../escalations/escalations.module';
 
 @Module({
   imports: [
@@ -21,6 +22,7 @@ import { OrchestrationLoggerModule } from '../ai/orchestrator/orchestration-logg
     WhatsappSenderModule,
     WhatsappMediaModule,
     OrchestrationLoggerModule,
+    EscalationsModule,
   ],
   controllers: [CollectionsController],
   providers: [PaymentProofsService, CollectionsService, QuotasService, ReminderConfigService],

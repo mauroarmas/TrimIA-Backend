@@ -22,6 +22,8 @@ import { ReminderConfigService } from './reminder-config.service';
 import { WhatsappMediaService } from '../messaging/whatsapp-media.service';
 import { RejectProofDto } from './dto/reject-proof.dto';
 import { ListProofsQueryDto } from './dto/list-proofs-query.dto';
+import { ListActivityQueryDto } from './dto/list-activity-query.dto';
+import { EscalateClientDto } from './dto/escalate-client.dto';
 import { ManualHandlingProofDto } from './dto/manual-handling-proof.dto';
 import { UpdateReminderConfigDto } from './dto/update-reminder-config.dto';
 import { VerifyImpactDto } from './dto/verify-impact.dto';
@@ -182,5 +184,50 @@ export class CollectionsController {
       req.user.isController,
       dto.note,
     );
+  }
+
+  /**
+   * POST /collections/quotas/:id/request-proof — "Solicitar comprobante"
+   * (Fig 3): el cliente avisó por WhatsApp que ya pagó pero no mandó el
+   * comprobante; el cobrador dispara el mensaje a mano en vez de esperar el
+   * próximo ciclo automático de recordatorios.
+   */
+  @Post('quotas/:id/request-proof')
+  @ApiOperation({ summary: 'Envía un WhatsApp pidiéndole el comprobante al cliente' })
+  requestProof(@Param('id') quotaId: string, @Req() req: any) {
+    return this.quotas.requestProof(quotaId, req.user.id, req.user.isController);
+  }
+
+  /**
+   * POST /collections/clients/:id/escalate — "Escalar el caso al supervisor"
+   * (Fig 3), disparado a mano por el cobrador desde la fila del cliente.
+   * Distinto de la derivación automática de los agentes RAG.
+   */
+  @Post('clients/:id/escalate')
+  @ApiOperation({ summary: 'Escala manualmente el caso de un cliente a un supervisor' })
+  escalateClient(
+    @Param('id') clientId: string,
+    @Body() dto: EscalateClientDto,
+    @Req() req: any,
+  ) {
+    return this.collections.escalateClient(
+      clientId,
+      req.user.id,
+      req.user.isController,
+      dto.reason,
+    );
+  }
+
+  /**
+   * GET /collections/activity — "Registro de Actividad" (Fig 7), vista
+   * cruzada sobre todos los clientes en el alcance del empleado (a
+   * diferencia de /clients/:id/history, que es de a uno). Con
+   * ?eventType=quota_reminder_sent cubre también "Recordatorios Enviados"
+   * sin necesitar un endpoint separado.
+   */
+  @Get('activity')
+  @ApiOperation({ summary: 'Registro de actividad cruzado (mensajes, notas, eventos)' })
+  listActivity(@Query() query: ListActivityQueryDto, @Req() req: any) {
+    return this.collections.listActivity(req.user.id, req.user.isController, query);
   }
 }
