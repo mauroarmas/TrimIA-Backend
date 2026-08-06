@@ -1,7 +1,13 @@
 import { Logger } from '@nestjs/common';
 import { StateGraph, START, END } from '@langchain/langgraph';
-import { SystemMessage, HumanMessage, AIMessage } from '@langchain/core/messages';
+import {
+  BaseMessage,
+  SystemMessage,
+  HumanMessage,
+  AIMessage,
+} from '@langchain/core/messages';
 import { AgentType } from '@prisma/client';
+import { ConversationTurn } from '../../conversations/conversations.service';
 import { LlmService } from '../llm/llm.service';
 import { AgentsService, SpecializedAgent } from '../agents/agents.service';
 import { OrchestrationLogger } from './orchestration-logger.service';
@@ -82,12 +88,25 @@ export function buildOrchestratorGraph(
   const scopeCheck = async (state: OrchestratorStateType) => {
     const startedAt = Date.now();
     const current = state.currentAgent as SpecializedAgent;
+    // Sin el historial, una confirmación corta ("si por favor") a una
+    // pregunta que el bot mismo hizo en el turno anterior es indistinguible
+    // de una cortesía suelta ("dale", "gracias") — el modelo la marcaba
+    // isGreeting=true y la conversación caía en un callejón sin salida
+    // (greeting_response → END), sin llegar nunca al agente. Mismo patrón
+    // de historyMessages que ya usa generate_response en rag-agent.graph.ts.
+    const historyMessages: BaseMessage[] = (state.history ?? []).map(
+      (turn: ConversationTurn) =>
+        turn.role === 'USER'
+          ? new HumanMessage(turn.content)
+          : new AIMessage(turn.content),
+    );
     const structured = llm.chat.withStructuredOutput(scopeSchema, {
       name: 'scope_check',
       includeRaw: true,
     });
     const result = await structured.invoke([
       new SystemMessage(buildScopePrompt(current)),
+      ...historyMessages,
       new HumanMessage(state.message),
     ]);
 

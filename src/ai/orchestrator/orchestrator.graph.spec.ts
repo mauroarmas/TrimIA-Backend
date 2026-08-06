@@ -81,4 +81,52 @@ describe('buildOrchestratorGraph — ruteo sticky vs. greeting', () => {
 
     expect(invoke).toHaveBeenCalledTimes(1);
   });
+
+  /**
+   * Bug real (2026-08-06): "si por favor" —confirmando la pregunta que el
+   * bot mismo hizo en el turno anterior— se clasificaba como isGreeting=true
+   * y la conversación caía en un callejón sin salida sin llegar al agente.
+   * Causa: scope_check no recibía el historial, así que una confirmación
+   * corta era indistinguible de una cortesía suelta ("dale", "gracias").
+   */
+  it('scope_check recibe el historial (no solo el mensaje aislado)', async () => {
+    const stateWithHistory: OrchestratorStateType = {
+      ...baseState,
+      message: 'si por favor',
+      history: [
+        { role: 'USER', content: 'quiero saber si tenes el modelo X' },
+        {
+          role: 'ASSISTANT',
+          content: '¿Querés que derive tu consulta con un responsable?',
+        },
+      ],
+    };
+    const { graph, invoke } = buildGraph({ decision: 'mismo', isGreeting: false });
+
+    await graph.invoke(stateWithHistory);
+
+    const messages = invoke.mock.calls[0][0] as Array<{
+      content: string;
+      _getType: () => string;
+    }>;
+    // [system, ...history, mensaje actual]
+    expect(messages).toHaveLength(4);
+    expect(messages[1]._getType()).toBe('human');
+    expect(messages[1].content).toBe('quiero saber si tenes el modelo X');
+    expect(messages[2]._getType()).toBe('ai');
+    expect(messages[2].content).toBe(
+      '¿Querés que derive tu consulta con un responsable?',
+    );
+    expect(messages[3]._getType()).toBe('human');
+    expect(messages[3].content).toBe('si por favor');
+  });
+
+  it('scope_check funciona igual sin historial (conversación recién empezada)', async () => {
+    const { graph, invoke } = buildGraph({ decision: 'mismo', isGreeting: false });
+
+    await graph.invoke(baseState); // baseState.history = []
+
+    const messages = invoke.mock.calls[0][0] as Array<unknown>;
+    expect(messages).toHaveLength(2); // [system, mensaje actual]
+  });
 });
