@@ -1,6 +1,6 @@
 # Plan de Trabajo — TrimIA Backend (v5)
 
-> **Fecha:** 2026-08-04 · **Fuentes:** `src/`, `docs/CONTEXTO_TECNICO.md`, `docs/diccionarioEDT.md`, `docs/requisitos.md`, `docs/CRM.xlsx`, `docs/prototipos.pdf`, memoria Claude Code, `docs/voice_strategy_comparison.md`.
+> **Fecha:** 2026-08-04 · **Fuentes:** `src/`, `docs/CONTEXTO_TECNICO.md`, `docs/diccionarioEDT.md`, `docs/requisitos.md`, `docs/CRM.xlsx`, `docs/prototipos.pdf`, memoria Claude Code.
 >
 > **v5 (2026-08-04):** revisión completa contra los prototipos de interfaz del equipo de frontend
 > (`docs/prototipos.pdf`, 22 pantallas). Las decisiones de alcance tomadas en esa revisión están

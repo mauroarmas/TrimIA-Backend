@@ -561,5 +561,4 @@ docker compose exec nestjs npx jest --no-coverage
 | `docs/DeclaracióndeAlcancedeProyecto_TrimIA.md` | Alcance, requisitos, entregables (PMBOK) |
 | `docs/TP2_PMI_Matriz...-requisitos.csv` | Matriz de trazabilidad requisito→entregable→OE |
 | `docs/Diccionario_EDT_TrimIA.pdf` | Diccionario de la EDT (paquetes de trabajo) |
-| `docs/GuiaEstudio_TrimIA.md` | Guía de estudio del código (módulo por módulo) |
 | `docs/Procesos de Credimisión S.R.L..md` | Procesos reales del cliente |
