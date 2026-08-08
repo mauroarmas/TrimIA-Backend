@@ -198,6 +198,15 @@ sequenceDiagram
     n8n_out->>Meta_out: POST Meta Graph API v22.0
     Meta_out-->>Usuario: WhatsApp recibe mensaje
 
+    Note over n8n_out,Meta_out: ⏸️ PAUSA: esperando supervisor<br/>(conversación en WAITING_HUMAN)
+
+    alt cliente escribe de nuevo
+        Worker->>Worker: acknowledgeWaitingHuman()<br/>(acuse: "te atendemos pronto")
+        Worker->>n8n_out: envía acuse UNA SOLA VEZ
+        n8n_out->>Meta_out: acuse al cliente
+        Note over Worker: no repite en mensajes posteriores<br/>ni si supervisor ya tomó control
+    end
+
     rect rgba(59, 76, 59, 1)
         Note over Worker: job completó ✓
         Note over BullMQ: siguiente job en la cola puede empezar
@@ -222,120 +231,6 @@ sequenceDiagram
 - **Dos fases**: síncrona (webhook → validar → encolar) y asíncrona (worker → orquestador → respuesta)
 - **Escalada termina job**: no cuelga esperando supervisor. Supervisor reanuda con **nuevo job** después
 - **ChromaDB solo busca**: `retrieve_context` es O(log n), `evaluate_confidence` es puro filtro (0 tokens)
-
----
-
-## 2. Flujo de un Mensaje (entrada → salida) — Detalle ASCII
-
-```
-                      Meta WhatsApp
-                           │
-                           │ (recibe 549XXXXXXXXX)
-                           ▼
-           ┌───────────────────────────────────┐
-           │   n8n Webhook (RecepcionMensaje-A)│
-           │   Normaliza: 549 → 54             │
-           └──────────────┬────────────────────┘
-                          │
-                          ▼
-           ┌──────────────────────────────────┐
-           │ NestJS POST /messaging/webhook    │
-           │  • Guard: x-n8n-secret           │
-           │  • ValidationPipe: DTO           │
-           │  • responde 202 (ACEPTADO)       │
-           └────────┬─────────────────────────┘
-                    │
-         ┌──────────▼──────────┐
-         │  MessagingService   │
-         │  1. getOrCreate()   │ ← memoria conversacional
-         │  2. addMessage()    │
-         │  3. queue.add()     │ (BullMQ con retry)
-         └────────┬────────────┘
-                  │
-                  ▼ (job en cola)
-    ┌──────────────────────────────────┐
-    │  MessageProcessor (worker)        │
-    │  consume jobs + invoke orchestrator
-    └────────┬─────────────────────────┘
-             │
-             ▼
-    ┌──────────────────────────────────┐
-    │ orchestrator.invoke()             │
-    │ OrchestratorState = {             │
-    │   input,                          │
-    │   userId,                         │
-    │   userType (CLIENTE/EMPLEADO),   │
-    │   history (últimas 6 vueltas),   │ ← memoria
-    │   currentAgent                    │
-    │ }                                 │
-    └────────┬─────────────────────────┘
-             │
-    ┌────────▼─────────────────────────────────┐
-    │ [Nodo 1] classify_intent()                │
-    │ ¿Es un saludo? (regex) → skip tokens     │
-    └────────┬─────────────────────────────────┘
-             │
-             ▼
-    ┌────────────────────────────────────────┐
-    │ [Nodo 2] scope_check()                  │
-    │ ¿userType está permitido en este token?│
-    └────────┬────────────────────────────────┘
-             │
-             ▼
-    ┌────────────────────────────────────────┐
-    │ [Nodo 3] sticky_agent()                 │
-    │ ¿ya tiene agente? (Conversation.currAg)│
-    │ Si no → ruta a SALES/COLLECTIONS       │
-    └────────┬────────────────────────────────┘
-             │
-             ▼
-    ┌────────────────────────────────────────────────────┐
-    │ [Nodo 4] Agente RAG (ej. SALES)                   │
-    │                                                     │
-    │ 1. retrieve_context()                             │
-    │    ChromaDB.query(input, audience=PUBLICO, k=4)  │
-    │                                                     │
-    │ 2. evaluate_confidence()                          │
-    │    score >= 0.65? → generate : escalate          │
-    │                                                     │
-    │ 3a. generate_response() [si score >= 0.65]       │
-    │     Gemini + context + history → respuesta       │
-    │                                                     │
-    │ 3b. escalate_to_human() [si score < 0.65]        │
-    │     status=WAITING_HUMAN → espera supervisor     │
-    └────────┬────────────────────────────────────────────┘
-             │
-             ▼
-    ┌────────────────────────────────────────┐
-    │ OrchestrationLogger.track()             │
-    │ ├─ OrchestrationEvent (qué pasó)       │
-    │ └─ TokenUsage (input/output tokens)    │
-    └────────┬────────────────────────────────┘
-             │
-             ▼
-    ┌────────────────────────────────────────┐
-    │ Message.addMessage() → DB              │
-    │ Conversation.setCurrentAgent()         │
-    └────────┬────────────────────────────────┘
-             │
-             ▼
-    ┌────────────────────────────────────────┐
-    │ WhatsappSenderService.send()           │
-    │ POST N8N_BASE_URL/webhook/send-whatsapp│
-    └────────┬────────────────────────────────┘
-             │
-             ▼
-    ┌────────────────────────────────────────┐
-    │ n8n Workflow (EnvioMensaje-B)          │
-    │ 1. Filtro: channel == WHATSAPP?        │
-    │ 2. Transform: 54 → 549 (Meta expect.)  │
-    │ 3. POST Meta Graph API v22.0           │
-    └────────┬────────────────────────────────┘
-             │
-             ▼
-         Meta WhatsApp
-      (envía 549XXXXXXXXX)
-```
 
 ---
 
@@ -382,11 +277,16 @@ flowchart TD
         evaluate{evaluate_confidence<br/>score ≥ 0.65?}
         retrieve --> evaluate
         
-        evaluate -->|sí| generate["generate_response<br/>(Gemini + contexto RAG)"]
-        evaluate -->|no| escalate["escalate_to_human<br/>(interrupt)"]
+        evaluate -->|no| escalate["escalate_to_human<br/>(interrupt, canned)"]
+        evaluate -->|sí| generate["generate_response<br/>(Gemini + contexto RAG)<br/>→ response + needsHuman?"]
         
-        generate --> logEvent["log_event<br/>(RESPONDED)"]
+        generate --> evalHandoff{evaluateHandoff<br/>needsHuman?}
+        
+        evalHandoff -->|sí| escalateAgent["escalate_by_agent<br/>(+ internalNote)"]
+        evalHandoff -->|no| logEvent["log_event<br/>(RESPONDED)"]
+        
         escalate --> logEscalated["log_event<br/>(ESCALATED_TO_HUMAN)"]
+        escalateAgent --> logEscalated
         
         logEvent --> trackTokens
         logEscalated --> trackTokens
@@ -491,8 +391,11 @@ flowchart TD
               │             │   │   AGENTE RAG  (SALES│ADMIN│COLLECTIONS│LOGI│DEPO)  │
               │             │   │   1. retrieve_context  (ChromaDB, audiencia/role)  │
               │             │   │   2. evaluate_confidence  (score ≥ 0.65?)          │
-              │             │   │   3a. generate_response (Gemini+contexto+historial)│
-              │             │   │   3b. escalate_to_human (status=WAITING_HUMAN)     │
+              │             │   │      ├─ NO → escalate_to_human (canned)           │
+              │             │   │      └─ SÍ → 3. generate_response                 │
+              │             │   │   3. generate_response (Gemini+contexto+historial)│
+              │             │   │      → response + needsHuman? + internalNote?     │
+              │             │   │      └─ 4. evaluateHandoff → escalate_by_agent?   │
               │             │   └────────────────────────┬───────────────────────────┘
               │             │                            ▼
               │             │                     ┌──────────────┐
@@ -625,14 +528,28 @@ el mismo patrón, definido en: src/ai/agents/shared/rag-agent.graph.ts
 │      │   messages=system+history+user,                            │
 │      │   model=gemini-3.1-flash-lite,                            │
 │      │   temperature=0.7,                                         │
-│      │   maxTokens=512                                            │
+│      │   maxTokens=512,                                           │
+│      │   outputFormat=structured                                  │
 │      │ )                                                            │
-│      └─ output: estado.response                                    │
+│      └─ output: {                                                  │
+│           response: string,                                       │
+│           needsHuman: boolean,  ← NEW                            │
+│           handoffReason?: string, ← NEW                          │
+│           internalNote?: string ← NEW (solo si needsHuman=true)  │
+│         }                                                          │
 │                                                                     │
-│  [3b] escalate_to_human (si contexto débil)                       │
+│  [3b] escalate_to_human (si contexto débil, score < 0.65)        │
 │      ├─ output: estado.response = "Un supervisor revisará pronto" │
 │      ├─ acción: Conversation.status = WAITING_HUMAN              │
-│      └─ efecto: supervisor lo ve en Panel (Cola de Prioridades)   │
+│      └─ efecto: supervisor lo ve en Panel (razón: confianza baja) │
+│                                                                     │
+│  [3c] escalate_by_agent (si generate_response.needsHuman = true) │
+│      ├─ input: estado.response, estado.internalNote,             │
+│      │         estado.handoffReason                              │
+│      ├─ acción: Escalation.create({ reason, internalNote })      │
+│      ├─ acción: Conversation.status = WAITING_HUMAN              │
+│      └─ efecto: respuesta SÍ se envía al cliente + supervisor    │
+│                 ve una nota interna específica del agente         │
 │                                                                     │
 │  [4] track_tokens                                                  │
 │      ├─ input: tokens gastados en [3a] o [3b]                     │
@@ -660,6 +577,15 @@ Cada agente tiene variantes:
   ├─ Audiencia: EMPLEADO (PUBLICO + INTERNO)
   ├─ allowedFor: solo EMPLEADO
   └─ Escalada: NO (sin herramientas, solo RAG)
+
+**Dos caminos de escalada a humano (distintos motivos, mismo destino WAITING_HUMAN):**
+
+| Vía | Nodo | Razón | Respuesta al cliente | Nota al supervisor |
+|-----|------|-------|----------------------|--------------------|
+| **A: Confianza baja** | `escalate_to_human` | score RAG < 0.65 | Canned: "Un supervisor revisará pronto" | Razón: confianza insuficiente + score |
+| **B: Decisión de agente** | `escalate_by_agent` | needsHuman=true (agente lo decidió) | Respuesta ya generada por Gemini + contexto | internalNote con resumen del caso |
+
+Ejemplo de escenario B: cliente dice "quiero hablar con un supervisor"; el agente genera una respuesta útil pero marca needsHuman=true, y la internalNote acumula por qué ("usuario solicitó escalada manual"). El cliente recibe la respuesta inmediatamente y el supervisor ve el contexto completo en la nota interna, sin esperar a que el cliente escriba de nuevo.
 ```
 ## 4. Modelo de Datos — ER Diagram (Mermaid)
 
@@ -830,7 +756,7 @@ erDiagram
 
     FINANCING {
         string id PK
-        string purchaseRequestId FK-UK
+        string purchaseRequestId FK
         decimal totalAmount
         int quotaCount
         enum status
@@ -926,16 +852,6 @@ erDiagram
 - Sistemas externos (Paljet/Riesgo Online/CRM): aún no implementados, reservado Fase 5
 
 ---
-
-## Notas Técnicas
-
-### Gotchas (ya resueltos, NO re-debuggear)
-
-1. **Embeddings:** `text-embedding-004` → 404. Usar `gemini-embedding-001` (dim 3072).
-2. **ChromaDB 1.9.x:** No devuelve distancias por defecto. Solución: vectores precomputados + `include=['distances']`.
-3. **WhatsApp Argentina:** Recibe `549XXXXXXXXX` pero envía a `54XXXXXXXXX`. Aplicado en n8n.
-4. **RAG threshold:** 0.70 → 0.65 (gap observado: relevantes 0.74–0.81, irrelevantes ~0.55).
-5. **Checkpointer:** Eliminado del código (PostgresSaver recreaba tablas). Se recablea Fase 5.
 
 ### Conceptos Clave
 
