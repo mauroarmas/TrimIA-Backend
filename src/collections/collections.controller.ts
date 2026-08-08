@@ -27,6 +27,8 @@ import { EscalateClientDto } from './dto/escalate-client.dto';
 import { ManualHandlingProofDto } from './dto/manual-handling-proof.dto';
 import { UpdateReminderConfigDto } from './dto/update-reminder-config.dto';
 import { VerifyImpactDto } from './dto/verify-impact.dto';
+import { AssignCollectorDto } from './dto/assign-collector.dto';
+import { ClientsService } from '../clients/clients.service';
 
 /**
  * Panel de Cobranzas (Sprint 4 — entregable E4).
@@ -45,6 +47,7 @@ export class CollectionsController {
     private readonly quotas: QuotasService,
     private readonly media: WhatsappMediaService,
     private readonly reminderConfig: ReminderConfigService,
+    private readonly clients: ClientsService,
   ) {}
 
   /**
@@ -126,17 +129,24 @@ export class CollectionsController {
 
   /** GET /collections/proofs/accepted — Cobrador Controlador verifica impacto. */
   @Get('proofs/accepted')
-  @ApiOperation({ summary: 'Lista de comprobantes aceptados pendientes de verificación de impacto' })
+  @ApiOperation({
+    summary:
+      'Lista de comprobantes aceptados pendientes de verificación de impacto',
+  })
   listAcceptedProofs(@Req() req: any) {
     if (!req.user.isController) {
-      throw new ForbiddenException('Solo el Cobrador Controlador puede acceder a esta lista');
+      throw new ForbiddenException(
+        'Solo el Cobrador Controlador puede acceder a esta lista',
+      );
     }
     return this.paymentProofs.listAcceptedForImpactReview();
   }
 
   /** POST /collections/proofs/:id/verify-impact — Cobrador Controlador verifica. */
   @Post('proofs/:id/verify-impact')
-  @ApiOperation({ summary: 'Verifica si un pago aceptado impactó en la cuenta bancaria' })
+  @ApiOperation({
+    summary: 'Verifica si un pago aceptado impactó en la cuenta bancaria',
+  })
   verifyImpact(
     @Param('id') id: string,
     @Body() dto: VerifyImpactDto,
@@ -145,9 +155,33 @@ export class CollectionsController {
     return this.paymentProofs.verifyImpact(id, req.user.id, dto);
   }
 
+  /**
+   * POST /collections/clients/:id/assign-collector — solo Cobrador Controlador.
+   * Un cliente puede existir sin cobrador (FR-001b): sus casos caen en la cola
+   * del Controlador, que acá le pone dueño. Sin este endpoint la asignación
+   * solo era alcanzable desde dev-tools.
+   */
+  @Post('clients/:id/assign-collector')
+  @ApiOperation({ summary: 'Asigna un cobrador responsable a un cliente' })
+  assignCollector(
+    @Param('id') id: string,
+    @Body() dto: AssignCollectorDto,
+    @Req() req: any,
+  ) {
+    if (!req.user.isController) {
+      throw new ForbiddenException(
+        'Solo el Cobrador Controlador puede asignar cobradores',
+      );
+    }
+    return this.clients.assignCollector(id, dto.collectorId);
+  }
+
   /** GET /collections/kpis — KPIs del panel. */
   @Get('kpis')
-  @ApiOperation({ summary: 'KPIs del panel de cobranzas (cuotas pendientes, comprobantes, pagos)' })
+  @ApiOperation({
+    summary:
+      'KPIs del panel de cobranzas (cuotas pendientes, comprobantes, pagos)',
+  })
   getKpis(@Req() req: any) {
     return this.collections.getKpis(req.user.id, req.user.isController);
   }
@@ -161,7 +195,10 @@ export class CollectionsController {
 
   /** GET /collections/clients/:id/history — Historial de un cliente. */
   @Get('clients/:id/history')
-  @ApiOperation({ summary: 'Historial unificado de un cliente (mensajes, comprobantes, notas)' })
+  @ApiOperation({
+    summary:
+      'Historial unificado de un cliente (mensajes, comprobantes, notas)',
+  })
   getClientHistory(@Param('id') clientId: string, @Req() req: any) {
     return this.collections.getClientHistory(
       clientId,
@@ -172,7 +209,10 @@ export class CollectionsController {
 
   /** POST /collections/quotas/:id/manual — Marcar cuota como manejada manualmente. */
   @Post('quotas/:id/manual')
-  @ApiOperation({ summary: 'Marca una cuota como gestionada manualmente (detiene recordatorios)' })
+  @ApiOperation({
+    summary:
+      'Marca una cuota como gestionada manualmente (detiene recordatorios)',
+  })
   markQuotaManual(
     @Param('id') quotaId: string,
     @Body() dto: { note?: string },
@@ -193,9 +233,15 @@ export class CollectionsController {
    * próximo ciclo automático de recordatorios.
    */
   @Post('quotas/:id/request-proof')
-  @ApiOperation({ summary: 'Envía un WhatsApp pidiéndole el comprobante al cliente' })
+  @ApiOperation({
+    summary: 'Envía un WhatsApp pidiéndole el comprobante al cliente',
+  })
   requestProof(@Param('id') quotaId: string, @Req() req: any) {
-    return this.quotas.requestProof(quotaId, req.user.id, req.user.isController);
+    return this.quotas.requestProof(
+      quotaId,
+      req.user.id,
+      req.user.isController,
+    );
   }
 
   /**
@@ -204,7 +250,9 @@ export class CollectionsController {
    * Distinto de la derivación automática de los agentes RAG.
    */
   @Post('clients/:id/escalate')
-  @ApiOperation({ summary: 'Escala manualmente el caso de un cliente a un supervisor' })
+  @ApiOperation({
+    summary: 'Escala manualmente el caso de un cliente a un supervisor',
+  })
   escalateClient(
     @Param('id') clientId: string,
     @Body() dto: EscalateClientDto,
@@ -226,8 +274,14 @@ export class CollectionsController {
    * sin necesitar un endpoint separado.
    */
   @Get('activity')
-  @ApiOperation({ summary: 'Registro de actividad cruzado (mensajes, notas, eventos)' })
+  @ApiOperation({
+    summary: 'Registro de actividad cruzado (mensajes, notas, eventos)',
+  })
   listActivity(@Query() query: ListActivityQueryDto, @Req() req: any) {
-    return this.collections.listActivity(req.user.id, req.user.isController, query);
+    return this.collections.listActivity(
+      req.user.id,
+      req.user.isController,
+      query,
+    );
   }
 }
