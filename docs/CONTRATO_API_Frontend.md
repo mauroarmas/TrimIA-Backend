@@ -402,6 +402,49 @@ Actualiza la configuración (solo SUPERVISOR).
 { "daysBefore": [7, 3, 0], "maxAttempts": 3 }
 ```
 
+### ✅ `POST /collections/clients/:id/assign-collector` (JWT + isController=true)
+Asigna cobrador responsable a un cliente que no tenía. 403 si no es Controlador.
+```json
+{ "collectorId": "uuid" }
+```
+
+### ✅ `POST /collections/clients/:id/escalate` (JWT)
+Deriva el caso del cliente a una persona (reusa el escalado de Sprint 3).
+
+### ✅ `POST /collections/quotas/:id/request-proof` (JWT)
+Le pide al cliente el comprobante de una cuota.
+
+### ✅ `GET /collections/activity` (JWT)
+Registro de actividad transversal (no por cliente).
+Query: `collectorId`, `type`, `from`, `to`, `page`, `limit`.
+Un cobrador común solo ve los eventos de sus propios clientes y el
+`collectorId` que mande se **ignora**; el Controlador ve todos o filtra por uno.
+
+---
+
+## Módulo Ventas — `/sales` ✅ (Sprint 4)
+
+### ✅ `POST /sales/clients` (JWT + sector Ventas)
+Alta de cliente con su plan de cuotas al cerrar la venta. Se restringe por
+**sector**, no por rol: 403 desde cualquier sector que no sea Ventas.
+```json
+{
+  "name": "Juan Pérez",
+  "phone": "3865505362",
+  "dni": "30111222",
+  "assignedCollectorId": "uuid (opcional)",
+  "quotas": [
+    { "amount": 42000, "dueDate": "2026-09-10" },
+    { "amount": 42000, "dueDate": "2026-10-10" }
+  ]
+}
+// response: Client con sus quotas + recoveredProofs: number
+```
+- 409 si el teléfono ya pertenece a un cliente.
+- Sin `assignedCollectorId`, el cliente queda en la cola del Cobrador Controlador.
+- `recoveredProofs` = comprobantes que habían llegado antes de que el cliente
+  existiera y quedaron imputados en este alta.
+
 ---
 
 ## Módulo Chat (web) — `/messaging/web/*` 🔴 (propuesto)

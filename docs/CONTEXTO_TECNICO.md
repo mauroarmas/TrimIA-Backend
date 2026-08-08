@@ -389,6 +389,51 @@ memoria conversacional y auditoría/métricas. Hay corpus de prueba cargado para
 > Sprint 4 (Cobranzas: comprobantes, recordatorios, verificación de impacto, panel) ✅.
 > Próximo: Sprint 5 en adelante — ver el plan de trabajo para el detalle.
 
+### 7.1 Lectura del comprobante: es un processor, no un tool del grafo
+
+El `plan.md` de Sprint 4 preveía un tool `verifyReceipt` dentro de
+`collections.graph.ts`. **La implementación no lo hizo así**: la lectura vive en
+`src/queue/processors/receipt-extraction.processor.ts`, un processor de BullMQ
+que se encola cuando llega la imagen.
+
+El motivo es el Principio IV: como tool del grafo, la llamada a Gemini Vision
+quedaba dentro del turno conversacional del agente y por lo tanto atada al
+tiempo de respuesta del webhook. Como job encolado, la imagen se guarda y se
+responde de inmediato, y la lectura corre después con sus reintentos.
+
+Consecuencia de diseño que conviene no perder: el processor **solo completa los
+campos `extracted*` y jamás toca `PaymentProof.status`**. La decisión sobre el
+comprobante es siempre de una persona (Principio III).
+
+### 7.2 Alta de clientes: vive en `sales/`, no en `clients/`
+
+El alta de un cliente con su plan de cuotas (`POST /sales/clients`) la hace el
+vendedor al cerrar la venta. El servicio que la orquesta
+(`ClientOnboardingService`) está en `src/sales/` y no en `src/clients/` porque
+necesita coordinar dos módulos: el alta (`ClientsModule`) y la recuperación de
+comprobantes que habían llegado antes de que el cliente existiera
+(`CollectionsModule`). Ponerlo en cualquiera de los dos crearía una dependencia
+circular entre ellos.
+
+El CRM (Google Sheets) se consume detrás de `CRM_PORT`
+(`src/clients/crm/crm.port.ts`). El provider es `N8nCrmAdapter`, que sigue el
+mismo criterio ya usado para WhatsApp (`WhatsappSenderService`): el backend
+**no guarda la credencial de Google**, solo le pega a un webhook propio de n8n
+(`N8N_BASE_URL/webhook/crm-upsert-client`) y es n8n quien escribe en el Sheets
+con su nodo nativo `Google Sheets` (credencial OAuth2 configurada ahí, no en
+el backend). El workflow es
+`n8n/workflows/CrmUpsertCliente-C.json`.
+
+**Etapa actual:** el workflow apunta a un Google Sheets personal de prueba
+(cuenta de Google del desarrollador), para validar el flujo de punta a punta
+sin depender de la cuenta corporativa. Migrar a la planilla real de la empresa
+es cambiar la credencial OAuth2 y el `documentId` en n8n — el backend no
+cambia. El workflow queda con `active: false` porque requiere que alguien
+complete `documentId` y la credencial en la UI de n8n antes de poder activarse;
+a diferencia de los otros workflows de este directorio, este no fue verificado
+contra una instancia de n8n real (ver research.md §1 para el patrón de
+verificación esperado antes de darlo por probado en producción).
+
 ---
 
 ## 8. Mapeo Requisito → Entregable (para repartir tareas)

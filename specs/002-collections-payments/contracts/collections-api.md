@@ -1,4 +1,4 @@
-# Contrato de API — Cobranzas (Sprint 4)
+# Contrato de API — Cobranzas y alta de clientes (Sprint 4)
 
 > Complementa `docs/CONTRATO_API_Frontend.md`. Todos los endpoints exigen JWT;
 > los de `/collections/*` requieren `role: EMPLEADO` + `sector: Cobranzas`
@@ -87,7 +87,27 @@ desde `acceptedAt`. 403 si `isController` es `false`.
 - `CONFIRMED` → envía confirmación definitiva al cliente, `Quota` pasa a `PAID`.
 - `MISSING` → notifica por WhatsApp al cobrador responsable del cliente (FR-013).
 
+### `POST /collections/clients/:id/assign-collector`
+Asigna cobrador responsable a un cliente que no tenía (FR-001b). 403 si
+`isController` es `false`.
+```json
+{ "collectorId": "uuid" }
+```
+
+### `POST /collections/clients/:id/escalate`
+Deriva el caso del cliente a una persona, reusando el mecanismo de escalado de
+Sprint 3. Agregado contra el prototipo de UI, fuera del alcance original.
+
+### `GET /collections/activity?collectorId=&type=&from=&to=&page=&limit=`
+Registro de actividad transversal (FR-016), no por cliente. Un cobrador común
+solo ve los eventos de sus propios clientes y el `collectorId` de la query se
+**ignora**; el Cobrador Controlador ve todos o filtra por uno.
+
 ## Cuotas
+
+### `POST /collections/quotas/:id/request-proof`
+Le pide al cliente el comprobante de una cuota. Agregado contra el prototipo de
+UI, fuera del alcance original.
 
 ### `POST /collections/quotas/:id/manual`
 Marca la cuota como `MANUAL`; detiene sus recordatorios. Sin efecto en el
@@ -95,6 +115,34 @@ flujo de comprobante.
 ```json
 { "note": "opcional" }
 ```
+
+## Alta de clientes (sector Ventas)
+
+### `POST /sales/clients`
+Da de alta un cliente con su plan de cuotas al cerrar la venta (FR-001a / US6).
+Se restringe por **sector** (`sectorName === 'Ventas'`), no por rol: quien cierra
+la venta es un empleado de Ventas, no necesariamente un supervisor. 403 en
+cualquier otro sector.
+
+```json
+{
+  "name": "Juan Pérez",
+  "phone": "3865505362",
+  "dni": "30111222",
+  "assignedCollectorId": "uuid (opcional)",
+  "quotas": [
+    { "amount": 42000, "dueDate": "2026-09-10" },
+    { "amount": 42000, "dueDate": "2026-10-10" }
+  ]
+}
+```
+
+- 409 si el teléfono ya pertenece a un cliente registrado.
+- `assignedCollectorId` puede omitirse: el cliente queda en la cola del Cobrador
+  Controlador (FR-001b).
+- La respuesta incluye `recoveredProofs`: cuántos comprobantes que habían
+  llegado antes de que el cliente existiera quedaron imputados en este alta
+  (FR-006b).
 
 ## Configuración de recordatorios (SUPERVISOR)
 
