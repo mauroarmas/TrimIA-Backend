@@ -448,3 +448,46 @@ Task: "Test PaymentProofsService.markManualHandling() usa takeover — payment-p
 - La aprobación de la plantilla de WhatsApp (Meta) es una dependencia externa
   fuera del código — no bloquea el desarrollo de T024-T028, solo la
   validación real de envío en `quickstart.md` §2.
+
+---
+
+## Phase 9: Convergence
+
+**Origen**: `/speckit-converge` (2026-08-08), evaluado contra el árbol de
+`sprint-5a-archivos-chat-conocimiento`, que contiene todo Sprint 4 más el
+trabajo posterior de Cobranzas. Las 4 primeras tareas provienen de los
+requisitos incorporados por `/speckit-clarify` en la misma fecha (FR-001a,
+FR-001b, FR-006a, FR-006b, FR-017a), que no existían cuando se generó este
+`tasks.md`. Suite verificada en verde antes de anexar: 91 tests, 9 suites.
+
+- [ ] T048 Exponer el alta de `Client` con su plan de `Quota` (monto y
+  vencimiento por cuota) al empleado del sector Ventas que cierra la venta
+  por WhatsApp, auditada vía `OrchestrationLogger`; hoy solo se crean por
+  `prisma/seed.ts` y `dev-tools` per FR-001a (missing)
+- [ ] T049 Implementar la escritura hacia el CRM en Google Sheets al dar de
+  alta un cliente, detrás de un puerto/adaptador con mock (Principio V —
+  integraciones desacopladas); hoy no existe ninguna integración con Sheets
+  en `src/` per FR-001a (missing)
+- [ ] T050 Registrar un `OrchestrationEvent` auditable cuando llega un
+  comprobante de un teléfono sin `Client` o de un cliente sin cuota vigente,
+  en vez del `logger.warn` + `return null` actual de
+  `PaymentProofsService.receiveFromWhatsapp` per FR-006b (missing)
+- [ ] T051 Hacer que el asistente le pida al cliente nombre y DNI cuando su
+  comprobante no se puede imputar, y re-imputarlo según FR-006a si los datos
+  identifican a un cliente existente per FR-006b (missing)
+- [ ] T052 Exponer `ClientsService.assignCollector` como acción del panel para
+  el Cobrador Controlador, de modo que pueda asignar cobrador a un cliente
+  que no tiene uno per FR-001b (partial)
+- [ ] T053 Incluir la relación `acceptedBy` en `proofInclude` para que
+  `listAcceptedForImpactReview` devuelva quién aceptó el comprobante por
+  nombre y no como UUID crudo per US3/AC1 (partial)
+- [ ] T054 Documentar en `docs/CONTEXTO_TECNICO.md` que la lectura del
+  comprobante corre como processor de BullMQ
+  (`queue/processors/receipt-extraction.processor.ts`) y no como tool del
+  grafo, con su justificación por el Principio IV per plan: verifyReceipt en
+  collections.graph.ts (contradicts)
+- [ ] T055 Reflejar en `contracts/collections-api.md` y
+  `docs/CONTRATO_API_Frontend.md` los endpoints `GET /collections/activity`,
+  `POST /collections/quotas/:id/request-proof` y
+  `POST /collections/clients/:id/escalate`, o justificar su permanencia per
+  contracts/collections-api.md (unrequested)

@@ -8,6 +8,16 @@
 
 **Input**: User description: "Sprint 4 — Cobranzas: agregar modelo Client (nombre, teléfono vinculado a Conversation.externalId, DNI, cobrador asignado) como prerequisito de las pantallas de Cobranzas y Ventas — hoy la conversación solo tiene externalId, sin nombre ni cobrador asignado; flag Employee.isController para distinguir al rol Cobrador Controlador sin inflar el enum EmployeeRole; modelos Quota (estados PENDING/AWAITING_CONFIRMATION/PAID/OVERDUE/MANUAL) y PaymentProof (extractedOpCode único, quién lo aceptó, estado de impacto bancario, quién lo verificó); scheduler de recordatorios de cuota vencida vía BullMQ repeatable a 7/3/0 días antes del vencimiento con máximo 3 intentos, configurable por ReminderConfig editable por el supervisor; requiere plantillas de WhatsApp (HSM) aprobadas por Meta como bloqueante, porque los recordatorios son mensajes proactivos que caen fuera de la ventana de 24hs de conversación de WhatsApp Business; tool verifyReceipt en collections.graph.ts que usa Gemini Vision para extraer monto/fecha/banco de un comprobante enviado por WhatsApp como sugerencia editable —nunca verdad del sistema— y escala al cobrador responsable para su revisión; flujo de confirmación: cliente avisa el pago → acuse automático → se pausan los recordatorios → el cobrador acepta el comprobante o marca un problema entre 4 motivos predefinidos (fecha anterior, CBU incorrecto, monto menor al que corresponde, u 'otro problema' que pausa la IA vía el takeover de Sprint 3 y registra una InternalNote); opción 'marcar como gestionado manualmente' que detiene los recordatorios sin pasar por el flujo de comprobante; endpoints del panel de cobranzas con KPIs (clientes con cuotas pendientes, comprobantes para revisar, pagos confirmados esta semana), lista de clientes del cobrador logueado, e historial de contacto; pantalla exclusiva del rol Cobrador Controlador llamada Control de Comprobantes: lista de comprobantes aceptados por todos los cobradores con los días transcurridos desde la aceptación, y una acción para verificar si el pago impactó en la cuenta bancaria de la empresa (impactó / no impactó + observación opcional) — es un registro manual hecho por una persona, TrimIA no se conecta al banco; timeline de Registro de Actividad que unifica en orden cronológico OrchestrationEvent + Message + InternalNote, filtrable por cliente, por cobrador (solo el Cobrador Controlador ve todos, el cobrador común solo los suyos) y por tipo de evento; contadores tipo badge en el panel calculados por query sobre datos ya persistidos (sin websockets ni push), y una notificación por WhatsApp al cobrador responsable únicamente en el caso crítico de que un pago no impactó en la cuenta. Ver docs/plan_de_trabajo.md Sprint 4 (v5, sección completa con las 15 tareas 4.1-4.15) para el detalle exacto, y specs/001-human-in-the-loop/ como referencia del patrón ya usado en Sprint 3 — Escalation, takeover/release/reply, InternalNote y WhatsappSenderService ya existen y se reutilizan en este sprint en vez de reconstruirse."
 
+## Clarifications
+
+### Session 2026-08-08
+
+- Q: ¿A qué cuota se imputa un comprobante cuando el cliente tiene más de una cuota vigente? → A: A la cuota vigente más antigua (menor fecha de vencimiento)
+- Q: ¿Qué pasa con un comprobante que llega de un teléfono sin cliente registrado o de un cliente sin cuota vigente? → A: No se descarta en silencio: queda un evento auditable y el asistente le pide al cliente sus datos (nombre y DNI) para asociarlo a un cliente y una cuota
+- Q: ¿Quién revisa los comprobantes de un cliente que todavía no tiene cobrador asignado? → A: El Cobrador Controlador, que los resuelve directamente o asigna un cobrador responsable al cliente
+- Q: ¿Cómo se dan de alta los clientes y sus cuotas? → A: Dentro del alcance: los da de alta el vendedor (sector Ventas) que cierra la venta por WhatsApp, con su plan de cuotas
+- Q: ¿Cuánto se conservan las imágenes de comprobante y quién puede verlas? → A: Retención indefinida como respaldo de auditoría, visibles solo para el cobrador asignado y el Cobrador Controlador
+
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Confirmar un comprobante de pago enviado por el cliente (Priority: P1)
@@ -196,8 +206,16 @@ automático adicional para esa cuota.
   marcada como pagada o gestionada manualmente? El comprobante debe quedar
   visible para el cobrador, sin generar un recordatorio duplicado ni una
   confirmación automática.
+- ¿Qué pasa si el comprobante llega de un teléfono desconocido, o de un
+  cliente que no tiene ninguna cuota vigente? La imagen se guarda igual y
+  queda un evento en el registro de actividad; el asistente le pide al cliente
+  nombre y DNI para poder asociarlo. Nunca se descarta sin dejar rastro ni se
+  deja al cliente sin respuesta.
 - ¿Qué pasa si dos cobradores tienen asignado el mismo cliente por error? El
   sistema debe permitir un único cobrador asignado por cliente a la vez.
+- ¿Qué pasa si un cliente todavía no tiene cobrador asignado? Sus casos no
+  desaparecen: quedan en la cola del Cobrador Controlador, que los resuelve o
+  le asigna un cobrador responsable.
 - ¿Qué pasa si el Cobrador Controlador intenta verificar el impacto de un
   comprobante que todavía no fue aceptado por ningún cobrador? No debe
   aparecer en su lista — solo los ya aceptados.
@@ -215,8 +233,20 @@ automático adicional para esa cuota.
 ### Functional Requirements
 
 - **FR-001**: El sistema DEBE identificar a cada cliente con nombre, teléfono
-  y un cobrador asignado, de forma que las pantallas de cobranzas puedan
-  mostrar "mis clientes" y filtrar por cobrador responsable.
+  y —cuando ya se le asignó uno— un cobrador responsable, de forma que las
+  pantallas de cobranzas puedan mostrar "mis clientes" y filtrar por cobrador
+  responsable.
+- **FR-001a**: El sistema DEBE permitir dar de alta un cliente y su plan de
+  cuotas (monto y fecha de vencimiento de cada una) al **empleado del sector
+  Ventas que cierra la venta por WhatsApp** — es el punto del flujo de trabajo
+  donde nace el cliente. El alta queda auditada igual que el resto de las
+  acciones (FR-018) y escribe hacia el CRM en Google Sheets (ver Assumptions).
+  El cobrador asignado puede quedar vacío en el alta (FR-001b).
+- **FR-001b**: Un cliente PUEDE existir sin cobrador asignado. En ese caso sus
+  comprobantes y cuotas DEBEN quedar visibles en la cola del Cobrador
+  Controlador, que puede resolverlos directamente o asignarle un cobrador
+  responsable al cliente desde el panel. Ningún caso puede quedar sin al menos
+  una persona capaz de verlo.
 - **FR-002**: El sistema DEBE distinguir, dentro del área de Cobranzas, entre
   un cobrador común y un Cobrador Controlador con permisos adicionales, sin
   necesidad de crear un rol de empleado completamente nuevo.
@@ -231,6 +261,19 @@ automático adicional para esa cuota.
   comprobante de pago que un cliente envíe, junto con una lectura tentativa
   del monto, fecha y banco, presentada siempre como sugerencia editable y
   nunca como dato confirmado.
+- **FR-006a**: Cuando el cliente que envía un comprobante tiene más de una
+  cuota vigente (pendiente, esperando confirmación o vencida), el sistema DEBE
+  imputar el comprobante a la cuota vigente **más antigua** por fecha de
+  vencimiento. El cobrador ve a qué cuota quedó imputado al revisarlo.
+- **FR-006b**: Cuando un comprobante llega de un teléfono que no corresponde a
+  ningún cliente registrado, o de un cliente sin ninguna cuota vigente, el
+  sistema NO DEBE descartarlo en silencio: DEBE guardar la imagen, registrar
+  un evento auditable en el registro de actividad, y el asistente DEBE pedirle
+  al cliente los datos que permiten identificarlo (nombre y DNI) para asociar
+  el comprobante a un cliente y a una cuota. Si los datos aportados permiten
+  identificar a un cliente existente, el comprobante se imputa según FR-006a y
+  entra al flujo normal de revisión; si no, el caso queda visible en el
+  registro de actividad para que una persona lo resuelva.
 - **FR-007**: El sistema DEBE permitir a un cobrador aceptar un comprobante,
   y esa decisión DEBE generar un mensaje de confirmación al cliente.
 - **FR-008**: El sistema DEBE permitir a un cobrador marcar un comprobante con
@@ -266,6 +309,11 @@ automático adicional para esa cuota.
 - **FR-017**: El sistema DEBE impedir el envío de recordatorios automáticos
   mientras la plantilla de WhatsApp correspondiente no esté aprobada, de
   forma explícita y detectable, sin fallos silenciosos.
+- **FR-017a**: La imagen original de cada comprobante DEBE conservarse de forma
+  indefinida como respaldo de auditoría del pago (OE-11), y su acceso DEBE
+  estar restringido al cobrador asignado a ese cliente y al Cobrador
+  Controlador (OE-10). No se expone públicamente ni queda accesible sin
+  autenticación.
 - **FR-018**: Todas las acciones de esta funcionalidad (aceptar/rechazar
   comprobante, verificar impacto, marcar gestión manual, configurar
   recordatorios) DEBEN quedar auditadas: quién la hizo, sobre qué cliente/cuota
@@ -274,14 +322,17 @@ automático adicional para esa cuota.
 ### Key Entities
 
 - **Client**: Representa a un cliente identificado por nombre, teléfono
-  (vinculado a la conversación de WhatsApp) y DNI, con un cobrador asignado.
+  (vinculado a la conversación de WhatsApp) y DNI, con un cobrador asignado
+  —que puede estar vacío hasta que el Cobrador Controlador lo asigne (FR-001b)—.
+  Lo da de alta el vendedor que cierra la venta por WhatsApp (FR-001a).
   Es la pieza de datos que faltaba para que "mis clientes" y "cobrador
   responsable" tengan sentido en el sistema.
 - **Quota (cuota)**: Representa una cuota de un cliente, con su monto,
   fecha de vencimiento y estado (pendiente, esperando confirmación, pagada,
   vencida, o gestionada manualmente).
 - **PaymentProof (comprobante)**: Representa un comprobante de pago enviado
-  por un cliente para una cuota, con la lectura tentativa del asistente,
+  por un cliente para una cuota — siempre la vigente más antigua del cliente
+  al momento de recibirlo (FR-006a) —, con la lectura tentativa del asistente,
   quién lo aceptó y cuándo, y el estado de verificación de impacto bancario
   (pendiente, impactó, no impactó) junto con quién lo verificó.
 - **ReminderConfig (configuración de recordatorios)**: Define cuántos días
@@ -295,10 +346,12 @@ automático adicional para esa cuota.
 
 ### Measurable Outcomes
 
-- **SC-001**: El 100% de los comprobantes que un cliente envía queda
-  visible como pendiente de revisión para el cobrador correspondiente (hoy
-  esto no existe: no hay forma de identificar a qué cobrador pertenece un
-  cliente).
+- **SC-001**: El 100% de los comprobantes enviados por un cliente
+  identificable con cuota vigente queda visible como pendiente de revisión
+  para el cobrador correspondiente (hoy esto no existe: no hay forma de
+  identificar a qué cobrador pertenece un cliente). El 100% de los que no se
+  pueden imputar deja un evento en el registro de actividad y un pedido de
+  datos al cliente — ninguno se pierde en silencio.
 - **SC-002**: Un cobrador puede revisar y resolver (aceptar o marcar
   problema) un comprobante sin salir del panel ni consultar la conversación
   de WhatsApp completa.
@@ -317,8 +370,8 @@ automático adicional para esa cuota.
 
 - **El CRM en Google Sheets se sigue usando**: Postgres (el nuevo modelo
   `Client`) es la fuente de verdad para las pantallas de TrimIA, y escribe
-  hacia el Sheets al dar de alta un cliente; no hay sincronización
-  bidireccional en esta etapa.
+  hacia el Sheets cuando el vendedor da de alta un cliente (FR-001a); no hay
+  sincronización bidireccional en esta etapa.
 - **Las plantillas de WhatsApp (HSM) aprobadas por Meta son una dependencia
   externa bloqueante** para los recordatorios automáticos, ya que son
   mensajes proactivos fuera de la ventana de 24 horas de conversación. Se
