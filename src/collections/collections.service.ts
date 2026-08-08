@@ -213,7 +213,10 @@ export class CollectionsService {
       ? []
       : await this.prisma.internalNote.findMany({
           where: { ...conversationFilter, ...createdAtFilter },
-          include: clientSelect,
+          // `author` resuelto por relación, no el authorId crudo — mismo
+          // criterio ya aplicado en SupervisorService.getConversationDetail():
+          // un uuid sin nombre obliga al frontend a adivinar quién escribió.
+          include: { ...clientSelect, author: { select: { id: true, name: true } } },
           orderBy: { createdAt: 'desc' },
         });
 
@@ -244,7 +247,7 @@ export class CollectionsService {
         createdAt: n.createdAt,
         clientId: n.conversation.clientId,
         clientName: n.conversation.client?.name ?? null,
-        authorId: n.authorId,
+        author: n.author ? { id: n.author.id, name: n.author.name } : null,
         authorAgentType: n.authorAgentType,
         content: n.content,
       })),
