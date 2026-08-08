@@ -197,6 +197,45 @@ automático adicional para esa cuota.
 
 ---
 
+### User Story 6 - Dar de alta un cliente y su plan de cuotas al cerrar la venta (Priority: P1)
+
+Un vendedor cierra una venta financiada por WhatsApp y da de alta al cliente en
+el sistema con sus datos (nombre, teléfono, DNI) y el plan de cuotas acordado
+(monto y vencimiento de cada una). Desde ese momento el cliente existe para el
+resto del sistema: recibe recordatorios, puede enviar comprobantes y aparece en
+los paneles de cobranzas.
+
+**Why this priority**: Es el punto de entrada de todo el ciclo — sin clientes ni
+cuotas dados de alta, ninguna de las otras historias tiene sobre qué operar. Se
+identificó después de las Historias 1-5 porque el resto del sprint asumía
+clientes precargados por seed, un supuesto que no se sostiene fuera de
+desarrollo.
+
+**Independent Test**: Como empleado del sector Ventas, dar de alta un cliente
+con un plan de 3 cuotas y verificar que aparece en el panel de cobranzas, que
+sus cuotas quedan pendientes con los vencimientos cargados, y que el alta quedó
+auditada.
+
+**Acceptance Scenarios**:
+
+1. **Given** un empleado del sector Ventas, **When** da de alta un cliente con
+   nombre, teléfono, DNI y un plan de cuotas (monto y vencimiento por cuota),
+   **Then** el cliente queda registrado con sus cuotas en estado pendiente, y
+   el alta queda auditada con quién la hizo y cuándo.
+2. **Given** un alta de cliente sin cobrador asignado, **When** se completa,
+   **Then** el cliente queda visible en la cola del Cobrador Controlador
+   (FR-001b) sin que la falta de cobrador bloquee el alta.
+3. **Given** un teléfono que ya pertenece a un cliente registrado, **When** el
+   vendedor intenta darlo de alta otra vez, **Then** el sistema rechaza el alta
+   indicando que el cliente ya existe, sin duplicarlo ni pisar sus cuotas.
+4. **Given** un cliente recién dado de alta, **When** se consulta el CRM en
+   Google Sheets, **Then** el cliente aparece también ahí (escritura de ida,
+   sin sincronización bidireccional).
+5. **Given** un empleado que no pertenece al sector Ventas, **When** intenta
+   dar de alta un cliente, **Then** el sistema le niega el acceso.
+
+---
+
 ### Edge Cases
 
 - ¿Qué pasa si el asistente no puede leer con claridad el monto, la fecha o el
@@ -365,6 +404,10 @@ automático adicional para esa cuota.
 - **SC-006**: Un cobrador puede reconstruir el historial completo de
   cualquiera de sus clientes (recordatorios, comprobantes, decisiones, notas)
   sin necesidad de revisar la conversación de WhatsApp.
+- **SC-007**: Un vendedor puede dar de alta un cliente con su plan de cuotas y
+  ese cliente queda operable en cobranzas (recibe recordatorios, puede enviar
+  comprobantes, aparece en los paneles) sin ninguna carga técnica previa por
+  seed ni intervención de un desarrollador.
 
 ## Assumptions
 
