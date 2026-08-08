@@ -7,13 +7,18 @@ import {
 } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
-import { Channel, PaymentProofStatus, ProofRejectionReason } from '@prisma/client';
+import {
+  Channel,
+  PaymentProofStatus,
+  ProofRejectionReason,
+} from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
 import { ConversationsService } from '../conversations/conversations.service';
 import { ClientsService } from '../clients/clients.service';
 import { EmployeesService } from '../employees/employees.service';
 import { WhatsappSenderService } from '../messaging/whatsapp-sender.service';
 import { OrchestrationLogger } from '../ai/orchestrator/orchestration-logger.service';
+import { normalizePhone } from '../common/phone';
 import { VerifyImpactDto } from './dto/verify-impact.dto';
 
 const REJECTION_MESSAGES: Record<ProofRejectionReason, string> = {
@@ -35,9 +40,18 @@ const ACCEPTED_MESSAGE = '¡Recibido, gracias! 🙌';
 const PROOF_RECEIVED_MESSAGE =
   '📄 Recibimos tu comprobante, gracias. Lo estamos revisando y te confirmamos en breve.';
 
+// No encontramos a quién imputarle el pago. Le pedimos los datos mínimos para
+// poder asociarlo (FR-006b) en vez de dejarlo sin respuesta.
+const UNMATCHED_PROOF_MESSAGE =
+  'Para poder asociar tu pago necesitamos confirmar tus datos: ¿nos pasás tu nombre completo y tu DNI, por favor?';
+
 const proofInclude = {
   message: true,
   quota: { include: { client: { include: { assignedCollector: true } } } },
+  // `acceptedBy` resuelto por relación: el Control de Comprobantes tiene que
+  // mostrar QUIÉN aceptó (US3/AC1) y un uuid crudo no sirve para eso. Mismo
+  // criterio ya aplicado al autor de la nota interna en CollectionsService.
+  acceptedBy: { select: { id: true, name: true } },
 } as const;
 
 @Injectable()
@@ -67,12 +81,12 @@ export class PaymentProofsService {
   }) {
     const client = await this.clients.getByPhone(params.phone);
     if (!client) {
-      this.logger.warn(
-        `Comprobante recibido de un teléfono sin Client asociado: ${params.phone}`,
-      );
+      await this.registerUnmatchedProof(params, 'NO_CLIENT');
       return null;
     }
 
+    // Imputación: la cuota vigente MÁS ANTIGUA (FR-006a). Es la práctica de
+    // cobranza estándar — se cancela primero el vencimiento más viejo.
     const quota = await this.prisma.quota.findFirst({
       where: {
         clientId: client.id,
@@ -81,9 +95,7 @@ export class PaymentProofsService {
       orderBy: { dueDate: 'asc' },
     });
     if (!quota) {
-      this.logger.warn(
-        `Comprobante recibido de ${params.phone} sin ninguna cuota vigente`,
-      );
+      await this.registerUnmatchedProof(params, 'NO_QUOTA');
       return null;
     }
 
@@ -127,6 +139,129 @@ export class PaymentProofsService {
     return proof;
   }
 
+  /**
+   * Un comprobante que no se puede imputar (teléfono sin Client, o Client sin
+   * cuota vigente) NO se descarta en silencio (FR-006b). La imagen ya quedó
+   * guardada en disco; acá se deja el rastro auditable y se le pide al cliente
+   * los datos que permiten asociarlo. Cuando después se dé de alta un Client
+   * con ese teléfono, `ClientsService` recupera estos eventos y crea el
+   * PaymentProof que faltaba.
+   *
+   * Antes esto era un `logger.warn` + `return null`: el comprobante existía en
+   * disco pero era invisible para toda persona del sistema, y el cliente se
+   * quedaba sin respuesta creyendo que su pago estaba en trámite.
+   */
+  private async registerUnmatchedProof(
+    params: { phone: string; messageId: string; imagePath: string },
+    reason: 'NO_CLIENT' | 'NO_QUOTA',
+  ) {
+    this.logger.warn(
+      `Comprobante no imputable de ${params.phone} (${reason}) — queda registrado y se piden datos`,
+    );
+
+    await this.orchestrationLogger.logEvent({
+      eventType: 'payment_proof_unmatched',
+      payload: {
+        phone: params.phone,
+        messageId: params.messageId,
+        imagePath: params.imagePath,
+        reason,
+      },
+    });
+
+    await this.notifyClientReceived(params.messageId).catch((err) =>
+      this.logger.error(`No se pudo acusar recibo a ${params.phone}: ${err}`),
+    );
+    await this.askClientForIdentity(params.messageId).catch((err) =>
+      this.logger.error(
+        `No se pudieron pedir los datos a ${params.phone}: ${err}`,
+      ),
+    );
+  }
+
+  private async askClientForIdentity(messageId: string) {
+    const message = await this.prisma.message.findUnique({
+      where: { id: messageId },
+      select: { conversationId: true },
+    });
+    if (!message) return;
+    await this.notifyClient(
+      { message: { conversationId: message.conversationId } },
+      UNMATCHED_PROOF_MESSAGE,
+    );
+  }
+
+  /**
+   * Recupera los comprobantes que habían quedado sin imputar para un teléfono
+   * (FR-006b) y los convierte en casos reales ahora que el cliente existe.
+   * Se llama al dar de alta un cliente (US6) — es lo que cierra el círculo del
+   * "te pedimos los datos" del mensaje automático.
+   *
+   * Idempotente: descarta los eventos cuyo `messageId` ya tiene un PaymentProof
+   * asociado, así reintentar el alta no duplica comprobantes.
+   */
+  async reconcileUnmatchedForPhone(phone: string, clientId: string) {
+    const normalized = normalizePhone(phone);
+
+    const events = await this.prisma.orchestrationEvent.findMany({
+      where: { eventType: 'payment_proof_unmatched' },
+      orderBy: { createdAt: 'asc' },
+    });
+    const mine = events.filter((e) => (e.payload as any)?.phone === normalized);
+    if (mine.length === 0) return [];
+
+    const quota = await this.prisma.quota.findFirst({
+      where: {
+        clientId,
+        status: { in: ['PENDING', 'AWAITING_CONFIRMATION', 'OVERDUE'] },
+      },
+      orderBy: { dueDate: 'asc' },
+    });
+    if (!quota) return [];
+
+    const recovered = [];
+    for (const event of mine) {
+      const payload = event.payload as any;
+
+      const already = await this.prisma.paymentProof.findFirst({
+        where: { messageId: payload.messageId },
+      });
+      if (already) continue;
+
+      const proof = await this.prisma.paymentProof.create({
+        data: {
+          quotaId: quota.id,
+          messageId: payload.messageId,
+          imagePath: payload.imagePath,
+        },
+      });
+
+      await this.orchestrationLogger.logEvent({
+        eventType: 'payment_proof_received',
+        payload: {
+          paymentProofId: proof.id,
+          quotaId: quota.id,
+          recoveredFromUnmatched: true,
+        },
+      });
+
+      await this.receiptQueue.add(
+        'extract-receipt',
+        { paymentProofId: proof.id },
+        { attempts: 3, backoff: { type: 'exponential', delay: 2000 } },
+      );
+
+      recovered.push(proof);
+    }
+
+    if (recovered.length > 0) {
+      this.logger.log(
+        `Recuperados ${recovered.length} comprobante(s) huérfano(s) de ${normalized}`,
+      );
+    }
+    return recovered;
+  }
+
   private async notifyClientReceived(messageId: string) {
     const message = await this.prisma.message.findUnique({
       where: { id: messageId },
@@ -139,8 +274,13 @@ export class PaymentProofsService {
     );
   }
 
-  private async notifyCollectorNewProof(collectorId: string, clientName: string) {
-    const collector = await this.employees.findById(collectorId).catch(() => null);
+  private async notifyCollectorNewProof(
+    collectorId: string,
+    clientName: string,
+  ) {
+    const collector = await this.employees
+      .findById(collectorId)
+      .catch(() => null);
     if (!collector?.isActive) return;
     await this.sender.send(
       collector.phone,
@@ -232,7 +372,10 @@ export class PaymentProofsService {
     return proof.imagePath;
   }
 
-  private async notifyClient(proof: { message: { conversationId: string } | null }, text: string) {
+  private async notifyClient(
+    proof: { message: { conversationId: string } | null },
+    text: string,
+  ) {
     if (!proof.message) return;
     const conversation = await this.conversations.findById(
       proof.message.conversationId,
@@ -253,7 +396,11 @@ export class PaymentProofsService {
 
     const updated = await this.prisma.paymentProof.update({
       where: { id },
-      data: { status: 'ACCEPTED', acceptedById: employeeId, acceptedAt: new Date() },
+      data: {
+        status: 'ACCEPTED',
+        acceptedById: employeeId,
+        acceptedAt: new Date(),
+      },
     });
 
     await this.prisma.quota.update({
@@ -343,11 +490,7 @@ export class PaymentProofsService {
    * Si CONFIRMED: cliente recibe confirmación definitiva, Quota → PAID.
    * Si MISSING: cobrador responsable recibe notificación del problema.
    */
-  async verifyImpact(
-    id: string,
-    employeeId: string,
-    dto: VerifyImpactDto,
-  ) {
+  async verifyImpact(id: string, employeeId: string, dto: VerifyImpactDto) {
     const employee = await this.employees.findById(employeeId);
     if (!employee?.isController) {
       throw new ForbiddenException(
@@ -379,8 +522,7 @@ export class PaymentProofsService {
         '¡Confirmado! Tu pago ha sido procesado correctamente. 🎉',
       );
     } else if (dto.impactStatus === 'MISSING') {
-      const assignedCollector =
-        proof.quota.client.assignedCollector;
+      const assignedCollector = proof.quota.client.assignedCollector;
       if (assignedCollector) {
         await this.sender.send(
           assignedCollector.phone,

@@ -24,6 +24,7 @@ describe('PaymentProofsService', () => {
     };
     quota: { update: jest.Mock; findFirst: jest.Mock };
     message: { findUnique: jest.Mock };
+    orchestrationEvent: { findMany: jest.Mock };
   };
   let conversations: {
     findById: jest.Mock;
@@ -67,6 +68,7 @@ describe('PaymentProofsService', () => {
       },
       quota: { update: jest.fn(), findFirst: jest.fn() },
       message: { findUnique: jest.fn().mockResolvedValue(null) },
+      orchestrationEvent: { findMany: jest.fn().mockResolvedValue([]) },
     };
     conversations = {
       findById: jest.fn().mockResolvedValue(conversation),
@@ -157,7 +159,11 @@ describe('PaymentProofsService', () => {
         rejectionReason: 'PAST_DATE',
       });
 
-      const result = await service.reject('proof-1', 'collector-1', 'PAST_DATE');
+      const result = await service.reject(
+        'proof-1',
+        'collector-1',
+        'PAST_DATE',
+      );
 
       expect(prisma.paymentProof.update).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -236,7 +242,10 @@ describe('PaymentProofsService', () => {
         'Cliente prefiere coordinar por teléfono.',
       );
 
-      expect(conversations.takeover).toHaveBeenCalledWith('conv-1', 'collector-1');
+      expect(conversations.takeover).toHaveBeenCalledWith(
+        'conv-1',
+        'collector-1',
+      );
       expect(conversations.addInternalNote).toHaveBeenCalledWith(
         'conv-1',
         'collector-1',
@@ -264,7 +273,10 @@ describe('PaymentProofsService', () => {
 
       await service.markManualHandling('proof-1', 'collector-1');
 
-      expect(conversations.takeover).toHaveBeenCalledWith('conv-1', 'collector-1');
+      expect(conversations.takeover).toHaveBeenCalledWith(
+        'conv-1',
+        'collector-1',
+      );
       expect(conversations.addInternalNote).not.toHaveBeenCalled();
       expect(prisma.paymentProof.update).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -334,8 +346,63 @@ describe('PaymentProofsService', () => {
       expect(result).toBeNull();
     });
 
+    // FR-006b: un comprobante que no se puede imputar dejó de descartarse en
+    // silencio. Antes esto era sólo un logger.warn y el cliente no recibía nada.
+    it('audita el comprobante no imputable y le pide los datos al cliente (teléfono sin Client)', async () => {
+      clients.getByPhone.mockResolvedValue(null);
+      prisma.message.findUnique.mockResolvedValue({ conversationId: 'conv-9' });
+
+      const result = await service.receiveFromWhatsapp({
+        phone: '5491199999999',
+        messageId: 'msg-9',
+        imagePath: 'huerfano.jpg',
+      });
+
+      expect(result).toBeNull();
+      expect(prisma.paymentProof.create).not.toHaveBeenCalled();
+      expect(logger.logEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventType: 'payment_proof_unmatched',
+          payload: expect.objectContaining({
+            phone: '5491199999999',
+            imagePath: 'huerfano.jpg',
+            reason: 'NO_CLIENT',
+          }),
+        }),
+      );
+      // Se le pide nombre y DNI para poder asociarlo. El destino es el
+      // externalId de la conversación, no el phone crudo del parámetro.
+      expect(sender.send).toHaveBeenCalledWith(
+        conversation.externalId,
+        expect.stringContaining('DNI'),
+        'WHATSAPP',
+      );
+    });
+
+    it('audita con reason=NO_QUOTA cuando el cliente existe pero no tiene cuota vigente', async () => {
+      clients.getByPhone.mockResolvedValue({ id: 'cust-1' });
+      prisma.quota.findFirst.mockResolvedValue(null);
+      prisma.message.findUnique.mockResolvedValue({ conversationId: 'conv-9' });
+
+      await service.receiveFromWhatsapp({
+        phone: '5491100000000',
+        messageId: 'msg-10',
+        imagePath: 'sincuota.jpg',
+      });
+
+      expect(logger.logEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventType: 'payment_proof_unmatched',
+          payload: expect.objectContaining({ reason: 'NO_QUOTA' }),
+        }),
+      );
+    });
+
     it('acusa recibo al cliente sin decidir sobre el pago (Principio III)', async () => {
-      clients.getByPhone.mockResolvedValue({ id: 'cust-1', name: 'Comercio Don Pedro' });
+      clients.getByPhone.mockResolvedValue({
+        id: 'cust-1',
+        name: 'Comercio Don Pedro',
+      });
       prisma.quota.findFirst.mockResolvedValue({ id: 'inst-1' });
       prisma.paymentProof.create.mockResolvedValue({ id: 'proof-1' });
       prisma.message.findUnique.mockResolvedValue({ conversationId: 'conv-1' });
@@ -445,7 +512,9 @@ describe('PaymentProofsService', () => {
         phone: '5493865570995',
         isActive: true,
       });
-      sender.send.mockRejectedValue(new Error('Recipient phone number not in allowed list'));
+      sender.send.mockRejectedValue(
+        new Error('Recipient phone number not in allowed list'),
+      );
 
       const result = await service.receiveFromWhatsapp({
         phone: '5491100000000',
@@ -454,6 +523,108 @@ describe('PaymentProofsService', () => {
       });
 
       expect(result?.id).toBe('proof-1');
+    });
+  });
+
+  // FR-006b: cierra el círculo del comprobante huérfano cuando el cliente
+  // finalmente se da de alta (US6).
+  describe('reconcileUnmatchedForPhone', () => {
+    it('crea el comprobante que había quedado sin imputar y encola su lectura', async () => {
+      prisma.orchestrationEvent.findMany.mockResolvedValue([
+        {
+          id: 'ev-1',
+          payload: {
+            phone: '5493865505362',
+            messageId: 'msg-huerfano',
+            imagePath: 'huerfano.jpg',
+          },
+        },
+      ]);
+      prisma.quota.findFirst.mockResolvedValue({ id: 'q-1' });
+      prisma.paymentProof.findFirst.mockResolvedValue(null);
+      prisma.paymentProof.create.mockResolvedValue({ id: 'proof-rec' });
+
+      const result = await service.reconcileUnmatchedForPhone(
+        '5493865505362',
+        'cli-1',
+      );
+
+      expect(result).toHaveLength(1);
+      expect(prisma.paymentProof.create).toHaveBeenCalledWith({
+        data: {
+          quotaId: 'q-1',
+          messageId: 'msg-huerfano',
+          imagePath: 'huerfano.jpg',
+        },
+      });
+      expect(receiptQueue.add).toHaveBeenCalledWith(
+        'extract-receipt',
+        { paymentProofId: 'proof-rec' },
+        expect.any(Object),
+      );
+    });
+
+    it('ignora los eventos de otro teléfono', async () => {
+      prisma.orchestrationEvent.findMany.mockResolvedValue([
+        {
+          id: 'ev-1',
+          payload: { phone: '5491100000000', messageId: 'm', imagePath: 'x' },
+        },
+      ]);
+
+      const result = await service.reconcileUnmatchedForPhone(
+        '5493865505362',
+        'cli-1',
+      );
+
+      expect(result).toEqual([]);
+      expect(prisma.paymentProof.create).not.toHaveBeenCalled();
+    });
+
+    // Reintentar el alta no puede duplicar el comprobante.
+    it('es idempotente: no recrea un comprobante que ya existe para ese mensaje', async () => {
+      prisma.orchestrationEvent.findMany.mockResolvedValue([
+        {
+          id: 'ev-1',
+          payload: {
+            phone: '5493865505362',
+            messageId: 'msg-1',
+            imagePath: 'x.jpg',
+          },
+        },
+      ]);
+      prisma.quota.findFirst.mockResolvedValue({ id: 'q-1' });
+      prisma.paymentProof.findFirst.mockResolvedValue({ id: 'ya-creado' });
+
+      const result = await service.reconcileUnmatchedForPhone(
+        '5493865505362',
+        'cli-1',
+      );
+
+      expect(result).toEqual([]);
+      expect(prisma.paymentProof.create).not.toHaveBeenCalled();
+    });
+
+    it('no hace nada si el cliente recién creado no tiene cuota vigente', async () => {
+      prisma.orchestrationEvent.findMany.mockResolvedValue([
+        {
+          id: 'ev-1',
+          payload: {
+            phone: '5493865505362',
+            messageId: 'msg-1',
+            imagePath: 'x.jpg',
+          },
+        },
+      ]);
+      prisma.quota.findFirst.mockResolvedValue(null);
+
+      const result = await service.reconcileUnmatchedForPhone(
+        '5493865505362',
+        'cli-1',
+      );
+
+      expect(result).toEqual([]);
+      expect(prisma.paymentProof.create).not.toHaveBeenCalled();
     });
   });
 
@@ -473,7 +644,10 @@ describe('PaymentProofsService', () => {
 
     it('rechaza (403) si el empleado no tiene isController = true', async () => {
       prisma.paymentProof.findUnique.mockResolvedValue(acceptedProof);
-      employees.findById.mockResolvedValue({ id: 'collector-2', isController: false });
+      employees.findById.mockResolvedValue({
+        id: 'collector-2',
+        isController: false,
+      });
 
       await expect(
         service.verifyImpact('proof-accepted', 'collector-2', {
@@ -484,7 +658,10 @@ describe('PaymentProofsService', () => {
     });
 
     it('con impactStatus=CONFIRMED, envía confirmación al cliente y deja Quota.status=PAID', async () => {
-      employees.findById.mockResolvedValue({ id: 'controller-1', isController: true });
+      employees.findById.mockResolvedValue({
+        id: 'controller-1',
+        isController: true,
+      });
       prisma.paymentProof.findUnique.mockResolvedValue(acceptedProof);
       prisma.paymentProof.update.mockResolvedValue({
         ...acceptedProof,
@@ -492,10 +669,14 @@ describe('PaymentProofsService', () => {
         impactVerifiedAt: new Date(),
       });
 
-      const result = await service.verifyImpact('proof-accepted', 'controller-1', {
-        impactStatus: ImpactStatusDto.CONFIRMED,
-        observation: 'Confirmado en la cuenta',
-      });
+      const result = await service.verifyImpact(
+        'proof-accepted',
+        'controller-1',
+        {
+          impactStatus: ImpactStatusDto.CONFIRMED,
+          observation: 'Confirmado en la cuenta',
+        },
+      );
 
       expect(prisma.paymentProof.update).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -529,20 +710,30 @@ describe('PaymentProofsService', () => {
         ...acceptedProof,
         quota: {
           ...acceptedProof.quota,
-          client: { ...acceptedProof.quota.client, assignedCollector: collector },
+          client: {
+            ...acceptedProof.quota.client,
+            assignedCollector: collector,
+          },
         },
       };
-      employees.findById.mockResolvedValue({ id: 'controller-1', isController: true });
+      employees.findById.mockResolvedValue({
+        id: 'controller-1',
+        isController: true,
+      });
       prisma.paymentProof.findUnique.mockResolvedValue(proofWithCollector);
       prisma.paymentProof.update.mockResolvedValue({
         ...proofWithCollector,
         impactStatus: ImpactStatusDto.MISSING,
       });
 
-      const result = await service.verifyImpact('proof-accepted', 'controller-1', {
-        impactStatus: ImpactStatusDto.MISSING,
-        observation: 'No figura en la cuenta',
-      });
+      const result = await service.verifyImpact(
+        'proof-accepted',
+        'controller-1',
+        {
+          impactStatus: ImpactStatusDto.MISSING,
+          observation: 'No figura en la cuenta',
+        },
+      );
 
       expect(prisma.paymentProof.update).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -563,7 +754,10 @@ describe('PaymentProofsService', () => {
     });
 
     it('rechaza (404) si el comprobante no existe', async () => {
-      employees.findById.mockResolvedValue({ id: 'controller-1', isController: true });
+      employees.findById.mockResolvedValue({
+        id: 'controller-1',
+        isController: true,
+      });
       prisma.paymentProof.findUnique.mockResolvedValue(null);
 
       await expect(
@@ -636,7 +830,11 @@ describe('PaymentProofsService', () => {
     it('con status explícito, filtra por ese status', async () => {
       prisma.paymentProof.findMany.mockResolvedValue([]);
 
-      await service.listPendingReview('collector-1', false, 'MANUAL_HANDLING' as any);
+      await service.listPendingReview(
+        'collector-1',
+        false,
+        'MANUAL_HANDLING' as any,
+      );
 
       const { where } = prisma.paymentProof.findMany.mock.calls[0][0];
       expect(where.status).toBe('MANUAL_HANDLING');
