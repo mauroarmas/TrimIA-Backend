@@ -1,9 +1,15 @@
 # Contrato de API — Cobranzas y alta de clientes (Sprint 4)
 
-> Complementa `docs/CONTRATO_API_Frontend.md`. Todos los endpoints exigen JWT;
-> los de `/collections/*` requieren `role: EMPLEADO` + `sector: Cobranzas`
-> (el service filtra por `assignedCollectorId` salvo `isController: true`,
-> que ve todo). `PUT /collections/reminder-config` exige `role: SUPERVISOR`.
+> Complementa `docs/CONTRATO_API_Frontend.md`. Todos los endpoints exigen JWT.
+> **No hay `SectorGuard` todavía** (ver comentario en
+> `collections.controller.ts`): cualquier `EMPLEADO` autenticado, sea cual
+> sea su sector, puede llamar a `/collections/*` — el alcance real se
+> resuelve puertas adentro por `assignedCollectorId` (el service filtra por
+> el cobrador logueado, salvo `isController: true`, que ve todo). El
+> frontend gatea la UI por sector como buena práctica, pero eso es una
+> restricción de presentación, no de la API. `PUT /collections/reminder-config`
+> exige `role: SUPERVISOR`; `POST /sales/clients` sí valida
+> `sectorName === 'Ventas'` explícitamente en el controller (no vía guard).
 
 ## Panel del cobrador
 
