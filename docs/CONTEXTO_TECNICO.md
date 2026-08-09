@@ -428,11 +428,16 @@ el backend). El workflow es
 (cuenta de Google del desarrollador), para validar el flujo de punta a punta
 sin depender de la cuenta corporativa. Migrar a la planilla real de la empresa
 es cambiar la credencial OAuth2 y el `documentId` en n8n — el backend no
-cambia. El workflow queda con `active: false` porque requiere que alguien
-complete `documentId` y la credencial en la UI de n8n antes de poder activarse;
-a diferencia de los otros workflows de este directorio, este no fue verificado
-contra una instancia de n8n real (ver research.md §1 para el patrón de
-verificación esperado antes de darlo por probado en producción).
+cambia.
+
+**Verificado en vivo (2026-08-09)**, mismo patrón de research.md §1: se
+activó el workflow con una credencial OAuth2 real y el Google Sheet de
+prueba del desarrollador, y se corrió la cadena completa —comprobante de un
+teléfono sin `Client` (queda `payment_proof_unmatched`) → alta del cliente
+por `POST /sales/clients` → reconciliación automática del comprobante a la
+cuota más antigua (`payment_proof_received` con
+`recoveredFromUnmatched: true`) → escritura al CRM— confirmando la fila
+nueva en el Sheets real. `active: true` en el repo desde entonces.
 
 ---
 

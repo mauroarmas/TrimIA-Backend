@@ -19,7 +19,7 @@
         "operation": "appendOrUpdate",
         "documentId": {
           "__rl": true,
-          "value": "REEMPLAZAR_CON_EL_ID_DE_TU_GOOGLE_SHEET",
+          "value": "1eU8lXoA6mcSh-s02NElqr8EWl1R2rR3TZAIFX1cENu4",
           "mode": "id"
         },
         "sheetName": {
@@ -46,7 +46,7 @@
       "name": "Google Sheets",
       "credentials": {
         "googleSheetsOAuth2Api": {
-          "id": "REEMPLAZAR_CON_TU_CREDENCIAL",
+          "id": "PSBd2QQ3ePFjvOeF",
           "name": "Google Sheets account"
         }
       }
@@ -66,7 +66,7 @@
       ]
     }
   },
-  "active": false,
+  "active": true,
   "settings": {
     "executionOrder": "v1",
     "binaryMode": "separate"

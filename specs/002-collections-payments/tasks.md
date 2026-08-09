@@ -475,14 +475,17 @@ FR-001b, FR-006a, FR-006b, FR-017a), que no existían cuando se generó este
     `n8n/workflows/CrmUpsertCliente-C.json` escribe con el nodo nativo
     `Google Sheets` de n8n. `ClientsService.createWithQuotas` sigue llamándolo
     best-effort (test de que un fallo del CRM no revierte el alta).
-  - **Etapa actual, US6/AC4 parcialmente satisfecho:** el workflow apunta a un
-    Google Sheets personal de prueba, no al corporativo — es la decisión
-    explícita del usuario para validar el flujo antes de integrar la cuenta
-    real. Migrar es cambiar `documentId` y la credencial OAuth2 en n8n, no
-    tocar el backend. El workflow queda `active: false` en el repo porque
-    necesita esos dos valores completados en la UI de n8n, y **no fue
-    verificado contra una instancia de n8n real** (a diferencia del resto de
-    `n8n/workflows/`, corregidos tras probarlos en vivo — ver research.md §1).
+  - **Verificado en vivo (2026-08-09).** Credencial OAuth2 real cargada en
+    n8n, workflow activado, y probada la cadena completa: comprobante
+    huérfano (`payment_proof_unmatched`) → `POST /sales/clients` → 2 cuotas
+    creadas → comprobante reconciliado a la cuota más antigua
+    (`payment_proof_received` con `recoveredFromUnmatched: true`) → fila
+    nueva confirmada en el Google Sheets real. `active: true` en el repo.
+  - **US6/AC4 satisfecho con una salvedad de alcance, no técnica:** el
+    workflow escribe a un Google Sheets **personal** de prueba, no al
+    corporativo — decisión explícita del usuario para validar el flujo antes
+    de dar de alta la cuenta de la empresa. Migrar es cambiar `documentId` y
+    la credencial OAuth2 en n8n; el backend no cambia.
 - [X] T050 Registrar un `OrchestrationEvent` auditable cuando llega un
   comprobante de un teléfono sin `Client` o de un cliente sin cuota vigente,
   en vez del `logger.warn` + `return null` actual de
