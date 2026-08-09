@@ -63,6 +63,22 @@ export class CollectionsService {
     };
   }
 
+  /**
+   * Lista los empleados del sector Cobranzas, para el selector de
+   * "asignar cobrador" del Cobrador Controlador (FR-001b). Devuelve TODOS
+   * los del sector, no solo los que ya tienen algún cliente asignado —
+   * sin esto, un cobrador recién dado de alta sin clientes todavía era
+   * invisible para el selector, que solo podía derivarse de
+   * `clients[].assignedCollector`.
+   */
+  async listCollectors() {
+    return this.prisma.employee.findMany({
+      where: { sector: { name: 'Cobranzas' }, isActive: true },
+      select: { id: true, name: true, isController: true },
+      orderBy: { name: 'asc' },
+    });
+  }
+
   async listClients(employeeId: string, isController: boolean) {
     return this.prisma.client.findMany({
       where: isController ? {} : { assignedCollectorId: employeeId },

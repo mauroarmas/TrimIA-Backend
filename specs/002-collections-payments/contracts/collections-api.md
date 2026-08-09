@@ -93,6 +93,12 @@ desde `acceptedAt`. 403 si `isController` es `false`.
 - `CONFIRMED` → envía confirmación definitiva al cliente, `Quota` pasa a `PAID`.
 - `MISSING` → notifica por WhatsApp al cobrador responsable del cliente (FR-013).
 
+### `GET /collections/collectors`
+Lista de empleados activos del sector Cobranzas (`id`, `name`,
+`isController`), para poblar el selector de "asignar cobrador". Incluye a
+los que todavía no tienen ningún cliente asignado — a diferencia de
+derivarlo de `clients[].assignedCollector`, que los omite.
+
 ### `POST /collections/clients/:id/assign-collector`
 Asigna cobrador responsable a un cliente que no tenía (FR-001b). 403 si
 `isController` es `false`.

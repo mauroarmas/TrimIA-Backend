@@ -17,6 +17,7 @@ describe('CollectionsService', () => {
     internalNote: { findMany: jest.Mock };
     orchestrationEvent: { findMany: jest.Mock };
     conversation: { findFirst: jest.Mock };
+    employee: { findMany: jest.Mock };
   };
   let escalations: { create: jest.Mock };
 
@@ -29,6 +30,7 @@ describe('CollectionsService', () => {
       internalNote: { findMany: jest.fn() },
       orchestrationEvent: { findMany: jest.fn() },
       conversation: { findFirst: jest.fn() },
+      employee: { findMany: jest.fn() },
     };
     escalations = { create: jest.fn() };
 
@@ -65,6 +67,25 @@ describe('CollectionsService', () => {
 
       const calls = prisma.quota.count.mock.calls[0];
       expect(calls[0].where.client).toEqual({});
+    });
+  });
+
+  describe('listCollectors', () => {
+    it('lista empleados activos del sector Cobranzas, ordenados por nombre', async () => {
+      prisma.employee.findMany.mockResolvedValue([
+        { id: 'emp-1', name: 'Ana Cobradora', isController: false },
+      ]);
+
+      const result = await service.listCollectors();
+
+      expect(prisma.employee.findMany).toHaveBeenCalledWith({
+        where: { sector: { name: 'Cobranzas' }, isActive: true },
+        select: { id: true, name: true, isController: true },
+        orderBy: { name: 'asc' },
+      });
+      expect(result).toEqual([
+        { id: 'emp-1', name: 'Ana Cobradora', isController: false },
+      ]);
     });
   });
 

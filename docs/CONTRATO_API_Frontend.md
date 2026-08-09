@@ -402,6 +402,12 @@ Actualiza la configuración (solo SUPERVISOR).
 { "daysBefore": [7, 3, 0], "maxAttempts": 3 }
 ```
 
+### ✅ `GET /collections/collectors` (JWT)
+Lista de empleados activos del sector Cobranzas: `[{ id, name, isController }]`.
+Incluye a los que todavía no tienen ningún cliente asignado — usar esto para
+el selector de "asignar cobrador" en vez de derivarlo de
+`clients[].assignedCollector`.
+
 ### ✅ `POST /collections/clients/:id/assign-collector` (JWT + isController=true)
 Asigna cobrador responsable a un cliente que no tenía. 403 si no es Controlador.
 ```json

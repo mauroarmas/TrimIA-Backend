@@ -156,6 +156,17 @@ export class CollectionsController {
   }
 
   /**
+   * GET /collections/collectors — lista de empleados del sector Cobranzas,
+   * para poblar el selector de "asignar cobrador". Devuelve todos los
+   * activos del sector, no solo los que ya tienen algún cliente asignado.
+   */
+  @Get('collectors')
+  @ApiOperation({ summary: 'Lista de empleados del sector Cobranzas' })
+  listCollectors() {
+    return this.collections.listCollectors();
+  }
+
+  /**
    * POST /collections/clients/:id/assign-collector — solo Cobrador Controlador.
    * Un cliente puede existir sin cobrador (FR-001b): sus casos caen en la cola
    * del Controlador, que acá le pone dueño. Sin este endpoint la asignación
