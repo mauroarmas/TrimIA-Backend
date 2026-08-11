@@ -1,0 +1,81 @@
+{
+  "name": "CRM: Alta/Actualización de Cliente C",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "crm-upsert-client",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [-512, 112],
+      "id": "d1a4f9c3-8e2b-4a6d-9c1f-3b7e5d0a2f81",
+      "name": "Webhook",
+      "webhookId": "e2b5a0d4-9f6c-4b8a-a123-4d9f7c1e3a92"
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "1eU8lXoA6mcSh-s02NElqr8EWl1R2rR3TZAIFX1cENu4",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Clientes",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": ["phone"],
+          "value": {
+            "phone": "={{ $json.body.phone }}",
+            "name": "={{ $json.body.name }}",
+            "dni": "={{ $json.body.dni }}",
+            "quotaCount": "={{ $json.body.quotaCount }}"
+          }
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [-256, 112],
+      "id": "f3c6b0d5-a07d-4c9b-b234-5e0a8d2f4b03",
+      "name": "Google Sheets",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "PSBd2QQ3ePFjvOeF",
+          "name": "Google Sheets account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Google Sheets",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate"
+  },
+  "versionId": "a8d3c0f6-4e91-4b7c-8a2d-6f1b9e3c5d74",
+  "meta": {
+    "instanceId": "dfd902cdb7991f61a4293a03371b908ff48fcfc8ce98150c917724065174c796"
+  },
+  "nodeGroups": [],
+  "id": "tRc4mz2VYSpQ5nFj",
+  "tags": []
+}

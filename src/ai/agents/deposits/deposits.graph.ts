@@ -17,7 +17,7 @@ export function buildDepositsGraph(deps: AgentGraphDeps) {
       agentType: 'DEPOSITS',
       prompt: DEPOSITS_PROMPT,
       escalationMessage:
-        'No tengo esa información en la base de conocimiento. Te sugiero consultar directamente con el encargado de depósito. 📦',
+        'Eso no lo tengo a mano. Consultalo directamente con el encargado de depósito. 📦',
     },
     deps,
   );

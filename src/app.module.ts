@@ -18,6 +18,10 @@ import { SupervisorModule } from './supervisor/supervisor.module';
 import { AuthModule } from './auth/auth.module';
 import { EmployeesModule } from './employees/employees.module';
 import { EscalationsModule } from './escalations/escalations.module';
+import { ClientsModule } from './clients/clients.module';
+import { CollectionsModule } from './collections/collections.module';
+import { SalesModule } from './sales/sales.module';
+import { DevToolsModule } from './dev-tools/dev-tools.module';
 import { ConfigService } from '@nestjs/config';
 
 @Module({
@@ -65,6 +69,10 @@ import { ConfigService } from '@nestjs/config';
     AuthModule,
     EmployeesModule,
     EscalationsModule,
+    ClientsModule,
+    CollectionsModule,
+    SalesModule,
+    DevToolsModule,
   ],
   providers: [
     {

@@ -108,9 +108,8 @@ src/
 │                                #   getRecentHistory (memoria), setCurrentAgent (sticky)
 │
 ├── supervisor/                  # PANEL DEL SUPERVISOR (gobernanza / E4)
-│   ├── supervisor.controller.ts # GET /supervisor (dashboard) + /supervisor/metrics (JSON)
-│   ├── supervisor.service.ts    # queries agregadas (TokenUsage, OrchestrationEvent, Conversation)
-│   └── supervisor-dashboard.html.ts  # página HTML mínima (semilla; la reemplaza el React de E4)
+│   ├── supervisor.controller.ts # /supervisor/conversations, /supervisor/metrics (JSON), etc.
+│   └── supervisor.service.ts    # queries agregadas (TokenUsage, OrchestrationEvent, Conversation)
 │
 └── ai/
     ├── llm/                     # LlmService: cliente Gemini compartido
@@ -179,8 +178,9 @@ mensaje de escalado.
   - **EMPLEADO** → los 5.
 - La **audiencia del RAG** depende del usuario: EMPLEADO ve `INTERNO`+`PUBLICO`;
   CLIENTE solo `PUBLICO`. Se aplica en `knowledge.search()` y en `rag-agent.graph.ts`.
-- `userType` vive en `Conversation.userType` (hoy default `CLIENTE`; la whitelist de
-  empleados la administrará el panel — E4).
+- `userType` vive en `Conversation.userType` y se **revalida en cada mensaje** contra la
+  whitelist (ver §5.3.2). No es sticky: si a un empleado se le da de baja, su conversación
+  abierta degrada a `CLIENTE` en el mensaje siguiente.
 - **Regla de oro:** un cliente NUNCA debe poder recuperar conocimiento `INTERNO` ni
   llegar a un agente no permitido. Cualquier cambio debe preservar esto.
 
@@ -194,11 +194,31 @@ El modelo de negocio tiene **tres roles**, en **dos dimensiones distintas**:
   un actor supervisor distinto del empleado común. Por eso SUPERVISOR es parte del modelo
   **actual**, no un extra futuro.
 
-**Cómo modelarlo (recomendado):** NO agregar `SUPERVISOR` al enum `UserType` (rompería los
-chequeos `=== 'EMPLEADO'` de audiencia/acceso). El rol vive en la **tabla de empleados/whitelist**
-(RF-12): cada empleado tiene `role: EMPLEADO | SUPERVISOR`. La whitelist unifica dos cosas —
-marca el teléfono como interno (→ `userType=EMPLEADO`) y guarda el rol para gatear el Panel.
-Se implementa junto con E4 (whitelist + panel); no hace falta para el flujo conversacional de hoy.
+**Cómo está modelado:** `SUPERVISOR` NO está en el enum `UserType` (rompería los
+chequeos `=== 'EMPLEADO'` de audiencia/acceso). El rol vive en la tabla de empleados:
+cada empleado tiene `role: EMPLEADO | SUPERVISOR`. Eso unifica dos cosas — marca el
+teléfono como interno (→ `userType=EMPLEADO`) y guarda el rol para gatear el Panel.
+
+#### 5.3.2 La whitelist ES la tabla `Employee` (no hay tabla aparte)
+
+No existe un modelo `Whitelist`, y no debería: sería una segunda fuente de verdad que
+se desincroniza del alta/baja de empleados. La whitelist son dos campos de `Employee`:
+
+- **`phone`** (`@unique`, indexado) — el teléfono habilitado.
+- **`isActive`** — la baja es *soft* (`DELETE /employees/:id` setea `isActive: false`).
+
+`MessageProcessor` la consulta vía `EmployeesService.findByPhone()` en **cada mensaje** y
+deriva el `userType`; solo persiste en `Conversation.userType` cuando cambió. La pantalla
+de gestión de empleados del panel (`/employees`, ya implementada, SUPERVISOR-only) **es**
+la administración de la whitelist: dar de alta un empleado con su teléfono lo habilita.
+
+> ⚠️ **Todo teléfono pasa por `normalizePhone()`** (`src/common/phone.ts`) al guardarse y
+> al buscarse. Sin eso, el mismo número escrito de dos formas (`543865505362` vs
+> `5493865505362`) genera un `findUnique` que no encuentra nada: el empleado queda
+> tratado como cliente **sin ningún error visible**. Ya pasó — quedaron dos filas de
+> `Employee` para la misma persona. Forma canónica: `549` + 10 dígitos, que es la que
+> manda Meta. Para migrar datos viejos: `npx ts-node prisma/normalize-phones.ts`
+> (dry-run por defecto, escribe sólo con `--apply`).
 
 ### 5.4 RAG (base de conocimiento)
 - `KnowledgeService.ingest()`: parte el doc en chunks (corte por párrafo/oración),
@@ -250,28 +270,97 @@ detalle completo de esta decisión.
 `InternalNote` es aparte: comentarios de supervisores/empleados sobre una
 conversación, nunca enviados al usuario ni mezclados con `Message`.
 
+### 5.7.1 Quirk de Meta: el `to` saliente en modo sandbox NO es la forma canónica
+
+⚠️ **Solo aplica en desarrollo, con el modo de prueba de WhatsApp (hasta 5
+destinatarios).** Los workflows de n8n `EnvioMensaje-B` y
+`EnvioMensajePlantilla-B2` (`n8n/workflows/`) transforman el teléfono antes de
+mandarlo a la API de Meta:
+
+```js
+$json.body.phone.replace(/^549(\d{4})(\d{6})$/, '54$115$2')
+```
+
+`5493865505362` (canónico, el que usa TODO el resto del sistema) se convierte
+en `54386515505362` — reinserta el `15` local y saca el `9` de móvil. Sin este
+parche, Meta devuelve `(#131030) Recipient phone number not in allowed list`
+con **cualquier** otro formato probado (con `9`, sin `9`), aunque el número
+esté correctamente cargado y verificado en la lista de destinatarios de
+prueba.
+
+Causa probable: al cargar un número a mano en el modo sandbox, Meta lo indexa
+internamente con la forma en que se escribió (con `15`), y el chequeo de
+"recipient in allowed list" hace match contra esa forma exacta, no contra el
+número normalizado. **No es un requisito real de la API en producción** — con
+un número verificado por el flujo normal de WhatsApp (opt-in), no debería
+hacer falta.
+
+El regex asume área de 4 dígitos (`3865`), que es la de los dos números de
+prueba actuales (`DEV_CLIENT_PHONE`, `DEV_COLLECTOR_PHONE`). Con un número de
+otra provincia (área de 2 o 3 dígitos) no haría match y quedaría sin modificar
+— hay que ajustar el regex si se agregan números de prueba con otra área.
+
+**Al pasar a producción (Sprint 8, WA Business real): sacar este parche.**
+`normalizePhone()` (`src/common/phone.ts`) y la forma canónica `549...` NO se
+tocaron — siguen siendo correctas para todo lo demás (storage, matching,
+webhooks entrantes) y deberían ser también lo correcto para el `to` saliente
+una vez fuera del sandbox.
+
 ---
 
 ## 6. Modelo de datos (Prisma — `prisma/schema.prisma`)
 
 | Modelo | Para qué | Campos clave |
 |--------|----------|--------------|
-| `Conversation` | Hilo de chat por teléfono | `id`, `externalId`, `currentAgent` (sticky), `userType`, `status`, `handledById`/`handledAt` (control manual, Sprint 3) |
+| `Sector` | Sector de la empresa; gatea módulos del panel | `name`, `agentType` (el agente que capacita/da soporte al sector) |
+| `Employee` | Empleado o supervisor autorizado | `phone`, `email`, `password`, `role` (EMPLEADO/SUPERVISOR), `sectorId`, `isController` |
+| `Client` | Cliente externo | `name`, `phone` (UK), `dni`, `assignedCollectorId` (cartera del cobrador) |
+| `Conversation` | Hilo de chat por teléfono | `externalId`, `clientId` (FK al cliente), `currentAgent` (sticky), `userType`, `status`, `handledById`/`handledAt` (control manual, Sprint 3) |
 | `Message` | Cada mensaje | `role` (USER/ASSISTANT/...), `content`, `agentType` |
-| `KnowledgeDocument` | Metadatos de docs del RAG | `audience` (PUBLICO/INTERNO), `agentType`, `checksum` |
+| `PurchaseRequest` | La "ficha de venta" del proceso real | `clientId`, `conversationId`, `productSummary`, `modality` (CASH/FINANCED), `status`, `reviewedById` (vendedor) |
+| `CreditAssessment` | Dictamen crediticio, **histórico** | `clientId`, `purchaseRequestId`, `verdict`, `reason`, `rawPayload` (INTERNO, OE-10) |
+| `Financing` | Plan de cuotas de una venta financiada | `purchaseRequestId` (UK), `totalAmount`, `quotaCount`, `collectorId` |
+| `Quota` (Sprint 4) | Cuota a cobrar | `clientId` (denormalizado), `financingId`, `number`, `dueDate`, `status`, `reminderAttempts` |
+| `PaymentProof` (Sprint 4) | Comprobante enviado por WhatsApp | `quotaId`, `imagePath`, `extracted*` (sugerencia de Gemini), `status`, `impactStatus` |
+| `ReminderConfig` (Sprint 4) | Fila única de configuración | `daysBefore` (7/3/0), `maxAttempts`, `templateApproved` |
+| `KnowledgeDocument` | Metadatos de docs del RAG | `audience` (PUBLICO/INTERNO), `agentType`, `checksum`, `vectorId` |
 | `TokenUsage` | Consumo por turno | `inputTokens`, `outputTokens`, `durationMs`, `model` |
 | `OrchestrationEvent` | Auditoría de ruteo | `eventType`, `agentType`, `payload` (JSON) |
 | `Escalation` (Sprint 3) | Caso pendiente por baja confianza | `reason`, `status` (PENDING/RESOLVED), `resolvedById`/`resolution`, `delegatedToId`/`delegatedById` |
-| `InternalNote` (Sprint 3) | Comentario interno sobre una conversación | `conversationId`, `authorId`, `content` — nunca visible para el usuario |
+| `InternalNote` (Sprint 3) | Comentario interno sobre una conversación | `conversationId`, `authorId` **o** `authorAgentType`, `content` — nunca visible para el usuario |
 
 Enums: `AgentType` (ORCHESTRATOR + 5 agentes), `UserType` (CLIENTE/EMPLEADO),
 `Audience` (PUBLICO/INTERNO), `Channel` (WHATSAPP/WEB),
 `ConvStatus` (ACTIVE/WAITING_HUMAN/HUMAN_HANDLING/CLOSED), `MessageRole`,
-`EscalationStatus` (PENDING/RESOLVED, Sprint 3).
+`EscalationStatus` (PENDING/RESOLVED, Sprint 3), `QuotaStatus`,
+`PaymentProofStatus`, `ProofRejectionReason`, `ImpactStatus` (Sprint 4),
+`PurchaseRequestStatus`, `PaymentModality`, `CreditVerdict`, `FinancingStatus`.
+
+> **Agente y Base de Conocimiento no son tablas.** El diagrama de dominio los
+> modela como entidades, pero acá viven como el enum `AgentType`:
+> `Sector.agentType` cubre "Sector 1—1 Agente" y `KnowledgeDocument.agentType`
+> cubre "Agente 1—1 BaseConocimiento → N Documentos". Físicamente hay **una
+> sola colección** de ChromaDB (`trimia_knowledge`) filtrada por metadata
+> `agentType` + `audience`; una por agente obligaría a duplicar los documentos
+> generales (`agentType = null`) en las cinco. Ver `DIAGRAMAS_ARQUITECTURA.md` §4.
+
+> **Ventas está modelado pero no implementado.** `PurchaseRequest`,
+> `CreditAssessment` y `Financing` existen en la DB para cerrar el modelo de
+> dominio y no tener que migrar `Quota` con datos productivos cargados; la
+> lógica de negocio (endpoints, agentes, integración con Riesgo Online) llega
+> en los Sprints 6-7.
 
 > Migraciones: el proyecto usa **`prisma db push`** (no `migrate`). Las tablas
 > `checkpoint_*` que puedan existir en la DB son remanentes de LangGraph; Prisma no
 > las toca.
+
+> ⚠️ **`prisma/seed.ts` no borra conocimiento.** El seed escribe solo en
+> Postgres, mientras que los vectores viven en ChromaDB y los escribe
+> `KnowledgeService.ingest()`. Un `deleteMany({})` sobre `KnowledgeDocument`
+> borra también lo cargado por `POST /knowledge` y deja los chunks de Chroma
+> huérfanos: los dos almacenes se desincronizan **sin que nada falle** (el RAG
+> sigue respondiendo, pero el panel no lista los documentos). El seed inserta
+> solo los títulos que faltan.
 
 ---
 
@@ -295,8 +384,59 @@ memoria conversacional y auditoría/métricas. Hay corpus de prueba cargado para
 > **Nota:** desde `docs/plan_de_trabajo.md` v4, el trabajo posterior a la Fase 4
 > se organiza en **8 sprints** (no en "Fase 5/6" a secas). Estado real:
 > Sprint 1 (Auth+Whitelist) ✅, Sprint 2 (Panel Supervisor: métricas,
-> conversaciones, `agents/status`) ✅, Sprint 3 (human-in-the-loop, §5.7) ✅.
-> Próximo: Sprint 4 en adelante — ver el plan de trabajo para el detalle.
+> conversaciones, `agents/status`) ✅, Sprint 3 (human-in-the-loop, §5.7) ✅,
+> Sprint 4 (Cobranzas: comprobantes, recordatorios, verificación de impacto, panel) ✅.
+> Próximo: Sprint 5 en adelante — ver el plan de trabajo para el detalle.
+
+### 7.1 Lectura del comprobante: es un processor, no un tool del grafo
+
+El `plan.md` de Sprint 4 preveía un tool `verifyReceipt` dentro de
+`collections.graph.ts`. **La implementación no lo hizo así**: la lectura vive en
+`src/queue/processors/receipt-extraction.processor.ts`, un processor de BullMQ
+que se encola cuando llega la imagen.
+
+El motivo es el Principio IV: como tool del grafo, la llamada a Gemini Vision
+quedaba dentro del turno conversacional del agente y por lo tanto atada al
+tiempo de respuesta del webhook. Como job encolado, la imagen se guarda y se
+responde de inmediato, y la lectura corre después con sus reintentos.
+
+Consecuencia de diseño que conviene no perder: el processor **solo completa los
+campos `extracted*` y jamás toca `PaymentProof.status`**. La decisión sobre el
+comprobante es siempre de una persona (Principio III).
+
+### 7.2 Alta de clientes: vive en `sales/`, no en `clients/`
+
+El alta de un cliente con su plan de cuotas (`POST /sales/clients`) la hace el
+vendedor al cerrar la venta. El servicio que la orquesta
+(`ClientOnboardingService`) está en `src/sales/` y no en `src/clients/` porque
+necesita coordinar dos módulos: el alta (`ClientsModule`) y la recuperación de
+comprobantes que habían llegado antes de que el cliente existiera
+(`CollectionsModule`). Ponerlo en cualquiera de los dos crearía una dependencia
+circular entre ellos.
+
+El CRM (Google Sheets) se consume detrás de `CRM_PORT`
+(`src/clients/crm/crm.port.ts`). El provider es `N8nCrmAdapter`, que sigue el
+mismo criterio ya usado para WhatsApp (`WhatsappSenderService`): el backend
+**no guarda la credencial de Google**, solo le pega a un webhook propio de n8n
+(`N8N_BASE_URL/webhook/crm-upsert-client`) y es n8n quien escribe en el Sheets
+con su nodo nativo `Google Sheets` (credencial OAuth2 configurada ahí, no en
+el backend). El workflow es
+`n8n/workflows/CrmUpsertCliente-C.json`.
+
+**Etapa actual:** el workflow apunta a un Google Sheets personal de prueba
+(cuenta de Google del desarrollador), para validar el flujo de punta a punta
+sin depender de la cuenta corporativa. Migrar a la planilla real de la empresa
+es cambiar la credencial OAuth2 y el `documentId` en n8n — el backend no
+cambia.
+
+**Verificado en vivo (2026-08-09)**, mismo patrón de research.md §1: se
+activó el workflow con una credencial OAuth2 real y el Google Sheet de
+prueba del desarrollador, y se corrió la cadena completa —comprobante de un
+teléfono sin `Client` (queda `payment_proof_unmatched`) → alta del cliente
+por `POST /sales/clients` → reconciliación automática del comprobante a la
+cuota más antigua (`payment_proof_received` con
+`recoveredFromUnmatched: true`) → escritura al CRM— confirmando la fila
+nueva en el Sheets real. `active: true` en el repo desde entonces.
 
 ---
 
@@ -373,7 +513,6 @@ como producto) es **uno de esos módulos**, no una herramienta aparte. Backend y
 
 ### Otros
 - **Seguimiento de prospectos** (RF-03) vía CRM.
-- Cablear `userType` real desde la whitelist en el `MessageProcessor`.
 
 ---
 
@@ -403,10 +542,26 @@ curl -X POST http://localhost:3000/messaging/webhook \
 # Luego ver la respuesta del agente en los logs o en la tabla Message.
 ```
 
-### Marcar un teléfono como empleado (dev, hasta que exista la whitelist)
-```sql
-UPDATE "Conversation" SET "userType" = 'EMPLEADO' WHERE "externalId" = '<telefono>';
+### Dejar al cliente de prueba en una situación (dev)
+```bash
+# RESET limpia comprobantes y cuotas; después se arma el escenario.
+curl -X POST http://localhost:3000/dev/client-fixtures -H "Content-Type: application/json" \
+  -d '{"phone":"5493865505362","fixtures":["RESET","CUOTA_POR_VENCER"]}'
 ```
+Fixtures: `RESET` · `SIN_DEUDA` · `CUOTA_POR_VENCER` · `CUOTA_VENCIDA` (combinables, en orden).
+
+En desarrollo cada número de Meta tiene identidad fija: `DEV_CLIENT_PHONE` es el cliente y
+`DEV_COLLECTOR_PHONE` el cobrador (el seed se lo asigna a Roberto Sosa). El resto de los
+empleados entra por el portal web con las credenciales del seed (pass `trimia2026`).
+Contrato completo en `CONTRATO_API_Frontend.md`.
+
+### Migrar teléfonos al formato canónico (dev)
+```bash
+npx ts-node prisma/normalize-phones.ts           # dry-run: muestra cambios y colisiones
+npx ts-node prisma/normalize-phones.ts --apply   # aplica, en una transacción
+```
+Se niega a aplicar si normalizar generaría colisiones con el índice UNIQUE de
+`Employee.phone` / `Client.phone`: cuál fila sobrevive es una decisión de negocio.
 
 ### Correr los tests
 ```bash
@@ -455,5 +610,4 @@ docker compose exec nestjs npx jest --no-coverage
 | `docs/DeclaracióndeAlcancedeProyecto_TrimIA.md` | Alcance, requisitos, entregables (PMBOK) |
 | `docs/TP2_PMI_Matriz...-requisitos.csv` | Matriz de trazabilidad requisito→entregable→OE |
 | `docs/Diccionario_EDT_TrimIA.pdf` | Diccionario de la EDT (paquetes de trabajo) |
-| `docs/GuiaEstudio_TrimIA.md` | Guía de estudio del código (módulo por módulo) |
 | `docs/Procesos de Credimisión S.R.L..md` | Procesos reales del cliente |

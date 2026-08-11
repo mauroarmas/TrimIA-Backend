@@ -38,6 +38,70 @@ enum EscalationStatus {
   RESOLVED
 }
 
+// Estado de una cuota (Sprint 4 — Cobranzas). Ver transiciones en
+// specs/002-collections-payments/data-model.md.
+enum QuotaStatus {
+  PENDING               // aún no vence, sin acción
+  AWAITING_CONFIRMATION // el cliente avisó/envió comprobante, esperando decisión del cobrador
+  PAID                  // comprobante aceptado Y verificado con impacto bancario confirmado
+  OVERDUE               // vencida, sin respuesta tras el máximo de intentos de recordatorio
+  MANUAL                // el cobrador la marcó como gestionada manualmente
+}
+
+enum PaymentProofStatus {
+  PENDING_REVIEW   // recién recibido, esperando decisión del cobrador
+  ACCEPTED         // el cobrador lo aceptó
+  REJECTED         // el cobrador marcó un problema (ver ProofRejectionReason)
+  MANUAL_HANDLING  // "otro problema — voy a manejarlo yo" (pausa la IA, ver takeover Sprint 3)
+}
+
+enum ProofRejectionReason {
+  PAST_DATE       // el comprobante es de una fecha anterior
+  WRONG_CBU       // el CBU de destino no es el de la empresa
+  AMOUNT_TOO_LOW  // el monto transferido es menor al que corresponde
+}
+
+enum ImpactStatus {
+  PENDING    // comprobante aceptado, aún no verificado contra la cuenta bancaria
+  CONFIRMED  // el Cobrador Controlador confirmó que el pago impactó
+  MISSING    // el Cobrador Controlador indicó que no impactó
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Ventas y financiación. Los modelos existen desde ya para cerrar el modelo
+// de dominio (el diagrama de la cátedra) y no tener que migrar Quota con
+// datos productivos cargados; la lógica de negocio llega en los Sprints 6-7.
+// ─────────────────────────────────────────────────────────────────────────
+
+enum PurchaseRequestStatus {
+  DRAFT          // el agente la está armando durante la conversación
+  PENDING_REVIEW // esperando que un vendedor la gestione
+  APPROVED
+  REJECTED
+  CANCELLED
+}
+
+enum PaymentModality {
+  CASH     // contado / transferencia por el total
+  FINANCED // en cuotas
+}
+
+// Dictamen crediticio. UNAVAILABLE cubre la degradación graceful de RF10:
+// si Riesgo Online no responde, se registra el intento en vez de bloquear.
+enum CreditVerdict {
+  APPROVED
+  APPROVED_WITH_CONDITIONS
+  REJECTED
+  UNAVAILABLE
+}
+
+enum FinancingStatus {
+  ACTIVE
+  COMPLETED
+  DEFAULTED
+  CANCELLED
+}
+
 // Sector de la empresa. Gatea qué módulos del panel ve cada empleado.
 model Sector {
   id        String     @id @default(uuid())
@@ -59,6 +123,10 @@ model Employee {
   isActive  Boolean      @default(true)
   sectorId  String
   sector    Sector       @relation(fields: [sectorId], references: [id])
+  // Permiso adicional de Cobrador Controlador (Sprint 4). No es un valor nuevo
+  // de EmployeeRole: convive con role=EMPLEADO + sector=Cobranzas. Ver
+  // specs/002-collections-payments/data-model.md.
+  isController Boolean   @default(false)
   createdAt DateTime     @default(now())
   updatedAt DateTime     @updatedAt
 
@@ -67,10 +135,212 @@ model Employee {
   resolvedEscalations  Escalation[]   @relation("EscalationResolvedBy")
   handledConversations Conversation[] @relation("ConversationHandledBy")
   internalNotes        InternalNote[] @relation("InternalNoteAuthor")
+  assignedClients      Client[]       @relation("ClientAssignedCollector")
+  acceptedProofs       PaymentProof[] @relation("PaymentProofAcceptedBy")
+  verifiedProofs       PaymentProof[] @relation("PaymentProofImpactVerifiedBy")
+
+  reviewedPurchaseRequests PurchaseRequest[]  @relation("PurchaseRequestReviewedBy")
+  creditAssessments        CreditAssessment[] @relation("CreditAssessmentAssessedBy")
+  managedFinancings        Financing[]        @relation("FinancingCollector")
 
   @@index([phone])
   @@index([email])
   @@index([sectorId])
+}
+
+// Cliente identificado por nombre/teléfono/DNI, con un cobrador asignado
+// (Sprint 4). Prerequisito de las pantallas de Cobranzas y Ventas.
+//
+// El vínculo con Conversation es una FK explícita (Conversation.clientId), no
+// un cruce por teléfono en tiempo de consulta como en la versión original de
+// Sprint 4: el diagrama de dominio modela "Conversacion 1—1 Cliente" y hacer
+// el join por `phone == externalId` en cada pantalla era frágil (rompe con el
+// canal WEB, donde externalId no es un teléfono). La FK se resuelve una sola
+// vez al recibir el mensaje y se retro-completa si el cliente se da de alta
+// después. Ver docs/CONTEXTO_TECNICO.md.
+model Client {
+  id                  String    @id @default(uuid())
+  name                String
+  phone               String    @unique
+  dni                 String?
+  assignedCollectorId String?
+  assignedCollector   Employee? @relation("ClientAssignedCollector", fields: [assignedCollectorId], references: [id])
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+
+  quotas            Quota[]
+  conversations     Conversation[]
+  purchaseRequests  PurchaseRequest[]
+  creditAssessments CreditAssessment[]
+
+  @@index([assignedCollectorId])
+}
+
+// La "ficha de venta" del proceso real de Credimisión: el agente la arma
+// durante la conversación de WhatsApp y un vendedor la gestiona desde el
+// panel. `productSummary` es texto libre a propósito — TrimIA no escribe en
+// Paljet, así que no replica su catálogo (ver plan_de_trabajo.md tarea 6.9).
+model PurchaseRequest {
+  id             String                @id @default(uuid())
+  clientId       String
+  client         Client                @relation(fields: [clientId], references: [id])
+  conversationId String?               // de qué conversación salió
+  conversation   Conversation?         @relation(fields: [conversationId], references: [id])
+  productSummary String
+  amount         Decimal?
+  modality       PaymentModality
+  status         PurchaseRequestStatus @default(PENDING_REVIEW)
+
+  // "Aprueba (Vendedor)": quién la gestionó desde el panel.
+  reviewedById String?
+  reviewedBy   Employee? @relation("PurchaseRequestReviewedBy", fields: [reviewedById], references: [id])
+  reviewedAt   DateTime?
+  reviewNote   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  creditAssessments CreditAssessment[]
+  financing         Financing?
+
+  @@index([clientId])
+  @@index([status])
+  @@index([reviewedById])
+}
+
+// Evaluación crediticia de un cliente para una venta puntual.
+//
+// Es HISTÓRICA (1—N con Client), no un atributo del cliente: la verificación
+// se dispara por venta ("solicita la verificación del cliente antes de cerrar
+// la venta"), y un cliente sin deudas hoy puede tenerlas en tres meses. Si
+// fuera 1—1 cada nueva compra pisaría el motivo de la anterior, que es
+// justamente el registro que exige la auditoría (OE-11).
+//
+// `rawPayload` es la respuesta cruda de Riesgo Online: INTERNO, nunca se
+// expone al cliente ni sale del agente ADMIN (OE-10, RF13).
+model CreditAssessment {
+  id                String           @id @default(uuid())
+  clientId          String
+  client            Client           @relation(fields: [clientId], references: [id])
+  purchaseRequestId String?
+  purchaseRequest   PurchaseRequest? @relation(fields: [purchaseRequestId], references: [id])
+  verdict           CreditVerdict
+  reason            String           // el porqué del dictamen, en texto
+  source            String           @default("RIESGO_ONLINE") // RIESGO_ONLINE | MANUAL
+  rawPayload        Json?
+  assessedById      String?
+  assessedBy        Employee?        @relation("CreditAssessmentAssessedBy", fields: [assessedById], references: [id])
+  createdAt         DateTime         @default(now())
+
+  @@index([clientId, createdAt])
+  @@index([purchaseRequestId])
+}
+
+// Plan de cuotas de una venta financiada. El cobrador que figura acá es el
+// que "recibe la ficha, verifica que el negocio exista y aprueba la venta"
+// según el proceso real — por eso la asignación es por financiación y no
+// solo por cliente (Client.assignedCollector sigue siendo la cartera).
+model Financing {
+  id                String          @id @default(uuid())
+  purchaseRequestId String          @unique
+  purchaseRequest   PurchaseRequest @relation(fields: [purchaseRequestId], references: [id])
+  totalAmount       Decimal
+  quotaCount        Int
+  status            FinancingStatus @default(ACTIVE)
+  collectorId       String?
+  collector         Employee?       @relation("FinancingCollector", fields: [collectorId], references: [id])
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  quotas Quota[]
+
+  @@index([collectorId])
+  @@index([status])
+}
+
+// Cuota de una financiación. Ver transiciones de estado en
+// specs/002-collections-payments/data-model.md.
+//
+// `clientId` está DENORMALIZADO a propósito: el camino normalizado es
+// Quota → Financing → PurchaseRequest → Client (3 joins), y todo el panel de
+// Cobranzas filtra por cliente/cobrador en cada consulta. La invariante que
+// hay que sostener al crear la cuota es:
+//     quota.clientId == quota.financing.purchaseRequest.clientId
+//
+// `financingId` es opcional porque una cuota puede existir sin venta
+// financiada registrada en el sistema (deuda migrada de Paljet, o los datos
+// de prueba de dev/test-persona).
+model Quota {
+  id                 String      @id @default(uuid())
+  clientId           String
+  client             Client      @relation(fields: [clientId], references: [id])
+  financingId        String?
+  financing          Financing?  @relation(fields: [financingId], references: [id])
+  number             Int?        // nº de cuota dentro del plan (1..quotaCount)
+  amount             Decimal
+  dueDate            DateTime
+  status             QuotaStatus @default(PENDING)
+  reminderAttempts   Int         @default(0)
+  lastReminderAt     DateTime?
+  manualHandlingNote String?
+  createdAt          DateTime    @default(now())
+  updatedAt          DateTime    @updatedAt
+
+  paymentProofs PaymentProof[]
+
+  @@index([clientId])
+  @@index([financingId])
+  @@index([status])
+  @@index([dueDate])
+}
+
+// Comprobante de pago enviado por un cliente por WhatsApp (Sprint 4). Los
+// campos extracted* son SIEMPRE una sugerencia editable de Gemini Vision,
+// nunca verdad del sistema — el cobrador decide.
+model PaymentProof {
+  id             String                 @id @default(uuid())
+  quotaId        String
+  quota          Quota                  @relation(fields: [quotaId], references: [id])
+  messageId      String?
+  message        Message?               @relation(fields: [messageId], references: [id])
+  imagePath      String
+  extractedAmount Decimal?
+  extractedDate   DateTime?
+  extractedBank   String?
+  extractedOpCode String?               @unique
+  status          PaymentProofStatus    @default(PENDING_REVIEW)
+  rejectionReason ProofRejectionReason?
+  // Motivo que dejó el cobrador al marcar "voy a manejarlo yo". Vive acá y no
+  // solo como InternalNote de la conversación porque es un atributo de ESTE
+  // comprobante puntual, no de la conversación en general (que puede tener
+  // varias notas por otros motivos). El InternalNote se sigue creando igual,
+  // para el historial del cliente en el panel.
+  manualHandlingNote String?
+  acceptedById    String?
+  acceptedBy      Employee?             @relation("PaymentProofAcceptedBy", fields: [acceptedById], references: [id])
+  acceptedAt      DateTime?
+  impactStatus       ImpactStatus       @default(PENDING)
+  impactVerifiedById String?
+  impactVerifiedBy   Employee?          @relation("PaymentProofImpactVerifiedBy", fields: [impactVerifiedById], references: [id])
+  impactVerifiedAt   DateTime?
+  impactObservation  String?
+  createdAt          DateTime           @default(now())
+
+  @@index([quotaId])
+  @@index([status])
+  @@index([impactStatus])
+}
+
+// Configuración de recordatorios de cuota (Sprint 4) — fila única, editable
+// por un supervisor. templateApproved bloquea el scheduler de forma
+// explícita mientras Meta no aprobó la plantilla HSM (ver research.md §2).
+model ReminderConfig {
+  id               String   @id @default(uuid())
+  daysBefore       Int[]    @default([7, 3, 0])
+  maxAttempts      Int      @default(3)
+  templateName     String   @default("recordatorio_cuota")
+  templateApproved Boolean  @default(false)
+  updatedAt        DateTime @updatedAt
 }
 
 enum MessageRole {
@@ -107,15 +377,22 @@ model Conversation {
   handledBy   Employee? @relation("ConversationHandledBy", fields: [handledById], references: [id])
   handledAt   DateTime? // desde cuándo tiene el control
 
-  messages      Message[]
-  tokenUsage    TokenUsage[]
-  events        OrchestrationEvent[]
-  escalations   Escalation[]
-  internalNotes InternalNote[]
+  // Cliente detrás de la conversación, si está dado de alta. Null mientras
+  // sea un desconocido o cuando escribe un empleado (userType=EMPLEADO).
+  clientId String?
+  client   Client? @relation(fields: [clientId], references: [id])
+
+  messages         Message[]
+  tokenUsage       TokenUsage[]
+  events           OrchestrationEvent[]
+  escalations      Escalation[]
+  internalNotes    InternalNote[]
+  purchaseRequests PurchaseRequest[]
 
   @@index([externalId])
   @@index([status])
   @@index([createdAt])
+  @@index([clientId])
 }
 
 model Message {
@@ -126,6 +403,8 @@ model Message {
   content        String
   agentType      AgentType?
   createdAt      DateTime    @default(now())
+
+  paymentProofs PaymentProof[]
 
   @@index([conversationId, createdAt])
 }
@@ -162,14 +441,20 @@ model Escalation {
 // Comentario interno sobre una conversación, visible solo para supervisores/
 // empleados con acceso al panel. Nunca se envía al usuario ni se mezcla con
 // Message (Sprint 3, FR-012).
+//
+// El autor puede ser una persona (`authorId`) o un agente (`authorAgentType`),
+// nunca los dos: el agente SALES deja acá su resumen estructurado al escalar
+// una venta (tarea 6.7). Exactamente uno de los dos debe estar presente —
+// invariante de aplicación, no constraint de DB.
 model InternalNote {
-  id             String       @id @default(uuid())
-  conversationId String
-  conversation   Conversation @relation(fields: [conversationId], references: [id])
-  authorId       String
-  author         Employee     @relation("InternalNoteAuthor", fields: [authorId], references: [id])
-  content        String
-  createdAt      DateTime     @default(now())
+  id              String       @id @default(uuid())
+  conversationId  String
+  conversation    Conversation @relation(fields: [conversationId], references: [id])
+  authorId        String?
+  author          Employee?    @relation("InternalNoteAuthor", fields: [authorId], references: [id])
+  authorAgentType AgentType?
+  content         String
+  createdAt       DateTime     @default(now())
 
   @@index([conversationId, createdAt])
 }

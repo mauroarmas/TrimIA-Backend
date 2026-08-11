@@ -33,14 +33,35 @@ export class ConversationsService {
     private readonly orchestrationLogger: OrchestrationLogger,
   ) {}
 
-  async getOrCreate(externalId: string, channel: Channel): Promise<Conversation> {
+  /**
+   * Conversación abierta del contacto, o una nueva.
+   *
+   * `clientId` vincula la conversación con el Cliente ya dado de alta. Es
+   * opcional porque un desconocido puede escribir antes de existir en la DB;
+   * si se da de alta después, la FK se retro-completa en el siguiente mensaje
+   * en vez de quedar huérfana para siempre. Nunca se desasigna: si la
+   * conversación ya tiene cliente, gana el que está.
+   */
+  async getOrCreate(
+    externalId: string,
+    channel: Channel,
+    clientId?: string | null,
+  ): Promise<Conversation> {
     const existing = await this.prisma.conversation.findFirst({
       where: { externalId, channel, status: { not: 'CLOSED' } },
     });
-    if (existing) return existing;
+    if (existing) {
+      if (clientId && !existing.clientId) {
+        return this.prisma.conversation.update({
+          where: { id: existing.id },
+          data: { clientId },
+        });
+      }
+      return existing;
+    }
 
     return this.prisma.conversation.create({
-      data: { externalId, channel },
+      data: { externalId, channel, clientId: clientId ?? undefined },
     });
   }
 
@@ -66,18 +87,24 @@ export class ConversationsService {
    * Devuelve los últimos `limit` turnos USER/ASSISTANT de la conversación,
    * ordenados del más antiguo al más reciente (orden natural para el LLM).
    * Se excluyen roles SYSTEM y TOOL para no filtrar internos al modelo.
+   *
+   * `excludeMessageId` saca el mensaje que se está procesando ahora. Hace
+   * falta porque el mensaje del cliente se persiste ANTES de encolar el job,
+   * así que sin esto el agente lo recibía dos veces: una en el historial y
+   * otra en el HumanMessage de la consulta. Se excluye por id y no "el
+   * último USER" porque si el cliente manda dos mensajes seguidos hay dos
+   * jobs en vuelo y cada uno tiene que sacar el suyo, no el más nuevo.
    */
   async getRecentHistory(
     conversationId: string,
     limit = 6,
+    excludeMessageId?: string,
   ): Promise<ConversationTurn[]> {
     const rows = await this.prisma.message.findMany({
       where: {
         conversationId,
         role: { in: ['USER', 'ASSISTANT'] },
-        // Excluir el mensaje actual (el último USER todavía no tiene respuesta)
-        // — el processor lo agrega después de invocar el orquestador.
-        // Solo traemos los turnos previos completos (pares USER+ASSISTANT).
+        ...(excludeMessageId ? { id: { not: excludeMessageId } } : {}),
       },
       orderBy: { createdAt: 'desc' },
       take: limit,
@@ -85,6 +112,19 @@ export class ConversationsService {
     });
     // Invertir para presentar al LLM en orden cronológico.
     return rows.reverse() as ConversationTurn[];
+  }
+
+  /**
+   * Último mensaje del asistente en la conversación. Se usa para no repetir
+   * un aviso automático que ya se mandó (ver el acuse de WAITING_HUMAN en
+   * MessageProcessor).
+   */
+  async getLastAssistantMessage(conversationId: string) {
+    return this.prisma.message.findFirst({
+      where: { conversationId, role: 'ASSISTANT' },
+      orderBy: { createdAt: 'desc' },
+      select: { content: true },
+    });
   }
 
   /** Fija el agente sticky de la conversación tras resolver un mensaje. */
@@ -160,9 +200,23 @@ export class ConversationsService {
   /**
    * Devuelve el control manual al agente de IA (FR-008). Solo puede
    * liberarla quien figura en `handledById` (evita que un tercero corte la
-   * intervención de otro supervisor).
+   * intervención de otro supervisor) — salvo que quien la libera sea
+   * `SUPERVISOR` (`asSupervisor=true`), que puede destrabar cualquier caso.
+   *
+   * Ese bypass hace falta porque `takeover()` se puede disparar desde dos
+   * lugares con distinto nivel de acceso: este mismo endpoint (SUPERVISOR) y
+   * `PaymentProofsService.markManualHandling()` ("voy a manejarlo yo", Sprint
+   * 4), que no exige rol SUPERVISOR — cualquier EMPLEADO puede tomar una
+   * conversación por esa vía. Sin el bypass, ese EMPLEADO queda sin ninguna
+   * salida legítima para liberarla (el endpoint de liberación es
+   * SUPERVISOR-only, y un supervisor distinto era rechazado por no coincidir
+   * el `handledById`) — quedaba en HUMAN_HANDLING para siempre.
    */
-  async release(conversationId: string, employeeId: string) {
+  async release(
+    conversationId: string,
+    employeeId: string,
+    asSupervisor = false,
+  ) {
     const conversation = await this.prisma.conversation.findUnique({
       where: { id: conversationId },
     });
@@ -174,7 +228,7 @@ export class ConversationsService {
         'La conversación no está en control manual',
       );
     }
-    if (conversation.handledById !== employeeId) {
+    if (!asSupervisor && conversation.handledById !== employeeId) {
       throw new ForbiddenException(
         'No tenés el control de esta conversación',
       );
@@ -239,6 +293,34 @@ export class ConversationsService {
       conversationId,
       eventType: 'internal_note_added',
       payload: { authorId },
+    });
+
+    return note;
+  }
+
+  /**
+   * Nota interna escrita por un AGENTE de IA, no por una persona.
+   *
+   * La usa el agente al escalar, para dejarle al supervisor un resumen del
+   * caso y que no tenga que reconstruirlo leyendo toda la conversación.
+   * Va en la misma tabla que las notas humanas (aparecen juntas en el
+   * timeline del panel), distinguidas por `authorAgentType` — por eso
+   * `InternalNote.authorId` es opcional en el schema.
+   */
+  async addAgentNote(
+    conversationId: string,
+    agentType: AgentType | null,
+    content: string,
+  ) {
+    const note = await this.prisma.internalNote.create({
+      data: { conversationId, authorAgentType: agentType, content },
+    });
+
+    await this.orchestrationLogger.logEvent({
+      conversationId,
+      eventType: 'internal_note_added',
+      agentType,
+      payload: { authorAgentType: agentType },
     });
 
     return note;

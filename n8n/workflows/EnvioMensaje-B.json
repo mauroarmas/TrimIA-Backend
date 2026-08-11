@@ -25,7 +25,7 @@
         "genericAuthType": "httpHeaderAuth",
         "sendBody": true,
         "specifyBody": "json",
-        "jsonBody": "={{ JSON.stringify({\n  \"messaging_product\": \"whatsapp\",\n  \"to\": $json.body.phone.replace(/^549/, '54'),\n  \"type\": \"text\",\n  \"text\": {\n    \"body\": $json.body.message\n  }\n}) }}",
+        "jsonBody": "={{ JSON.stringify({\n  \"messaging_product\": \"whatsapp\",\n  \"to\": $json.body.phone.replace(/^549(\\d{4})(\\d{6})$/, '54$115$2'),\n  \"type\": \"text\",\n  \"text\": {\n    \"body\": $json.body.message\n  }\n}) }}",
         "options": {}
       },
       "type": "n8n-nodes-base.httpRequest",

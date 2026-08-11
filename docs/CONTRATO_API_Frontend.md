@@ -4,7 +4,20 @@
 > que consume cada módulo de la app. Permite trabajar **en paralelo**: lo que ya
 > existe se consume directo; lo pendiente se mockea contra el contrato de abajo.
 >
-> Última actualización: 2026-08-04 (Sprint 1, 2 y 3).
+> Última actualización: 2026-08-05 (Sprint 1-4 completos).
+
+---
+
+## 📋 Sprint 4 — Documentación Completa
+
+**Sprint 4 (Cobranzas) fue completado el 2026-08-05.** Para un resumen ejecutivo detallado del trabajo realizado:
+
+- 📄 **[RESUMEN_EJECUTIVO.md](sprint-4-summary/RESUMEN_EJECUTIVO.md)** — Documento detallado en Markdown con todas las historias, servicios, endpoints, testing y lecciones aprendidas.
+- 🌐 **[RESUMEN_VISUAL.html](sprint-4-summary/RESUMEN_VISUAL.html)** — Versión visual HTML (puedes abrir en navegador) con estadísticas, flujos, y checklist.
+
+**Status del Sprint:** ✅ Completo (128/128 tests pasando, 13 endpoints nuevos, 5 historias de usuario implementadas)
+
+---
 
 ## Generalidades
 
@@ -22,10 +35,14 @@
 | Entrevistas | SUPERVISOR | `/interviews/*` 🔴 |
 | Capacitación | EMPLEADO | `/training/*` 🔴 |
 | Gobernanza (Panel del Supervisor) | SUPERVISOR | `/supervisor/*` ✅ |
+| Panel de Cobranzas | EMPLEADO (cobrador) / SUPERVISOR (controlador) | `/collections/*` ✅ |
+| Panel de Ventas | EMPLEADO (vendedor) / SUPERVISOR | `/sales/*` 🔴 (modelo de datos ya en DB) |
+| Herramientas de dev | — (solo en dev) | `/dev/client-fixtures` ✅ |
 
 > Roles: ver `CONTEXTO_TECNICO.md` §5.3.1. `userType` (CLIENTE/EMPLEADO) define audiencia;
-> `role` (EMPLEADO/SUPERVISOR) gatea los módulos de gobernanza. El `role` viene de la
-> whitelist de empleados (pendiente).
+> `role` (EMPLEADO/SUPERVISOR) gatea los módulos de gobernanza. El `role` sale de la tabla
+> `Employee`, que **es** la whitelist (§5.3.2) y se administra desde `/employees` — ya
+> implementado. El `userType` se revalida contra ella en cada mensaje.
 
 ---
 
@@ -50,14 +67,51 @@ Devuelve los datos del usuario logueado.
 
 ## Módulo Empleados — `/employees`
 
-### ✅ `GET /employees` (JWT + SUPERVISOR)
-Lista la whitelist de empleados con sus sectores.
+**Esta es la pantalla de gestión de usuarios Y la administración de la whitelist**: son la
+misma cosa. Dar de alta un empleado con su teléfono habilita ese número para que el bot lo
+trate como interno (`userType=EMPLEADO` → conocimiento INTERNO + los 5 agentes).
 
-### ✅ `POST /employees`, `PUT /employees/:id`, `DELETE /employees/:id` (JWT + SUPERVISOR)
-CRUD de empleados.
+### ✅ `GET /employees` (JWT + SUPERVISOR)
+Lista los empleados con su sector. Devuelve activos e inactivos; el hash de la contraseña
+nunca se incluye.
+```json
+[ {
+  "id": "uuid", "phone": "5493865505362", "email": "roberto.sosa@credimision.com",
+  "name": "Roberto Sosa", "role": "EMPLEADO", "isActive": true, "isController": false,
+  "sectorId": "uuid", "sector": { "id": "uuid", "name": "Cobranzas" }
+} ]
+```
+
+### ✅ `POST /employees` (JWT + SUPERVISOR)
+```jsonc
+{
+  "phone": "0381 15 4123456",        // se normaliza a 5493814123456
+  "email": "nuevo@credimision.com",
+  "name": "Nombre Apellido",
+  "password": "min 8 caracteres",
+  "role": "EMPLEADO",                 // opcional, default EMPLEADO
+  "sectorId": "uuid",
+  "isController": false               // opcional; habilita verificación de impacto
+}
+```
+El teléfono se acepta en cualquier formato (`+54 9 …`, `0381 15 …`, con guiones) y se guarda
+canónico: `549` + 10 dígitos. Ver `CONTEXTO_TECNICO.md` §5.3.2.
+
+Errores de validación devuelven 400 con el detalle campo por campo:
+```json
+{ "message": ["email must be an email", "sectorId must be a UUID"],
+  "error": "Bad Request", "statusCode": 400 }
+```
+
+### ✅ `PUT /employees/:id` (JWT + SUPERVISOR)
+Mismos campos, todos opcionales, más `isActive` para **reactivar** a alguien dado de baja.
+
+### ✅ `DELETE /employees/:id` (JWT + SUPERVISOR)
+**Soft delete**: setea `isActive: false`, no borra la fila (se preserva la auditoría de lo
+que esa persona hizo). El empleado deja de estar en la whitelist en el mensaje siguiente.
 
 ### ✅ `GET /employees/sectors` (JWT + SUPERVISOR)
-Lista los sectores disponibles.
+Lista los sectores disponibles, para el combo del formulario.
 
 ---
 
@@ -238,6 +292,167 @@ Buscar en el RAG (útil para previsualizar qué recupera un documento).
 
 ---
 
+## Módulo Panel de Cobranzas — `/collections` ✅ (Sprint 4)
+
+### ✅ `GET /collections/proofs` (JWT)
+Cola de comprobantes pendientes de revisión. El cobrador ve solo los suyos;
+el Cobrador Controlador (`isController: true`) ve todos.
+```json
+[ {
+  "id": "uuid", "status": "PENDING_REVIEW",
+  "extractedAmount": 15000, "extractedDate": "2026-08-05", "extractedBank": "Banco XYZ",
+  "acceptedById": null, "acceptedAt": null,
+  "quota": { "id": "uuid", "client": { "id": "uuid", "name": "...", "phone": "..." } },
+  "message": { "id": "uuid", "conversationId": "uuid" }
+} ]
+```
+
+### ✅ `GET /collections/proofs/:id/image` (JWT)
+Descarga la imagen del comprobante (binario JPEG/PNG).
+
+### ✅ `POST /collections/proofs/:id/accept` (JWT)
+El cobrador acepta el comprobante. La cuota pasa a `AWAITING_CONFIRMATION` y
+el cliente recibe confirmación automática.
+```json
+// response: PaymentProof actualizado con status: "ACCEPTED", acceptedAt, acceptedById
+```
+
+### ✅ `POST /collections/proofs/:id/reject` (JWT)
+Rechaza con un motivo predefinido.
+```json
+{ "reason": "PAST_DATE" | "WRONG_CBU" | "AMOUNT_TOO_LOW" }
+// response: PaymentProof con status: "REJECTED", rejectionReason
+// → cliente recibe mensaje explicando el problema
+```
+
+### ✅ `POST /collections/proofs/:id/manual-handling` (JWT)
+Pausa la IA para manejo directo del cobrador (sin enviar mensaje automático al cliente).
+```json
+{ "note": "Cliente prefiere hablar por teléfono." }
+// → takeover automático de la conversación + InternalNote
+```
+
+### ✅ `GET /collections/proofs/accepted` (JWT + isController=true)
+Lista de comprobantes aceptados pendientes de verificación de impacto bancario.
+Solo el Cobrador Controlador accede (`403` sin el flag).
+```json
+[ {
+  "id": "uuid", "status": "ACCEPTED", "acceptedAt": "2026-08-05T...",
+  "acceptedById": "uuid", "impactStatus": "PENDING",
+  "quota": { "client": { "name": "...", "phone": "..." } }
+} ]
+```
+
+### ✅ `POST /collections/proofs/:id/verify-impact` (JWT + isController=true)
+El Cobrador Controlador verifica si el pago impactó en la cuenta bancaria.
+```json
+{ "impactStatus": "CONFIRMED" | "MISSING", "observation": "..." }
+// CONFIRMED → cliente recibe confirmación, Quota pasa a PAID
+// MISSING → cobrador responsable recibe notificación del problema
+```
+
+### ✅ `GET /collections/kpis` (JWT)
+KPIs del panel del cobrador.
+```json
+{
+  "clientsWithPendingQuotas": 3,
+  "proofsToReview": 1,
+  "confirmedThisWeek": 5
+}
+```
+
+### ✅ `GET /collections/clients` (JWT)
+Lista de mis clientes (solo los asignados al cobrador logueado, o todos si `isController: true`).
+```json
+[ {
+  "id": "uuid", "name": "...", "phone": "...", "dni": "...",
+  "quotas": [ { "id": "uuid", "status": "PENDING", "dueDate": "2026-08-10", "amount": 15000 } ]
+} ]
+```
+
+### ✅ `GET /collections/clients/:id/history` (JWT)
+Timeline unificada de un cliente (mensajes, comprobantes, notas internas).
+```json
+[ {
+  "type": "message" | "internal_note" | "event",
+  "id": "uuid", "createdAt": "2026-08-05T...",
+  "content": "...", "author": "..."
+} ]
+```
+- `type: "message"` → usuario o asistente
+- `type: "internal_note"` → nota privada del cobrador
+- `type: "event"` → eventos de sistema (comprobante recibido, cuota marcada manual, etc.)
+
+### ✅ `POST /collections/quotas/:id/manual` (JWT)
+Marca una cuota como gestionada manualmente (detiene recordatorios automáticos).
+```json
+{ "note": "Cliente arregló por teléfono." }
+// response: Quota con status: "MANUAL"
+```
+
+### ✅ `GET /collections/reminder-config` (JWT + SUPERVISOR)
+Configuración vigente de recordatorios automáticos.
+```json
+{ "daysBefore": [7, 3, 0], "maxAttempts": 3, "templateName": "quota_reminder", "templateApproved": true }
+```
+
+### ✅ `PUT /collections/reminder-config` (JWT + SUPERVISOR)
+Actualiza la configuración (solo SUPERVISOR).
+```json
+{ "daysBefore": [7, 3, 0], "maxAttempts": 3 }
+```
+
+### ✅ `GET /collections/collectors` (JWT)
+Lista de empleados activos del sector Cobranzas: `[{ id, name, isController }]`.
+Incluye a los que todavía no tienen ningún cliente asignado — usar esto para
+el selector de "asignar cobrador" en vez de derivarlo de
+`clients[].assignedCollector`.
+
+### ✅ `POST /collections/clients/:id/assign-collector` (JWT + isController=true)
+Asigna cobrador responsable a un cliente que no tenía. 403 si no es Controlador.
+```json
+{ "collectorId": "uuid" }
+```
+
+### ✅ `POST /collections/clients/:id/escalate` (JWT)
+Deriva el caso del cliente a una persona (reusa el escalado de Sprint 3).
+
+### ✅ `POST /collections/quotas/:id/request-proof` (JWT)
+Le pide al cliente el comprobante de una cuota.
+
+### ✅ `GET /collections/activity` (JWT)
+Registro de actividad transversal (no por cliente).
+Query: `collectorId`, `type`, `from`, `to`, `page`, `limit`.
+Un cobrador común solo ve los eventos de sus propios clientes y el
+`collectorId` que mande se **ignora**; el Controlador ve todos o filtra por uno.
+
+---
+
+## Módulo Ventas — `/sales` ✅ (Sprint 4)
+
+### ✅ `POST /sales/clients` (JWT + sector Ventas)
+Alta de cliente con su plan de cuotas al cerrar la venta. Se restringe por
+**sector**, no por rol: 403 desde cualquier sector que no sea Ventas.
+```json
+{
+  "name": "Juan Pérez",
+  "phone": "3865505362",
+  "dni": "30111222",
+  "assignedCollectorId": "uuid (opcional)",
+  "quotas": [
+    { "amount": 42000, "dueDate": "2026-09-10" },
+    { "amount": 42000, "dueDate": "2026-10-10" }
+  ]
+}
+// response: Client con sus quotas + recoveredProofs: number
+```
+- 409 si el teléfono ya pertenece a un cliente.
+- Sin `assignedCollectorId`, el cliente queda en la cola del Cobrador Controlador.
+- `recoveredProofs` = comprobantes que habían llegado antes de que el cliente
+  existiera y quedaron imputados en este alta.
+
+---
+
 ## Módulo Chat (web) — `/messaging/web/*` 🔴 (propuesto)
 
 Hoy solo existe el webhook de n8n (`POST /messaging/webhook`, entrada de WhatsApp). Para el
@@ -258,6 +473,44 @@ chat web del empleado hace falta un par de endpoints nuevos que reusen el mismo 
 
 Todavía no tienen backend. Contrato a definir cuando se diseñen (RF-11 entrevistas, RF-05
 capacitación). La compañera puede maquetar la UI con datos mock por ahora.
+
+---
+
+## Herramientas de desarrollo — `/dev` ⚠️ (solo en dev)
+
+Bloqueadas por `DevOnlyGuard`: no existen fuera de desarrollo.
+
+### ✅ `POST /dev/client-fixtures`
+
+Deja al cliente de prueba en una situación concreta para poder repetir un flujo de
+WhatsApp desde cero.
+
+En desarrollo cada número cargado en Meta tiene una identidad **fija**: `DEV_CLIENT_PHONE`
+es siempre el cliente y `DEV_COLLECTOR_PHONE` siempre el cobrador (el seed se lo asigna a
+Roberto Sosa para que reciba las notificaciones de cobranza). El resto de los empleados
+entra por el portal web. Por eso el endpoint no tiene un eje de "rol": sólo la situación.
+
+```jsonc
+// Limpiar y armar el escenario de cobranza de nuevo
+{ "phone": "5493865505362", "fixtures": ["RESET", "CUOTA_POR_VENCER"] }
+
+// Cliente sin deuda (para probar el flujo de Ventas)
+{ "phone": "5493865505362", "fixtures": ["SIN_DEUDA"] }
+
+// → { "phone": "...", "clientId": "uuid", "fixtures": ["RESET", "CUOTA_POR_VENCER"] }
+```
+
+| Fixture | Qué hace |
+|---|---|
+| `RESET` | Borra los comprobantes de prueba y devuelve las cuotas a `PENDING`. **No borra cuotas** (pueden pertenecer a una `Financing`) |
+| `SIN_DEUDA` | Salda todas las cuotas (`PAID`) |
+| `CUOTA_POR_VENCER` | Cuota `PENDING` a 3 días |
+| `CUOTA_VENCIDA` | Cuota `OVERDUE` de hace 10 días |
+
+Se aplican en orden, así que `["RESET", "CUOTA_POR_VENCER"]` limpia y después arma. Son
+idempotentes: llamarlo dos veces reajusta la cuota existente en vez de acumular. Siempre
+se asegura que el `Client` exista (es lo que enlaza `Conversation.clientId`) y se resetea
+el agente sticky de las conversaciones abiertas.
 
 ---
 

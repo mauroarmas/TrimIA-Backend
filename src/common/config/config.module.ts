@@ -23,13 +23,19 @@ import * as Joi from 'joi';
         REDIS_PORT: Joi.number().default(6379),
 
         GOOGLE_API_KEY: Joi.string().required(),
-        GEMINI_MODEL: Joi.string().default('gemini-3.1-flash-lite'),
+        GEMINI_MODEL: Joi.string().default('gemini-3.5-flash-lite'),
         EMBEDDING_MODEL: Joi.string().default('gemini-embedding-001'),
 
         CHROMA_URL: Joi.string().uri().required(),
 
-        N8N_WEBHOOK_SECRET: Joi.string().required(),
+        N8N_WEBHOOK_SECRET: Joi.string().min(32).required(),
         N8N_BASE_URL: Joi.string().uri().required(),
+        // Secreto propio para /knowledge (ingesta + búsqueda, incluye
+        // INTERNO): antes compartía N8N_WEBHOOK_SECRET con el webhook de
+        // WhatsApp. Si ese secreto se filtra (ej. queda en un log o en un
+        // export de n8n), no debería alcanzar también para volcar todo el
+        // conocimiento confidencial — son superficies de riesgo distintas.
+        KNOWLEDGE_ADMIN_SECRET: Joi.string().min(32).required(),
 
         RAG_CONFIDENCE_THRESHOLD: Joi.number().min(0).max(1).default(0.65),
 

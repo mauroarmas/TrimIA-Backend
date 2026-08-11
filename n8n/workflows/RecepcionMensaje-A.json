@@ -3,7 +3,7 @@
   "nodes": [
     {
       "parameters": {
-        "jsCode": "const body = $input.first().json.body;\n\n// Formato directo (Postman/WEB): { phone, message }\nif (body?.phone && body?.message) {\n  return [{ json: { phone: body.phone, message: body.message, channel: 'WEB' } }];\n}\n\n// Formato real de WhatsApp Business API\nconst message = body?.entry?.[0]?.changes?.[0]?.value?.messages?.[0];\nif (!message || message.type !== 'text') return [];\n\nreturn [{ json: { phone: message.from, message: message.text.body, channel: 'WHATSAPP' } }];\n"
+        "jsCode": "const body = $input.first().json.body;\n\n// Formato directo (Postman/WEB): { phone, message }\nif (body?.phone && body?.message) {\n  return [{ json: { phone: body.phone, message: body.message, channel: 'WEB', isImage: 'false' } }];\n}\n\n// Formato real de WhatsApp Business API\nconst message = body?.entry?.[0]?.changes?.[0]?.value?.messages?.[0];\nif (!message) return [];\n\nif (message.type === 'text') {\n  return [{ json: { phone: message.from, message: message.text.body, channel: 'WHATSAPP', isImage: 'false' } }];\n}\n\n// Comprobante de pago (Sprint 4): acá solo extraemos el mediaId/mimeType.\n// La resolución+descarga contra la Graph API de Meta la hacen los nodos\n// HTTP Request de abajo — el Code Node de n8n (Task Runner) NO soporta\n// this.helpers.httpRequestWithAuthentication (confirmado en vivo, n8n 2.30.7).\nif (message.type === 'image') {\n  return [{\n    json: {\n      phone: message.from,\n      message: message.image.caption ?? '',\n      channel: 'WHATSAPP',\n      isImage: 'true',\n      mediaId: message.image.id,\n      mimeType: message.image.mime_type,\n    },\n  }];\n}\n\n// Otros tipos (audio, video, documento, sticker...) quedan fuera de alcance.\nreturn [];\n"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -13,6 +13,105 @@
       ],
       "id": "dffa3345-d84b-4371-97da-caacd1ce7b8a",
       "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "d1a2b3c4-1111-4a2b-8c3d-4e5f6a7b8c9d",
+              "leftValue": "={{ $json.isImage }}",
+              "rightValue": "true",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.3,
+      "position": [
+        448,
+        0
+      ],
+      "id": "e1f2a3b4-2222-4c5d-9e6f-7a8b9c0d1e2f",
+      "name": "Es imagen?"
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "=https://graph.facebook.com/v22.0/{{ $json.mediaId }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        672,
+        -112
+      ],
+      "id": "f2a3b4c5-3333-4d6e-af70-8b9c0d1e2f3a",
+      "name": "Obtener info del media",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "BrSBTQKJ0cgPgcUG",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{ $json.url }}",
+        "authentication": "genericCredentialType",
+        "genericAuthType": "httpHeaderAuth",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file"
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        896,
+        -112
+      ],
+      "id": "a3b4c5d6-4444-4e7f-b081-9c0d1e2f3a4b",
+      "name": "Descargar media",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "BrSBTQKJ0cgPgcUG",
+          "name": "Header Auth account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// getBinaryDataBuffer resuelve el binario sin importar el modo de\n// almacenamiento de n8n (memoria/filesystem/S3) — leer item.binary.data.data\n// directo solo funciona en modo memoria y en modo filesystem devuelve el ID\n// de referencia interno, no el contenido (bug encontrado en prueba real).\nconst binaryDataBuffer = await this.helpers.getBinaryDataBuffer(0, 'data');\nconst mediaBase64 = binaryDataBuffer.toString('base64');\nconst original = $('Code in JavaScript').item.json;\n\nreturn [{\n  json: {\n    phone: original.phone,\n    message: original.message,\n    channel: original.channel,\n    mediaBase64,\n    mimeType: original.mimeType,\n  },\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        -112
+      ],
+      "id": "b4c5d6e7-5555-4f80-9192-0d1e2f3a4b5c",
+      "name": "Armar payload final"
     },
     {
       "parameters": {
@@ -45,6 +144,14 @@
             {
               "name": "channel",
               "value": "={{ $json.channel }}"
+            },
+            {
+              "name": "mediaBase64",
+              "value": "={{ $json.mediaBase64 }}"
+            },
+            {
+              "name": "mimeType",
+              "value": "={{ $json.mimeType }}"
             }
           ]
         },
@@ -53,8 +160,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.4,
       "position": [
-        448,
-        0
+        1120,
+        112
       ],
       "id": "194322d9-394a-4515-b3d9-308269e4a231",
       "name": "HTTP Request"
@@ -69,7 +176,7 @@
       "typeVersion": 1.5,
       "position": [
         224,
-        224
+        336
       ],
       "id": "f673d385-7540-4c46-aa21-81b557ad9564",
       "name": "Respond to Webhook"
@@ -100,7 +207,7 @@
       "typeVersion": 2.1,
       "position": [
         0,
-        224
+        336
       ],
       "id": "29eef725-b5b2-4ec0-a747-b7259d4f546e",
       "name": "Verificación META",
@@ -110,6 +217,57 @@
   "pinData": {},
   "connections": {
     "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Es imagen?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Es imagen?": {
+      "main": [
+        [
+          {
+            "node": "Obtener info del media",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Obtener info del media": {
+      "main": [
+        [
+          {
+            "node": "Descargar media",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Descargar media": {
+      "main": [
+        [
+          {
+            "node": "Armar payload final",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Armar payload final": {
       "main": [
         [
           {

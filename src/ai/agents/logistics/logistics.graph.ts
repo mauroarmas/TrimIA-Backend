@@ -17,7 +17,7 @@ export function buildLogisticsGraph(deps: AgentGraphDeps) {
       agentType: 'LOGISTICS',
       prompt: LOGISTICS_PROMPT,
       escalationMessage:
-        'No tengo esa información en la base de conocimiento. Te sugiero consultar con el área de logística. 🚚',
+        'Eso no lo tengo a mano. Consultalo con el área de logística. 🚚',
     },
     deps,
   );

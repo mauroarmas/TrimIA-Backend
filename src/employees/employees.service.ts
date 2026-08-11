@@ -1,26 +1,10 @@
 import { Injectable, NotFoundException, ConflictException, Logger } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { AuthService } from '../auth/auth.service';
-import { EmployeeRole } from '@prisma/client';
+import { analyzePhone, normalizePhone } from '../common/phone';
+import { CreateEmployeeDto, UpdateEmployeeDto } from './dto/employee.dto';
 
-export interface CreateEmployeeDto {
-  phone: string;
-  email: string;
-  name: string;
-  password: string;
-  role?: EmployeeRole;
-  sectorId: string;
-}
-
-export interface UpdateEmployeeDto {
-  phone?: string;
-  email?: string;
-  name?: string;
-  password?: string;
-  role?: EmployeeRole;
-  sectorId?: string;
-  isActive?: boolean;
-}
+export { CreateEmployeeDto, UpdateEmployeeDto };
 
 @Injectable()
 export class EmployeesService {
@@ -32,16 +16,20 @@ export class EmployeesService {
   ) {}
 
   async create(dto: CreateEmployeeDto, createdBy: string) {
+    // El DTO ya normaliza, pero create() también se llama desde código
+    // interno (seed, dev-tools) que no pasa por el ValidationPipe.
+    const phone = normalizePhone(dto.phone);
+
     // Verificar que no exista un empleado con el mismo teléfono o email
     const existing = await this.prisma.employee.findFirst({
       where: {
-        OR: [{ phone: dto.phone }, { email: dto.email }],
+        OR: [{ phone }, { email: dto.email }],
       },
     });
 
     if (existing) {
       throw new ConflictException(
-        existing.phone === dto.phone
+        existing.phone === phone
           ? 'Ya existe un empleado con ese teléfono'
           : 'Ya existe un empleado con ese email',
       );
@@ -51,12 +39,13 @@ export class EmployeesService {
 
     const employee = await this.prisma.employee.create({
       data: {
-        phone: dto.phone,
+        phone,
         email: dto.email,
         name: dto.name,
         password: hashedPassword,
         role: dto.role ?? 'EMPLEADO',
         sectorId: dto.sectorId,
+        isController: dto.isController ?? false,
       },
       include: { sector: true },
     });
@@ -94,12 +83,25 @@ export class EmployeesService {
   }
 
   /**
-   * Busca un empleado por teléfono. Usado por MessageProcessor para
-   * determinar userType (EMPLEADO vs CLIENTE).
+   * Busca un empleado por teléfono — ESTA es la whitelist que consulta el
+   * MessageProcessor para decidir el userType.
+   *
+   * El número se normaliza antes de buscar: si el guardado y el que manda
+   * Meta difieren en el formato (el `549` vs `54` que ya nos mordió), el
+   * findUnique no encuentra nada y el empleado queda tratado como cliente,
+   * con conocimiento PUBLICO y sin los 5 agentes. Lo peor es que falla sin
+   * ruido, así que además se avisa cuando el número entrante era raro.
    */
   async findByPhone(phone: string) {
+    const analyzed = analyzePhone(phone);
+    if (!analyzed.canonical) {
+      this.logger.warn(
+        `Teléfono no canónico en la búsqueda de whitelist ("${phone}"): ${analyzed.reason}`,
+      );
+    }
+
     return this.prisma.employee.findUnique({
-      where: { phone },
+      where: { phone: analyzed.phone },
       select: {
         id: true,
         role: true,
@@ -116,7 +118,18 @@ export class EmployeesService {
       throw new NotFoundException('Empleado no encontrado');
     }
 
-    const data: any = { ...dto };
+    // Lista explícita: `{ ...dto }` dejaba pasar cualquier campo del body
+    // directo al `data` de Prisma. Con los DTOs como clases el
+    // ValidationPipe ya filtra, pero update() también se llama desde código
+    // interno (dev-tools) que no pasa por el pipe.
+    const data: Record<string, unknown> = {};
+    if (dto.phone !== undefined) data.phone = normalizePhone(dto.phone);
+    if (dto.email !== undefined) data.email = dto.email;
+    if (dto.name !== undefined) data.name = dto.name;
+    if (dto.role !== undefined) data.role = dto.role;
+    if (dto.sectorId !== undefined) data.sectorId = dto.sectorId;
+    if (dto.isActive !== undefined) data.isActive = dto.isActive;
+    if (dto.isController !== undefined) data.isController = dto.isController;
     if (dto.password) {
       data.password = await this.authService.hashPassword(dto.password);
     }

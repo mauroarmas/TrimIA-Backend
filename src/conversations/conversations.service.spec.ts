@@ -10,8 +10,13 @@ import { OrchestrationLogger } from '../ai/orchestrator/orchestration-logger.ser
 describe('ConversationsService — takeover/release/replyManually', () => {
   let service: ConversationsService;
   let prisma: {
-    conversation: { findUnique: jest.Mock; update: jest.Mock };
-    message: { create: jest.Mock };
+    conversation: {
+      findUnique: jest.Mock;
+      findFirst: jest.Mock;
+      create: jest.Mock;
+      update: jest.Mock;
+    };
+    message: { create: jest.Mock; findMany: jest.Mock };
     internalNote: { create: jest.Mock; findMany: jest.Mock };
   };
   let sender: { send: jest.Mock };
@@ -19,8 +24,13 @@ describe('ConversationsService — takeover/release/replyManually', () => {
 
   beforeEach(() => {
     prisma = {
-      conversation: { findUnique: jest.fn(), update: jest.fn() },
-      message: { create: jest.fn() },
+      conversation: {
+        findUnique: jest.fn(),
+        findFirst: jest.fn(),
+        create: jest.fn(),
+        update: jest.fn(),
+      },
+      message: { create: jest.fn(), findMany: jest.fn().mockResolvedValue([]) },
       internalNote: { create: jest.fn(), findMany: jest.fn() },
     };
     sender = { send: jest.fn() };
@@ -31,6 +41,119 @@ describe('ConversationsService — takeover/release/replyManually', () => {
       sender as unknown as WhatsappSenderService,
       logger as unknown as OrchestrationLogger,
     );
+  });
+
+  // FK Conversation → Client: el vínculo con el cliente deja de resolverse
+  // cruzando `externalId == phone` en cada consulta.
+  describe('getOrCreate — vínculo con Client', () => {
+    it('crea la conversación con el clientId recibido', async () => {
+      prisma.conversation.findFirst.mockResolvedValue(null);
+      prisma.conversation.create.mockResolvedValue({ id: 'conv-1' });
+
+      await service.getOrCreate('549123', 'WHATSAPP', 'client-1');
+
+      expect(prisma.conversation.create).toHaveBeenCalledWith({
+        data: { externalId: '549123', channel: 'WHATSAPP', clientId: 'client-1' },
+      });
+    });
+
+    it('retro-completa el clientId de una conversación abierta que no lo tenía', async () => {
+      prisma.conversation.findFirst.mockResolvedValue({
+        id: 'conv-1',
+        clientId: null,
+      });
+      prisma.conversation.update.mockResolvedValue({
+        id: 'conv-1',
+        clientId: 'client-1',
+      });
+
+      const result = await service.getOrCreate('549123', 'WHATSAPP', 'client-1');
+
+      expect(prisma.conversation.update).toHaveBeenCalledWith({
+        where: { id: 'conv-1' },
+        data: { clientId: 'client-1' },
+      });
+      expect(result.clientId).toBe('client-1');
+    });
+
+    it('no reasigna el cliente si la conversación ya tiene uno', async () => {
+      prisma.conversation.findFirst.mockResolvedValue({
+        id: 'conv-1',
+        clientId: 'client-original',
+      });
+
+      const result = await service.getOrCreate('549123', 'WHATSAPP', 'client-otro');
+
+      expect(prisma.conversation.update).not.toHaveBeenCalled();
+      expect(result.clientId).toBe('client-original');
+    });
+
+    it('sin clientId (contacto desconocido) crea la conversación igual', async () => {
+      prisma.conversation.findFirst.mockResolvedValue(null);
+      prisma.conversation.create.mockResolvedValue({ id: 'conv-1' });
+
+      await service.getOrCreate('549999', 'WHATSAPP', undefined);
+
+      expect(prisma.conversation.create).toHaveBeenCalledWith({
+        data: { externalId: '549999', channel: 'WHATSAPP', clientId: undefined },
+      });
+    });
+  });
+
+  /**
+   * El mensaje del cliente se persiste ANTES de encolar el job, así que sin
+   * excluirlo el agente lo recibía dos veces: en el historial y en la
+   * consulta.
+   */
+  describe('getRecentHistory — mensaje actual', () => {
+    it('excluye el mensaje que se está procesando', async () => {
+      await service.getRecentHistory('conv-1', 6, 'msg-actual');
+
+      expect(prisma.message.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({ id: { not: 'msg-actual' } }),
+        }),
+      );
+    });
+
+    it('sin excludeMessageId no agrega ningún filtro por id', async () => {
+      await service.getRecentHistory('conv-1');
+
+      const { where } = prisma.message.findMany.mock.calls[0][0];
+      expect(where).not.toHaveProperty('id');
+    });
+
+    it('devuelve los turnos del más antiguo al más reciente', async () => {
+      prisma.message.findMany.mockResolvedValue([
+        { role: 'ASSISTANT', content: 'nuevo' },
+        { role: 'USER', content: 'viejo' },
+      ]);
+
+      const history = await service.getRecentHistory('conv-1');
+
+      expect(history.map((t) => t.content)).toEqual(['viejo', 'nuevo']);
+    });
+  });
+
+  // Las notas de agente y las humanas conviven en la misma tabla (aparecen
+  // juntas en el timeline del panel), distinguidas por authorAgentType.
+  describe('addAgentNote', () => {
+    it('guarda la nota con authorAgentType y sin authorId', async () => {
+      prisma.internalNote.create.mockResolvedValue({ id: 'note-1' });
+
+      await service.addAgentNote('conv-1', 'SALES', 'Resumen del caso');
+
+      expect(prisma.internalNote.create).toHaveBeenCalledWith({
+        data: {
+          conversationId: 'conv-1',
+          authorAgentType: 'SALES',
+          content: 'Resumen del caso',
+        },
+      });
+      expect(logger.logEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ eventType: 'internal_note_added' }),
+      );
+    });
   });
 
   describe('takeover', () => {
@@ -150,6 +273,47 @@ describe('ConversationsService — takeover/release/replyManually', () => {
       await expect(service.release('conv-1', 'emp-1')).rejects.toThrow(
         ConflictException,
       );
+    });
+
+    // Bug real: un EMPLEADO toma una conversación vía markManualHandling
+    // ("voy a manejarlo yo", Sprint 4), que no exige SUPERVISOR. Sin este
+    // bypass, esa conversación queda en HUMAN_HANDLING para siempre — el
+    // endpoint de liberación es SUPERVISOR-only, y un supervisor distinto al
+    // que la tomó era rechazado por no coincidir el handledById.
+    it('con asSupervisor=true, libera aunque quien la tomó sea otra persona', async () => {
+      prisma.conversation.findUnique.mockResolvedValue({
+        id: 'conv-1',
+        status: 'HUMAN_HANDLING',
+        handledById: 'empleado-que-la-tomo',
+      });
+      prisma.conversation.update.mockResolvedValue({
+        id: 'conv-1',
+        status: 'ACTIVE',
+        handledById: null,
+      });
+
+      const result = await service.release('conv-1', 'supervisor-1', true);
+
+      expect(prisma.conversation.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'conv-1' },
+          data: expect.objectContaining({ status: 'ACTIVE', handledById: null }),
+        }),
+      );
+      expect(result.status).toBe('ACTIVE');
+    });
+
+    it('sin asSupervisor, sigue rechazando a quien no la tomó (default seguro)', async () => {
+      prisma.conversation.findUnique.mockResolvedValue({
+        id: 'conv-1',
+        status: 'HUMAN_HANDLING',
+        handledById: 'empleado-que-la-tomo',
+      });
+
+      await expect(
+        service.release('conv-1', 'otro-empleado'),
+      ).rejects.toThrow(ForbiddenException);
+      expect(prisma.conversation.update).not.toHaveBeenCalled();
     });
   });
 

@@ -200,7 +200,16 @@ describe('EscalationsService', () => {
       expect(prisma.escalation.update).not.toHaveBeenCalled();
     });
 
-    it('con teachAgent: true, ingesta la respuesta al RAG con la audiencia derivada del userType', async () => {
+    /**
+     * Fix de seguridad (2026-08-11): antes, con teachAgent: true, la
+     * audiencia se INFERÍA del userType de la conversación (CLIENTE →
+     * PUBLICO automático). Un supervisor podía tipear un matiz interno para
+     * un caso puntual y terminar publicándolo, sin haberlo decidido, como
+     * respuesta servida a cualquier cliente futuro. Ahora el default es
+     * INTERNO pase lo que pase con la conversación — publicar requiere
+     * audience: PUBLICO explícito.
+     */
+    it('con teachAgent: true y sin audience explícita, ingesta como INTERNO aunque la conversación sea con un CLIENTE', async () => {
       prisma.escalation.findUnique.mockResolvedValue(pending);
       prisma.escalation.update.mockResolvedValue({
         ...pending,
@@ -213,13 +222,35 @@ describe('EscalationsService', () => {
         'employee-1',
       );
 
-      // conversation.userType = 'CLIENTE' → audiencia PUBLICO.
+      // conversation.userType = 'CLIENTE', pero el default ya no se infiere.
       expect(knowledge.ingest).toHaveBeenCalledWith(
         expect.objectContaining({
           content: 'Sí, la tenemos en 12 cuotas.',
-          audience: 'PUBLICO',
+          audience: 'INTERNO',
           agentType: conversation.currentAgent,
         }),
+      );
+    });
+
+    it('con teachAgent: true y audience: PUBLICO explícita, respeta lo que pidió el supervisor', async () => {
+      prisma.escalation.findUnique.mockResolvedValue(pending);
+      prisma.escalation.update.mockResolvedValue({
+        ...pending,
+        status: 'RESOLVED',
+      });
+
+      await service.resolve(
+        'esc-1',
+        {
+          message: 'Sí, la tenemos en 12 cuotas.',
+          teachAgent: true,
+          audience: 'PUBLICO',
+        },
+        'employee-1',
+      );
+
+      expect(knowledge.ingest).toHaveBeenCalledWith(
+        expect.objectContaining({ audience: 'PUBLICO' }),
       );
     });
 

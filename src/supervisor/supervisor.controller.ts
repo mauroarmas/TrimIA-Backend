@@ -2,7 +2,6 @@ import {
   Body,
   Controller,
   Get,
-  Header,
   NotFoundException,
   Param,
   Post,
@@ -15,7 +14,6 @@ import { AgentType, Channel, ConvStatus, UserType } from '@prisma/client';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard, Roles } from '../auth/guards/roles.guard';
 import { SupervisorService } from './supervisor.service';
-import { DASHBOARD_HTML } from './supervisor-dashboard.html';
 import { EscalationsService } from '../escalations/escalations.service';
 import { ConversationsService } from '../conversations/conversations.service';
 import { ResolveEscalationDto } from '../escalations/dto/resolve-escalation.dto';
@@ -28,9 +26,12 @@ import { CreateInternalNoteDto } from '../conversations/dto/create-internal-note
  *
  * - GET /supervisor/conversations → lista paginada de conversaciones (RF13, OE-11)
  * - GET /supervisor/metrics       → métricas agregadas en JSON
- * - GET /supervisor               → la página HTML del dashboard (dev)
  *
- * Todos los endpoints de datos exigen JWT + rol SUPERVISOR.
+ * Todos los endpoints exigen JWT + rol SUPERVISOR, salvo /release (ver el
+ * comentario en el propio endpoint). El dashboard HTML de desarrollo que
+ * vivía acá (GET /supervisor) se borró: nunca autenticaba su propio fetch a
+ * /metrics (exigía Bearer JWT, el fetch no lo mandaba) y ya hay un frontend
+ * de pruebas para el Panel del Supervisor (repo trimIA-frontend).
  */
 @ApiTags('supervisor')
 @Controller('supervisor')
@@ -138,13 +139,27 @@ export class SupervisorController {
     return this.conversations.takeover(id, req.user.id);
   }
 
-  /** POST /supervisor/conversations/:id/release — devuelve el control. */
+  /**
+   * POST /supervisor/conversations/:id/release — devuelve el control.
+   *
+   * Abierto también a EMPLEADO (no solo SUPERVISOR): un cobrador que tomó
+   * la conversación vía markManualHandling (Sprint 4) no tenía ninguna ruta
+   * legítima para soltarla — quedaba en HUMAN_HANDLING para siempre, porque
+   * este endpoint exigía SUPERVISOR. El service ya sabía resolver esto
+   * (asSupervisor=false valida que sea el mismo empleado que la tomó); solo
+   * faltaba exponerlo. Un SUPERVISOR sigue pudiendo destrabar cualquier
+   * conversación, aunque la haya tomado otro empleado.
+   */
   @Post('conversations/:id/release')
   @UseGuards(JwtAuthGuard, RolesGuard)
-  @Roles('SUPERVISOR')
+  @Roles('SUPERVISOR', 'EMPLEADO')
   @ApiOperation({ summary: 'Devuelve el control manual de una conversación' })
   releaseConversation(@Param('id') id: string, @Req() req: any) {
-    return this.conversations.release(id, req.user.id);
+    return this.conversations.release(
+      id,
+      req.user.id,
+      req.user.role === 'SUPERVISOR',
+    );
   }
 
   /** POST /supervisor/conversations/:id/reply — mensaje manual durante el control. */
@@ -246,12 +261,5 @@ export class SupervisorController {
   @ApiOperation({ summary: 'Métricas agregadas para el Panel del Supervisor' })
   getMetrics() {
     return this.supervisor.getMetrics();
-  }
-
-  @Get()
-  @Header('Content-Type', 'text/html; charset=utf-8')
-  @ApiOperation({ summary: 'Página HTML del Panel del Supervisor (dev)' })
-  dashboard(): string {
-    return DASHBOARD_HTML;
   }
 }
