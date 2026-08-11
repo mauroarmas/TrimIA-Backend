@@ -109,17 +109,30 @@ export function buildRagAgentGraph(
       includeRaw: true,
     });
 
+    // El contexto recuperado y el mensaje del cliente van en mensajes
+    // SEPARADOS, no concatenados en un mismo string. Antes compartían un
+    // HumanMessage con etiquetas de texto ("Información disponible:" /
+    // "Consulta del usuario:") como único separador — el cliente podía
+    // escribir esas mismas etiquetas en su mensaje y forjar su propio
+    // "contexto" (ej. un precio inventado que el agente terminaba
+    // repitiéndole como si fuera de la base de conocimiento). Al vivir en
+    // canales de rol distintos (system vs. human), el mensaje del cliente
+    // llega SIEMPRE como texto de usuario, nunca como una sección de
+    // contexto adicional — ver también la regla en STYLE_RULES.
     const result = await structured.invoke([
-      new SystemMessage(`${prompt}\n${STYLE_RULES}\n${HANDOFF_INSTRUCTIONS}`),
-      ...historyMessages,
-      // "Información disponible" y no "contexto de la base de conocimiento":
-      // el modelo copiaba esa etiqueta y se la repetía al cliente ("no lo
-      // tenemos en nuestra base de conocimiento actual").
-      new HumanMessage(
-        `Información disponible:\n${state.context || '(no hay información sobre esto)'}\n\n` +
-          `Consulta del usuario: ${state.message}`,
+      new SystemMessage(
+        `${prompt}\n${STYLE_RULES}\n${HANDOFF_INSTRUCTIONS}\n\n` +
+          `Información disponible:\n${state.context || '(no hay información sobre esto)'}`,
       ),
+      ...historyMessages,
+      new HumanMessage(state.message),
     ]);
+
+    if (!result.parsed) {
+      throw new Error(
+        `${tag} generate_response: Gemini no devolvió salida estructurada válida para "${state.message}"`,
+      );
+    }
 
     const parsed = result.parsed;
     const usage = (result.raw as AIMessage).usage_metadata as

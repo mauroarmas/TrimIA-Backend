@@ -37,7 +37,11 @@ export const OrchestratorState = Annotation.Root({
 
   // --- Control del ruteo sticky ---
   scopeChanged: Annotation<boolean | null>, // lo setea scope_check (mismo/cambio)
-  isGreeting: Annotation<boolean | null>, // lo setea classify_intent
+  isGreeting: Annotation<boolean | null>, // lo setea classify_intent y scope_check
+  // apertura/cierre, solo si isGreeting/intent=greeting; lo completan classify_intent
+  // y scope_check en la misma llamada estructurada (sin costo extra de tokens).
+  // Lo usa greeting_response para no contestar "¡Hola!" a un "gracias, genial".
+  greetingType: Annotation<'apertura' | 'cierre' | null>,
   isTrivial: Annotation<boolean | null>, // lo setea trivial_response (regex)
 
   // --- Métricas (las llenan classify_intent y track_tokens) ---

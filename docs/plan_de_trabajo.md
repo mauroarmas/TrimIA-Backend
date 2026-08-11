@@ -21,6 +21,14 @@ Confidencialidad `audience`/`userType` ✅ · Memoria conversacional ✅ · Logg
 conversaciones, eventos, `agents/status`) ✅ · **Sprint 3** Human-in-the-loop (escalado real,
 takeover/release/reply, notas internas, delegar, "responder y enseñar a la IA") ✅ · 64 tests ✅
 
+> [!NOTE]
+> **Trazabilidad SDD:** adoptamos GitHub Spec Kit (Spec-Driven Development) recién a partir del
+> Sprint 3, por eso `specs/001-human-in-the-loop/` es el primer spec formal. Las Fases 1-4 (Núcleo
+> conversacional) y los Sprints 1-2 se implementaron antes de esa adopción y no tenían spec.
+> Para no dejar el historial incompleto de cara a la tesis, se documentaron **retroactivamente**
+> en `specs/000-linea-base/` (marcado explícitamente como spec escrito post-hoc, no como diseño
+> previo a la implementación).
+
 ---
 
 ## 2. Sprints

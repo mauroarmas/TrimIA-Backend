@@ -304,3 +304,151 @@ describe('MessageProcessor — revalidación del userType contra la whitelist', 
     expect(conversations.setUserType).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * Fix de rendimiento/seguridad (2026-08-11): concurrency pasó de 1 a 5.
+ * Antes, TODOS los mensajes de TODAS las conversaciones se procesaban uno a
+ * la vez, sin motivo — conversaciones distintas no comparten estado. El
+ * único riesgo real de paralelizar es procesar DOS mensajes de la MISMA
+ * conversación al mismo tiempo (currentAgent/historial desactualizados).
+ * runExclusive() resuelve justo eso con un mutex en memoria por
+ * conversationId, sin serializar entre conversaciones distintas.
+ */
+describe('MessageProcessor — runExclusive (serialización por conversación)', () => {
+  function makeJob(conversationId: string, message: string): any {
+    return {
+      data: {
+        conversationId,
+        externalId: `ext-${conversationId}`,
+        channel: 'WHATSAPP',
+        message,
+      },
+      attemptsMade: 0,
+      opts: { attempts: 3 },
+    };
+  }
+
+  function deferred<T = void>() {
+    let resolve!: (value: T) => void;
+    const promise = new Promise<T>((res) => {
+      resolve = res;
+    });
+    return { promise, resolve };
+  }
+
+  function buildDeps(conversationId: string) {
+    const conversations = {
+      findById: jest.fn().mockResolvedValue({
+        id: conversationId,
+        status: 'ACTIVE',
+        currentAgent: null,
+        userType: 'CLIENTE',
+      }),
+      getRecentHistory: jest.fn().mockResolvedValue([]),
+      setCurrentAgent: jest.fn(),
+      addMessage: jest.fn(),
+      setUserType: jest.fn(),
+      getLastAssistantMessage: jest.fn().mockResolvedValue(null),
+    };
+    const sender = { send: jest.fn().mockResolvedValue(undefined) };
+    const employees = { findByPhone: jest.fn().mockResolvedValue(null) };
+    return { conversations, sender, employees };
+  }
+
+  it('dos mensajes de la MISMA conversación se procesan uno a la vez, no en paralelo', async () => {
+    const { conversations, sender, employees } = buildDeps('conv-1');
+    const first = deferred();
+    let secondStarted = false;
+    const orchestrator = {
+      invoke: jest
+        .fn()
+        .mockImplementationOnce(async () => {
+          await first.promise;
+          return { response: 'r1', agentType: null };
+        })
+        .mockImplementationOnce(async () => {
+          secondStarted = true;
+          return { response: 'r2', agentType: null };
+        }),
+    };
+    const processor = new MessageProcessor(
+      conversations as unknown as ConversationsService,
+      sender as unknown as WhatsappSenderService,
+      orchestrator as unknown as OrchestratorService,
+      employees as unknown as EmployeesService,
+    );
+
+    const p1 = processor.process(makeJob('conv-1', 'primero'));
+    const p2 = processor.process(makeJob('conv-1', 'segundo'));
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    // El segundo mensaje NO debería haber arrancado mientras el primero
+    // sigue "procesándose" (first.promise sin resolver).
+    expect(secondStarted).toBe(false);
+
+    first.resolve();
+    await Promise.all([p1, p2]);
+
+    expect(secondStarted).toBe(true);
+    expect(orchestrator.invoke).toHaveBeenCalledTimes(2);
+  });
+
+  it('mensajes de conversaciones DISTINTAS se procesan en paralelo', async () => {
+    const { conversations, sender, employees } = buildDeps('conv-x');
+    const first = deferred();
+    let secondStarted = false;
+    const orchestrator = {
+      invoke: jest
+        .fn()
+        .mockImplementationOnce(async () => {
+          await first.promise;
+          return { response: 'r1', agentType: null };
+        })
+        .mockImplementationOnce(async () => {
+          secondStarted = true;
+          return { response: 'r2', agentType: null };
+        }),
+    };
+    const processor = new MessageProcessor(
+      conversations as unknown as ConversationsService,
+      sender as unknown as WhatsappSenderService,
+      orchestrator as unknown as OrchestratorService,
+      employees as unknown as EmployeesService,
+    );
+
+    const p1 = processor.process(makeJob('conv-A', 'primero'));
+    const p2 = processor.process(makeJob('conv-B', 'segundo'));
+
+    await new Promise((resolve) => setTimeout(resolve, 20));
+    // conv-B no depende de que termine conv-A: debería haber arrancado igual.
+    expect(secondStarted).toBe(true);
+
+    first.resolve();
+    await Promise.all([p1, p2]);
+  });
+
+  it('si el turno de una conversación falla, no traba el siguiente mensaje de esa misma conversación', async () => {
+    const { conversations, sender, employees } = buildDeps('conv-1');
+    const orchestrator = {
+      invoke: jest
+        .fn()
+        .mockRejectedValueOnce(new Error('boom'))
+        .mockResolvedValueOnce({ response: 'ok', agentType: null }),
+    };
+    const processor = new MessageProcessor(
+      conversations as unknown as ConversationsService,
+      sender as unknown as WhatsappSenderService,
+      orchestrator as unknown as OrchestratorService,
+      employees as unknown as EmployeesService,
+    );
+
+    const failingJob = makeJob('conv-1', 'primero');
+    failingJob.opts = { attempts: 1 };
+    await expect(processor.process(failingJob)).rejects.toThrow('boom');
+
+    await expect(
+      processor.process(makeJob('conv-1', 'segundo')),
+    ).resolves.toBeUndefined();
+    expect(orchestrator.invoke).toHaveBeenCalledTimes(2);
+  });
+});

@@ -62,6 +62,7 @@ export class OrchestratorService implements OnModuleInit {
       internalNote: null,
       scopeChanged: null,
       isGreeting: null,
+      greetingType: null,
       isTrivial: null,
       startedAt: null,
       inputTokens: null,

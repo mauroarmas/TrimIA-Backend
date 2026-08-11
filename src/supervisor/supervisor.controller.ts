@@ -2,7 +2,6 @@ import {
   Body,
   Controller,
   Get,
-  Header,
   NotFoundException,
   Param,
   Post,
@@ -15,7 +14,6 @@ import { AgentType, Channel, ConvStatus, UserType } from '@prisma/client';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard, Roles } from '../auth/guards/roles.guard';
 import { SupervisorService } from './supervisor.service';
-import { DASHBOARD_HTML } from './supervisor-dashboard.html';
 import { EscalationsService } from '../escalations/escalations.service';
 import { ConversationsService } from '../conversations/conversations.service';
 import { ResolveEscalationDto } from '../escalations/dto/resolve-escalation.dto';
@@ -28,10 +26,12 @@ import { CreateInternalNoteDto } from '../conversations/dto/create-internal-note
  *
  * - GET /supervisor/conversations → lista paginada de conversaciones (RF13, OE-11)
  * - GET /supervisor/metrics       → métricas agregadas en JSON
- * - GET /supervisor               → la página HTML del dashboard (dev)
  *
- * Todos los endpoints de datos exigen JWT + rol SUPERVISOR, salvo
- * /release (ver el comentario en el propio endpoint).
+ * Todos los endpoints exigen JWT + rol SUPERVISOR, salvo /release (ver el
+ * comentario en el propio endpoint). El dashboard HTML de desarrollo que
+ * vivía acá (GET /supervisor) se borró: nunca autenticaba su propio fetch a
+ * /metrics (exigía Bearer JWT, el fetch no lo mandaba) y ya hay un frontend
+ * de pruebas para el Panel del Supervisor (repo trimIA-frontend).
  */
 @ApiTags('supervisor')
 @Controller('supervisor')
@@ -261,12 +261,5 @@ export class SupervisorController {
   @ApiOperation({ summary: 'Métricas agregadas para el Panel del Supervisor' })
   getMetrics() {
     return this.supervisor.getMetrics();
-  }
-
-  @Get()
-  @Header('Content-Type', 'text/html; charset=utf-8')
-  @ApiOperation({ summary: 'Página HTML del Panel del Supervisor (dev)' })
-  dashboard(): string {
-    return DASHBOARD_HTML;
   }
 }

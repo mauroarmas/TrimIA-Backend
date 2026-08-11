@@ -5,6 +5,7 @@ import {
   IsNotEmpty,
   IsOptional,
   IsString,
+  MaxLength,
   ValidateIf,
 } from 'class-validator';
 import { Channel } from '@prisma/client';
@@ -21,9 +22,13 @@ export class WebhookMessageDto {
   phone: string;
 
   // Opcional: un mensaje con imagen puede llegar con caption vacío.
+  // 4096: límite de WhatsApp para un mensaje de texto, así que nunca llega
+  // legítimamente algo más largo — evita mandar texto arbitrariamente largo
+  // al prompt del LLM (costo) o a los regex de isTrivial (backtracking).
   @ApiProperty({ example: 'Hola, quiero consultar por un producto', required: false })
   @IsString()
   @IsOptional()
+  @MaxLength(4096)
   message?: string;
 
   @ApiProperty({ enum: Channel, default: Channel.WHATSAPP, required: false })

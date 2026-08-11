@@ -19,9 +19,29 @@ interface MessageJob {
   messageId?: string;
 }
 
-@Processor('message-processing', { concurrency: 1 })
+/**
+ * concurrency: 5 — antes era 1, que serializaba TODOS los mensajes de TODAS
+ * las conversaciones (un cliente esperaba a que terminara de procesarse el
+ * mensaje de otro cliente sin ninguna relación). El único riesgo real de
+ * paralelizar es procesar DOS mensajes de la MISMA conversación al mismo
+ * tiempo (pisarse el currentAgent sticky, leer historial desactualizado);
+ * conversaciones distintas no comparten estado y no necesitan serializarse
+ * entre sí. runExclusive() (más abajo) resuelve exactamente eso: encadena
+ * por conversationId con un lock en memoria del proceso.
+ */
+@Processor('message-processing', { concurrency: 5 })
 export class MessageProcessor extends WorkerHost {
   private readonly logger = new Logger(MessageProcessor.name);
+
+  /**
+   * Cola de ejecución por conversación (mutex en memoria, no distribuido).
+   * Correcto mientras haya UNA sola instancia de este proceso — que es el
+   * despliegue actual (un contenedor `nestjs` en docker-compose.yml). Si en
+   * Cloud Run (Sprint 8) esto llega a correr en más de una instancia, hay que
+   * reemplazar esto por un lock distribuido (Redis, ya es dependencia del
+   * proyecto vía RedisService) — dos instancias no comparten este Map.
+   */
+  private readonly conversationLocks = new Map<string, Promise<void>>();
 
   constructor(
     private readonly conversations: ConversationsService,
@@ -44,6 +64,40 @@ export class MessageProcessor extends WorkerHost {
     'Ya le pasé tu consulta a un responsable 🙌 En cuanto tengamos novedades te escribimos por acá.';
 
   async process(job: Job<MessageJob>): Promise<void> {
+    return this.runExclusive(job.data.conversationId, () =>
+      this.processExclusive(job),
+    );
+  }
+
+  /**
+   * Encadena `fn` detrás de lo último encolado para esta conversación, sin
+   * importar si ese turno anterior resolvió o rechazó (un fallo no debe
+   * trabar los mensajes siguientes de la misma conversación). Limpia la
+   * entrada del Map al terminar, salvo que alguien haya encolado un turno
+   * más nuevo mientras tanto — si no, quedaría creciendo para siempre.
+   */
+  private async runExclusive<T>(
+    conversationId: string,
+    fn: () => Promise<T>,
+  ): Promise<T> {
+    const previous =
+      this.conversationLocks.get(conversationId) ?? Promise.resolve();
+    const settled = previous.then(fn, fn);
+    const tail = settled.then(
+      () => undefined,
+      () => undefined,
+    );
+    this.conversationLocks.set(conversationId, tail);
+    try {
+      return await settled;
+    } finally {
+      if (this.conversationLocks.get(conversationId) === tail) {
+        this.conversationLocks.delete(conversationId);
+      }
+    }
+  }
+
+  private async processExclusive(job: Job<MessageJob>): Promise<void> {
     const { conversationId, externalId, message, channel, messageId } =
       job.data;
 

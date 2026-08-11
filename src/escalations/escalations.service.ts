@@ -16,6 +16,11 @@ export interface ListEscalationsFilter {
 export interface ResolveEscalationInput {
   message: string;
   teachAgent?: boolean;
+  /** Requeridos si teachAgent=true; ver ResolveEscalationDto. */
+  title?: string;
+  category?: string;
+  audience?: Audience;
+  agentType?: AgentType;
 }
 
 /**
@@ -122,9 +127,9 @@ export class EscalationsService {
 
   /**
    * Responde el caso: envía el mensaje al usuario, vuelve la conversación a
-   * ACTIVE y marca la Escalation RESOLVED. `teachAgent` se implementa en la
-   * Historia 4 (ver EscalationsService.resolve() extendido más abajo en el
-   * historial de esta clase, tarea T024) — acá se ignora si viene.
+   * ACTIVE y marca la Escalation RESOLVED. Si `teachAgent` es true, ingesta
+   * la respuesta al RAG como `KnowledgeDocument` usando el título/categoría
+   * que mande el supervisor (mismo shape que POST /knowledge).
    */
   async resolve(
     id: string,
@@ -178,14 +183,19 @@ export class EscalationsService {
     });
 
     if (input.teachAgent) {
-      const audience =
-        conversation.userType === 'EMPLEADO' ? Audience.INTERNO : Audience.PUBLICO;
+      // Antes se inferÍa PUBLICO cuando la conversación era con un CLIENTE.
+      // Eso publicaba automáticamente lo que el supervisor tipeó para ESE
+      // caso puntual — sin que lo decidiera a propósito — como conocimiento
+      // servido a cualquier cliente futuro. Default seguro: INTERNO, igual
+      // que knowledge.ingest() (knowledge.service.ts). Publicarlo requiere
+      // que el supervisor mande audience: PUBLICO explícito.
+      const audience = input.audience ?? Audience.INTERNO;
       await this.knowledge.ingest({
-        title: `Resolución escalado ${escalation.id}`,
+        title: input.title!,
         content: input.message,
-        category: 'escalado',
+        category: input.category!,
         audience,
-        agentType: conversation.currentAgent,
+        agentType: input.agentType ?? conversation.currentAgent,
       });
     }
 

@@ -108,9 +108,8 @@ src/
 │                                #   getRecentHistory (memoria), setCurrentAgent (sticky)
 │
 ├── supervisor/                  # PANEL DEL SUPERVISOR (gobernanza / E4)
-│   ├── supervisor.controller.ts # GET /supervisor (dashboard) + /supervisor/metrics (JSON)
-│   ├── supervisor.service.ts    # queries agregadas (TokenUsage, OrchestrationEvent, Conversation)
-│   └── supervisor-dashboard.html.ts  # página HTML mínima (semilla; la reemplaza el React de E4)
+│   ├── supervisor.controller.ts # /supervisor/conversations, /supervisor/metrics (JSON), etc.
+│   └── supervisor.service.ts    # queries agregadas (TokenUsage, OrchestrationEvent, Conversation)
 │
 └── ai/
     ├── llm/                     # LlmService: cliente Gemini compartido
