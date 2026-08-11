@@ -80,6 +80,15 @@ services:
     volumes:
       - .:/app
       - /app/node_modules
+    # El volumen anónimo de node_modules persiste entre `docker compose down`
+    # y `up` (down sin -v no lo borra) — aísla los módulos nativos (bcrypt)
+    # del contenedor Linux de los del host, pero si package.json gana una
+    # dependencia nueva ese volumen queda desactualizado y la imagen fresca
+    # que construyó `npm ci` en Dockerfile.dev queda tapada. `npm install`
+    # acá es idempotente (no reinstala lo que ya está) y sincroniza el
+    # volumen contra package.json en cada arranque, sin depender de que
+    # alguien lo note y corra `npm install` a mano dentro del contenedor.
+    command: sh -c "npm install --no-audit --no-fund && npx prisma generate && npm run start:dev"
     networks:
       - trimia-net
     depends_on:
@@ -90,14 +99,9 @@ services:
       chromadb:
         condition: service_healthy
 
-  # paperclip:   <- Fase 5 / Administración
-  #   image: ...
-  #   ports:
-  #     - "4000:4000"
-  #   networks:
-  #     - trimia-net
-  #   depends_on:
-  #     - nestjs
+  # El Panel del Supervisor (gobernanza) NO es un contenedor aparte: es un
+  # módulo del frontend React (E4) que consume los endpoints /supervisor/* del
+  # backend NestJS. Por eso acá no hay un servicio dedicado.
 
 networks:
   trimia-net:

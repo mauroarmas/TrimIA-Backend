@@ -8,7 +8,7 @@ import {
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { WebhookMessageDto } from './dto/webhook-message.dto';
-import { N8nAuthGuard } from './guards/n8n-auth.guard';
+import { WebhookSecretGuard } from '../common/guards/webhook-secret.guard';
 import { MessagingService } from './messaging.service';
 
 @ApiTags('messaging')
@@ -18,7 +18,7 @@ export class MessagingController {
 
   @Post('webhook')
   @HttpCode(202)
-  @UseGuards(N8nAuthGuard)
+  @UseGuards(WebhookSecretGuard)
   @Throttle({ default: { limit: 30, ttl: 60000 } })
   @ApiOperation({ summary: 'Recibe mensajes desde n8n/WhatsApp' })
   async webhook(@Body() dto: WebhookMessageDto) {

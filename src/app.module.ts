@@ -3,17 +3,25 @@ import { APP_GUARD } from '@nestjs/core';
 import { LoggerModule } from 'nestjs-pino';
 import { BullModule } from '@nestjs/bullmq';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
-import { AppConfigModule } from './config/config.module';
+import { AppConfigModule } from './common/config/config.module';
 import { PrismaModule } from './database/prisma.module';
 import { RedisModule } from './redis/redis.module';
-import { CheckpointerModule } from './ai/checkpointer/checkpointer.module';
 import { LlmModule } from './ai/llm/llm.module';
+import { KnowledgeModule } from './ai/knowledge/knowledge.module';
 import { AgentsModule } from './ai/agents/agents.module';
 import { OrchestratorModule } from './ai/orchestrator/orchestrator.module';
-import { HealthModule } from './health/health.module';
+import { HealthModule } from './common/health/health.module';
 import { ConversationsModule } from './conversations/conversations.module';
 import { MessagingModule } from './messaging/messaging.module';
 import { QueueModule } from './queue/queue.module';
+import { SupervisorModule } from './supervisor/supervisor.module';
+import { AuthModule } from './auth/auth.module';
+import { EmployeesModule } from './employees/employees.module';
+import { EscalationsModule } from './escalations/escalations.module';
+import { ClientsModule } from './clients/clients.module';
+import { CollectionsModule } from './collections/collections.module';
+import { SalesModule } from './sales/sales.module';
+import { DevToolsModule } from './dev-tools/dev-tools.module';
 import { ConfigService } from '@nestjs/config';
 
 @Module({
@@ -49,14 +57,22 @@ import { ConfigService } from '@nestjs/config';
     }),
     PrismaModule,
     RedisModule,
-    CheckpointerModule,
     LlmModule,
+    KnowledgeModule,
     AgentsModule,
     OrchestratorModule,
     HealthModule,
     ConversationsModule,
     MessagingModule,
     QueueModule,
+    SupervisorModule,
+    AuthModule,
+    EmployeesModule,
+    EscalationsModule,
+    ClientsModule,
+    CollectionsModule,
+    SalesModule,
+    DevToolsModule,
   ],
   providers: [
     {

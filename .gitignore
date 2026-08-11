@@ -3,6 +3,8 @@
 /node_modules
 /build
 /.vscode
+/.claude
+/graphify-out
 
 # Logs
 logs
@@ -47,6 +49,12 @@ lerna-debug.log*
 .temp
 .tmp
 
+# Binarios de comprobantes de pago (Sprint 4) — no se commitean
+/storage/*
+!/storage/payment-proofs/
+storage/payment-proofs/*
+!storage/payment-proofs/.gitkeep
+
 # Runtime data
 pids
 *.pid
@@ -55,3 +63,7 @@ pids
 
 # Diagnostic reports (https://nodejs.org/api/report.html)
 report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
+
+# Transcripciones de sesiones de Claude Code (nunca deben commitearse)
+docs/-home-*
+docs/*/*.jsonl

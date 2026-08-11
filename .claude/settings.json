@@ -2,6 +2,35 @@
   "env": {
     "CLAUDE_CODE_EXPERIMENTAL_AGENT_TEAMS": "1"
   },
+  "permissions": {
+    "allow": [
+      "Bash(docker compose *)",
+      "Bash(curl -s -o /dev/null -w \"GET /supervisor         → HTTP %{http_code} \\(%{content_type}\\)\\\\n\" http://localhost:3000/supervisor)",
+      "Bash(curl -s -o /dev/null -w \"GET /supervisor/metrics → HTTP %{http_code}\\\\n\" http://localhost:3000/supervisor/metrics)",
+      "Bash(curl -s -o /dev/null -w \"GET /admin/metrics      → HTTP %{http_code}\\\\n\" http://localhost:3000/admin/metrics)",
+      "Bash(npx tsc *)",
+      "Bash(curl -s -o /dev/null -w \"status=%{http_code}\\\\n\" http://localhost:3000/supervisor/agents/status)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\('threshold:',d['confidenceThreshold']\\); [print\\(a['agentType'],'| status:',a['status'],'| routed:',a['routedTurns'],'| avgConfidence:',a['avgConfidence'],'| escalations:',a['escalations']\\) for a in d['agents']]\")",
+      "Bash(npm test *)",
+      "Bash(curl -s http://localhost:3000/health)",
+      "Bash(npx jest *)",
+      "Bash(npx prisma *)",
+      "Bash(npx tsx -e ' *)",
+      "Read(//home/mauro/Proyectos/trimIA-frontend/**)",
+      "Bash(npx vite *)",
+      "Bash(docker compose exec -T postgres psql -U trimia -d trimia -c ' *)",
+      "Bash(curl -s -X POST localhost:3000/dev/client-fixtures -H 'Content-Type: application/json' -d '{\"phone\":\"5493865505362\",\"fixtures\":[\"RESET\",\"CUOTA_POR_VENCER\"]}')",
+      "Bash(timeout 90 docker compose logs nestjs -f --tail 0)",
+      "Bash(wait)",
+      "Bash(cd /home/mauro/Proyectos/trimIA *)",
+      "Read(//home/mauro/Proyectos/trimIA-frontend/src/**)",
+      "Bash(curl -s http://localhost:5173/src/components/CollectionsPanel.jsx)",
+      "Bash(curl -s http://localhost:5173/src/index.css)"
+    ],
+    "additionalDirectories": [
+      "/home/mauro/Proyectos/trimIA-frontend/src/components"
+    ]
+  },
   "hooks": {
     "SessionStart": [
       {

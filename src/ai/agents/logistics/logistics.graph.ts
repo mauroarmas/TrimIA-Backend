@@ -1,28 +1,24 @@
-import { Logger } from '@nestjs/common';
-import { StateGraph, START, END } from '@langchain/langgraph';
 import {
-  OrchestratorState,
-  OrchestratorStateType,
-} from '../../orchestrator/orchestrator.state';
+  AgentGraphDeps,
+  buildRagAgentGraph,
+} from '../shared/rag-agent.graph';
+import { LOGISTICS_PROMPT } from './logistics.prompt';
 
 /**
- * Agente de LOGÍSTICA (stub).
+ * Agente de LOGÍSTICA (Fase 4 Inc. 2) — flujo RAG capacitativo.
  *
- *   [START] → generate_response → [END]
- *
- * En Fase 4 manejará envíos, tiempos de entrega y despacho de mercadería.
+ * Solo accesible para EMPLEADO. Resuelve consultas internas sobre envíos,
+ * tiempos de entrega y despacho de mercadería. Sin herramientas externas:
+ * todo el conocimiento viene del corpus (RAG-only).
  */
-export function buildLogisticsGraph(logger: Logger) {
-  const generateResponse = async (_state: OrchestratorStateType) => {
-    logger.log('[LOGISTICS] generando respuesta (stub)');
-    return {
-      response: 'Hola, soy el agente de Logística.',
-    };
-  };
-
-  return new StateGraph(OrchestratorState)
-    .addNode('generate_response', generateResponse)
-    .addEdge(START, 'generate_response')
-    .addEdge('generate_response', END)
-    .compile();
+export function buildLogisticsGraph(deps: AgentGraphDeps) {
+  return buildRagAgentGraph(
+    {
+      agentType: 'LOGISTICS',
+      prompt: LOGISTICS_PROMPT,
+      escalationMessage:
+        'Eso no lo tengo a mano. Consultalo con el área de logística. 🚚',
+    },
+    deps,
+  );
 }
