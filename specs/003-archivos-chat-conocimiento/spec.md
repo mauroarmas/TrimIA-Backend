@@ -384,6 +384,14 @@ contador de recuperaciones y su score promedio suben en consecuencia.
 - Q: ¿Qué límite de tamaño por archivo subido? → A: 20 MB, techo único para
   todos los formatos. → **FR-007** (reemplaza el "límite conocido" sin
   cuantificar).
+- Q (revisión, durante `/speckit-plan`): la investigación técnica reveló que el
+  proveedor de IA limita el tamaño **total de la petición** a 20 MB y que la
+  codificación en base64 infla el binario ~33%, así que un archivo de 20 MB no
+  entra. ¿Se baja el techo general a 10 MB? → A: **No.** Solo imagen y audio
+  pasan por el modelo multimodal; PDF y Word se procesan localmente y son
+  justamente los que más se acercan a los 20 MB (un escaneo de 30 páginas). Se
+  mantiene el techo de 20 MB y se agrega un umbral menor solo para los tipos
+  afectados. → **FR-050**.
 
 ## Requirements *(mandatory)*
 
@@ -408,8 +416,13 @@ contador de recuperaciones y su score promedio suben en consecuencia.
   se consulta después mediante un estado por archivo (en proceso / listo /
   error con motivo).
 - **FR-007**: El sistema DEBE rechazar de forma clara todo archivo que supere
-  **20 MB**, con un mensaje que indique el límite. El techo es único para todos
-  los formatos aceptados.
+  **20 MB**, con un mensaje que indique el límite.
+- **FR-050**: Los tipos que dependen de un modelo multimodal para extraer su
+  texto (imagen y audio) DEBEN además rechazarse por encima de un umbral menor y
+  configurable (~14 MB), impuesto por el límite de tamaño de petición del
+  proveedor de IA. El mensaje de rechazo DEBE indicar qué hacer (comprimir la
+  imagen, grabar el audio en partes), no solo que falló. Los formatos que se
+  procesan localmente (PDF, Word) no están sujetos a este segundo umbral.
 - **FR-044**: El sistema DEBE conservar los archivos originales que **no** son
   audio (PDF, Word, imágenes) y hacerlos accesibles desde el detalle del
   documento de conocimiento que generaron, como respaldo verificable del texto
