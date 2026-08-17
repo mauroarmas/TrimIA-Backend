@@ -393,6 +393,24 @@ contador de recuperaciones y su score promedio suben en consecuencia.
   mantiene el techo de 20 MB y se agrega un umbral menor solo para los tipos
   afectados. → **FR-050**.
 
+**Correcciones aplicadas tras `/speckit-analyze`** (2026-08-11):
+
+- **Terminología**: lo que la sesión del 2026-08-08 llamó "percentil" **no es un
+  percentil** — `100 * (1 - distancia_coseno)` es una similitud reescalada, y un
+  percentil exigiría una distribución de referencia. Se renombra a **"similitud
+  normalizada (0-100)"** en todo el documento. El registro de arriba se conserva
+  como quedó dicho en su momento.
+- **FR-027** se reescribió: hablaba de recuperaciones "para responder una
+  consulta", lo que contradecía a FR-046 (que exige registrar **todos** los
+  candidatos, respondan o no).
+- **Mensajes web durante intervención manual**: el supuesto afirmaba un
+  reprocesado al liberar que el sistema no hace. Corregido en Assumptions, con
+  la limitación declarada.
+
+*Glosario*: en la prosa de esta spec el indicador se llama **"grado de
+coincidencia"**; en `data-model.md` y en los contratos, el mismo valor es el
+campo `score`.
+
 ## Requirements *(mandatory)*
 
 ### Functional Requirements
@@ -506,8 +524,9 @@ contador de recuperaciones y su score promedio suben en consecuencia.
   de un archivo/carga manual, de una entrevista de capacitación o de la
   resolución de una consulta escalada, junto con la referencia al caso concreto
   que lo generó.
-- **FR-027**: El sistema DEBE registrar cada vez que un documento es recuperado
-  para responder una consulta, junto con su grado de coincidencia.
+- **FR-027**: El sistema DEBE registrar cada documento que la búsqueda devuelve
+  como candidato ante una consulta, junto con su grado de coincidencia. El
+  alcance de ese registro y el desenlace del turno los precisa FR-046.
 - **FR-046**: El registro de recuperación DEBE abarcar **todos** los documentos
   candidatos devueltos por la búsqueda, no solo los que terminaron alimentando
   una respuesta, y DEBE indicar por cada uno si el turno terminó en respuesta
@@ -589,7 +608,8 @@ contador de recuperaciones y su score promedio suben en consecuencia.
   demás se retienen y quedan visibles/descargables desde el panel para que el
   supervisor pueda reprocesar si falla la extracción o consultar el original.
 - **Recuperación de conocimiento**: El registro de que un documento salió como
-  candidato de una búsqueda, con su grado de coincidencia (0-100 percentil,
+  candidato de una búsqueda, con su grado de coincidencia (similitud normalizada
+  a una escala 0-100,
   normalizado de la distancia de ChromaDB) y el desenlace del turno (respuesta
   generada o escalamiento por confianza insuficiente). Es la materia prima del
   indicador de uso; hoy este dato se calcula al vuelo y se descarta.
@@ -677,11 +697,27 @@ contador de recuperaciones y su score promedio suben en consecuencia.
   división de responsabilidades que ya se usa para las imágenes de comprobantes
   (el token de la API de WhatsApp vive solo en la integración, no en el
   backend).
-- **Mensajes web durante intervención manual se encolan**: cuando un supervisor
-  toma una conversación web manualmente, los mensajes que envíe el usuario siguen
-  llegando al backend y se guardan, pero no generan respuesta automática. Al
-  liberar la intervención, vuelven a procesarse normalmente. Es el mismo
-  comportamiento que en WhatsApp.
+- **Mensajes web durante intervención manual: se guardan, no se responden.**
+  Cuando un supervisor tiene tomada una conversación web, los mensajes que envíe
+  el usuario siguen llegando al backend y quedan persistidos en el historial,
+  pero no generan respuesta automática. Es exactamente el mismo comportamiento
+  que ya rige en WhatsApp desde el Sprint 3
+  (`MessageProcessor` corta antes de invocar al orquestador cuando el estado no
+  es `ACTIVE`).
+
+  > **Corrección respecto de una versión anterior de este documento.** La
+  > clarificación del 2026-08-08 afirmaba que al liberar la intervención los
+  > mensajes acumulados "vuelven a procesarse normalmente". **Eso no es lo que
+  > hace el sistema**: el turno se descarta y liberar no dispara ningún
+  > reprocesado. La afirmación se coló sin verificarse contra el código.
+  >
+  > Reproducir esos mensajes es una capacidad que hoy **no existe para ningún
+  > canal** — es alcance del human-in-the-loop del Sprint 3, no de esta feature,
+  > y afecta por igual a WhatsApp. Además exige decisiones de producto que
+  > ninguna spec tomó: si se reprocesan todos los mensajes acumulados o solo el
+  > último, en qué orden, y qué pasa si el supervisor ya respondió eso mismo a
+  > mano mientras tenía el control. Queda como **limitación conocida y candidata
+  > a spec propia**, fuera del alcance del Sprint 5A.
 - **Extraer texto de una imagen es una lectura asistida, no una fuente de
   verdad**: el texto extraído de una foto de ficha queda a la vista del
   supervisor y es editable antes de que el conocimiento se dé por bueno, con el

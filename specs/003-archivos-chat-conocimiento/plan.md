@@ -131,6 +131,7 @@ src/
 │   ├── knowledge-ingestion.service.ts   # NUEVO: orquesta archivo → texto → ingest
 │   ├── knowledge-ai-edit.service.ts     # NUEVO: propuesta de edición (FR-030..033)
 │   ├── knowledge-usage.service.ts       # NUEVO: indicador de recuperación (FR-046/047)
+│   ├── knowledge-storage.service.ts     # NUEVO: originales conservados (FR-044)
 │   ├── extractors/                      # NUEVO: una interfaz, cuatro implementaciones
 │   │   ├── text-extractor.port.ts       #   contrato común (Principio V)
 │   │   ├── pdf.extractor.ts             #   unpdf
