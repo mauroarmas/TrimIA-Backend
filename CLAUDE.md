@@ -5,7 +5,7 @@ Backend NestJS de una plataforma de agentes de IA (WhatsApp) para una empresa co
 ## Stack y decisiones vigentes
 
 - **Runtime:** TypeScript 5.x + Node.js 20, NestJS 11.
-- **IA:** LangGraph.js (`@langchain/langgraph`) + Gemini (`gemini-3.1-flash-lite`; embeddings `gemini-embedding-001`, dim 3072) vía `@langchain/google-genai`. Modelo y umbrales (`GEMINI_MODEL`, `EMBEDDING_MODEL`, `RAG_CONFIDENCE_THRESHOLD`) se pinean por variable de entorno, nunca por default en código.
+- **IA:** LangGraph.js (`@langchain/langgraph`) + Gemini (`gemini-3.5-flash-lite`; embeddings `gemini-embedding-2-preview`) vía `@langchain/google-genai`. Modelo y umbrales (`GEMINI_MODEL`, `EMBEDDING_MODEL`, `RAG_CONFIDENCE_THRESHOLD`) se pinean por variable de entorno, nunca por default en código.
 - **Datos:** PostgreSQL + Prisma. Migraciones con `prisma db push` (no `migrate`). Las tablas `checkpoint_*` son remanentes de un checkpointer de LangGraph hoy **desconectado** (decisión: "Checkpointer eliminado, opción A"; vuelve en Fase 5 para interrupt/resume) — Prisma no las gestiona.
 - **Cola:** Redis + BullMQ. El webhook de WhatsApp nunca ejecuta IA dentro del request: valida, encola y responde `202`; el trabajo pesado corre en `MessageProcessor`.
 - **RAG:** ChromaDB, vía `KnowledgeService`. Agentes construidos sobre la fábrica común `buildRagAgentGraph` (`src/ai/agents/shared/rag-agent.graph.ts`): `retrieve_context → evaluate_confidence → generate_response | escalate_to_human`.
