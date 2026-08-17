@@ -39,6 +39,19 @@ import * as Joi from 'joi';
 
         RAG_CONFIDENCE_THRESHOLD: Joi.number().min(0).max(1).default(0.65),
 
+        // Carga de archivos a la base de conocimiento (Sprint 5A).
+        // Hay DOS techos, no uno, y la diferencia no es arbitraria:
+        //  - MAX_FILE: lo que se acepta subir, para cualquier formato.
+        //  - MULTIMODAL_MAX: tope menor para imagen y audio, que se procesan
+        //    con Gemini. La API limita la petición a 20 MB TOTALES y base64
+        //    infla el binario ~33%, así que un archivo de 20 MB genera un
+        //    request de ~27 MB y falla. PDF y Word se extraen localmente
+        //    (unpdf/mammoth) y no están sujetos a este segundo límite: son,
+        //    de hecho, los que más se acercan a los 20 MB (un escaneo largo).
+        KNOWLEDGE_MAX_FILE_MB: Joi.number().min(1).default(20),
+        KNOWLEDGE_MULTIMODAL_MAX_MB: Joi.number().min(1).default(14),
+        STORAGE_KNOWLEDGE_DIR: Joi.string().default('storage/knowledge'),
+
         JWT_SECRET: Joi.string().min(32).required(),
       }),
       validationOptions: {

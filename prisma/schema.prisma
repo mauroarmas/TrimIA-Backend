@@ -33,9 +33,56 @@ enum EmployeeRole {
   SUPERVISOR
 }
 
+// Estado de un caso escalado. Los TRES cierres son terminales y mutuamente
+// excluyentes (Sprint 5A). Se modelan como valores del enum y no como
+// RESOLVED + un booleano `delivered` para que la pregunta "¿a esta persona se
+// le contestó?" sea una sola condición (`status === RESOLVED`) en todas las
+// consultas del panel. Ver specs/003-archivos-chat-conocimiento/data-model.md §1.1.
 enum EscalationStatus {
-  PENDING
-  RESOLVED
+  PENDING      // sin resolver — el usuario espera
+  RESOLVED     // se aprobó y SE ENVIÓ la respuesta
+  SAVED_UNSENT // se aprobó, se capitalizó al RAG, NO se envió (Sprint 5A, FR-039)
+  DISCARDED    // caso puntual, no amerita respuesta estándar (Sprint 5A, FR-038)
+}
+
+// De dónde salió un documento de conocimiento (Sprint 5A, FR-026).
+// ENTREVISTA se define ahora aunque su generador llegue en el Sprint 5B:
+// cerrar el enum de una evita una segunda migración.
+enum KnowledgeSourceType {
+  DOCUMENTO  // cargado a mano o subiendo un archivo
+  ENTREVISTA // generado por una entrevista de capacitación (Sprint 5B)
+  ESCALADO   // capitalizado al resolver una consulta escalada
+}
+
+// Postgres y ChromaDB son dos almacenes sin transacción común: al editar un
+// documento hay una ventana donde el contenido visible y el vectorizado no
+// coinciden. Este estado hace visible esa ventana en vez de dejarla silenciosa
+// (Sprint 5A, FR-024) — que era el bug que motivó la tarea.
+enum KnowledgeSyncStatus {
+  SYNCED          // Postgres y ChromaDB coinciden
+  PENDING_REINDEX // hay cambios sin volcar a ChromaDB
+  REINDEX_FAILED  // se agotaron los reintentos — requiere acción humana
+}
+
+// Procesamiento de un archivo subido (Sprint 5A, FR-006).
+enum FileProcessingStatus {
+  PROCESSING // en cola o extrayendo texto
+  READY      // texto extraído e ingestado
+  FAILED     // formato no soportado, dañado o sin texto útil
+}
+
+// Quién originó un cambio sobre un documento (Sprint 5A, FR-049).
+enum KnowledgeChangeOrigin {
+  MANUAL      // el supervisor editó a mano
+  AI_ACCEPTED // el supervisor aprobó una propuesta de la IA
+}
+
+// En qué terminó el turno que recuperó un documento (Sprint 5A, FR-046).
+// Permite distinguir un documento que nunca se recupera de uno que se recupera
+// seguido pero nunca alcanza el umbral de confianza — que es la señal útil.
+enum RetrievalOutcome {
+  ANSWERED  // el turno terminó con respuesta generada
+  ESCALATED // la confianza no alcanzó y se derivó a un humano
 }
 
 // Estado de una cuota (Sprint 4 — Cobranzas). Ver transiciones en
@@ -142,6 +189,12 @@ model Employee {
   reviewedPurchaseRequests PurchaseRequest[]  @relation("PurchaseRequestReviewedBy")
   creditAssessments        CreditAssessment[] @relation("CreditAssessmentAssessedBy")
   managedFinancings        Financing[]        @relation("FinancingCollector")
+
+  // Sprint 5A
+  knowledgeUpdated     KnowledgeDocument[] @relation("KnowledgeUpdatedBy")
+  knowledgeFiles       KnowledgeFile[]     @relation("KnowledgeFileUploadedBy")
+  knowledgeChanges     KnowledgeChange[]   @relation("KnowledgeChangeAuthor")
+  escalationsDiscarded Escalation[]        @relation("EscalationDiscardedBy")
 
   @@index([phone])
   @@index([email])
@@ -387,6 +440,7 @@ model Conversation {
   events           OrchestrationEvent[]
   escalations      Escalation[]
   internalNotes    InternalNote[]
+  retrievals       KnowledgeRetrieval[] // Sprint 5A
   purchaseRequests PurchaseRequest[]
 
   @@index([externalId])
@@ -430,6 +484,19 @@ model Escalation {
   resolvedBy   Employee? @relation("EscalationResolvedBy", fields: [resolvedById], references: [id])
   resolution   String?
   resolvedAt   DateTime?
+
+  // --- Sprint 5A ---
+  // Última propuesta generada por la IA, guardada para auditoría. Lo que se
+  // envía al usuario es SIEMPRE el texto que aprobó el supervisor, nunca esto.
+  suggestedResponse String?
+  suggestedAt       DateTime?
+  // Texto aprobado en el cierre SAVED_UNSENT. Campo APARTE de `resolution` a
+  // propósito: así "hay algo en resolution" sigue significando "esto se le
+  // envió al usuario", que es justo la distinción que pide FR-039.
+  savedResponse String?
+  discardedById String?
+  discardedBy   Employee? @relation("EscalationDiscardedBy", fields: [discardedById], references: [id])
+  discardedAt   DateTime?
 
   createdAt DateTime @default(now())
 
@@ -492,13 +559,116 @@ model KnowledgeDocument {
   agentType AgentType? // agente dueño del doc (null = general, para todos)
   vectorId  String?
   version   Int        @default(1)
+  // Checksum del CONTENIDO EXTRAÍDO. Distinto de KnowledgeFile.checksum, que
+  // es el hash del binario: dos PDFs distintos pueden dar el mismo texto.
   checksum  String?
+
+  // --- Sprint 5A ---
+  // Desactivar es reversible y NO borra los chunks: viaja como metadata en
+  // ChromaDB y se filtra en search(). Si borrara, reactivar obligaría a
+  // re-embeber el documento entero — una llamada paga por apretar un botón.
+  isActive   Boolean             @default(true)
+  sourceType KnowledgeSourceType @default(DOCUMENTO)
+  // Apunta a KnowledgeFile, InterviewSession o Escalation según sourceType.
+  // Deliberadamente SIN FK: una FK real exigiría tres columnas nullables
+  // excluyentes. Mismo patrón que InternalNote.authorId/authorAgentType.
+  sourceId   String?
+  syncStatus KnowledgeSyncStatus @default(SYNCED)
+  syncError  String?
+
+  updatedById String?
+  updatedBy   Employee? @relation("KnowledgeUpdatedBy", fields: [updatedById], references: [id])
+
+  uploadedFile KnowledgeFile?
+  changes      KnowledgeChange[]
+  retrievals   KnowledgeRetrieval[]
+
   createdAt DateTime   @default(now())
   updatedAt DateTime   @updatedAt
 
   @@index([category])
   @@index([category, version])
   @@index([audience])
+  @@index([isActive])             // el listado del panel filtra por esto
+  @@index([syncStatus])           // encontrar los desincronizados
+  @@index([sourceType, sourceId]) // "¿de dónde salió esto?"
+}
+
+// Archivo subido a la base de conocimiento y su resultado de procesamiento
+// (Sprint 5A, FR-006/FR-044).
+model KnowledgeFile {
+  id       String @id @default(uuid())
+  filename String // nombre original, para mostrar
+  // NULL para audio: el binario se elimina apenas se transcribe (FR-004),
+  // pero la fila sobrevive para saber que ese conocimiento vino de un audio
+  // y quién lo subió. Es la diferencia entre FR-004 y FR-044, hecha explícita.
+  storagePath   String?
+  mimeType      String
+  sizeBytes     Int
+  checksum      String // SHA256 del BINARIO — detección de duplicados
+  status        FileProcessingStatus @default(PROCESSING)
+  failureReason String? // en castellano y sin jerga: se le muestra al supervisor
+
+  // Un archivo FAILED no tiene documento: no se crean documentos vacíos (FR-005).
+  documentId String?            @unique
+  document   KnowledgeDocument? @relation(fields: [documentId], references: [id], onDelete: SetNull)
+
+  uploadedById String
+  uploadedBy   Employee @relation("KnowledgeFileUploadedBy", fields: [uploadedById], references: [id])
+
+  createdAt   DateTime  @default(now())
+  processedAt DateTime?
+
+  @@index([status])
+  @@index([checksum])
+  @@index([createdAt]) // "cargas recientes" del panel
+}
+
+// Bitácora auditable de modificaciones (Sprint 5A, FR-049).
+// NO guarda el contenido anterior: la clarificación descartó explícitamente el
+// versionado recuperable. `aiInstruction` permite responder cuánto del corpus
+// lo escribió una persona y cuánto lo propuso el modelo.
+model KnowledgeChange {
+  id         String            @id @default(uuid())
+  documentId String
+  document   KnowledgeDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  authorId String
+  author   Employee @relation("KnowledgeChangeAuthor", fields: [authorId], references: [id])
+
+  changedFields String[] // ["content", "audience"]
+  origin        KnowledgeChangeOrigin
+  aiInstruction String? // qué le pidió el supervisor a la IA
+  createdAt     DateTime              @default(now())
+
+  @@index([documentId, createdAt])
+}
+
+// Registro de que un documento salió como candidato de una búsqueda
+// (Sprint 5A, FR-027/FR-046/FR-047).
+//
+// Hoy este dato se calcula al vuelo en retrieve_context y se descarta: por eso
+// el indicador arranca vacío y se construye hacia adelante. Se persiste DESPUÉS
+// de terminado el turno (el outcome no se conoce durante el retrieval) y en una
+// sola escritura por lote, para no agregar latencia al camino de respuesta.
+model KnowledgeRetrieval {
+  id         String            @id @default(uuid())
+  documentId String
+  document   KnowledgeDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  conversationId String?
+  conversation   Conversation? @relation(fields: [conversationId], references: [id])
+
+  score     Float            // similitud normalizada 0-100 (100 * (1 - distancia))
+  rank      Int              // posición en el top-k (0 = mejor)
+  agentType AgentType?
+  outcome   RetrievalOutcome
+
+  createdAt DateTime @default(now())
+
+  @@index([documentId, createdAt])
+  @@index([documentId, outcome]) // "apareció" vs. "sirvió" en una sola query
+  @@index([createdAt])           // deja lista una purga por antigüedad
 }
 
 model OrchestrationEvent {
