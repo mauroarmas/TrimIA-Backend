@@ -95,7 +95,28 @@ acá: se transcribe un archivo subido, en batch, dentro de un worker.
 > tarea 5A.6 (audio de WhatsApp en n8n) es independiente y se mantiene como
 > está — ver §6.
 
-### 4.1 Riesgo abierto: bloque de audio en LangChain JS
+### 4.1 ~~Riesgo abierto~~ → RESUELTO (spike T004, 2026-08-11)
+
+> **Resultado del spike, contra la API real:** `@langchain/google-genai` (JS)
+> **sí** acepta audio, pero **solo con la clave en camelCase**:
+>
+> | Variante | Resultado |
+> |---|---|
+> | `{ type: 'media', data, mime_type }` ← forma documentada para Python | ❌ `Invalid media content` |
+> | `{ type: 'media', data, mimeType }` | ✅ **Aceptado** — el modelo describió el audio |
+>
+> **No hace falta el fallback a `@google/genai`.** El bloque va con `mimeType`.
+>
+> Esto es exactamente lo que un mock no habría detectado: la petición se arma
+> igual en los dos casos y solo la API real distingue. Misma lección que el
+> comentario sobre `z.nullable()` en `receipt-extraction.processor.ts:21-26`.
+>
+> Nota al margen: el `GEMINI_MODEL` efectivo del `.env` es
+> `gemini-3.5-flash-lite`, no el `gemini-3.1-flash-lite` que documentan
+> `CLAUDE.md` y `CONTEXTO_TECNICO.md` §2. La documentación quedó desactualizada.
+
+<details>
+<summary>Análisis original del riesgo (previo al spike)</summary>
 
 El patrón multimodal de audio está documentado para LangChain **Python**
 (`{"type": "media", "data": <base64>, "mime_type": ...}`). El proyecto usa
@@ -110,6 +131,8 @@ schema. Si el bloque no funciona, el fallback es llamar al SDK oficial
 `@google/genai` (v2.16.0, publicado 2026-08-06) directamente desde el servicio de
 transcripción, sin pasar por LangChain. El fallback no afecta a ningún otro
 componente porque la transcripción queda detrás de una interfaz propia.
+
+</details>
 
 ### 4.2 El límite de 20 MB de la spec choca con el límite inline de Gemini
 

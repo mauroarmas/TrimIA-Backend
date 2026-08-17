@@ -22,16 +22,28 @@ Token de supervisor para todo lo que sigue (Diego Bazán, pass del seed):
 ```bash
 TOKEN=$(curl -s -X POST http://localhost:3000/auth/login \
   -H 'Content-Type: application/json' \
-  -d '{"email":"diego.bazan@credimision.com","password":"trimia2026"}' | jq -r .access_token)
+  -d '{"email":"diego.bazan@credimision.com","password":"trimia2026"}' | jq -r .accessToken)
 ```
 
 ---
 
-## Escenario 0 — Spike de audio (hacer PRIMERO)
+## Escenario 0 — Spike de audio ✅ RESUELTO (2026-08-11)
 
-**Riesgo #1 del plan.** El bloque `media` de audio está documentado para
-LangChain **Python**; en JS este repo solo tiene probado `image_url`. Verificalo
-**contra la API real** antes de construir nada encima.
+> **Resultado**: `@langchain/google-genai` (JS) **sí** acepta audio, pero la
+> clave va en **camelCase**. La forma documentada para Python falla:
+>
+> | Bloque | Resultado |
+> |---|---|
+> | `{ type: 'media', data, mime_type }` | ❌ `Invalid media content` |
+> | `{ type: 'media', data, mimeType }` | ✅ aceptado |
+>
+> **No se usa el fallback `@google/genai`.** Al implementar `audio.extractor.ts`
+> (T032) usar `mimeType`.
+
+**Riesgo #1 del plan**, ya cerrado. Se deja el procedimiento por si hay que
+re-verificarlo al cambiar de modelo o de versión de la librería — y como
+recordatorio de que esto **solo** se detecta contra la API real: la petición se
+arma igual con las dos formas y ningún mock distingue.
 
 ```bash
 docker compose exec nestjs npx ts-node -e "
@@ -43,14 +55,14 @@ const fs = require('fs');
   const b64 = fs.readFileSync('/tmp/prueba.mp3').toString('base64');
   const r = await llm.invoke([new HumanMessage({ content: [
     { type: 'text', text: 'Transcribí este audio literalmente.' },
-    { type: 'media', data: b64, mime_type: 'audio/mp3' },
+    { type: 'media', data: b64, mimeType: 'audio/mp3' },
   ]})]);
   console.log(r.content);
 })();
 "
 ```
 
-- **Transcribe** → seguir con LangChain, como el resto del proyecto.
+- **Transcribe** → seguir con LangChain, como el resto del proyecto. ← *es el caso actual*
 - **Error de schema o 400** → fallback documentado en [research.md](./research.md) §4.1:
   `@google/genai` directo, detrás de la misma interfaz `TextExtractor`. **No
   perder tiempo peleándole al converter de LangChain.**
@@ -161,7 +173,7 @@ nuevos: texto, voz y chat web.
 
 ```bash
 EMP=$(curl -s -X POST http://localhost:3000/auth/login -H 'Content-Type: application/json' \
-  -d '{"email":"laura.gomez@credimision.com","password":"trimia2026"}' | jq -r .access_token)
+  -d '{"email":"laura.gomez@credimision.com","password":"trimia2026"}' | jq -r .accessToken)
 
 curl -X POST http://localhost:3000/messaging/web -H "Authorization: Bearer $EMP" \
   -H 'Content-Type: application/json' -d '{"message":"¿Qué planes de financiación tenemos?"}'

@@ -43,10 +43,10 @@ Proyecto backend único: `src/` en la raíz del repositorio. Los tests viven
 
 **Purpose**: dependencias, configuración y el spike que destraba el riesgo #1
 
-- [ ] T001 Instalar dependencias nuevas: `npm i unpdf mammoth` y `npm i -D @types/multer` en `package.json`
-- [ ] T002 [P] Agregar y validar con Joi las variables `KNOWLEDGE_MAX_FILE_MB` (20), `KNOWLEDGE_MULTIMODAL_MAX_MB` (14) y `STORAGE_KNOWLEDGE_DIR` (`storage/knowledge`) en `src/common/config/config.module.ts`
-- [ ] T003 [P] Documentar esas tres variables en `.env.example` con un comentario que explique de dónde sale el límite de 14 MB
-- [ ] T004 **Spike de audio (riesgo #1)**: verificar contra la API **real** —no un mock— si `@langchain/google-genai` acepta el bloque `{ type: 'media', data, mime_type }`, siguiendo el Escenario 0 de [quickstart.md](./quickstart.md). Registrar el resultado en [research.md](./research.md) §4.1. Si falla, instalar `@google/genai` y usarlo en `audio.extractor.ts` (T032)
+- [X] T001 Instalar dependencias nuevas: `npm i unpdf mammoth` y `npm i -D @types/multer` en `package.json`
+- [X] T002 [P] Agregar y validar con Joi las variables `KNOWLEDGE_MAX_FILE_MB` (20), `KNOWLEDGE_MULTIMODAL_MAX_MB` (14) y `STORAGE_KNOWLEDGE_DIR` (`storage/knowledge`) en `src/common/config/config.module.ts`
+- [X] T003 [P] Documentar esas tres variables en `.env.example` con un comentario que explique de dónde sale el límite de 14 MB
+- [X] T004 **Spike de audio (riesgo #1)**: verificar contra la API **real** —no un mock— si `@langchain/google-genai` acepta el bloque `{ type: 'media', data, mime_type }`, siguiendo el Escenario 0 de [quickstart.md](./quickstart.md). Registrar el resultado en [research.md](./research.md) §4.1. Si falla, instalar `@google/genai` y usarlo en `audio.extractor.ts` (T032)
 
 **Checkpoint**: dependencias listas y la incógnita del audio resuelta antes de construir encima.
 
@@ -61,16 +61,16 @@ Proyecto backend único: `src/` en la raíz del repositorio. Los tests viven
 > `prisma/schema.prisma` es **un solo archivo**: T005–T008 son secuenciales, no
 > paralelizables entre sí.
 
-- [ ] T005 Agregar los enums `KnowledgeSourceType`, `KnowledgeSyncStatus`, `FileProcessingStatus`, `KnowledgeChangeOrigin` y `RetrievalOutcome`, y extender `EscalationStatus` con `SAVED_UNSENT` y `DISCARDED`, en `prisma/schema.prisma` (ver [data-model.md](./data-model.md) §1)
-- [ ] T006 Extender `KnowledgeDocument` con `isActive`, `sourceType`, `sourceId`, `syncStatus`, `syncError`, `updatedById` y sus 3 índices nuevos en `prisma/schema.prisma` (data-model §2)
-- [ ] T007 Crear los modelos `KnowledgeFile`, `KnowledgeChange` y `KnowledgeRetrieval` en `prisma/schema.prisma` (data-model §3, §4, §5)
-- [ ] T008 Extender `Escalation` con `suggestedResponse`, `suggestedAt`, `savedResponse`, `discardedById`, `discardedAt`, y agregar las 4 relaciones inversas en `Employee`, en `prisma/schema.prisma` (data-model §6, §8)
-- [ ] T009 Aplicar el esquema con `docker compose exec nestjs npx prisma db push` y regenerar el cliente
-- [ ] T010 ⚠️ **Backfill de metadata en ChromaDB — va ANTES de T011**: crear `prisma/backfill-chunk-metadata.ts` que recorra los `KnowledgeDocument` existentes y agregue `isActive: true` y `version` a la metadata de sus chunks. **Sin esto, el filtro de T011 deja fuera todo el corpus actual** (un `where` de igualdad no matchea registros donde la clave está ausente) y los cinco agentes empiezan a escalar por falta de contexto, sin lanzar ningún error. Dry-run por defecto, escribe con `--apply`, siguiendo el patrón de `prisma/normalize-phones.ts`
-- [ ] T011 Sumar `isActive` y `version` a la metadata de los chunks en `ingest()`, y agregar `isActive: true` al filtro `where` de `search()` en `src/ai/knowledge/knowledge.service.ts` (data-model §9, research §5)
-- [ ] T012 ⭐ Test en `src/ai/knowledge/knowledge.service.spec.ts`: `search()` excluye documentos con `isActive: false` **y sigue excluyendo** `INTERNO` cuando la audiencia es `PUBLICO` — el filtro nuevo no puede haber roto el viejo (Principio I)
-- [ ] T013 Reemplazar `WebhookSecretGuard` por `JwtAuthGuard + RolesGuard` con `@Roles('SUPERVISOR')` en `src/ai/knowledge/knowledge.controller.ts` (FR-025, FR-045)
-- [ ] T014 ⭐ Test en `src/ai/knowledge/knowledge.controller.spec.ts`: `/knowledge` responde 401 sin JWT y 403 con rol `EMPLEADO`; un `SUPERVISOR` accede a **todas** las áreas sin filtro por sector (FR-045)
+- [X] T005 Agregar los enums `KnowledgeSourceType`, `KnowledgeSyncStatus`, `FileProcessingStatus`, `KnowledgeChangeOrigin` y `RetrievalOutcome`, y extender `EscalationStatus` con `SAVED_UNSENT` y `DISCARDED`, en `prisma/schema.prisma` (ver [data-model.md](./data-model.md) §1)
+- [X] T006 Extender `KnowledgeDocument` con `isActive`, `sourceType`, `sourceId`, `syncStatus`, `syncError`, `updatedById` y sus 3 índices nuevos en `prisma/schema.prisma` (data-model §2)
+- [X] T007 Crear los modelos `KnowledgeFile`, `KnowledgeChange` y `KnowledgeRetrieval` en `prisma/schema.prisma` (data-model §3, §4, §5)
+- [X] T008 Extender `Escalation` con `suggestedResponse`, `suggestedAt`, `savedResponse`, `discardedById`, `discardedAt`, y agregar las 4 relaciones inversas en `Employee`, en `prisma/schema.prisma` (data-model §6, §8)
+- [X] T009 Aplicar el esquema con `docker compose exec nestjs npx prisma db push` y regenerar el cliente
+- [X] T010 ⚠️ **Backfill de metadata en ChromaDB — va ANTES de T011**: crear `prisma/backfill-chunk-metadata.ts` que recorra los `KnowledgeDocument` existentes y agregue `isActive: true` y `version` a la metadata de sus chunks. **Sin esto, el filtro de T011 deja fuera todo el corpus actual** (un `where` de igualdad no matchea registros donde la clave está ausente) y los cinco agentes empiezan a escalar por falta de contexto, sin lanzar ningún error. Dry-run por defecto, escribe con `--apply`, siguiendo el patrón de `prisma/normalize-phones.ts`
+- [X] T011 Sumar `isActive` y `version` a la metadata de los chunks en `ingest()`, y agregar `isActive: true` al filtro `where` de `search()` en `src/ai/knowledge/knowledge.service.ts` (data-model §9, research §5)
+- [X] T012 ⭐ Test en `src/ai/knowledge/knowledge.service.spec.ts`: `search()` excluye documentos con `isActive: false` **y sigue excluyendo** `INTERNO` cuando la audiencia es `PUBLICO` — el filtro nuevo no puede haber roto el viejo (Principio I)
+- [X] T013 Reemplazar `WebhookSecretGuard` por `JwtAuthGuard + RolesGuard` con `@Roles('SUPERVISOR')` en `src/ai/knowledge/knowledge.controller.ts` (FR-025, FR-045)
+- [X] T014 ⭐ Test en `src/ai/knowledge/knowledge.controller.spec.ts`: `/knowledge` responde 401 sin JWT y 403 con rol `EMPLEADO`; un `SUPERVISOR` accede a **todas** las áreas sin filtro por sector (FR-045)
 
 **Checkpoint**: esquema aplicado y el punto único de filtrado (audiencia + agente + actividad) cubierto por test. Las historias pueden empezar.
 
@@ -88,20 +88,20 @@ Proyecto backend único: `src/` en la raíz del repositorio. Los tests viven
 
 ### Implementación
 
-- [ ] T015 [P] [US2] Crear los DTOs `UpdateKnowledgeDto`, `ListKnowledgeQueryDto` y `SetActiveDto` con `class-validator` en `src/ai/knowledge/dto/`
-- [ ] T016 [US2] Implementar `list()` (filtros `agentType`/`category`/`isActive`, paginado) y `findById()` con origen y bitácora en `src/ai/knowledge/knowledge.service.ts`
-- [ ] T017 [US2] Implementar `update()` en `src/ai/knowledge/knowledge.service.ts`: incrementa `version` y marca `PENDING_REINDEX` **solo si cambió `content`**; registra un `KnowledgeChange` con `origin: MANUAL` y actualiza `updatedById` (FR-020, FR-048, FR-049)
-- [ ] T018 [US2] Implementar `setActive()` en `src/ai/knowledge/knowledge.service.ts`: actualiza la metadata de los chunks en ChromaDB **sin borrarlos ni recalcular embeddings** (FR-022, research §5)
-- [ ] T019 [US2] Implementar `remove()` en `src/ai/knowledge/knowledge.service.ts`: borra los chunks por `where: { documentId }` y la fila de Postgres, dejando el `KnowledgeFile` con `documentId: null` (FR-023, research §7)
-- [ ] T020 [US2] Crear `src/queue/processors/knowledge-reindex.processor.ts`: borra los chunks viejos por metadata, re-embebe y re-agrega, y mueve `syncStatus` `PENDING_REINDEX → SYNCED`, o a `REINDEX_FAILED` al agotar reintentos (FR-024)
-- [ ] T021 [US2] Registrar la cola `knowledge-reindex` y el processor en `src/queue/queue.module.ts`
-- [ ] T022 [US2] Agregar los endpoints `GET /knowledge`, `GET /knowledge/:id`, `PUT /knowledge/:id`, `PATCH /knowledge/:id/active`, `DELETE /knowledge/:id` y `POST /knowledge/:id/reindex` en `src/ai/knowledge/knowledge.controller.ts` según [contracts/knowledge-api.md](./contracts/knowledge-api.md)
+- [X] T015 [P] [US2] Crear los DTOs `UpdateKnowledgeDto`, `ListKnowledgeQueryDto` y `SetActiveDto` con `class-validator` en `src/ai/knowledge/dto/`
+- [X] T016 [US2] Implementar `list()` (filtros `agentType`/`category`/`isActive`, paginado) y `findById()` con origen y bitácora en `src/ai/knowledge/knowledge.service.ts`
+- [X] T017 [US2] Implementar `update()` en `src/ai/knowledge/knowledge.service.ts`: incrementa `version` y marca `PENDING_REINDEX` **solo si cambió `content`**; registra un `KnowledgeChange` con `origin: MANUAL` y actualiza `updatedById` (FR-020, FR-048, FR-049)
+- [X] T018 [US2] Implementar `setActive()` en `src/ai/knowledge/knowledge.service.ts`: actualiza la metadata de los chunks en ChromaDB **sin borrarlos ni recalcular embeddings** (FR-022, research §5)
+- [X] T019 [US2] Implementar `remove()` en `src/ai/knowledge/knowledge.service.ts`: borra los chunks por `where: { documentId }` y la fila de Postgres, dejando el `KnowledgeFile` con `documentId: null` (FR-023, research §7)
+- [X] T020 [US2] Crear `src/queue/processors/knowledge-reindex.processor.ts`: borra los chunks viejos por metadata, re-embebe y re-agrega, y mueve `syncStatus` `PENDING_REINDEX → SYNCED`, o a `REINDEX_FAILED` al agotar reintentos (FR-024)
+- [X] T021 [US2] Registrar la cola `knowledge-reindex` y el processor en `src/queue/queue.module.ts`
+- [X] T022 [US2] Agregar los endpoints `GET /knowledge`, `GET /knowledge/:id`, `PUT /knowledge/:id`, `PATCH /knowledge/:id/active`, `DELETE /knowledge/:id` y `POST /knowledge/:id/reindex` en `src/ai/knowledge/knowledge.controller.ts` según [contracts/knowledge-api.md](./contracts/knowledge-api.md)
 
 ### Tests
 
-- [ ] T023 [P] [US2] Test en `src/ai/knowledge/knowledge.service.spec.ts`: editar solo el título **no** versiona ni encola reindexación; editar el contenido sí hace ambas
-- [ ] T024 [P] [US2] Test en `src/queue/processors/knowledge-reindex.processor.spec.ts`: un fallo del worker deja `REINDEX_FAILED` y **nunca** `SYNCED` con contenido desincronizado (FR-024)
-- [ ] T025 [P] [US2] Test en `src/ai/knowledge/knowledge.service.spec.ts`: `remove()` deja el `KnowledgeFile` huérfano con `documentId: null` en vez de borrarlo
+- [X] T023 [P] [US2] Test en `src/ai/knowledge/knowledge.service.spec.ts`: editar solo el título **no** versiona ni encola reindexación; editar el contenido sí hace ambas
+- [X] T024 [P] [US2] Test en `src/queue/processors/knowledge-reindex.processor.spec.ts`: un fallo del worker deja `REINDEX_FAILED` y **nunca** `SYNCED` con contenido desincronizado (FR-024)
+- [X] T025 [P] [US2] Test en `src/ai/knowledge/knowledge.service.spec.ts`: `remove()` deja el `KnowledgeFile` huérfano con `documentId: null` en vez de borrarlo
 
 **Checkpoint**: la base de conocimiento es gestionable y no puede quedar desincronizada en silencio.
 
@@ -115,24 +115,24 @@ Proyecto backend único: `src/` en la raíz del repositorio. Los tests viven
 
 ### Implementación
 
-- [ ] T026 [P] [US1] Definir el puerto `TextExtractor` (`supports(mimeType)`, `extract(buffer, mimeType)`) en `src/ai/knowledge/extractors/text-extractor.port.ts` (Principio V)
-- [ ] T027 [P] [US1] Implementar `PdfExtractor` con `unpdf` en `src/ai/knowledge/extractors/pdf.extractor.ts`; si no hay texto extraíble, fallar con motivo legible en vez de devolver vacío (FR-005, research §1)
-- [ ] T028 [P] [US1] Implementar `DocxExtractor` con `mammoth.extractRawText` en `src/ai/knowledge/extractors/docx.extractor.ts`; rechazar `.doc` binario con motivo explícito (research §2)
-- [ ] T029 [P] [US1] Implementar `ImageExtractor` con Gemini Vision en `src/ai/knowledge/extractors/image.extractor.ts`, reusando el patrón de bloque `image_url` de `src/queue/processors/receipt-extraction.processor.ts` (research §3)
-- [ ] T030 [US1] Implementar `AudioExtractor` en `src/ai/knowledge/extractors/audio.extractor.ts` según el resultado del spike T004, y **eliminar el archivo de audio al terminar, exitosa o no** (FR-004)
-- [ ] T031 [P] [US1] Crear `KnowledgeStorageService` en `src/ai/knowledge/knowledge-storage.service.ts` para persistir originales no-audio con nombre UUID, siguiendo el patrón de `src/messaging/whatsapp-media.service.ts` (FR-044)
-- [ ] T032 [US1] Crear `KnowledgeIngestionService` en `src/ai/knowledge/knowledge-ingestion.service.ts`: valida tipo y tamaño, calcula el checksum del binario, crea el `KnowledgeFile` y encola el procesamiento
-- [ ] T033 [US1] Implementar la validación de los **dos** límites en `src/ai/knowledge/knowledge-ingestion.service.ts`: 20 MB general (`FILE_LIMIT`) y 14 MB para imagen/audio (`MULTIMODAL_LIMIT`), con mensajes accionables distintos (FR-007, FR-050)
-- [ ] T034 [US1] Implementar la detección de duplicados por checksum del binario en `src/ai/knowledge/knowledge-ingestion.service.ts`: 409 por defecto, con `?force=true` para insistir (clarificación 2026-08-08)
-- [ ] T035 [US1] Crear `src/queue/processors/knowledge-ingestion.processor.ts`: elige el extractor por MIME, extrae, llama a `KnowledgeService.ingest()` con `sourceType: DOCUMENTO` y `sourceId` del archivo, y mueve el estado a `READY` o `FAILED` con motivo
-- [ ] T036 [US1] Registrar la cola `knowledge-ingestion` y el processor en `src/queue/queue.module.ts`
-- [ ] T037 [US1] Agregar `POST /knowledge/upload` (multipart con `FileInterceptor`, responde **202**), `GET /knowledge/files` y `GET /knowledge/files/:id/download` en `src/ai/knowledge/knowledge.controller.ts` (FR-006, contracts)
+- [X] T026 [P] [US1] Definir el puerto `TextExtractor` (`supports(mimeType)`, `extract(buffer, mimeType)`) en `src/ai/knowledge/extractors/text-extractor.port.ts` (Principio V)
+- [X] T027 [P] [US1] Implementar `PdfExtractor` con `unpdf` en `src/ai/knowledge/extractors/pdf.extractor.ts`; si no hay texto extraíble, fallar con motivo legible en vez de devolver vacío (FR-005, research §1)
+- [X] T028 [P] [US1] Implementar `DocxExtractor` con `mammoth.extractRawText` en `src/ai/knowledge/extractors/docx.extractor.ts`; rechazar `.doc` binario con motivo explícito (research §2)
+- [X] T029 [P] [US1] Implementar `ImageExtractor` con Gemini Vision en `src/ai/knowledge/extractors/image.extractor.ts`, reusando el patrón de bloque `image_url` de `src/queue/processors/receipt-extraction.processor.ts` (research §3)
+- [X] T030 [US1] Implementar `AudioExtractor` en `src/ai/knowledge/extractors/audio.extractor.ts` según el resultado del spike T004, y **eliminar el archivo de audio al terminar, exitosa o no** (FR-004)
+- [X] T031 [P] [US1] Crear `KnowledgeStorageService` en `src/ai/knowledge/knowledge-storage.service.ts` para persistir originales no-audio con nombre UUID, siguiendo el patrón de `src/messaging/whatsapp-media.service.ts` (FR-044)
+- [X] T032 [US1] Crear `KnowledgeIngestionService` en `src/ai/knowledge/knowledge-ingestion.service.ts`: valida tipo y tamaño, calcula el checksum del binario, crea el `KnowledgeFile` y encola el procesamiento
+- [X] T033 [US1] Implementar la validación de los **dos** límites en `src/ai/knowledge/knowledge-ingestion.service.ts`: 20 MB general (`FILE_LIMIT`) y 14 MB para imagen/audio (`MULTIMODAL_LIMIT`), con mensajes accionables distintos (FR-007, FR-050)
+- [X] T034 [US1] Implementar la detección de duplicados por checksum del binario en `src/ai/knowledge/knowledge-ingestion.service.ts`: 409 por defecto, con `?force=true` para insistir (clarificación 2026-08-08)
+- [X] T035 [US1] Crear `src/queue/processors/knowledge-ingestion.processor.ts`: elige el extractor por MIME, extrae, llama a `KnowledgeService.ingest()` con `sourceType: DOCUMENTO` y `sourceId` del archivo, y mueve el estado a `READY` o `FAILED` con motivo
+- [X] T036 [US1] Registrar la cola `knowledge-ingestion` y el processor en `src/queue/queue.module.ts`
+- [X] T037 [US1] Agregar `POST /knowledge/upload` (multipart con `FileInterceptor`, responde **202**), `GET /knowledge/files` y `GET /knowledge/files/:id/download` en `src/ai/knowledge/knowledge.controller.ts` (FR-006, contracts)
 
 ### Tests
 
-- [ ] T038 [P] [US1] Test en `src/ai/knowledge/knowledge-ingestion.service.spec.ts`: un archivo sin texto extraíble termina `FAILED` con motivo y **sin** crear documento (FR-005)
-- [ ] T039 [P] [US1] Test en `src/ai/knowledge/knowledge-ingestion.service.spec.ts`: imagen de 16 MB → 413 `MULTIMODAL_LIMIT`; **PDF de 18 MB → aceptado** (FR-050)
-- [ ] T040 [P] [US1] Test en `src/ai/knowledge/extractors/audio.extractor.spec.ts`: el archivo de audio se elimina también cuando la transcripción falla (FR-004)
+- [X] T038 [P] [US1] Test en `src/ai/knowledge/knowledge-ingestion.service.spec.ts`: un archivo sin texto extraíble termina `FAILED` con motivo y **sin** crear documento (FR-005)
+- [X] T039 [P] [US1] Test en `src/ai/knowledge/knowledge-ingestion.service.spec.ts`: imagen de 16 MB → 413 `MULTIMODAL_LIMIT`; **PDF de 18 MB → aceptado** (FR-050)
+- [X] T040 [P] [US1] Test en `src/ai/knowledge/extractors/audio.extractor.spec.ts`: el archivo de audio se elimina también cuando la transcripción falla (FR-004)
 
 **Checkpoint**: 🎯 **MVP completo.** Se puede demostrar el ciclo entero: subir un PDF → verlo en la lista → corregir un dato → que el agente responda con el valor nuevo.
 
