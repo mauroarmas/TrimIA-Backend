@@ -132,3 +132,34 @@ en `audio.extractor.spec.ts` con el texto real de la transcripción.
 pero destapó un agujero que ningún audio bien grabado habría mostrado. El
 prototipo estaba dispuesto a incorporar como conocimiento cualquier cosa que
 alguien dijera en voz alta.
+
+---
+
+## Segundo hallazgo, en la Fase 5 (2026-08-17)
+
+Los audios sirvieron una vez más, esta vez para probar la propuesta de
+respuesta (US3). El documento del audio 1 quedó como `INTERNO` / `COLLECTIONS`,
+así que permitió montar la demostración del Principio I con datos reales: dos
+conversaciones escaladas, **la misma pregunta** ("¿puedo adelantar varias
+cuotas juntas?"), distinto `userType`.
+
+| Conversación | `audienceUsed` | Fuentes recuperadas |
+|---|---|---|
+| `EMPLEADO` | `INTERNO` | **Adelanto de varias cuotas juntas** (el audio) + 3 más |
+| `CLIENTE` | `PUBLICO` | Medios de pago, promociones — **el documento del audio no aparece** |
+
+Al pedirle la propuesta al caso del `EMPLEADO`, redactó una respuesta correcta
+citando el procedimiento del audio. Al del `CLIENTE`, no.
+
+### Hallazgo: `hasContext: true` con la propuesta vacía
+
+En el caso del `CLIENTE`, la primera corrida devolvió `hasContext: true` y
+`suggestion: ""`. El score de los documentos públicos de medios de pago pasó el
+umbral —hablan del tema— pero ninguno respondía la consulta, así que el modelo
+no redactó nada. Hizo lo correcto; el servicio no lo contempló.
+
+En la pantalla eso habría sido un cuadro de texto en blanco sin ninguna
+explicación: el supervisor sin saber si el sistema falló o si no hay nada que
+decir. Se agregó un segundo filtro —el score dice si hay material *del tema*,
+la respuesta del modelo dice si ese material *responde la consulta*— y ahora
+cae por la rama de FR-035, con motivo. Queda como test.

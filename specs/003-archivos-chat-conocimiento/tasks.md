@@ -146,19 +146,19 @@ Proyecto backend único: `src/` en la raíz del repositorio. Los tests viven
 
 ### Implementación
 
-- [ ] T041 [US3] Crear `EscalationSuggestionService` en `src/escalations/escalation-suggestion.service.ts`: deriva la audiencia del **`userType` de la conversación escalada** (no del supervisor), busca contexto y redacta con Gemini (FR-034, research §12)
-- [ ] T042 [US3] Devolver `hasContext: false` con `suggestion: null` cuando no haya contexto suficiente, en vez de redactar sin respaldo, en `src/escalations/escalation-suggestion.service.ts` (FR-035, Principio II)
-- [ ] T043 [US3] Implementar `saveUnsent()` en `src/escalations/escalations.service.ts`: no envía nada, ingesta al RAG con `sourceType: ESCALADO` + `sourceId` **y la audiencia derivada del `userType` de la conversación** (FR-043 — mismo riesgo que cubre T048), devuelve la conversación a `ACTIVE` y marca `SAVED_UNSENT` (FR-039)
-- [ ] T044 [US3] Implementar `discard()` en `src/escalations/escalations.service.ts`: sin mensaje, sin ingesta, registra `discardedById`/`discardedAt` y marca `DISCARDED` (FR-038)
-- [ ] T045 [US3] Respetar `HUMAN_HANDLING` en los tres cierres, en `src/escalations/escalations.service.ts`: no devolver el control al asistente si hay una intervención humana en curso (caso borde de la spec)
-- [ ] T046 [US3] Agregar `GET /supervisor/escalations/:id/suggestion`, `POST .../save-unsent` y `POST .../discard` en `src/supervisor/supervisor.controller.ts` según [contracts/escalations-api.md](./contracts/escalations-api.md)
-- [ ] T047 [US3] Registrar los eventos `escalation_suggestion_generated`, `escalation_saved_unsent` y `escalation_discarded` vía `OrchestrationLogger` en `src/escalations/escalations.service.ts` (FR-041, OE-11)
+- [X] T041 [US3] Crear `EscalationSuggestionService` en `src/escalations/escalation-suggestion.service.ts`: deriva la audiencia del **`userType` de la conversación escalada** (no del supervisor), busca contexto y redacta con Gemini (FR-034, research §12)
+- [X] T042 [US3] Devolver `hasContext: false` con `suggestion: null` cuando no haya contexto suficiente, en vez de redactar sin respaldo, en `src/escalations/escalation-suggestion.service.ts` (FR-035, Principio II)
+- [X] T043 [US3] Implementar `saveUnsent()` en `src/escalations/escalations.service.ts`: no envía nada, ingesta al RAG con `sourceType: ESCALADO` + `sourceId` **y la audiencia derivada del `userType` de la conversación** (FR-043 — mismo riesgo que cubre T048), devuelve la conversación a `ACTIVE` y marca `SAVED_UNSENT` (FR-039)
+- [X] T044 [US3] Implementar `discard()` en `src/escalations/escalations.service.ts`: sin mensaje, sin ingesta, registra `discardedById`/`discardedAt` y marca `DISCARDED` (FR-038)
+- [X] T045 [US3] Respetar `HUMAN_HANDLING` en los tres cierres, en `src/escalations/escalations.service.ts`: no devolver el control al asistente si hay una intervención humana en curso (caso borde de la spec)
+- [X] T046 [US3] Agregar `GET /supervisor/escalations/:id/suggestion`, `POST .../save-unsent` y `POST .../discard` en `src/supervisor/supervisor.controller.ts` según [contracts/escalations-api.md](./contracts/escalations-api.md)
+- [X] T047 [US3] Registrar los eventos `escalation_suggestion_generated`, `escalation_saved_unsent` y `escalation_discarded` vía `OrchestrationLogger` en `src/escalations/escalations.service.ts` (FR-041, OE-11)
 
 ### Tests
 
-- [ ] T048 ⭐ [US3] Test en `src/escalations/escalation-suggestion.service.spec.ts`: una escalación de una conversación con `userType: CLIENTE` produce `audienceUsed: PUBLICO` y **no** recupera documentos `INTERNO`, aunque quien consulta sea `SUPERVISOR` (Principio I — es la fuga más fácil de este sprint)
-- [ ] T049 [P] [US3] Test en `src/escalations/escalations.service.spec.ts`: los tres cierres son terminales — un segundo intento sobre el mismo caso devuelve 409 (FR-040). **Incluir**: lo que se envía al usuario es el texto del body y **nunca** `escalation.suggestedResponse` (FR-036 — ahora que la propuesta se persiste, es una regresión posible)
-- [ ] T050 [P] [US3] Test en `src/escalations/escalations.service.spec.ts`: `saveUnsent()` **no** llama a `WhatsappSenderService.send()` y sí crea un `KnowledgeDocument`; `discard()` no hace ninguna de las dos
+- [X] T048 ⭐ [US3] Test en `src/escalations/escalation-suggestion.service.spec.ts`: una escalación de una conversación con `userType: CLIENTE` produce `audienceUsed: PUBLICO` y **no** recupera documentos `INTERNO`, aunque quien consulta sea `SUPERVISOR` (Principio I — es la fuga más fácil de este sprint)
+- [X] T049 [P] [US3] Test en `src/escalations/escalations.service.spec.ts`: los tres cierres son terminales — un segundo intento sobre el mismo caso devuelve 409 (FR-040). **Incluir**: lo que se envía al usuario es el texto del body y **nunca** `escalation.suggestedResponse` (FR-036 — ahora que la propuesta se persiste, es una regresión posible)
+- [X] T050 [P] [US3] Test en `src/escalations/escalations.service.spec.ts`: `saveUnsent()` **no** llama a `WhatsappSenderService.send()` y sí crea un `KnowledgeDocument`; `discard()` no hace ninguna de las dos
 
 **Checkpoint**: las tres historias P1 están completas y el ciclo de retroalimentación del conocimiento cierra.
 
