@@ -84,7 +84,11 @@ describe('ReceiptExtractionProcessor', () => {
 
     expect(prisma.paymentProof.update).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: { extractedAmount: null, extractedDate: null, extractedBank: null },
+        data: {
+          extractedAmount: null,
+          extractedDate: null,
+          extractedBank: null,
+        },
       }),
     );
   });

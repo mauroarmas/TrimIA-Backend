@@ -60,7 +60,10 @@ export function analyzePhone(raw: string | null | undefined): NormalizedPhone {
   // El 9 de móvil sólo se saca si lo que queda tiene un largo plausible
   // (10 = ya normalizado, 12 = todavía tiene el 15 local). Ningún área
   // argentina empieza con 9, así que no hay riesgo de comerse un dígito real.
-  if (digits.startsWith('9') && (digits.length === 11 || digits.length === 13)) {
+  if (
+    digits.startsWith('9') &&
+    (digits.length === 11 || digits.length === 13)
+  ) {
     digits = digits.slice(1);
   }
 

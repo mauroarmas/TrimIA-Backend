@@ -1,4 +1,8 @@
-import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { CollectionsService } from './collections.service';
 import { PrismaService } from '../database/prisma.service';
 import { EscalationsService } from '../escalations/escalations.service';
@@ -256,7 +260,9 @@ describe('CollectionsService', () => {
     it('un controlador puede filtrar por un cobrador puntual', async () => {
       prisma.client.findMany.mockResolvedValue([{ id: 'c1' }]);
 
-      await service.listActivity('controlador-1', true, { collectorId: 'cobrador-2' });
+      await service.listActivity('controlador-1', true, {
+        collectorId: 'cobrador-2',
+      });
 
       expect(prisma.client.findMany).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -270,7 +276,13 @@ describe('CollectionsService', () => {
 
       const result = await service.listActivity('cobrador-1', false);
 
-      expect(result).toEqual({ data: [], total: 0, page: 1, limit: 20, hasMore: false });
+      expect(result).toEqual({
+        data: [],
+        total: 0,
+        page: 1,
+        limit: 20,
+        hasMore: false,
+      });
       expect(prisma.message.findMany).not.toHaveBeenCalled();
     });
 

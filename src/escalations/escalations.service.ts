@@ -1,4 +1,8 @@
-import { ConflictException, Injectable, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  Injectable,
+  NotFoundException,
+} from '@nestjs/common';
 import { AgentType, Audience } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
 import { ConversationsService } from '../conversations/conversations.service';

@@ -102,7 +102,12 @@ export class SupervisorController {
   @ApiQuery({ name: 'conversationId', type: String, required: false })
   @ApiQuery({ name: 'eventType', type: String, required: false })
   @ApiQuery({ name: 'agentType', enum: AgentType, required: false })
-  @ApiQuery({ name: 'after', type: String, required: false, description: 'Fecha ISO (ej. 2026-07-22T00:00:00Z)' })
+  @ApiQuery({
+    name: 'after',
+    type: String,
+    required: false,
+    description: 'Fecha ISO (ej. 2026-07-22T00:00:00Z)',
+  })
   @ApiQuery({ name: 'page', type: Number, required: false })
   @ApiQuery({ name: 'limit', type: Number, required: false })
   getEvents(
@@ -122,8 +127,6 @@ export class SupervisorController {
       limit: limit ? parseInt(limit, 10) : undefined,
     });
   }
-
-
 
   // ---------------------------------------------------------------------
   // Human-in-the-loop (Sprint 3) — cola de escalados y control manual.

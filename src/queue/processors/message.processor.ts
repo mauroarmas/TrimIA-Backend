@@ -101,7 +101,9 @@ export class MessageProcessor extends WorkerHost {
     const { conversationId, externalId, message, channel, messageId } =
       job.data;
 
-    this.logger.log(`Processing message [conv=${conversationId}]: "${message}"`);
+    this.logger.log(
+      `Processing message [conv=${conversationId}]: "${message}"`,
+    );
 
     try {
       // Sticky + historial: una sola query trae todo lo que necesita el orquestador.
@@ -120,7 +122,11 @@ export class MessageProcessor extends WorkerHost {
         // (HUMAN_HANDLING) está mirando la conversación y va a contestar él,
         // un aviso automático ahí sobra y confunde.
         if (conversation.status === 'WAITING_HUMAN') {
-          await this.acknowledgeWaitingHuman(conversationId, externalId, channel);
+          await this.acknowledgeWaitingHuman(
+            conversationId,
+            externalId,
+            channel,
+          );
         }
         return;
       }

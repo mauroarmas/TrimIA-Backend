@@ -2,7 +2,11 @@ import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
 import { readFile } from 'node:fs/promises';
-import { AIMessage, HumanMessage, SystemMessage } from '@langchain/core/messages';
+import {
+  AIMessage,
+  HumanMessage,
+  SystemMessage,
+} from '@langchain/core/messages';
 import { z } from 'zod';
 import { PrismaService } from '../../database/prisma.service';
 import { LlmService } from '../../ai/llm/llm.service';
@@ -28,15 +32,21 @@ const receiptSchema = z.object({
   amount: z
     .number()
     .optional()
-    .describe('Monto de la transferencia en pesos argentinos. Omitir el campo si no se puede leer con confianza'),
+    .describe(
+      'Monto de la transferencia en pesos argentinos. Omitir el campo si no se puede leer con confianza',
+    ),
   date: z
     .string()
     .optional()
-    .describe('Fecha de la operación en formato ISO 8601 (YYYY-MM-DD). Omitir el campo si no se puede leer'),
+    .describe(
+      'Fecha de la operación en formato ISO 8601 (YYYY-MM-DD). Omitir el campo si no se puede leer',
+    ),
   bank: z
     .string()
     .optional()
-    .describe('Nombre del banco o billetera de origen (ej. "Banco Nación", "Mercado Pago"). Omitir el campo si no se puede leer'),
+    .describe(
+      'Nombre del banco o billetera de origen (ej. "Banco Nación", "Mercado Pago"). Omitir el campo si no se puede leer',
+    ),
 });
 
 const EXTRACTION_PROMPT =
@@ -65,7 +75,9 @@ export class ReceiptExtractionProcessor extends WorkerHost {
       include: { message: true },
     });
     if (!proof) {
-      this.logger.warn(`PaymentProof ${paymentProofId} no existe — se descarta el job`);
+      this.logger.warn(
+        `PaymentProof ${paymentProofId} no existe — se descarta el job`,
+      );
       return;
     }
 
@@ -85,7 +97,10 @@ export class ReceiptExtractionProcessor extends WorkerHost {
         new HumanMessage({
           content: [
             { type: 'text', text: 'Leé este comprobante de pago.' },
-            { type: 'image_url', image_url: { url: `data:${mimeType};base64,${base64}` } },
+            {
+              type: 'image_url',
+              image_url: { url: `data:${mimeType};base64,${base64}` },
+            },
           ],
         }),
       ]);
@@ -112,7 +127,9 @@ export class ReceiptExtractionProcessor extends WorkerHost {
         model: this.llm.model,
       });
 
-      this.logger.log(`Lectura tentativa completada para PaymentProof ${paymentProofId}`);
+      this.logger.log(
+        `Lectura tentativa completada para PaymentProof ${paymentProofId}`,
+      );
     } catch (err) {
       this.logger.error(
         `Error leyendo comprobante ${paymentProofId}: ${err instanceof Error ? err.message : err}`,

@@ -31,7 +31,9 @@ export const agentResponseSchema = z.object({
   handoffReason: z
     .string()
     .optional()
-    .describe('Motivo de la derivación, en una línea. Solo si needsHuman es true'),
+    .describe(
+      'Motivo de la derivación, en una línea. Solo si needsHuman es true',
+    ),
   internalNote: z
     .string()
     .optional()

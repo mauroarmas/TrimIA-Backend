@@ -43,15 +43,20 @@ describe('buildOrchestratorGraph — ruteo sticky vs. greeting', () => {
     });
     const llm = {
       chat: { withStructuredOutput: jest.fn().mockReturnValue({ invoke }) },
-      classifierChat: { withStructuredOutput: jest.fn().mockReturnValue({ invoke }) },
+      classifierChat: {
+        withStructuredOutput: jest.fn().mockReturnValue({ invoke }),
+      },
       model: 'gemini-3.5-flash-lite',
     };
-    const collectionsNode = jest
-      .fn()
-      .mockResolvedValue({ response: 'respuesta del agente de cobranzas', agentType: 'COLLECTIONS' });
+    const collectionsNode = jest.fn().mockResolvedValue({
+      response: 'respuesta del agente de cobranzas',
+      agentType: 'COLLECTIONS',
+    });
     const agents = {
       getGraph: jest.fn((type: string) =>
-        type === 'COLLECTIONS' ? collectionsNode : jest.fn().mockResolvedValue({}),
+        type === 'COLLECTIONS'
+          ? collectionsNode
+          : jest.fn().mockResolvedValue({}),
       ),
     };
     const orchestrationLogger = { logEvent: jest.fn(), trackTokens: jest.fn() };
@@ -66,7 +71,10 @@ describe('buildOrchestratorGraph — ruteo sticky vs. greeting', () => {
   }
 
   it('sticky + mismo tema + mensaje mayormente saludo → resuelve como greeting, NO entra al agente', async () => {
-    const { graph, collectionsNode } = buildGraph({ decision: 'mismo', isGreeting: true });
+    const { graph, collectionsNode } = buildGraph({
+      decision: 'mismo',
+      isGreeting: true,
+    });
 
     const result = await graph.invoke(baseState);
 
@@ -75,7 +83,10 @@ describe('buildOrchestratorGraph — ruteo sticky vs. greeting', () => {
   });
 
   it('sticky + mismo tema + NO es saludo → sigue yendo directo al agente (sin cambios de comportamiento)', async () => {
-    const { graph, collectionsNode } = buildGraph({ decision: 'mismo', isGreeting: false });
+    const { graph, collectionsNode } = buildGraph({
+      decision: 'mismo',
+      isGreeting: false,
+    });
 
     const result = await graph.invoke(baseState);
 
@@ -84,7 +95,10 @@ describe('buildOrchestratorGraph — ruteo sticky vs. greeting', () => {
   });
 
   it('scope_check sigue haciendo UNA sola llamada a Gemini (el greeting sale "gratis" de la misma respuesta estructurada)', async () => {
-    const { graph, invoke } = buildGraph({ decision: 'mismo', isGreeting: true });
+    const { graph, invoke } = buildGraph({
+      decision: 'mismo',
+      isGreeting: true,
+    });
 
     await graph.invoke(baseState);
 
@@ -110,7 +124,10 @@ describe('buildOrchestratorGraph — ruteo sticky vs. greeting', () => {
         },
       ],
     };
-    const { graph, invoke } = buildGraph({ decision: 'mismo', isGreeting: false });
+    const { graph, invoke } = buildGraph({
+      decision: 'mismo',
+      isGreeting: false,
+    });
 
     await graph.invoke(stateWithHistory);
 
@@ -131,7 +148,10 @@ describe('buildOrchestratorGraph — ruteo sticky vs. greeting', () => {
   });
 
   it('scope_check funciona igual sin historial (conversación recién empezada)', async () => {
-    const { graph, invoke } = buildGraph({ decision: 'mismo', isGreeting: false });
+    const { graph, invoke } = buildGraph({
+      decision: 'mismo',
+      isGreeting: false,
+    });
 
     await graph.invoke(baseState); // baseState.history = []
 
@@ -182,15 +202,20 @@ describe('buildOrchestratorGraph — atajo trivial vs. agente sticky', () => {
     });
     const llm = {
       chat: { withStructuredOutput: jest.fn().mockReturnValue({ invoke }) },
-      classifierChat: { withStructuredOutput: jest.fn().mockReturnValue({ invoke }) },
+      classifierChat: {
+        withStructuredOutput: jest.fn().mockReturnValue({ invoke }),
+      },
       model: 'gemini-3.5-flash-lite',
     };
-    const collectionsNode = jest
-      .fn()
-      .mockResolvedValue({ response: 'respuesta de cobranzas', agentType: 'COLLECTIONS' });
+    const collectionsNode = jest.fn().mockResolvedValue({
+      response: 'respuesta de cobranzas',
+      agentType: 'COLLECTIONS',
+    });
     const agents = {
       getGraph: jest.fn((type: string) =>
-        type === 'COLLECTIONS' ? collectionsNode : jest.fn().mockResolvedValue({}),
+        type === 'COLLECTIONS'
+          ? collectionsNode
+          : jest.fn().mockResolvedValue({}),
       ),
     };
     const orchestrationLogger = { logEvent: jest.fn(), trackTokens: jest.fn() };
@@ -218,7 +243,10 @@ describe('buildOrchestratorGraph — atajo trivial vs. agente sticky', () => {
   });
 
   it('sin agente sticky, "dale" sigue resolviéndose gratis (0 llamadas al LLM)', async () => {
-    const { graph, invoke } = buildGraph({ decision: 'mismo', isGreeting: false });
+    const { graph, invoke } = buildGraph({
+      decision: 'mismo',
+      isGreeting: false,
+    });
 
     const result = await graph.invoke({ ...baseState, currentAgent: null });
 
@@ -269,7 +297,9 @@ describe('buildOrchestratorGraph — greeting_response usa greetingType', () => 
     });
     const llm = {
       chat: { withStructuredOutput: jest.fn().mockReturnValue({ invoke }) },
-      classifierChat: { withStructuredOutput: jest.fn().mockReturnValue({ invoke }) },
+      classifierChat: {
+        withStructuredOutput: jest.fn().mockReturnValue({ invoke }),
+      },
       model: 'gemini-3.5-flash-lite',
     };
     const agents = { getGraph: jest.fn(() => jest.fn().mockResolvedValue({})) };
@@ -284,7 +314,11 @@ describe('buildOrchestratorGraph — greeting_response usa greetingType', () => 
   }
 
   it('greetingType "cierre" → respuesta de despedida, no "¡Hola!"', async () => {
-    const graph = buildGraph({ decision: 'mismo', isGreeting: true, greetingType: 'cierre' });
+    const graph = buildGraph({
+      decision: 'mismo',
+      isGreeting: true,
+      greetingType: 'cierre',
+    });
 
     const result = await graph.invoke(baseState);
 
@@ -292,7 +326,11 @@ describe('buildOrchestratorGraph — greeting_response usa greetingType', () => 
   });
 
   it('greetingType "apertura" → respuesta de bienvenida', async () => {
-    const graph = buildGraph({ decision: 'mismo', isGreeting: true, greetingType: 'apertura' });
+    const graph = buildGraph({
+      decision: 'mismo',
+      isGreeting: true,
+      greetingType: 'apertura',
+    });
 
     const result = await graph.invoke(baseState);
 
@@ -340,9 +378,10 @@ describe('buildOrchestratorGraph — handoff colapsado (targetAgent de scope_che
   };
 
   function buildSalesAgentMock() {
-    return jest
-      .fn()
-      .mockResolvedValue({ response: 'respuesta de ventas', agentType: 'SALES' });
+    return jest.fn().mockResolvedValue({
+      response: 'respuesta de ventas',
+      agentType: 'SALES',
+    });
   }
 
   it('scope_check trae targetAgent → va directo al agente, sin volver a clasificar (1 sola llamada al LLM)', async () => {
@@ -467,7 +506,9 @@ describe('buildOrchestratorGraph — trivial_response deja auditoría', () => {
     await graph.invoke(state);
 
     expect(logEvent).toHaveBeenCalledTimes(1);
-    expect(logEvent.mock.calls[0][0]).toMatchObject({ eventType: 'TRIVIAL_RESPONSE' });
+    expect(logEvent.mock.calls[0][0]).toMatchObject({
+      eventType: 'TRIVIAL_RESPONSE',
+    });
     expect(trackTokens).toHaveBeenCalledTimes(1);
     expect(trackTokens.mock.calls[0][0]).toMatchObject({
       inputTokens: 0,

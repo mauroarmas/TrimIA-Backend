@@ -30,15 +30,18 @@ import { ConfigService } from '@nestjs/config';
     LoggerModule.forRoot({
       pinoHttp: {
         level: process.env.NODE_ENV === 'production' ? 'info' : 'debug',
-        transport: process.env.NODE_ENV !== 'production' ? {
-          target: 'pino-pretty',
-          options: {
-            singleLine: true,
-            translateTime: 'SYS:HH:MM:ss',
-            messageFormat: '[{context}] {msg}',
-            ignore: 'pid,hostname',
-          },
-        } : undefined,
+        transport:
+          process.env.NODE_ENV !== 'production'
+            ? {
+                target: 'pino-pretty',
+                options: {
+                  singleLine: true,
+                  translateTime: 'SYS:HH:MM:ss',
+                  messageFormat: '[{context}] {msg}',
+                  ignore: 'pid,hostname',
+                },
+              }
+            : undefined,
         serializers: {
           req: (req) => ({ method: req.method, url: req.url }),
           res: (res) => ({ statusCode: res.statusCode }),
@@ -81,4 +84,4 @@ import { ConfigService } from '@nestjs/config';
     },
   ],
 })
-export class AppModule { }
+export class AppModule {}

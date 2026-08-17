@@ -119,8 +119,12 @@ async function main() {
   // Recorre el modelo entero tal como lo hace el proceso real:
   // Cliente → SolicitudCompra → evaluación crediticia → Financiación → Cuotas.
   const [vendedora, cobrador, administrativa] = await Promise.all([
-    prisma.employee.findUnique({ where: { email: 'laura.gomez@credimision.com' } }),
-    prisma.employee.findUnique({ where: { email: 'roberto.sosa@credimision.com' } }),
+    prisma.employee.findUnique({
+      where: { email: 'laura.gomez@credimision.com' },
+    }),
+    prisma.employee.findUnique({
+      where: { email: 'roberto.sosa@credimision.com' },
+    }),
     prisma.employee.findUnique({
       where: { email: 'graciela.medina@credimision.com' },
     }),
@@ -303,9 +307,9 @@ async function main() {
   // sin que nada falle: el RAG sigue respondiendo, pero el panel no lista los
   // documentos). Se insertan solo los que faltan, comparando por título.
   const existingTitles = new Set(
-    (
-      await prisma.knowledgeDocument.findMany({ select: { title: true } })
-    ).map((d) => d.title),
+    (await prisma.knowledgeDocument.findMany({ select: { title: true } })).map(
+      (d) => d.title,
+    ),
   );
 
   const missing = knowledgeDocs.filter((doc) => !existingTitles.has(doc.title));

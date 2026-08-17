@@ -38,7 +38,10 @@ describe('DevToolsService', () => {
       paymentProof: { deleteMany: jest.fn().mockResolvedValue({ count: 0 }) },
       conversation: { updateMany: jest.fn() },
     };
-    employees = { findByPhone: jest.fn().mockResolvedValue(null), update: jest.fn() };
+    employees = {
+      findByPhone: jest.fn().mockResolvedValue(null),
+      update: jest.fn(),
+    };
     clients = {
       getByPhone: jest.fn().mockResolvedValue({ id: 'client-1', phone }),
       create: jest.fn().mockResolvedValue({ id: 'client-1', phone }),
@@ -109,7 +112,10 @@ describe('DevToolsService', () => {
     it('borra los comprobantes del cliente y devuelve sus cuotas a PENDING', async () => {
       prisma.paymentProof.deleteMany.mockResolvedValue({ count: 3 });
 
-      await service.setClientFixtures({ phone, fixtures: [ClientFixture.RESET] });
+      await service.setClientFixtures({
+        phone,
+        fixtures: [ClientFixture.RESET],
+      });
 
       expect(prisma.paymentProof.deleteMany).toHaveBeenCalledWith({
         where: { quota: { clientId: 'client-1' } },
@@ -126,7 +132,10 @@ describe('DevToolsService', () => {
 
     // No las borra: pueden pertenecer a una Financing y romperían el plan.
     it('no borra las cuotas', async () => {
-      await service.setClientFixtures({ phone, fixtures: [ClientFixture.RESET] });
+      await service.setClientFixtures({
+        phone,
+        fixtures: [ClientFixture.RESET],
+      });
 
       expect(prisma.quota.create).not.toHaveBeenCalled();
     });
