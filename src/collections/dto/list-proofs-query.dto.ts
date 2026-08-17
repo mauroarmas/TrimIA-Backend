@@ -5,7 +5,8 @@ import { PaymentProofStatus } from '@prisma/client';
 export class ListProofsQueryDto {
   @ApiPropertyOptional({
     enum: PaymentProofStatus,
-    description: 'Sin especificar, devuelve PENDING_REVIEW (comportamiento original).',
+    description:
+      'Sin especificar, devuelve PENDING_REVIEW (comportamiento original).',
   })
   @IsOptional()
   @IsEnum(PaymentProofStatus)

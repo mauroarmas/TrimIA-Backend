@@ -12,8 +12,14 @@ import { LlmService } from '../llm/llm.service';
 import { AgentsService, SpecializedAgent } from '../agents/agents.service';
 import { OrchestrationLogger } from './orchestration-logger.service';
 import { OrchestratorState, OrchestratorStateType } from './orchestrator.state';
-import { buildClassifyPrompt, buildScopePrompt } from './utils/orchestrator.prompts';
-import { buildClassificationSchema, buildScopeSchema } from './utils/orchestrator.schemas';
+import {
+  buildClassifyPrompt,
+  buildScopePrompt,
+} from './utils/orchestrator.prompts';
+import {
+  buildClassificationSchema,
+  buildScopeSchema,
+} from './utils/orchestrator.schemas';
 import {
   isTrivial,
   cannedReply,
@@ -54,7 +60,6 @@ const AGENT_KEYS: SpecializedAgent[] = [
  *   orchestrator.prompts.ts · orchestrator.schemas.ts · trivial-filter.ts
  */
 
-
 export function buildOrchestratorGraph(
   llm: LlmService,
   agents: AgentsService,
@@ -94,7 +99,9 @@ export function buildOrchestratorGraph(
     return {
       agentType: isGreeting ? null : (intent as AgentType),
       isGreeting,
-      greetingType: isGreeting ? (result.parsed.greetingType ?? 'apertura') : null,
+      greetingType: isGreeting
+        ? (result.parsed.greetingType ?? 'apertura')
+        : null,
       startedAt,
       inputTokens: (state.inputTokens ?? 0) + (usage?.input_tokens ?? 0),
       outputTokens: (state.outputTokens ?? 0) + (usage?.output_tokens ?? 0),
@@ -154,13 +161,19 @@ export function buildOrchestratorGraph(
     return {
       scopeChanged,
       isGreeting,
-      greetingType: isGreeting ? (result.parsed.greetingType ?? 'apertura') : null,
+      greetingType: isGreeting
+        ? (result.parsed.greetingType ?? 'apertura')
+        : null,
       // Si sigue en el mismo dominio y no es un saludo, el agente resuelto
       // es el sticky actual. Un saludo nunca resuelve a un agente, igual que
       // en classify_intent (ver scopeRouter). Si cambió de tema, resuelve al
       // targetAgent si el modelo lo dio; si no (o es greeting), null — y
       // postHandoffRouter cae de nuevo a classify_intent como red de seguridad.
-      agentType: isGreeting ? null : scopeChanged ? (targetAgent ?? null) : state.currentAgent,
+      agentType: isGreeting
+        ? null
+        : scopeChanged
+          ? (targetAgent ?? null)
+          : state.currentAgent,
       startedAt,
       // Acumula igual que classify_intent (no pisa): hoy scope_check siempre
       // es el primer nodo LLM del turno cuando corre, así que da lo mismo —

@@ -15,7 +15,9 @@ export function buildClassificationSchema(allowed: SpecializedAgent[]) {
   return z.object({
     intent: z
       .enum([...allowed, 'greeting'] as unknown as [string, ...string[]])
-      .describe('El agente que debe atender el mensaje, o greeting si es un saludo'),
+      .describe(
+        'El agente que debe atender el mensaje, o greeting si es un saludo',
+      ),
     greetingType: z
       .enum(['apertura', 'cierre'])
       .optional()
@@ -35,10 +37,14 @@ export function buildScopeSchema(allowed: SpecializedAgent[]) {
   return z.object({
     decision: z
       .enum(['mismo', 'cambio'])
-      .describe('mismo = sigue en el dominio del agente actual; cambio = es otro tema'),
+      .describe(
+        'mismo = sigue en el dominio del agente actual; cambio = es otro tema',
+      ),
     isGreeting: z
       .boolean()
-      .describe('true si el mensaje es principalmente un saludo/cortesía sin una consulta concreta'),
+      .describe(
+        'true si el mensaje es principalmente un saludo/cortesía sin una consulta concreta',
+      ),
     greetingType: z
       .enum(['apertura', 'cierre'])
       .optional()

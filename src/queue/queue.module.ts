@@ -8,10 +8,13 @@ import { OrchestrationLoggerModule } from '../ai/orchestrator/orchestration-logg
 import { WhatsappMediaModule } from '../messaging/whatsapp-media.module';
 import { WhatsappSenderModule } from '../messaging/whatsapp-sender.module';
 import { CollectionsModule } from '../collections/collections.module';
+import { KnowledgeModule } from '../ai/knowledge/knowledge.module';
 import { MessageProcessor } from './processors/message.processor';
 import { ReceiptExtractionProcessor } from './processors/receipt-extraction.processor';
 import { RemindersProcessor } from './processors/reminders.processor';
 import { RemindersScheduler } from './schedulers/reminders.scheduler';
+import { KnowledgeReindexProcessor } from './processors/knowledge-reindex.processor';
+import { KnowledgeIngestionProcessor } from './processors/knowledge-ingestion.processor';
 
 @Module({
   imports: [
@@ -19,6 +22,8 @@ import { RemindersScheduler } from './schedulers/reminders.scheduler';
       { name: 'message-processing' },
       { name: 'receipt-extraction' },
       { name: 'reminders' },
+      { name: 'knowledge-reindex' }, // Sprint 5A
+      { name: 'knowledge-ingestion' }, // Sprint 5A
     ),
     ConversationsModule,
     MessagingModule,
@@ -28,12 +33,15 @@ import { RemindersScheduler } from './schedulers/reminders.scheduler';
     WhatsappMediaModule,
     WhatsappSenderModule,
     CollectionsModule,
+    KnowledgeModule,
   ],
   providers: [
     MessageProcessor,
     ReceiptExtractionProcessor,
     RemindersProcessor,
     RemindersScheduler,
+    KnowledgeReindexProcessor,
+    KnowledgeIngestionProcessor,
   ],
 })
 export class QueueModule {}

@@ -93,7 +93,8 @@ describe('chunk()', () => {
   });
 
   it('párrafos separados por doble salto generan chunks distintos', () => {
-    const text = 'Párrafo uno con contenido suficiente.\n\nPárrafo dos con contenido suficiente.';
+    const text =
+      'Párrafo uno con contenido suficiente.\n\nPárrafo dos con contenido suficiente.';
     const result = tester.chunk(text, 50, 0);
     expect(result.length).toBeGreaterThanOrEqual(2);
   });

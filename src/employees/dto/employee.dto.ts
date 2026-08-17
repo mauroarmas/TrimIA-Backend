@@ -28,7 +28,10 @@ import { normalizePhone } from '../../common/phone';
  * manda Meta, para que el `findUnique` de la whitelist no falle en silencio.
  */
 export class CreateEmployeeDto {
-  @ApiProperty({ example: '5491112345678', description: 'Se normaliza a 549 + 10 dígitos.' })
+  @ApiProperty({
+    example: '5491112345678',
+    description: 'Se normaliza a 549 + 10 dígitos.',
+  })
   @Transform(({ value }) => normalizePhone(value))
   @IsString()
   @IsNotEmpty()

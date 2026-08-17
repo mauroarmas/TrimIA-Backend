@@ -1,4 +1,8 @@
-import { ConflictException, ForbiddenException, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { ConversationsService } from './conversations.service';
 import { PrismaService } from '../database/prisma.service';
 import { WhatsappSenderService } from '../messaging/whatsapp-sender.service';
@@ -53,7 +57,11 @@ describe('ConversationsService — takeover/release/replyManually', () => {
       await service.getOrCreate('549123', 'WHATSAPP', 'client-1');
 
       expect(prisma.conversation.create).toHaveBeenCalledWith({
-        data: { externalId: '549123', channel: 'WHATSAPP', clientId: 'client-1' },
+        data: {
+          externalId: '549123',
+          channel: 'WHATSAPP',
+          clientId: 'client-1',
+        },
       });
     });
 
@@ -67,7 +75,11 @@ describe('ConversationsService — takeover/release/replyManually', () => {
         clientId: 'client-1',
       });
 
-      const result = await service.getOrCreate('549123', 'WHATSAPP', 'client-1');
+      const result = await service.getOrCreate(
+        '549123',
+        'WHATSAPP',
+        'client-1',
+      );
 
       expect(prisma.conversation.update).toHaveBeenCalledWith({
         where: { id: 'conv-1' },
@@ -82,7 +94,11 @@ describe('ConversationsService — takeover/release/replyManually', () => {
         clientId: 'client-original',
       });
 
-      const result = await service.getOrCreate('549123', 'WHATSAPP', 'client-otro');
+      const result = await service.getOrCreate(
+        '549123',
+        'WHATSAPP',
+        'client-otro',
+      );
 
       expect(prisma.conversation.update).not.toHaveBeenCalled();
       expect(result.clientId).toBe('client-original');
@@ -95,7 +111,11 @@ describe('ConversationsService — takeover/release/replyManually', () => {
       await service.getOrCreate('549999', 'WHATSAPP', undefined);
 
       expect(prisma.conversation.create).toHaveBeenCalledWith({
-        data: { externalId: '549999', channel: 'WHATSAPP', clientId: undefined },
+        data: {
+          externalId: '549999',
+          channel: 'WHATSAPP',
+          clientId: undefined,
+        },
       });
     });
   });
@@ -297,7 +317,10 @@ describe('ConversationsService — takeover/release/replyManually', () => {
       expect(prisma.conversation.update).toHaveBeenCalledWith(
         expect.objectContaining({
           where: { id: 'conv-1' },
-          data: expect.objectContaining({ status: 'ACTIVE', handledById: null }),
+          data: expect.objectContaining({
+            status: 'ACTIVE',
+            handledById: null,
+          }),
         }),
       );
       expect(result.status).toBe('ACTIVE');
@@ -310,9 +333,9 @@ describe('ConversationsService — takeover/release/replyManually', () => {
         handledById: 'empleado-que-la-tomo',
       });
 
-      await expect(
-        service.release('conv-1', 'otro-empleado'),
-      ).rejects.toThrow(ForbiddenException);
+      await expect(service.release('conv-1', 'otro-empleado')).rejects.toThrow(
+        ForbiddenException,
+      );
       expect(prisma.conversation.update).not.toHaveBeenCalled();
     });
   });
@@ -329,7 +352,11 @@ describe('ConversationsService — takeover/release/replyManually', () => {
       });
       prisma.message.create.mockResolvedValue({ id: 'msg-1' });
 
-      await service.replyManually('conv-1', 'emp-1', 'Dale, te tomo el pedido yo.');
+      await service.replyManually(
+        'conv-1',
+        'emp-1',
+        'Dale, te tomo el pedido yo.',
+      );
 
       expect(sender.send).toHaveBeenCalledWith(
         '5491100000000',

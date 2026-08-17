@@ -224,14 +224,10 @@ export class ConversationsService {
       throw new NotFoundException('Conversación no encontrada');
     }
     if (conversation.status !== 'HUMAN_HANDLING') {
-      throw new ConflictException(
-        'La conversación no está en control manual',
-      );
+      throw new ConflictException('La conversación no está en control manual');
     }
     if (!asSupervisor && conversation.handledById !== employeeId) {
-      throw new ForbiddenException(
-        'No tenés el control de esta conversación',
-      );
+      throw new ForbiddenException('No tenés el control de esta conversación');
     }
 
     const updated = await this.prisma.conversation.update({
@@ -252,7 +248,11 @@ export class ConversationsService {
    * Envía un mensaje manual al usuario mientras dura el control (FR-007).
    * Solo lo puede hacer quien tiene la conversación tomada.
    */
-  async replyManually(conversationId: string, employeeId: string, message: string) {
+  async replyManually(
+    conversationId: string,
+    employeeId: string,
+    message: string,
+  ) {
     const conversation = await this.prisma.conversation.findUnique({
       where: { id: conversationId },
     });
@@ -263,12 +263,14 @@ export class ConversationsService {
       conversation.status !== 'HUMAN_HANDLING' ||
       conversation.handledById !== employeeId
     ) {
-      throw new ForbiddenException(
-        'No tenés el control de esta conversación',
-      );
+      throw new ForbiddenException('No tenés el control de esta conversación');
     }
 
-    await this.sender.send(conversation.externalId, message, conversation.channel);
+    await this.sender.send(
+      conversation.externalId,
+      message,
+      conversation.channel,
+    );
 
     return this.prisma.message.create({
       data: {
@@ -284,7 +286,11 @@ export class ConversationsService {
    * Nota interna sobre una conversación (FR-012). Nunca genera un Message ni
    * se envía al usuario — es visible solo para quien tiene acceso al panel.
    */
-  async addInternalNote(conversationId: string, authorId: string, content: string) {
+  async addInternalNote(
+    conversationId: string,
+    authorId: string,
+    content: string,
+  ) {
     const note = await this.prisma.internalNote.create({
       data: { conversationId, authorId, content },
     });

@@ -16,10 +16,7 @@ import {
 } from '../../orchestrator/orchestrator.state';
 import { SpecializedAgent } from '../agents.service';
 import { agentResponseSchema } from './rag-agent.schemas';
-import {
-  HANDOFF_INSTRUCTIONS,
-  STYLE_RULES,
-} from './rag-agent.instructions';
+import { HANDOFF_INSTRUCTIONS, STYLE_RULES } from './rag-agent.instructions';
 
 /** Dependencias de infraestructura comunes a todo agente RAG. */
 export interface AgentGraphDeps {
@@ -184,7 +181,9 @@ export function buildRagAgentGraph(
   // --- NODO: escalate_to_human — confianza baja, deriva a un responsable ---
   const escalateToHuman = async (state: OrchestratorStateType) => {
     const confidence = state.confidence ?? 0;
-    logger.log(`${tag} confianza baja (${confidence.toFixed(2)}) → escalar a humano`);
+    logger.log(
+      `${tag} confianza baja (${confidence.toFixed(2)}) → escalar a humano`,
+    );
 
     // Antes de Sprint 3 esto solo devolvía el mensaje canned y no quedaba
     // ningún rastro consultable. Ahora crea el caso pendiente real que ve

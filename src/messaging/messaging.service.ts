@@ -19,7 +19,7 @@ export class MessagingService {
     private readonly clients: ClientsService,
     private readonly media: WhatsappMediaService,
     private readonly paymentProofs: PaymentProofsService,
-  ) { }
+  ) {}
 
   private async prepareConversation(dto: WebhookMessageDto, channel: Channel) {
     // Si el teléfono corresponde a un cliente dado de alta, la conversación
@@ -41,7 +41,10 @@ export class MessagingService {
 
   async enqueue(dto: WebhookMessageDto): Promise<void> {
     const channel = dto.channel ?? Channel.WHATSAPP;
-    const { conversation, message } = await this.prepareConversation(dto, channel);
+    const { conversation, message } = await this.prepareConversation(
+      dto,
+      channel,
+    );
 
     // Comprobante de pago (Sprint 4): NO pasa por el orquestador de IA — el
     // agente no debe "responder" un comprobante por su cuenta (Principio III,
@@ -79,5 +82,4 @@ export class MessagingService {
       },
     );
   }
-
 }

@@ -37,8 +37,16 @@ Es una **tesis de grado**. El producto sigue PMBOK (6 fases, 12 entregables E1�
 | Conocimiento | **ChromaDB** | Vector store del RAG (embeddings) |
 | Infra | **Docker Compose** | Todo containerizado; GCP a futuro |
 
-- **Modelo LLM:** `gemini-3.1-flash-lite` (variable `GEMINI_MODEL`).
-- **Embeddings:** `gemini-embedding-001` (dim 3072, variable `EMBEDDING_MODEL`).
+- **Modelo LLM:** variable `GEMINI_MODEL` — hoy `gemini-3.5-flash-lite`.
+- **Embeddings:** variable `EMBEDDING_MODEL` — hoy `gemini-embedding-2-preview`
+  (ver §12: al cambiar de modelo de embeddings hay que limpiar ChromaDB y
+  `KnowledgeDocument`, porque los vectores viejos quedan en otro espacio).
+
+> Los valores concretos se nombran acá solo como referencia de lo que hay hoy;
+> la fuente de verdad es el `.env`, nunca un default del código. Esta sección ya
+> quedó desactualizada una vez (decía `gemini-3.1-flash-lite` y
+> `gemini-embedding-001`, contradiciendo lo que §12 indica y lo que el `.env`
+> realmente tiene). Verificado contra el entorno el 2026-08-11.
 - **Puertos (host):** NestJS 3000 · Postgres 5433 · Redis 6379 · ChromaDB 8000 · n8n 5678.
 
 > Setup del entorno: ver `README.md` y `setup-prompt.md`. Arquitectura conceptual

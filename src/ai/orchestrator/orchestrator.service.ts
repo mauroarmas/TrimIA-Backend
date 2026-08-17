@@ -9,7 +9,6 @@ import { ConversationTurn } from '../../conversations/conversations.service';
 
 @Injectable()
 export class OrchestratorService implements OnModuleInit {
-
   onModuleInit() {
     // Compilar el grafo es costoso → se hace una vez al arrancar, no por mensaje
     this.graph = buildOrchestratorGraph(
@@ -21,7 +20,6 @@ export class OrchestratorService implements OnModuleInit {
     this.logger.log('Grafo del orquestador compilado');
   }
 
-
   private readonly logger = new Logger(OrchestratorService.name);
 
   // El grafo compilado. Se arma una sola vez al iniciar y se reutiliza.
@@ -31,9 +29,7 @@ export class OrchestratorService implements OnModuleInit {
     private readonly llm: LlmService,
     private readonly agents: AgentsService,
     private readonly orchestrationLogger: OrchestrationLogger,
-  ) { }
-
-
+  ) {}
 
   /**
    * Procesa un mensaje a través del grafo.

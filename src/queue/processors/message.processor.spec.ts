@@ -288,21 +288,27 @@ describe('MessageProcessor — revalidación del userType contra la whitelist', 
 
     await processor.process(job);
 
-    expect(conversations.setUserType).toHaveBeenCalledWith('conv-1', 'EMPLEADO');
+    expect(conversations.setUserType).toHaveBeenCalledWith(
+      'conv-1',
+      'EMPLEADO',
+    );
   });
 
   // No escribir en cada turno: sólo cuando el userType efectivamente cambió.
   it.each([
     ['CLIENTE', null],
     ['EMPLEADO', { isActive: true, sector: { name: 'Ventas' } }],
-  ])('no persiste nada si el userType no cambió (%s)', async (userType, employee) => {
-    conversations.findById.mockResolvedValue(activeConversation(userType));
-    employees.findByPhone.mockResolvedValue(employee);
+  ])(
+    'no persiste nada si el userType no cambió (%s)',
+    async (userType, employee) => {
+      conversations.findById.mockResolvedValue(activeConversation(userType));
+      employees.findByPhone.mockResolvedValue(employee);
 
-    await processor.process(job);
+      await processor.process(job);
 
-    expect(conversations.setUserType).not.toHaveBeenCalled();
-  });
+      expect(conversations.setUserType).not.toHaveBeenCalled();
+    },
+  );
 });
 
 /**

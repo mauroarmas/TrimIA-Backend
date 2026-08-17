@@ -1,4 +1,9 @@
-import { ForbiddenException, Injectable, Logger, NotFoundException } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  Logger,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { OrchestrationLogger } from '../ai/orchestrator/orchestration-logger.service';
 import { ConversationsService } from '../conversations/conversations.service';
@@ -34,9 +39,7 @@ export class QuotasService {
     }
 
     if (!isController && quota.client.assignedCollectorId !== employeeId) {
-      throw new ForbiddenException(
-        'No tenés acceso a esta cuota',
-      );
+      throw new ForbiddenException('No tenés acceso a esta cuota');
     }
 
     const updated = await this.prisma.quota.update({
@@ -74,7 +77,11 @@ export class QuotasService {
    * (`proof_requested`), que ya alimenta el Registro de Actividad — evita
    * una migración para un dato que es, en esencia, un evento del historial.
    */
-  async requestProof(quotaId: string, employeeId: string, isController: boolean) {
+  async requestProof(
+    quotaId: string,
+    employeeId: string,
+    isController: boolean,
+  ) {
     const quota = await this.prisma.quota.findUnique({
       where: { id: quotaId },
       include: { client: true },
@@ -99,7 +106,11 @@ export class QuotasService {
     await this.sender.send(quota.client.phone, message, 'WHATSAPP');
 
     if (conversation) {
-      await this.conversations.addMessage(conversation.id, 'ASSISTANT', message);
+      await this.conversations.addMessage(
+        conversation.id,
+        'ASSISTANT',
+        message,
+      );
     }
 
     await this.orchestrationLogger.logEvent({
@@ -108,7 +119,9 @@ export class QuotasService {
       payload: { quotaId, requestedById: employeeId },
     });
 
-    this.logger.log(`Comprobante solicitado a ${quota.client.name} (cuota ${quotaId})`);
+    this.logger.log(
+      `Comprobante solicitado a ${quota.client.name} (cuota ${quotaId})`,
+    );
 
     return { requested: true };
   }

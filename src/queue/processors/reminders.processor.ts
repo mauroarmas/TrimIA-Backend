@@ -5,7 +5,10 @@ import { PrismaService } from '../../database/prisma.service';
 import { ReminderConfigService } from '../../collections/reminder-config.service';
 import { WhatsappSenderService } from '../../messaging/whatsapp-sender.service';
 import { OrchestrationLogger } from '../../ai/orchestrator/orchestration-logger.service';
-import { shouldSendReminder, hasBecomeOverdue } from '../schedulers/reminder-rules';
+import {
+  shouldSendReminder,
+  hasBecomeOverdue,
+} from '../schedulers/reminder-rules';
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -45,7 +48,9 @@ export class RemindersProcessor extends WorkerHost {
     const maxDaysBefore = Math.max(0, ...config.daysBefore);
     const now = new Date();
     const windowStart = new Date(now.getTime() - MS_PER_DAY); // margen para OVERDUE
-    const windowEnd = new Date(now.getTime() + (maxDaysBefore + 1) * MS_PER_DAY);
+    const windowEnd = new Date(
+      now.getTime() + (maxDaysBefore + 1) * MS_PER_DAY,
+    );
 
     const candidates = await this.prisma.quota.findMany({
       where: {

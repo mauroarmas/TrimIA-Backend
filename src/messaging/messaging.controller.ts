@@ -1,10 +1,4 @@
-import {
-  Body,
-  Controller,
-  HttpCode,
-  Post,
-  UseGuards,
-} from '@nestjs/common';
+import { Body, Controller, HttpCode, Post, UseGuards } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import { WebhookMessageDto } from './dto/webhook-message.dto';
@@ -25,5 +19,4 @@ export class MessagingController {
     await this.messagingService.enqueue(dto);
     return { queued: true };
   }
-
 }

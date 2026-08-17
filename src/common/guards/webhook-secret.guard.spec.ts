@@ -78,7 +78,9 @@ describe('WebhookSecretGuard', () => {
     // contra una ruta protegida con KNOWLEDGE_ADMIN_SECRET.
     const config = {
       get: jest.fn((envVar: string) =>
-        envVar === 'N8N_WEBHOOK_SECRET' ? 'secreto-webhook' : 'secreto-knowledge-distinto',
+        envVar === 'N8N_WEBHOOK_SECRET'
+          ? 'secreto-webhook'
+          : 'secreto-knowledge-distinto',
       ),
     };
     const { context, reflector } = buildContext(

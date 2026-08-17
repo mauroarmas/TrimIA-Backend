@@ -35,6 +35,8 @@ export const ALL_AGENTS: SpecializedAgent[] = [
  * - CLIENTE externo: solo Ventas y Cobranzas (el stock lo responde Ventas).
  * - EMPLEADO: los 5 (incluye Depósito/Logística para capacitación interna).
  */
-export function allowedAgentsFor(userType: UserType | null): SpecializedAgent[] {
+export function allowedAgentsFor(
+  userType: UserType | null,
+): SpecializedAgent[] {
   return userType === 'EMPLEADO' ? ALL_AGENTS : ['SALES', 'COLLECTIONS'];
 }

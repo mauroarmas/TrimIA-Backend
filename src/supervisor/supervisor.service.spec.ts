@@ -41,15 +41,30 @@ describe('SupervisorService', () => {
       // totalByAgent: SALES tiene 3 conversaciones; ADMIN 1.
       prisma.conversation.groupBy
         .mockResolvedValueOnce([
-          { currentAgent: 'SALES', _count: { _all: 3 }, _max: { updatedAt: lastActivity } },
-          { currentAgent: 'ADMIN', _count: { _all: 1 }, _max: { updatedAt: lastActivity } },
+          {
+            currentAgent: 'SALES',
+            _count: { _all: 3 },
+            _max: { updatedAt: lastActivity },
+          },
+          {
+            currentAgent: 'ADMIN',
+            _count: { _all: 1 },
+            _max: { updatedAt: lastActivity },
+          },
         ])
         // activeByAgent: solo SALES tiene 2 activas.
-        .mockResolvedValueOnce([{ currentAgent: 'SALES', _count: { _all: 2 } }]);
+        .mockResolvedValueOnce([
+          { currentAgent: 'SALES', _count: { _all: 2 } },
+        ]);
 
       // eventStats (raw): SALES con confianza y un escalado; ADMIN sin escalados.
       prisma.$queryRaw.mockResolvedValueOnce([
-        { agentType: 'SALES', avgConfidence: 0.7777, escalations: 1n, routed: 4n },
+        {
+          agentType: 'SALES',
+          avgConfidence: 0.7777,
+          escalations: 1n,
+          routed: 4n,
+        },
         { agentType: 'ADMIN', avgConfidence: 0.9, escalations: 0n, routed: 2n },
       ]);
 
@@ -95,7 +110,10 @@ describe('SupervisorService', () => {
 
   describe('getConversations', () => {
     it('acota page y limit a rangos válidos y calcula hasMore', async () => {
-      prisma.conversation.findMany.mockResolvedValue([{ id: 'a' }, { id: 'b' }]);
+      prisma.conversation.findMany.mockResolvedValue([
+        { id: 'a' },
+        { id: 'b' },
+      ]);
       prisma.conversation.count.mockResolvedValue(50);
 
       const res = await service.getConversations({ page: 0, limit: 999 });
@@ -111,10 +129,16 @@ describe('SupervisorService', () => {
       prisma.conversation.findMany.mockResolvedValue([]);
       prisma.conversation.count.mockResolvedValue(0);
 
-      await service.getConversations({ status: 'WAITING_HUMAN', agentType: 'SALES' });
+      await service.getConversations({
+        status: 'WAITING_HUMAN',
+        agentType: 'SALES',
+      });
 
       const arg = prisma.conversation.findMany.mock.calls[0][0];
-      expect(arg.where).toEqual({ status: 'WAITING_HUMAN', currentAgent: 'SALES' });
+      expect(arg.where).toEqual({
+        status: 'WAITING_HUMAN',
+        currentAgent: 'SALES',
+      });
     });
   });
 });

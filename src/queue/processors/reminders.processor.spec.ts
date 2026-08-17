@@ -13,7 +13,13 @@ describe('RemindersProcessor', () => {
   let sender: { sendTemplate: jest.Mock };
   let logger: { logEvent: jest.Mock };
 
-  const config = { id: 'cfg-1', daysBefore: [7, 3, 0], maxAttempts: 3, templateName: 'recordatorio_cuota', templateApproved: true };
+  const config = {
+    id: 'cfg-1',
+    daysBefore: [7, 3, 0],
+    maxAttempts: 3,
+    templateName: 'recordatorio_cuota',
+    templateApproved: true,
+  };
 
   beforeEach(() => {
     prisma = {
@@ -32,7 +38,10 @@ describe('RemindersProcessor', () => {
   });
 
   it('NO envía nada y audita el bloqueo si la plantilla no está aprobada', async () => {
-    reminderConfig.get.mockResolvedValue({ ...config, templateApproved: false });
+    reminderConfig.get.mockResolvedValue({
+      ...config,
+      templateApproved: false,
+    });
 
     await processor.process({} as any);
 

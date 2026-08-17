@@ -10,14 +10,23 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
-import { AgentType, Channel, ConvStatus, UserType } from '@prisma/client';
+import {
+  AgentType,
+  Channel,
+  ConvStatus,
+  EscalationStatus,
+  UserType,
+} from '@prisma/client';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard, Roles } from '../auth/guards/roles.guard';
 import { SupervisorService } from './supervisor.service';
 import { EscalationsService } from '../escalations/escalations.service';
+import { EscalationSuggestionService } from '../escalations/escalation-suggestion.service';
 import { ConversationsService } from '../conversations/conversations.service';
 import { ResolveEscalationDto } from '../escalations/dto/resolve-escalation.dto';
 import { DelegateEscalationDto } from '../escalations/dto/delegate-escalation.dto';
+import { SaveUnsentDto } from '../escalations/dto/save-unsent.dto';
+import { DiscardEscalationDto } from '../escalations/dto/discard-escalation.dto';
 import { ManualReplyDto } from '../conversations/dto/manual-reply.dto';
 import { CreateInternalNoteDto } from '../conversations/dto/create-internal-note.dto';
 
@@ -39,6 +48,7 @@ export class SupervisorController {
   constructor(
     private readonly supervisor: SupervisorService,
     private readonly escalations: EscalationsService,
+    private readonly suggestions: EscalationSuggestionService,
     private readonly conversations: ConversationsService,
   ) {}
 
@@ -102,7 +112,12 @@ export class SupervisorController {
   @ApiQuery({ name: 'conversationId', type: String, required: false })
   @ApiQuery({ name: 'eventType', type: String, required: false })
   @ApiQuery({ name: 'agentType', enum: AgentType, required: false })
-  @ApiQuery({ name: 'after', type: String, required: false, description: 'Fecha ISO (ej. 2026-07-22T00:00:00Z)' })
+  @ApiQuery({
+    name: 'after',
+    type: String,
+    required: false,
+    description: 'Fecha ISO (ej. 2026-07-22T00:00:00Z)',
+  })
   @ApiQuery({ name: 'page', type: Number, required: false })
   @ApiQuery({ name: 'limit', type: Number, required: false })
   getEvents(
@@ -122,8 +137,6 @@ export class SupervisorController {
       limit: limit ? parseInt(limit, 10) : undefined,
     });
   }
-
-
 
   // ---------------------------------------------------------------------
   // Human-in-the-loop (Sprint 3) — cola de escalados y control manual.
@@ -193,11 +206,13 @@ export class SupervisorController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('SUPERVISOR')
   @ApiOperation({ summary: 'Lista casos escalados (default: pendientes)' })
-  @ApiQuery({ name: 'status', enum: ['PENDING', 'RESOLVED'], required: false })
+  // Sprint 5A: los cuatro estados. El default sigue siendo PENDING, así que
+  // la cola del panel no cambia de comportamiento.
+  @ApiQuery({ name: 'status', enum: EscalationStatus, required: false })
   @ApiQuery({ name: 'page', type: Number, required: false })
   @ApiQuery({ name: 'limit', type: Number, required: false })
   getEscalations(
-    @Query('status') status?: 'PENDING' | 'RESOLVED',
+    @Query('status') status?: EscalationStatus,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
   ) {
@@ -228,6 +243,57 @@ export class SupervisorController {
     @Req() req: any,
   ) {
     return this.escalations.resolve(id, dto, req.user.id);
+  }
+
+  /**
+   * GET /supervisor/escalations/:id/suggestion — propuesta de respuesta.
+   *
+   * No resuelve nada: el caso sigue PENDING y la propuesta se guarda solo para
+   * auditoría. Mirar `audienceUsed` en la respuesta — sale del `userType` de
+   * la conversación escalada, no del supervisor que consulta (research §12).
+   */
+  @Get('escalations/:id/suggestion')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('SUPERVISOR')
+  @ApiOperation({
+    summary: 'Redacta una propuesta con el conocimiento cargado (FR-034)',
+    description:
+      'Devuelve `suggestion: null` con `hasContext: false` cuando no hay ' +
+      'contexto suficiente, en vez de redactar sin respaldo (FR-035).',
+  })
+  suggestEscalationResponse(@Param('id') id: string) {
+    return this.suggestions.suggest(id);
+  }
+
+  /** POST /supervisor/escalations/:id/save-unsent — aprueba y guarda sin enviar. */
+  @Post('escalations/:id/save-unsent')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('SUPERVISOR')
+  @ApiOperation({
+    summary: 'Aprueba la respuesta, la incorpora al RAG y NO la envía (FR-039)',
+  })
+  saveEscalationUnsent(
+    @Param('id') id: string,
+    @Body() dto: SaveUnsentDto,
+    @Req() req: any,
+  ) {
+    return this.escalations.saveUnsent(id, dto, req.user.id);
+  }
+
+  /** POST /supervisor/escalations/:id/discard — cierra el caso sin responder. */
+  @Post('escalations/:id/discard')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('SUPERVISOR')
+  @ApiOperation({
+    summary:
+      'Descarta el caso: sin mensaje y sin incorporar nada al RAG (FR-038)',
+  })
+  discardEscalation(
+    @Param('id') id: string,
+    @Body() dto: DiscardEscalationDto,
+    @Req() req: any,
+  ) {
+    return this.escalations.discard(id, dto.reason, req.user.id);
   }
 
   /** POST /supervisor/escalations/:id/delegate — reasigna el caso a otro supervisor. */

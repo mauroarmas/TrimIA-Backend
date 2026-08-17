@@ -25,7 +25,17 @@ import { EscalationsModule } from '../escalations/escalations.module';
     EscalationsModule,
   ],
   controllers: [CollectionsController],
-  providers: [PaymentProofsService, CollectionsService, QuotasService, ReminderConfigService],
-  exports: [PaymentProofsService, CollectionsService, QuotasService, ReminderConfigService],
+  providers: [
+    PaymentProofsService,
+    CollectionsService,
+    QuotasService,
+    ReminderConfigService,
+  ],
+  exports: [
+    PaymentProofsService,
+    CollectionsService,
+    QuotasService,
+    ReminderConfigService,
+  ],
 })
 export class CollectionsModule {}

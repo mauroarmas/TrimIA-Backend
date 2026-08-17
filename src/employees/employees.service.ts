@@ -1,4 +1,9 @@
-import { Injectable, NotFoundException, ConflictException, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ConflictException,
+  Logger,
+} from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { AuthService } from '../auth/auth.service';
 import { analyzePhone, normalizePhone } from '../common/phone';
@@ -161,9 +166,7 @@ export class EmployeesService {
       data: { isActive: false },
     });
 
-    this.logger.log(
-      `Empleado desactivado: ${employee.name} por ${removedBy}`,
-    );
+    this.logger.log(`Empleado desactivado: ${employee.name} por ${removedBy}`);
 
     return { message: 'Empleado desactivado' };
   }

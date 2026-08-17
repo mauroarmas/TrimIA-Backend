@@ -35,12 +35,20 @@ export class WhatsappSenderService {
    * WhatsApp Business y requieren esto en vez de send() (texto libre). Ver
    * specs/002-collections-payments/research.md §2.
    */
-  async sendTemplate(phone: string, templateName: string, params: string[]): Promise<void> {
+  async sendTemplate(
+    phone: string,
+    templateName: string,
+    params: string[],
+  ): Promise<void> {
     const baseUrl = this.config.get<string>('N8N_BASE_URL');
     const res = await fetch(`${baseUrl}/webhook/send-whatsapp-template`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ phone: normalizePhone(phone), templateName, params }),
+      body: JSON.stringify({
+        phone: normalizePhone(phone),
+        templateName,
+        params,
+      }),
     });
     if (!res.ok) {
       const body = await res.text().catch(() => '');

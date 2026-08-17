@@ -29,6 +29,29 @@ Templates requiring updates:
 Follow-up TODOs: ninguno. Fecha de ratificación fijada a hoy (primera adopción formal).
 -->
 
+<!--
+SYNC IMPACT REPORT
+==================
+Version change: 1.0.0 → 1.0.1
+Bump rationale: PATCH — aclaración sin cambio semántico (§Governance). El nombre
+  concreto del modelo LLM (`gemini-3.1-flash-lite`) quedó desactualizado respecto
+  del `.env` real (`gemini-3.5-flash-lite`) y de `CLAUDE.md`/`CONTEXTO_TECNICO.md`,
+  que ya se habían corregido. Ningún principio cambia: la regla de fondo — el
+  modelo se pinea por `GEMINI_MODEL`, nunca por default en código — sigue intacta;
+  solo se corrige el valor de ejemplo citado. Detectado al implementar
+  specs/003-archivos-chat-conocimiento (Sprint 5A), 2026-08-17.
+
+Modified principles: N/A
+Modified sections:
+  - Restricciones Técnicas y Stack — `gemini-3.1-flash-lite` → `gemini-3.5-flash-lite`
+    (nombre de ejemplo únicamente; la fuente de verdad sigue siendo `GEMINI_MODEL`
+    en `.env`, no este documento).
+
+Templates requiring updates: ninguna — cambio de valor de ejemplo, no de regla.
+
+Follow-up TODOs: ninguno.
+-->
+
 # TrimIA Constitution
 
 Backend NestJS de una plataforma de agentes de IA para **Credimisión S.R.L.** (empresa
@@ -125,7 +148,9 @@ integraciones reales por mocks y sostienen una tesis que otros deben poder leer 
 El stack es fijo y no se sustituye sin enmienda a esta constitución:
 
 - **Backend:** NestJS + TypeScript. **Razonamiento:** LangGraph.js + Gemini
-  (`gemini-3.1-flash-lite`; embeddings `gemini-embedding-001`, dim 3072).
+  (hoy `gemini-3.5-flash-lite`; embeddings `gemini-embedding-2-preview`) — el
+  valor vigente lo fija siempre `GEMINI_MODEL`/`EMBEDDING_MODEL` en `.env`, no
+  este documento.
 - **Cola:** Redis + BullMQ. **Datos:** PostgreSQL + Prisma. **RAG:** ChromaDB.
   **Canal:** WhatsApp Business API vía n8n. **Infra:** Docker Compose.
 - **Modelos LLM y umbrales se pinean por variable de entorno** (`GEMINI_MODEL`,
@@ -169,4 +194,4 @@ el detalle técnico del código.
 - **Guía en tiempo de ejecución:** para desarrollo diario y convenciones, usar
   `docs/CONTEXTO_TECNICO.md` y `CLAUDE.md`.
 
-**Version**: 1.0.0 | **Ratified**: 2026-08-03 | **Last Amended**: 2026-08-03
+**Version**: 1.0.1 | **Ratified**: 2026-08-03 | **Last Amended**: 2026-08-17

@@ -1,6 +1,12 @@
 import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { AgentType, Channel, ConvStatus, Prisma, UserType } from '@prisma/client';
+import {
+  AgentType,
+  Channel,
+  ConvStatus,
+  Prisma,
+  UserType,
+} from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
 import { ALL_AGENTS } from '../ai/agents/agent-domains';
 
@@ -9,8 +15,8 @@ export interface GetConversationsFilter {
   channel?: Channel;
   userType?: UserType;
   agentType?: AgentType;
-  page?: number;   // 1-indexed
-  limit?: number;  // default 20, max 100
+  page?: number; // 1-indexed
+  limit?: number; // default 20, max 100
 }
 
 export interface GetEventsFilter {
@@ -18,8 +24,8 @@ export interface GetEventsFilter {
   eventType?: string;
   agentType?: AgentType;
   after?: Date;
-  page?: number;   // 1-indexed
-  limit?: number;  // default 20, max 100
+  page?: number; // 1-indexed
+  limit?: number; // default 20, max 100
 }
 
 /**
@@ -85,37 +91,44 @@ export class SupervisorService {
 
   async getMetrics(): Promise<SupervisorMetrics> {
     // Una sola tanda de queries en paralelo (no dependen entre sí).
-    const [total, active, convByAgent, tokensByAgent, eventsByType, recentEvents] =
-      await Promise.all([
-        this.prisma.conversation.count(),
-        this.prisma.conversation.count({ where: { status: 'ACTIVE' } }),
-        this.prisma.conversation.groupBy({
-          by: ['currentAgent'],
-          _count: { _all: true },
-        }),
-        this.prisma.tokenUsage.groupBy({
-          by: ['agentType'],
-          _sum: { inputTokens: true, outputTokens: true },
-        }),
-        this.prisma.orchestrationEvent.groupBy({
-          by: ['eventType'],
-          _count: { _all: true },
-        }),
-        // Solo metadatos del evento — NO el payload (puede tener contenido del
-        // mensaje). El drill-down con contenido llega con el panel completo + auth.
-        this.prisma.orchestrationEvent.findMany({
-          orderBy: { createdAt: 'desc' },
-          take: 10,
-          select: { createdAt: true, eventType: true, agentType: true },
-        }),
-      ]);
+    const [
+      total,
+      active,
+      convByAgent,
+      tokensByAgent,
+      eventsByType,
+      recentEvents,
+    ] = await Promise.all([
+      this.prisma.conversation.count(),
+      this.prisma.conversation.count({ where: { status: 'ACTIVE' } }),
+      this.prisma.conversation.groupBy({
+        by: ['currentAgent'],
+        _count: { _all: true },
+      }),
+      this.prisma.tokenUsage.groupBy({
+        by: ['agentType'],
+        _sum: { inputTokens: true, outputTokens: true },
+      }),
+      this.prisma.orchestrationEvent.groupBy({
+        by: ['eventType'],
+        _count: { _all: true },
+      }),
+      // Solo metadatos del evento — NO el payload (puede tener contenido del
+      // mensaje). El drill-down con contenido llega con el panel completo + auth.
+      this.prisma.orchestrationEvent.findMany({
+        orderBy: { createdAt: 'desc' },
+        take: 10,
+        select: { createdAt: true, eventType: true, agentType: true },
+      }),
+    ]);
 
     const convAgentMap: Record<string, number> = {};
     for (const row of convByAgent) {
       convAgentMap[row.currentAgent ?? 'sin asignar'] = row._count._all;
     }
 
-    const tokensAgentMap: Record<string, { input: number; output: number }> = {};
+    const tokensAgentMap: Record<string, { input: number; output: number }> =
+      {};
     for (const row of tokensByAgent) {
       tokensAgentMap[row.agentType] = {
         input: row._sum.inputTokens ?? 0,
@@ -193,58 +206,59 @@ export class SupervisorService {
    * Retorna null si no existe (el controller devuelve 404).
    */
   async getConversationDetail(conversationId: string) {
-    const [conversation, messages, events, tokenTotals, internalNotes] = await Promise.all([
-      this.prisma.conversation.findUnique({
-        where: { id: conversationId },
-      }),
+    const [conversation, messages, events, tokenTotals, internalNotes] =
+      await Promise.all([
+        this.prisma.conversation.findUnique({
+          where: { id: conversationId },
+        }),
 
-      this.prisma.message.findMany({
-        where: { conversationId },
-        orderBy: { createdAt: 'asc' },
-        select: {
-          id: true,
-          role: true,
-          content: true,
-          agentType: true,
-          createdAt: true,
-        },
-      }),
+        this.prisma.message.findMany({
+          where: { conversationId },
+          orderBy: { createdAt: 'asc' },
+          select: {
+            id: true,
+            role: true,
+            content: true,
+            agentType: true,
+            createdAt: true,
+          },
+        }),
 
-      this.prisma.orchestrationEvent.findMany({
-        where: { conversationId },
-        orderBy: { createdAt: 'asc' },
-        select: {
-          id: true,
-          eventType: true,
-          agentType: true,
-          payload: true,
-          createdAt: true,
-        },
-      }),
+        this.prisma.orchestrationEvent.findMany({
+          where: { conversationId },
+          orderBy: { createdAt: 'asc' },
+          select: {
+            id: true,
+            eventType: true,
+            agentType: true,
+            payload: true,
+            createdAt: true,
+          },
+        }),
 
-      this.prisma.tokenUsage.aggregate({
-        where: { conversationId },
-        _sum: { inputTokens: true, outputTokens: true },
-        _count: { _all: true },
-      }),
+        this.prisma.tokenUsage.aggregate({
+          where: { conversationId },
+          _sum: { inputTokens: true, outputTokens: true },
+          _count: { _all: true },
+        }),
 
-      // Notas internas (Sprint 3) — nunca visibles para el usuario final,
-      // solo se agregan acá porque este endpoint ya exige SUPERVISOR.
-      // El autor es o un Employee (author) o un agente de IA (authorAgentType)
-      // — nunca ambos, ver el comentario del modelo en schema.prisma — así que
-      // el frontend decide el ícono/color mirando cuál de los dos vino.
-      this.prisma.internalNote.findMany({
-        where: { conversationId },
-        orderBy: { createdAt: 'asc' },
-        select: {
-          id: true,
-          content: true,
-          createdAt: true,
-          authorAgentType: true,
-          author: { select: { id: true, name: true } },
-        },
-      }),
-    ]);
+        // Notas internas (Sprint 3) — nunca visibles para el usuario final,
+        // solo se agregan acá porque este endpoint ya exige SUPERVISOR.
+        // El autor es o un Employee (author) o un agente de IA (authorAgentType)
+        // — nunca ambos, ver el comentario del modelo en schema.prisma — así que
+        // el frontend decide el ícono/color mirando cuál de los dos vino.
+        this.prisma.internalNote.findMany({
+          where: { conversationId },
+          orderBy: { createdAt: 'asc' },
+          select: {
+            id: true,
+            content: true,
+            createdAt: true,
+            authorAgentType: true,
+            author: { select: { id: true, name: true } },
+          },
+        }),
+      ]);
 
     if (!conversation) return null;
 
@@ -342,9 +356,7 @@ export class SupervisorService {
       eventStatsPromise,
     ]);
 
-    const totalMap = new Map(
-      totalByAgent.map((r) => [r.currentAgent, r]),
-    );
+    const totalMap = new Map(totalByAgent.map((r) => [r.currentAgent, r]));
     const activeMap = new Map(
       activeByAgent.map((r) => [r.currentAgent, r._count._all]),
     );

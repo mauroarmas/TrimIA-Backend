@@ -4,7 +4,7 @@
 > que consume cada módulo de la app. Permite trabajar **en paralelo**: lo que ya
 > existe se consume directo; lo pendiente se mockea contra el contrato de abajo.
 >
-> Última actualización: 2026-08-05 (Sprint 1-4 completos).
+> Última actualización: 2026-08-11 (Sprint 1-4 completos).
 
 ---
 
@@ -36,7 +36,7 @@
 | Capacitación | EMPLEADO | `/training/*` 🔴 |
 | Gobernanza (Panel del Supervisor) | SUPERVISOR | `/supervisor/*` ✅ |
 | Panel de Cobranzas | EMPLEADO (cobrador) / SUPERVISOR (controlador) | `/collections/*` ✅ |
-| Panel de Ventas | EMPLEADO (vendedor) / SUPERVISOR | `/sales/*` 🔴 (modelo de datos ya en DB) |
+| Panel de Ventas | EMPLEADO (vendedor) / SUPERVISOR | `/sales/*` ✅ |
 | Herramientas de dev | — (solo en dev) | `/dev/client-fixtures` ✅ |
 
 > Roles: ver `CONTEXTO_TECNICO.md` §5.3.1. `userType` (CLIENTE/EMPLEADO) define audiencia;
@@ -224,16 +224,28 @@ Detalle de un caso escalado, incluye la conversación completa.
 ### ✅ `POST /supervisor/escalations/:id/resolve` (JWT + SUPERVISOR)
 Responde el caso al usuario y opcionalmente enseña la respuesta al RAG.
 ```json
-// request
-{ "message": "Sí, la tenemos en 12 cuotas.", "teachAgent": true }
+// request (teachAgent: false u omitido)
+{ "message": "Sí, la tenemos en 12 cuotas." }
+
+// request (teachAgent: true — title y category son OBLIGATORIOS en este caso)
+{
+  "message": "Sí, la tenemos en 12 cuotas.",
+  "teachAgent": true,
+  "title": "Financiación de heladeras exhibidoras en cuotas",
+  "category": "productos",
+  "audience": "PUBLICO",   // opcional; ver default abajo
+  "agentType": "SALES"     // opcional; ver default abajo
+}
 // response: la Escalation con status "RESOLVED"
 ```
 - Envía `message` por el canal de la conversación (WhatsApp; el canal WEB aún
   no tiene sender — ver módulo Chat más abajo).
 - Vuelve `Conversation.status` a `ACTIVE` y saca el caso de la cola.
-- Si `teachAgent: true`, ingesta `message` al RAG (misma pipeline que
-  `POST /knowledge`), con `audience` PUBLICO/INTERNO según el `userType` de
-  la conversación y `agentType` según el agente que atendía.
+- Si `teachAgent: true`, `title` y `category` son obligatorios (400 si faltan)
+  e ingesta `message` al RAG (misma pipeline que `POST /knowledge`).
+  `audience` por defecto se infiere del `userType` de la conversación
+  (EMPLEADO→INTERNO, CLIENTE→PUBLICO); `agentType` por defecto es el agente
+  activo de la conversación. Ambos se pueden pisar a mano.
 
 ### ✅ `POST /supervisor/escalations/:id/delegate` (JWT + SUPERVISOR)
 Reasigna el caso a otro supervisor. `400` si el destino no es supervisor
@@ -422,7 +434,10 @@ Le pide al cliente el comprobante de una cuota.
 
 ### ✅ `GET /collections/activity` (JWT)
 Registro de actividad transversal (no por cliente).
-Query: `collectorId`, `type`, `from`, `to`, `page`, `limit`.
+Query: `clientId`, `collectorId`, `eventType`, `after`, `before`, `page`, `limit`.
+- `eventType` (ej. `quota_reminder_sent`): si se manda, la respuesta trae
+  **solo** eventos de ese tipo (mensajes y notas no tienen este campo).
+- `after` / `before`: fechas ISO (`2026-07-01T00:00:00Z`).
 Un cobrador común solo ve los eventos de sus propios clientes y el
 `collectorId` que mande se **ignora**; el Controlador ve todos o filtra por uno.
 

@@ -93,7 +93,10 @@ describe('MessagingService', () => {
       channel: Channel.WHATSAPP,
     } as any);
 
-    expect(media.savePaymentProofImage).toHaveBeenCalledWith('aGVsbG8=', 'image/jpeg');
+    expect(media.savePaymentProofImage).toHaveBeenCalledWith(
+      'aGVsbG8=',
+      'image/jpeg',
+    );
     expect(paymentProofs.receiveFromWhatsapp).toHaveBeenCalledWith({
       phone: '5491100000000',
       messageId: 'msg-1',
