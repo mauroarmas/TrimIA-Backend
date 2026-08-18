@@ -199,13 +199,13 @@ Proyecto backend único: `src/` en la raíz del repositorio. Los tests viven
 
 ### Implementación
 
-- [ ] T059 [US5] Crear el Workflow 7 en `n8n/workflows/`: audio de WhatsApp → transcripción → `POST /messaging/webhook` con el texto, siguiendo el patrón de los workflows existentes. **El workflow NO debe persistir el binario del audio** en ningún nodo ni almacenamiento intermedio (FR-011)
-- [ ] T060 [US5] Definir el marcador acordado que n8n envía cuando no puede transcribir, y documentarlo en `n8n/workflows/README.md` o equivalente
-- [ ] T061 [US5] Manejar ese marcador en `src/ai/orchestrator/utils/trivial-filter.ts`: responder pidiendo reformulación **sin** llamar al LLM ni crear escalación (FR-009)
+- [X] T059 [US5] Crear el Workflow 7 en `n8n/workflows/` — **implementado como rama de `RecepcionMensaje-A.json`**, no como archivo aparte: Meta manda todos los mensajes al mismo webhook, así que un workflow separado no podría recibirlos: audio de WhatsApp → transcripción → `POST /messaging/webhook` con el texto, siguiendo el patrón de los workflows existentes. **El workflow NO debe persistir el binario del audio** en ningún nodo ni almacenamiento intermedio (FR-011)
+- [X] T060 [US5] Definir el marcador acordado que n8n envía cuando no puede transcribir, y documentarlo en `n8n/workflows/README.md` o equivalente
+- [X] T061 [US5] Manejar ese marcador en `src/ai/orchestrator/utils/trivial-filter.ts`: responder pidiendo reformulación **sin** llamar al LLM ni crear escalación (FR-009)
 
 ### Tests
 
-- [ ] T062 [P] [US5] Test en `src/ai/orchestrator/utils/trivial-filter.spec.ts`: el marcador de transcripción fallida produce el pedido de reformulación y **cero** llamadas al LLM (FR-009)
+- [X] T062 [P] [US5] Test en `src/ai/orchestrator/utils/trivial-filter.spec.ts`: el marcador de transcripción fallida produce el pedido de reformulación y **cero** llamadas al LLM (FR-009)
 
 **Checkpoint**: RF-14 cubierto por texto y por voz, con degradación explícita.
 

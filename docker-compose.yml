@@ -61,6 +61,16 @@ services:
       # En prod: reemplazar por la URL pública (ej. https://n8n.tudominio.com/)
       WEBHOOK_URL: http://localhost:5678/
       GENERIC_TIMEZONE: America/Argentina/Buenos_Aires
+      # La usa el nodo "Transcribir audio (Gemini)" de RecepcionMensaje-A
+      # (Sprint 5A, US5): n8n transcribe las notas de voz porque el token de
+      # Meta vive solo acá. Sin esta variable el nodo recibe 401 y —por su
+      # neverError— todos los audios caen en "no se entendió", en silencio.
+      GOOGLE_API_KEY: ${GOOGLE_API_KEY}
+      # Permite leerla como {{ $env.GOOGLE_API_KEY }} desde una expresión: n8n
+      # bloquea el acceso a env vars en los nodos por defecto.
+      N8N_BLOCK_ENV_ACCESS_IN_NODE: "false"
+    env_file:
+      - .env
     volumes:
       - ./n8n/data:/home/node/.n8n
     networks:

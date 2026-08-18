@@ -1,6 +1,10 @@
 import { Logger } from '@nestjs/common';
 import { buildOrchestratorGraph } from './orchestrator.graph';
 import { OrchestratorStateType } from './orchestrator.state';
+import {
+  UNTRANSCRIBABLE_AUDIO_MARKER,
+  TRANSCRIPTION_FAILED_REPLY,
+} from './utils/trivial-filter';
 
 /**
  * Ruteo sticky vs. greeting (bug encontrado revisando el diagrama de
@@ -226,7 +230,7 @@ describe('buildOrchestratorGraph — atajo trivial vs. agente sticky', () => {
       orchestrationLogger as any,
       new Logger('test'),
     );
-    return { graph, collectionsNode, invoke };
+    return { graph, collectionsNode, invoke, orchestrationLogger };
   }
 
   it('con agente sticky, "dale" pasa por scope_check (LLM) en vez del atajo regex', async () => {
@@ -252,6 +256,83 @@ describe('buildOrchestratorGraph — atajo trivial vs. agente sticky', () => {
 
     expect(invoke).not.toHaveBeenCalled();
     expect(result.isTrivial).toBe(true);
+  });
+
+  /**
+   * Audio no transcribible — Sprint 5A (US5, FR-009).
+   *
+   * A diferencia del saludo, este atajo NO lleva la guarda de
+   * `!currentAgent`: no hay ambigüedad que el historial pueda resolver,
+   * porque no existe un mensaje del usuario que interpretar. El caso con
+   * agente sticky es el que importa, y es el que el atajo trivial de arriba
+   * deja pasar por diseño.
+   */
+  describe('audio que n8n no pudo transcribir (FR-009)', () => {
+    it('CON agente sticky, no llama al LLM ni entra al agente', async () => {
+      const { graph, invoke, collectionsNode } = buildGraph({
+        decision: 'mismo',
+        isGreeting: false,
+      });
+
+      const result = await graph.invoke({
+        ...baseState,
+        message: UNTRANSCRIBABLE_AUDIO_MARKER,
+        currentAgent: 'COLLECTIONS',
+      });
+
+      // Cero tokens: ni scope_check ni classify_intent.
+      expect(invoke).not.toHaveBeenCalled();
+      // Y sin entrar al agente, que es donde vive la escalación a un humano:
+      // un audio que no se entendió no puede ocuparle el tiempo a una persona.
+      expect(collectionsNode).not.toHaveBeenCalled();
+      expect(result.escalated).not.toBe(true);
+    });
+
+    it('sin agente sticky, tampoco llama al LLM', async () => {
+      const { graph, invoke } = buildGraph({
+        decision: 'mismo',
+        isGreeting: false,
+      });
+
+      const result = await graph.invoke({
+        ...baseState,
+        message: UNTRANSCRIBABLE_AUDIO_MARKER,
+        currentAgent: null,
+      });
+
+      expect(invoke).not.toHaveBeenCalled();
+      expect(result.response).toBe(TRANSCRIPTION_FAILED_REPLY);
+    });
+
+    it('le pide reformular sin filtrar el centinela crudo', async () => {
+      const { graph } = buildGraph({ decision: 'mismo', isGreeting: false });
+
+      const result = await graph.invoke({
+        ...baseState,
+        message: UNTRANSCRIBABLE_AUDIO_MARKER,
+      });
+
+      expect(result.response).toBe(TRANSCRIPTION_FAILED_REPLY);
+      expect(result.response).not.toContain(UNTRANSCRIBABLE_AUDIO_MARKER);
+    });
+
+    it('queda auditado como AUDIO_NOT_TRANSCRIBED, no escondido entre los saludos', async () => {
+      // Cuán seguido falla la transcripción es lo que dice si el canal de voz
+      // sirve; contarlo como TRIVIAL_RESPONSE lo volvería inmedible (OE-11).
+      const { graph, orchestrationLogger } = buildGraph({
+        decision: 'mismo',
+        isGreeting: false,
+      });
+
+      await graph.invoke({
+        ...baseState,
+        message: UNTRANSCRIBABLE_AUDIO_MARKER,
+      });
+
+      expect(orchestrationLogger.logEvent).toHaveBeenCalledWith(
+        expect.objectContaining({ eventType: 'AUDIO_NOT_TRANSCRIBED' }),
+      );
+    });
   });
 });
 

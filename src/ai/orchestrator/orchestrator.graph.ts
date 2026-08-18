@@ -22,6 +22,7 @@ import {
 } from './utils/orchestrator.schemas';
 import {
   isTrivial,
+  isUntranscribableAudio,
   cannedReply,
   OPENING_REPLY,
   CLOSING_REPLY,
@@ -218,7 +219,16 @@ export function buildOrchestratorGraph(
       conversationId: state.conversationId,
       // trivial_response también pasa por acá (antes no dejaba rastro:
       // ni ConversationEvent ni TokenUsage, invisible para la auditoría).
-      eventType: state.isTrivial ? 'TRIVIAL_RESPONSE' : 'ROUTED_TO_AGENT',
+      //
+      // El audio no transcribible sale por el mismo nodo pero con su propio
+      // tipo: contarlo como TRIVIAL_RESPONSE lo escondería entre los saludos,
+      // y cuán seguido falla la transcripción es justamente lo que hay que
+      // poder medir para saber si el canal de voz sirve (OE-11).
+      eventType: isUntranscribableAudio(state.message)
+        ? 'AUDIO_NOT_TRANSCRIBED'
+        : state.isTrivial
+          ? 'TRIVIAL_RESPONSE'
+          : 'ROUTED_TO_AGENT',
       agentType: state.agentType,
       payload: {
         message: state.message,
@@ -254,6 +264,15 @@ export function buildOrchestratorGraph(
   // --- ROUTERS (funciones puras, sin costo de tokens) ---
 
   const entryRouter = (state: OrchestratorStateType): string => {
+    // Audio que n8n no pudo transcribir (US5, FR-009). Va ANTES del sticky y
+    // sin la guarda de `!state.currentAgent` que sí lleva isTrivial: acá no
+    // hay ambigüedad que resolver con el historial — no existe mensaje del
+    // usuario, existe un aviso de que la transcripción falló. Mandarlo al
+    // LLM sería pedirle que responda un texto que nadie escribió, y con
+    // agente fijado terminaría escalando a una persona por un audio que
+    // simplemente no se entendió.
+    if (isUntranscribableAudio(state.message)) return 'trivial';
+
     // El atajo de 0 tokens solo es seguro sin agente sticky: con un agente
     // fijado, un "dale"/"listo"/"ok" corto puede ser la confirmación a una
     // pregunta que el bot mismo hizo en el turno anterior (mismo callejón sin
