@@ -85,6 +85,13 @@ services:
       # que la comodidad de ver qué devolvió cada nodo.
       EXECUTIONS_DATA_SAVE_ON_SUCCESS: none
       EXECUTIONS_DATA_SAVE_ON_ERROR: none
+      # Las corridas manuales desde el editor se GUARDAN por defecto, así que
+      # sin esto alcanzaba con probar el workflow a mano una vez para volver a
+      # dejar el audio en la base. Apagarlo no impide depurar: al ejecutar
+      # desde el editor, n8n muestra la salida de cada nodo en vivo sobre el
+      # canvas (viene por la conexión push, no de la base) — lo que se pierde
+      # es poder volver a abrirla después.
+      EXECUTIONS_DATA_SAVE_MANUAL_EXECUTIONS: "false"
     env_file:
       - .env
     volumes:
