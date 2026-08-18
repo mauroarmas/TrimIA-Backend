@@ -1,0 +1,505 @@
+# Feature Specification: Chats del panel en tiempo real
+
+**Feature Branch**: `004-chat-tiempo-real`
+
+**Created**: 2026-08-18
+
+**Status**: Draft
+
+**Sprint**: 5B (habilitador) · **Entregable**: E4 (Panel) · **Objetivos**: OE-10, OE-11
+
+**Spike técnico**: [research.md](./research.md) — decide el transporte y **descarta
+mantener el polling** con evidencia. Esta spec describe el comportamiento
+observable; el *cómo* vive allá.
+
+---
+
+## 1. Objetivo y contexto de negocio
+
+El panel web tiene dos chats: el **Chat con el Asistente**, donde un empleado
+conversa con el sistema como sí mismo, y el **Simulador de Chat**, donde se
+escribe desde un teléfono cualquiera para ver cómo el sistema le responde a un
+cliente. Los dos existen desde el Sprint 5A y los dos funcionan preguntando en
+bucle "¿ya llegó algo?" cada dos segundos.
+
+Ese bucle no es solo incómodo: **pierde mensajes**. Dos casos verificados en el
+spike ([research.md §5](./research.md)):
+
+1. Cuando el asistente escala un caso y un supervisor lo responde a mano, la
+   pestaña abierta del usuario **nunca muestra esa respuesta**: dejó de
+   preguntar apenas la conversación pasó a esperar a una persona.
+2. Cuando un turno falla sus tres intentos, el usuario del panel **no recibe
+   ninguna señal** —ni siquiera la disculpa que sí recibe quien escribe por
+   WhatsApp— y se queda mirando un chat mudo.
+
+A eso se suma que cada chat abierto consume la mitad del límite de peticiones
+de la propia aplicación, así que **dos pestañas se auto-bloquean**, y que el
+bucle se rinde a los ~50 segundos y declara "no llegó respuesta" aunque la
+respuesta ya esté guardada.
+
+**Por qué ahora.** El Sprint 5B es Capacitación de empleados. Esas sesiones son
+conversacionales y largas, y el Chat con el Asistente deja de ser una comodidad
+de demo para pasar a ser **la superficie principal de ese sprint**. Un chat que
+se rinde a los 50 segundos y que puede tragarse la respuesta de un supervisor no
+sostiene una capacitación, y menos una demostración ante el tribunal.
+
+El objetivo es que en los dos chats **la respuesta aparezca cuando está lista**,
+que **ningún mensaje se pierda** aunque se corte la conexión, y que el simulador
+deje de exigir el secreto de producción para funcionar.
+
+**Lo que esta spec no cambia**: cómo se produce la respuesta. El mensaje se
+sigue encolando y el trabajo pesado sigue corriendo fuera del request
+(Principio IV); la audiencia del conocimiento y los agentes permitidos se
+siguen decidiendo donde se deciden hoy (Principio I). Cambia **cómo se entrega**
+lo que ya se produce.
+
+---
+
+## 2. Usuarios
+
+| Usuario | Quién es | Qué hace acá | Cómo se lo autoriza |
+|---|---|---|---|
+| **Empleado** | Persona con sesión en el panel, sin rol de supervisor | Conversa con el asistente como sí mismo. Es el usuario principal de las capacitaciones del Sprint 5B | Sesión válida. Su conversación se identifica por el teléfono de su perfil, que **nunca** escribe a mano |
+| **Supervisor** | Empleado con rol de supervisión | Todo lo del empleado, **más** el Simulador de Chat. También responde a mano los casos escalados desde el Panel del Supervisor | Sesión válida **más** rol de supervisor para el simulador |
+| **Cliente simulado** | No es un usuario del panel: es el **sujeto** de la prueba | Un teléfono cualquiera que el supervisor escribe en el simulador para ver la experiencia del cliente | No tiene sesión. El sistema lo trata como cliente por no estar en la whitelist de empleados |
+
+> El **cliente real de WhatsApp** no es usuario de esta spec: ese canal ya
+> entrega solo (§8).
+
+---
+
+## 3. Escenarios de usuario (historias)
+
+### HU1 — Chat con el Asistente en vivo (Prioridad: P1)
+
+Como **empleado**, quiero que la respuesta del asistente **aparezca sola** en
+cuanto está lista, para poder sostener una conversación larga de capacitación
+sin que el chat se rinda antes que yo.
+
+**Por qué P1**: es la superficie principal del Sprint 5B. Sin esto, ese sprint
+arranca sobre un chat que se declara vencido a los 50 segundos.
+
+**Prueba independiente**: enviar un mensaje y ver aparecer la respuesta sin
+tocar nada, incluso si el asistente tarda más de un minuto en contestar.
+
+**Escenarios de aceptación**:
+1. **Dado** un empleado con el chat abierto, **cuando** envía un mensaje,
+   **entonces** su propio mensaje se ve enseguida y el chat indica que el
+   asistente está trabajando.
+2. **Dado** ese mismo estado, **cuando** el asistente termina, **entonces** la
+   respuesta aparece sin ninguna acción del usuario.
+3. **Dado** que el asistente tarda **más de dos minutos**, **cuando** termina,
+   **entonces** la respuesta igual aparece: el chat no se rindió mientras tanto.
+
+---
+
+### HU2 — La respuesta del supervisor llega al chat abierto (Prioridad: P1)
+
+Como **empleado con un caso escalado**, quiero ver la respuesta que escribió un
+supervisor **en el mismo chat donde pregunté**, para no tener que enterarme por
+otro lado de que alguien me contestó.
+
+**Por qué P1**: es una **pérdida de mensajes**, no una demora. Hoy esa respuesta
+no aparece nunca. Es la falla más grave que arregla esta spec.
+
+**Prueba independiente**: escalar una conversación, responderla desde el Panel
+del Supervisor con la pestaña del empleado abierta, y ver el mensaje llegar sin
+recargar.
+
+**Escenarios de aceptación**:
+1. **Dado** un empleado cuyo caso está esperando a una persona, **cuando** un
+   supervisor toma el control y responde, **entonces** esa respuesta aparece en
+   el chat abierto del empleado.
+2. **Dado** ese mismo caso, **cuando** el supervisor todavía no respondió,
+   **entonces** el chat muestra que el caso está en manos de una persona, en vez
+   de aparentar que el asistente sigue pensando.
+
+---
+
+### HU3 — Simulador sin el secreto de producción (Prioridad: P1)
+
+Como **supervisor**, quiero probar el sistema escribiendo desde un teléfono
+cualquiera **usando mi sesión del panel**, para no tener que pegar a mano el
+secreto que protege el canal real de WhatsApp.
+
+**Por qué P1**: hoy el simulador exige ese secreto **además** de la sesión de
+supervisor que ya necesita, así que el secreto no aporta seguridad y sí expone
+en el navegador una credencial de producción.
+
+**Prueba independiente**: usar el simulador con la sesión iniciada y sin ningún
+secreto a la vista.
+
+**Escenarios de aceptación**:
+1. **Dado** un supervisor con sesión iniciada, **cuando** simula un mensaje
+   desde un teléfono cualquiera, **entonces** el sistema lo acepta **sin pedir
+   ningún secreto**.
+2. **Dado** un empleado **sin** rol de supervisor, **cuando** intenta usar el
+   simulador, **entonces** el sistema lo rechaza por falta de permisos.
+3. **Dado** el canal real de WhatsApp, **cuando** se lo consulta, **entonces**
+   sigue exigiendo su secreto igual que antes.
+
+---
+
+### HU4 — Ver la experiencia del cliente en vivo (Prioridad: P2)
+
+Como **supervisor**, quiero ver **en vivo** la respuesta que el sistema le da a
+un teléfono fuera de la whitelist, para comprobar que a un cliente no se le
+sirve conocimiento interno ni se lo deriva a un agente que no le corresponde.
+
+**Por qué P2**: es el motivo de existir del simulador, pero depende de HU3 y no
+bloquea la capacitación.
+
+**Prueba independiente**: simular desde un teléfono que no es de ningún
+empleado y verificar que el sistema responde como a un cliente.
+
+**Escenarios de aceptación**:
+1. **Dado** un teléfono que **no** pertenece a ningún empleado activo,
+   **cuando** el supervisor simula un mensaje, **entonces** la respuesta llega
+   en vivo y el sistema trató a ese teléfono **como cliente**.
+2. **Dado** un teléfono que **sí** pertenece a un empleado activo, **cuando** se
+   lo usa en el simulador, **entonces** el sistema lo trata **como empleado**:
+   el simulador no cambia quién es quién.
+
+---
+
+### HU5 — Recuperación sin pérdida (Prioridad: P2)
+
+Como **empleado**, quiero que si se me cae el wifi o suspendo la computadora
+mientras el asistente trabaja, **al volver esté todo**, para no tener que
+repetir lo que ya pregunté.
+
+**Por qué P2**: sin esto la promesa de "tiempo real" es frágil justo en el
+escenario más común de una capacitación larga.
+
+**Prueba independiente**: enviar un mensaje, desconectar la red, esperar a que
+el asistente termine, reconectar, y ver la respuesta.
+
+**Escenarios de aceptación**:
+1. **Dado** un mensaje enviado, **cuando** la conexión se corta y el asistente
+   responde durante el corte, **entonces** al recuperarse la conexión la
+   respuesta aparece.
+2. **Dado** un chat reconectado, **cuando** se restablece, **entonces** no se
+   duplica ningún mensaje que ya estaba a la vista.
+
+---
+
+## 4. Requisitos funcionales
+
+> Describen **qué** se observa, no cómo se implementa. El transporte lo decide
+> [research.md](./research.md).
+
+### Entrega en tiempo real
+
+- **RF-001**: El sistema DEBE entregar al panel los mensajes nuevos de una
+  conversación **apenas quedan registrados**, sin que el panel tenga que
+  consultar repetidamente.
+- **RF-002**: La entrega en tiempo real DEBE incluir **todo** mensaje nuevo de
+  la conversación, sin importar quién lo haya originado: el asistente, un aviso
+  automático del sistema o **una persona respondiendo a mano**.
+- **RF-003**: El sistema DEBE informar también los **cambios de estado** de la
+  conversación (por ejemplo: pasó a esperar a una persona; una persona tomó el
+  control; volvió a manos del asistente).
+- **RF-004**: Cada mensaje entregado DEBE traer un identificador estable y una
+  posición de orden, de modo que el panel pueda ordenarlos y reconocer si ya lo
+  tenía.
+- **RF-005**: El panel DEBE mostrar cada mensaje **una sola vez**, aunque le
+  llegue más de una vez.
+
+### Continuidad y recuperación
+
+- **RF-006**: Al (re)establecer la entrega en tiempo real, el sistema DEBE
+  entregar los mensajes que ocurrieron desde el último que el panel dice haber
+  visto, y recién después seguir en vivo.
+- **RF-007**: El sistema DEBE poder reconstruir la conversación completa aunque
+  la entrega en tiempo real haya fallado por completo: los mensajes se registran
+  **antes** de entregarse, y esa registración es la fuente de verdad.
+- **RF-008**: El sistema DEBE mantener viva la entrega durante conversaciones
+  largas, sin límite de intentos ni vencimiento por inactividad del usuario.
+- **RF-009**: El sistema DEBE liberar los recursos de una entrega cuando el
+  panel se desconecta, sin acumularlos indefinidamente.
+
+### Envío y acuse
+
+- **RF-010**: El envío de un mensaje DEBE seguir acusándose de inmediato, sin
+  esperar a que la respuesta esté lista.
+- **RF-011**: Desde el acuse hasta que llega una respuesta o un cambio de
+  estado, el panel DEBE indicar que **el turno está en curso**.
+- **RF-012**: Cuando un turno **fracasa definitivamente** —agotó todos sus
+  reintentos—, el sistema DEBE dejar registrado un aviso al usuario en la
+  conversación, igual que hace hoy en el canal de WhatsApp. Un turno fracasado
+  **no puede** terminar en silencio.
+
+### Autorización
+
+- **RF-013**: El sistema DEBE entregar en tiempo real **únicamente** los
+  mensajes de una conversación que el solicitante tiene derecho a leer, con el
+  **mismo criterio** con el que hoy se le niega el historial.
+- **RF-014**: El sistema DEBE rechazar una solicitud de entrega en tiempo real
+  **antes de abrirla** si el solicitante no está autenticado o la conversación
+  no le corresponde. No es aceptable abrir una entrega que después nunca emita.
+- **RF-015**: La entrega en tiempo real NO DEBE exponer ningún dato de la
+  conversación que el solicitante no pueda ya obtener por el historial.
+
+### Simulador
+
+- **RF-016**: El simulador DEBE aceptar mensajes en nombre de **un teléfono
+  cualquiera**, indicado por quien simula.
+- **RF-017**: El simulador DEBE exigir **sesión válida y rol de supervisor**, y
+  NO DEBE exigir ningún secreto compartido.
+- **RF-018**: El sistema DEBE seguir determinando **quién es** el remitente
+  simulado por su presencia o ausencia en la whitelist de empleados, sin que
+  quien simula pueda declararlo. El simulador **elige el teléfono, no el rol**.
+- **RF-019**: El simulador DEBE recibir las respuestas en tiempo real con el
+  mismo comportamiento que el Chat con el Asistente.
+- **RF-020**: La puerta de entrada del canal de WhatsApp DEBE seguir exigiendo
+  su secreto compartido y NO DEBE aceptar una sesión del panel como sustituto.
+
+### Entidades
+
+- **Conversación**: hilo identificado por el teléfono normalizado del contacto y
+  su canal. Tiene un estado que decide si el asistente responde o no.
+- **Mensaje**: unidad que se entrega. Tiene autor (usuario / asistente-o-persona),
+  contenido, momento e identificador estable.
+- **Evento de entrega**: el aviso de que hay algo nuevo. Es una **notificación,
+  no un almacén**: perderlo no pierde el mensaje (RF-007).
+
+---
+
+## 5. Reglas de negocio (con ejemplos)
+
+**RN-1 — El registro manda; la entrega solo avisa.**
+Un mensaje se considera existente cuando queda registrado, no cuando se
+entrega. Si la entrega falla, el mensaje sigue estando.
+*Ejemplo*: Ana envía "¿cuál es el plan de cuotas?" y cierra la notebook. El
+asistente responde durante ese rato. Cuando Ana vuelve a abrir el chat, la
+respuesta está. Verificable: el mensaje figura en el historial aunque nadie
+haya tenido una conexión abierta cuando se generó.
+
+**RN-2 — Se entrega lo que se puede leer, ni más ni menos.**
+El derecho a recibir en tiempo real es exactamente el derecho a leer el
+historial. No hay una segunda regla de permisos.
+*Ejemplo*: Ana pide entrega en tiempo real de la conversación de Bruno. Recibe
+el mismo rechazo por falta de permisos que si pidiera el historial de Bruno.
+Un supervisor **tampoco** entra por esta vía a la conversación de un empleado:
+para leer conversaciones ajenas está el Panel del Supervisor, con su propio
+control. Verificable: el mismo par (usuario, conversación) da el mismo veredicto
+en las dos vías.
+
+**RN-3 — El simulador elige el teléfono, no el rol.**
+Quién es el remitente lo decide la whitelist de empleados, nunca lo que se
+escriba en el simulador.
+*Ejemplo*: un supervisor simula desde `5493764000000`, que no pertenece a
+ningún empleado activo. El sistema lo trata como **cliente**: solo puede llegar
+a los agentes de ventas y cobranzas, y solo se le recupera conocimiento
+público. Si simula desde el teléfono de un empleado activo, lo trata como
+**empleado**. Verificable: dos simulaciones con la misma pregunta y distinto
+teléfono dan alcances distintos.
+
+**RN-4 — El simulador es de supervisores, y por una razón concreta.**
+Simular desde un teléfono cualquiera es escribir en la conversación **real** de
+ese teléfono. Es exactamente lo que se quiere para probar, y exactamente por lo
+que no puede estar al alcance de cualquiera.
+*Ejemplo*: un empleado sin rol de supervisor intenta simular desde el teléfono
+de un cliente real y el sistema lo rechaza por falta de permisos. Verificable:
+mismo pedido, dos sesiones con distinto rol, dos resultados.
+
+**RN-5 — Un turno nunca termina en silencio.**
+Todo turno cierra con algo visible para el usuario: una respuesta, un aviso de
+que su caso pasó a manos de una persona, o un aviso de que no se pudo procesar.
+*Ejemplo*: el asistente falla sus tres intentos por un problema del proveedor
+del modelo. El usuario del panel ve un aviso de que no se pudo procesar su
+mensaje, igual que lo vería por WhatsApp. Verificable: forzar el fallo y
+confirmar que la conversación termina con un mensaje visible, no vacía.
+
+**RN-6 — El asistente no responde cuando el caso es de una persona.**
+Mientras la conversación espera a una persona o alguien tiene el control, el
+asistente no interviene: el mensaje se registra y se acusa igual.
+*Ejemplo*: Ana escribe mientras su caso está escalado. Su mensaje queda
+guardado, el chat le indica que el caso está en manos de una persona, y **no**
+le muestra al asistente pensando indefinidamente. Verificable: enviar un
+mensaje con la conversación escalada y confirmar que se acusa, que se registra
+y que la indicación de estado es la correcta.
+
+**RN-7 — El canal de WhatsApp no se ablanda.**
+Que el simulador deje de usar el secreto compartido no cambia nada de la puerta
+por la que entra WhatsApp.
+*Ejemplo*: un pedido al canal de WhatsApp con una sesión del panel válida pero
+sin el secreto es rechazado. Verificable: el rechazo ocurre con sesión válida.
+
+**RN-8 — El transporte no decide confidencialidad.**
+Los agentes permitidos y la audiencia del conocimiento se deciden donde ya se
+deciden. Recibir en tiempo real no cambia qué se responde, solo cuándo se ve.
+*Ejemplo*: la misma pregunta hecha por el mismo teléfono da la misma respuesta
+por el panel y por WhatsApp. Verificable: comparar ambas.
+
+---
+
+## 6. Criterios de aceptación (verificables sin código)
+
+- **CA-01 — Aparece solo.** Un empleado envía un mensaje y la respuesta aparece
+  en pantalla **sin tocar nada y sin recargar**. *(RF-001)*
+- **CA-02 — Sin techo de tiempo.** Con el asistente tardando **más de dos
+  minutos**, la respuesta igual aparece. El chat no declara "no llegó respuesta"
+  mientras la respuesta sí llegó. *(RF-008)*
+- **CA-03 — La respuesta del supervisor llega.** Con la pestaña del empleado
+  abierta sobre un caso escalado, un supervisor responde desde su panel y ese
+  mensaje **aparece en la pestaña del empleado**. *(RF-002)*
+- **CA-04 — Recuperación sin pérdida.** Se envía un mensaje, se corta la red, se
+  espera a que el asistente termine, se restablece la red: la respuesta aparece
+  y **no hay mensajes duplicados**. *(RF-005, RF-006)*
+- **CA-05 — Dos pestañas coherentes.** Con dos pestañas de la misma sesión
+  abiertas, la respuesta aparece en **las dos**, una sola vez en cada una, y
+  ninguna se bloquea por exceso de peticiones. *(RF-005)*
+- **CA-06 — El fracaso se ve.** Forzando el fallo total de un turno, la
+  conversación **termina con un aviso visible** para el usuario del panel, no en
+  silencio. *(RF-012)*
+- **CA-07 — Estado a la vista.** Con la conversación esperando a una persona, el
+  chat lo indica; **no** deja al asistente aparentando que piensa. *(RF-003,
+  RF-011)*
+- **CA-08 — Conversación ajena, rechazo.** Un empleado pide la entrega en tiempo
+  real de una conversación que no le pertenece y **se lo rechaza de entrada**,
+  con el mismo criterio que el historial. Un supervisor tampoco entra por esta
+  vía. *(RF-013, RF-014)*
+- **CA-09 — Simulador sin secreto.** El simulador funciona con la sesión
+  iniciada y **sin ningún campo de secreto** en pantalla. *(RF-017)*
+- **CA-10 — Simulador cerrado por rol.** Un empleado sin rol de supervisor es
+  rechazado por el simulador. *(RF-017)*
+- **CA-11 — Cliente fuera de la whitelist.** Simulando desde un teléfono que no
+  es de ningún empleado activo, el sistema lo trata como cliente: no le llega
+  conocimiento interno ni un agente que no le corresponde. *(RF-018)*
+- **CA-12 — WhatsApp intacto.** El canal de WhatsApp sigue exigiendo su secreto
+  y no acepta una sesión del panel en su lugar; un mensaje real de WhatsApp
+  sigue funcionando igual que antes. *(RF-020)*
+- **CA-13 — El envío sigue siendo inmediato.** El acuse del envío llega en
+  milisegundos, muy antes que la respuesta. *(RF-010)*
+- **CA-14 — Sin fugas.** Abrir y cerrar el chat repetidamente no degrada el
+  sistema: las entregas cerradas no quedan acumuladas. *(RF-009)*
+
+---
+
+## 7. Casos límite
+
+**CL-1 — ¿Qué ve el usuario si el asistente no va a responder porque el caso es
+de una persona?**
+El mensaje se registra igual y el envío se acusa igual. El chat debe mostrar
+**el estado**, no un "pensando" eterno. Si es la primera vez en esa espera, el
+sistema deja un aviso de que el caso pasó a un responsable; si el usuario
+insiste, ese aviso **no se repite** (ya funciona así hoy), así que el chat no
+puede depender de que llegue un mensaje nuevo para actualizar lo que muestra:
+depende del **cambio de estado** (RF-003).
+
+**CL-2 — ¿El usuario ve llegar la respuesta que un supervisor escribió desde el
+panel?**
+**Sí, y es obligatorio** (RF-002, CA-03). Hoy **no** ocurre: es la falla más
+grave que arregla esta spec. Requiere que la entrega cubra todos los caminos por
+los que un mensaje puede quedar registrado, no solo el del asistente
+([research.md §6](./research.md)).
+
+**CL-3 — Se cae la conexión justo mientras el asistente trabaja. ¿Se pierde la
+respuesta?**
+**No.** El mensaje se registra antes de entregarse, así que la respuesta existe
+aunque nadie estuviera escuchando. Al reconectar, el panel declara cuál fue el
+último mensaje que vio y recibe todo lo posterior antes de volver a vivo
+(RF-006, RF-007). Es la razón por la que el evento se define como
+**notificación, no como almacén**.
+
+**CL-4 — Dos pestañas abiertas con la misma sesión.**
+Las dos reciben todo. No hay "dueño" de la conversación: es la misma persona
+mirando dos veces. Cada pestaña resuelve por su cuenta no mostrar duplicados
+(RF-005). Este caso hoy es un problema real —dos pestañas alcanzan el límite de
+peticiones de la aplicación— y con entrega en tiempo real deja de serlo, porque
+cada pestaña abre **una** conexión en vez de treinta consultas por minuto.
+
+**CL-5 — El worker falla y reintenta (tres intentos).**
+Los intentos fallidos **no** producen mensajes, así que no producen entregas: el
+usuario no ve tres respuestas ni tres errores. Si el turno termina saliendo bien
+en el segundo o tercer intento, se entrega **una** respuesta.
+Si fracasan los tres, hoy el usuario del panel **no ve absolutamente nada**
+—el aviso de disculpa solo sale por WhatsApp y ni siquiera se registra
+([research.md §5b](./research.md))—. RF-012 lo corrige: el fracaso debe quedar
+registrado como un mensaje visible, que por ser un mensaje viaja por la misma
+entrega que todo lo demás.
+
+**CL-6 — ¿Y si el asistente responde antes de que el panel termine de conectarse?**
+Es la carrera esperable con turnos rápidos. La reanudación de RF-006 la cubre:
+al conectarse, el panel declara qué vio y recibe lo que se perdió. No puede
+haber una ventana entre "envié" y "estoy escuchando" en la que un mensaje se
+caiga.
+
+**CL-7 — El empleado no tiene teléfono cargado en su perfil.**
+No hay conversación que identificar, así que no hay nada que entregar. El
+sistema ya rechaza el envío con un mensaje que explica que un supervisor tiene
+que cargar el teléfono; el chat debe mostrar **esa** explicación y no intentar
+abrir una entrega en tiempo real de una conversación que no existe.
+
+**CL-8 — Se simula desde el teléfono de un cliente real.**
+El mensaje entra en la conversación **real** de ese cliente y queda ahí. Es el
+comportamiento correcto —el simulador prueba el sistema de verdad, no una
+copia— y es la razón concreta de RN-4: por eso el simulador es de supervisores.
+El panel debería advertirlo antes de enviar; no debe impedirlo.
+
+**CL-9 — Un empleado activo es dado de baja mientras tiene el chat abierto.**
+El sistema resuelve quién es el remitente **en cada mensaje**, no una vez por
+conversación. Desde el mensaje siguiente pasa a tratarse como cliente. La
+entrega en tiempo real no puede cachear ese dato ni mantener abierta una
+entrega con permisos viejos: si el derecho a leer esa conversación se pierde, la
+entrega se corta.
+
+**CL-10 — Se pierde el bus interno de entrega.**
+Se degrada, no se cae: los mensajes se siguen registrando (RF-007) y el usuario
+los ve al recargar o al reconectar. Lo que **no** es aceptable es que el envío
+de mensajes deje de funcionar porque la entrega en tiempo real no esté
+disponible.
+
+**CL-11 — Una conversación sin ningún mensaje todavía.**
+La entrega se abre igual y espera. No es un error: es el estado inicial del
+chat de un empleado que nunca escribió.
+
+**CL-12 — Un mensaje enorme o un turno que genera varios mensajes seguidos.**
+Se entregan todos, en orden, sin que uno pise al otro. El orden lo garantiza la
+posición de RF-004, no el momento en que llegan.
+
+---
+
+## 8. Fuera de alcance
+
+- **WhatsApp.** Ese canal ya empuja por su propia vía —el sistema le escribe al
+  usuario— y no involucra a ningún navegador. Nada de esta spec lo toca, salvo
+  para garantizar que sigue funcionando igual (RF-020, CA-12).
+- **El contenido de las capacitaciones del Sprint 5B.** Esta spec entrega la
+  superficie conversacional; qué se enseña, cómo se estructura una sesión y cómo
+  se evalúa es de esa spec, no de esta.
+- **Indicadores de "está escribiendo", presencia, acuses de lectura y edición o
+  borrado de mensajes.** Ningún requisito los pide. Se los nombra porque son
+  justamente lo que justificaría un transporte bidireccional
+  ([research.md §4](./research.md)).
+- **Que el Panel del Supervisor se actualice solo.** Las listas de conversaciones
+  y de escalamientos siguen refrescándose como hoy. Lo que sí entra es que **la
+  respuesta que un supervisor escribe** llegue al chat del otro lado (HU2).
+- **El lock en memoria de `MessageProcessor`.** Defecto preexistente de
+  multi-instancia, del Sprint 8. Esta spec no lo agrava ni lo arregla; solo
+  introduce la infraestructura donde después va a poder resolverse
+  ([research.md §1](./research.md)).
+- **Notificaciones fuera del panel** (escritorio, correo, push): recibir en vivo
+  requiere tener el chat abierto.
+- **Historial infinito y buscador de conversaciones** en el panel.
+- **Endurecer el CORS y el despliegue en Cloud Run**: Sprint 8.
+
+---
+
+## Supuestos
+
+- El panel de pruebas (`trimIA-frontend`) es un banco de pruebas para demos, no
+  un producto: no lleva tests propios. Todo lo que esta spec manda testear
+  —autorización, ruteo y la resolución de quién es el remitente— se testea en el
+  backend, donde ya vive.
+- El despliegue vigente sigue siendo una sola instancia en Docker Compose. El
+  diseño no puede **impedir** el multi-instancia del Sprint 8, pero verificarlo
+  allí es de ese sprint.
+- Los usuarios del panel están en la red de la empresa, con conexión
+  razonablemente estable; los cortes son la excepción (CL-3), no lo normal.
+- El teléfono del empleado ya está cargado en su perfil; si no, aplica CL-7.
+- Se mantiene el criterio actual de identificar la conversación de un empleado
+  por su teléfono normalizado tomado de su sesión, sin que viaje escrito a mano.
+- Toda variable de entorno nueva se valida y se documenta, como manda la
+  constitución.
