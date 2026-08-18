@@ -13,6 +13,8 @@ import {
   map,
   merge,
   takeUntil,
+  takeWhile,
+  tap,
 } from 'rxjs';
 import { RedisService } from '../redis/redis.service';
 import { RealtimeEvent, conversationChannel } from './realtime.types';
@@ -32,6 +34,19 @@ const toSseMessage = (event: RealtimeEvent): SseMessage => ({
   type: event.type,
   data: event,
 });
+
+/**
+ * ¿Este mensaje avisa que la conversación se terminó?
+ *
+ * Una conversación cerrada **no vuelve a recibir un mensaje** —los siguientes van a
+ * la conversación nueva—, así que un stream que siguiera abierto ahí es una conexión
+ * que por definición no va a entregar nada más (CL-15).
+ */
+const cierraLaConversacion = (message: SseMessage): boolean =>
+  message.type === 'status' &&
+  (message.data as RealtimeEvent).type === 'status' &&
+  (message.data as Extract<RealtimeEvent, { type: 'status' }>).data.status ===
+    'CLOSED';
 
 export interface StreamOptions {
   /**
@@ -148,13 +163,46 @@ export class RealtimeService implements OnModuleDestroy {
     options: StreamOptions = {},
   ): Observable<SseMessage> {
     const heartbeatMs = this.config.get<number>('SSE_HEARTBEAT_MS') ?? 15000;
+    const idleMs = this.config.get<number>('SSE_IDLE_TIMEOUT_MS') ?? 1800000;
     const stop$ = new Subject<void>();
 
-    const events$ = this.streamFor(conversationId).pipe(map(toSseMessage));
+    // Estado de inactividad, por stream. No es compartido: cada conexión tiene su
+    // propia noción de "hace cuánto que no pasa nada".
+    let lastActivity = Date.now();
+    let turnPending = false;
+
+    const events$ = this.streamFor(conversationId).pipe(
+      tap((event) => {
+        lastActivity = Date.now();
+        // Un mensaje del usuario abre un turno; la respuesta del asistente lo
+        // cierra. Es lo que permite no cortar mientras el asistente trabaja
+        // (CL-13) sin tener que consultar la base en cada tick.
+        if (event.type === 'message') {
+          turnPending = event.data.role === 'USER';
+        }
+      }),
+      map(toSseMessage),
+    );
 
     const keepalive$ = interval(heartbeatMs).pipe(
       concatMap(async (): Promise<SseMessage | null> => {
         if (!(await this.stillAllowed(conversationId, options))) {
+          stop$.next();
+          return null;
+        }
+
+        // Conexión ociosa (RF-023): una pestaña que nadie mira no debería retener
+        // una suscripción. Cerrarla no pierde nada — la base es la fuente de verdad
+        // y al volver el panel reanuda con `after`.
+        //
+        // Con un turno en curso NO se cierra (CL-13): cortar mientras el asistente
+        // trabaja sería reintroducir por otra puerta el defecto que esta spec vino a
+        // arreglar. Un caso que espera a una PERSONA sí se cierra, y la distinción
+        // es deliberada: un turno dura segundos, una espera humana puede durar días.
+        if (!turnPending && Date.now() - lastActivity >= idleMs) {
+          this.logger.debug(
+            `Stream de [${conversationId}] cerrado por inactividad. La conversación queda intacta.`,
+          );
           stop$.next();
           return null;
         }
@@ -174,7 +222,13 @@ export class RealtimeService implements OnModuleDestroy {
       filter((message): message is SseMessage => message !== null),
     );
 
-    const live$ = merge(events$, keepalive$).pipe(takeUntil(stop$));
+    const live$ = merge(events$, keepalive$).pipe(
+      takeUntil(stop$),
+      // `inclusive: true` emite el valor que falla el predicado y recién entonces
+      // completa: el cliente **ve** el `status: CLOSED` y después el stream corta.
+      // Al revés se enteraría de que se cerró sin saber por qué.
+      takeWhile((message) => !cierraLaConversacion(message), true),
+    );
 
     if (!options.replay) return live$;
 

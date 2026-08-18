@@ -51,6 +51,7 @@ function buildController(
       hasMore: false,
     }),
     messagesSince: jest.fn().mockResolvedValue([]),
+    close: jest.fn().mockResolvedValue({ id: CONV_ID, status: 'CLOSED' }),
   };
   const employees = {
     findById: jest.fn().mockResolvedValue({
@@ -514,5 +515,55 @@ describe('MessagingWebController.stream — reanudación con `after` (RF-006, T0
       controller.stream(CONV_ID, { user: { id: 'emp-1' } }, 'msg-1'),
     ).rejects.toBeInstanceOf(ForbiddenException);
     expect(conversations.messagesSince).not.toHaveBeenCalled();
+  });
+});
+
+describe('⭐ MessagingWebController.close — solo el dueño (US6, RF-024)', () => {
+  it('el dueño puede terminar su conversación', async () => {
+    const { controller, conversations } = buildController({
+      employeePhone: '5493865505362',
+      conversationExternalId: '5493865505362',
+    });
+
+    const res = await controller.close(CONV_ID, { user: { id: 'emp-1' } });
+
+    expect(conversations.close).toHaveBeenCalledWith(CONV_ID);
+    expect(res).toEqual({ closed: true, conversationId: CONV_ID });
+  });
+
+  it('rechaza cerrar una conversación ajena', async () => {
+    const { controller, conversations } = buildController({
+      employeePhone: '5493865505362',
+      conversationExternalId: '5493800000000',
+    });
+
+    await expect(
+      controller.close(CONV_ID, { user: { id: 'emp-1' } }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(conversations.close).not.toHaveBeenCalled();
+  });
+
+  // RN-2: terminar es del dueño. Un supervisor tiene otras herramientas sobre una
+  // conversación ajena —tomar el control, responder, liberarla— y cerrarle el hilo
+  // a alguien más, con el reinicio de contexto que implica, no es una de ellas.
+  it('un SUPERVISOR no puede cerrar el chat de otra persona', async () => {
+    const { controller, conversations } = buildController({
+      employeePhone: '5493999999999',
+      conversationExternalId: '5493865505362',
+    });
+
+    await expect(
+      controller.close(CONV_ID, { user: { id: 'sup-1' } }),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(conversations.close).not.toHaveBeenCalled();
+  });
+
+  it('una conversación inexistente da 404', async () => {
+    const { controller, conversations } = buildController();
+    conversations.findById.mockResolvedValue(null);
+
+    await expect(
+      controller.close(CONV_ID, { user: { id: 'emp-1' } }),
+    ).rejects.toBeInstanceOf(NotFoundException);
   });
 });

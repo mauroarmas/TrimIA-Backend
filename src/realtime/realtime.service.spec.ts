@@ -54,9 +54,17 @@ describe('RealtimeService', () => {
 
     service = new RealtimeService(
       redis as unknown as RedisService,
-      { get: () => 15000 } as unknown as ConfigService,
+      config(15000, 1800000),
     );
   });
+
+  /** ConfigService con heartbeat e inactividad configurables. */
+  function config(heartbeatMs: number, idleMs: number) {
+    return {
+      get: (key: string) =>
+        key === 'SSE_IDLE_TIMEOUT_MS' ? idleMs : heartbeatMs,
+    } as unknown as ConfigService;
+  }
 
   describe('publish', () => {
     it('publica en el canal de la conversación', async () => {
@@ -333,6 +341,73 @@ describe('RealtimeService', () => {
     });
   });
 
+  /**
+   * ⭐ CL-15 / T039 — una conversación terminada no vuelve a recibir mensajes: los
+   * siguientes van a la conversación nueva. Un stream que siguiera abierto ahí es
+   * una conexión que por definición no va a entregar nada más.
+   */
+  describe('sseStreamFor — la conversación se termina (CL-15)', () => {
+    const cerrada: RealtimeEvent = {
+      type: 'status',
+      conversationId: 'conv-1',
+      data: { status: 'CLOSED', currentAgent: null },
+    };
+
+    it('entrega el CLOSED y DESPUÉS cierra el stream', async () => {
+      const recibidos: unknown[] = [];
+      let cerrado = false;
+
+      service.sseStreamFor('conv-1', {}).subscribe({
+        next: (m) => recibidos.push(m),
+        complete: () => (cerrado = true),
+      });
+
+      onMessage(conversationChannel('conv-1'), JSON.stringify(cerrada));
+      await new Promise((r) => setImmediate(r));
+
+      // El orden importa: si cortara antes de emitir, el cliente se enteraría de
+      // que se cerró el stream sin saber por qué.
+      expect(recibidos).toEqual([{ type: 'status', data: cerrada }]);
+      expect(cerrado).toBe(true);
+      // Acá no hace falta desuscribir: el propio CLOSED completó el stream, que es
+      // justamente lo que se está probando.
+    });
+
+    it('libera la suscripción al cerrarse (RF-009)', async () => {
+      const sub = service.sseStreamFor('conv-1', {}).subscribe();
+
+      onMessage(conversationChannel('conv-1'), JSON.stringify(cerrada));
+      await new Promise((r) => setImmediate(r));
+
+      expect(subscriber.unsubscribe).toHaveBeenCalledWith(
+        conversationChannel('conv-1'),
+      );
+      sub.unsubscribe();
+    });
+
+    it('otros cambios de estado NO cierran el stream', async () => {
+      let cerrado = false;
+      const sub = service
+        .sseStreamFor('conv-1', {})
+        .subscribe({ complete: () => (cerrado = true) });
+
+      onMessage(
+        conversationChannel('conv-1'),
+        JSON.stringify({
+          type: 'status',
+          conversationId: 'conv-1',
+          data: { status: 'WAITING_HUMAN', currentAgent: null },
+        }),
+      );
+      await new Promise((r) => setImmediate(r));
+
+      expect(cerrado).toBe(false);
+      // Se cierra a mano: el keepalive es un interval y mantendría vivo el
+      // proceso de Jest si el stream quedara abierto.
+      sub.unsubscribe();
+    });
+  });
+
   it('onModuleDestroy cierra la conexión suscriptora', async () => {
     service.streamFor('conv-1').subscribe();
 
@@ -345,5 +420,194 @@ describe('RealtimeService', () => {
     await service.publish('conv-1', evento);
 
     expect(redis.duplicate).not.toHaveBeenCalled();
+  });
+
+  /**
+   * ⭐ RF-023 / SC-012 — una pestaña olvidada no debería retener una suscripción.
+   *
+   * El límite de esta capacidad es CL-13, y es la mitad importante: si cerrara
+   * mientras el asistente está trabajando, sería el defecto que esta spec vino a
+   * arreglar (rendirse antes de que llegue la respuesta) reintroducido por otra
+   * puerta.
+   */
+  describe('sseStreamFor — conexión ociosa (RF-023, CL-13)', () => {
+    /** Servicio con inactividad corta para no depender de timers largos. */
+    const conIdle = (idleMs: number) =>
+      new RealtimeService(
+        redis as unknown as RedisService,
+        config(1000, idleMs),
+      );
+
+    const mensajeDe = (role: 'USER' | 'ASSISTANT'): RealtimeEvent => ({
+      type: 'message',
+      conversationId: 'conv-1',
+      data: {
+        id: `msg-${role}`,
+        role,
+        content: 'x',
+        agentType: null,
+        createdAt: '2026-08-18T14:00:00.000Z',
+      },
+    });
+
+    it('cierra un stream sin actividad pasado el umbral', async () => {
+      jest.useFakeTimers();
+      let cerrado = false;
+
+      conIdle(3000)
+        .sseStreamFor('conv-1', {})
+        .subscribe({ complete: () => (cerrado = true) });
+
+      await jest.advanceTimersByTimeAsync(3500);
+      jest.useRealTimers();
+
+      expect(cerrado).toBe(true);
+    });
+
+    it('no lo cierra antes del umbral', async () => {
+      jest.useFakeTimers();
+      let cerrado = false;
+
+      conIdle(10000)
+        .sseStreamFor('conv-1', {})
+        .subscribe({ complete: () => (cerrado = true) });
+
+      await jest.advanceTimersByTimeAsync(5000);
+      jest.useRealTimers();
+
+      expect(cerrado).toBe(false);
+    });
+
+    // ⭐ CL-13 — el límite de RF-023.
+    it('NO lo cierra si el asistente está trabajando, por más quieto que esté el usuario', async () => {
+      jest.useFakeTimers();
+      const svc = conIdle(3000);
+      let cerrado = false;
+
+      svc
+        .sseStreamFor('conv-1', {})
+        .subscribe({ complete: () => (cerrado = true) });
+
+      // Llega el mensaje del usuario: hay un turno en curso.
+      await jest.advanceTimersByTimeAsync(500);
+      onMessage(
+        conversationChannel('conv-1'),
+        JSON.stringify(mensajeDe('USER')),
+      );
+      // Pasa de largo el umbral sin que el usuario haga nada más.
+      await jest.advanceTimersByTimeAsync(8000);
+      jest.useRealTimers();
+
+      expect(cerrado).toBe(false);
+    });
+
+    it('cuando llega la respuesta, el turno cierra y vuelve a contar la inactividad', async () => {
+      jest.useFakeTimers();
+      const svc = conIdle(3000);
+      let cerrado = false;
+
+      svc
+        .sseStreamFor('conv-1', {})
+        .subscribe({ complete: () => (cerrado = true) });
+
+      await jest.advanceTimersByTimeAsync(500);
+      onMessage(
+        conversationChannel('conv-1'),
+        JSON.stringify(mensajeDe('USER')),
+      );
+      await jest.advanceTimersByTimeAsync(5000);
+      expect(cerrado).toBe(false); // seguía habiendo turno en curso
+
+      onMessage(
+        conversationChannel('conv-1'),
+        JSON.stringify(mensajeDe('ASSISTANT')),
+      );
+      await jest.advanceTimersByTimeAsync(4000);
+      jest.useRealTimers();
+
+      expect(cerrado).toBe(true);
+    });
+
+    it('cualquier actividad reinicia el contador', async () => {
+      jest.useFakeTimers();
+      const svc = conIdle(3000);
+      let cerrado = false;
+
+      svc
+        .sseStreamFor('conv-1', {})
+        .subscribe({ complete: () => (cerrado = true) });
+
+      // Dos respuestas espaciadas: ninguna deja turno pendiente, pero cada una
+      // corre el reloj.
+      for (let i = 0; i < 3; i++) {
+        await jest.advanceTimersByTimeAsync(2000);
+        onMessage(
+          conversationChannel('conv-1'),
+          JSON.stringify(mensajeDe('ASSISTANT')),
+        );
+      }
+      expect(cerrado).toBe(false);
+
+      await jest.advanceTimersByTimeAsync(4000);
+      jest.useRealTimers();
+
+      expect(cerrado).toBe(true);
+    });
+
+    // La distinción deliberada: un turno dura segundos, una espera humana puede
+    // durar días. Mantener la conexión abierta todo ese tiempo es justo la fuga
+    // que RF-023 tapa, y no cuesta nada — la respuesta del supervisor se registra
+    // y aparece al reconectar.
+    it('un caso que espera a una PERSONA sí se cierra por inactividad', async () => {
+      jest.useFakeTimers();
+      const svc = conIdle(3000);
+      let cerrado = false;
+
+      svc
+        .sseStreamFor('conv-1', {})
+        .subscribe({ complete: () => (cerrado = true) });
+
+      await jest.advanceTimersByTimeAsync(500);
+      onMessage(
+        conversationChannel('conv-1'),
+        JSON.stringify({
+          type: 'status',
+          conversationId: 'conv-1',
+          data: { status: 'WAITING_HUMAN', currentAgent: null },
+        }),
+      );
+      await jest.advanceTimersByTimeAsync(5000);
+      jest.useRealTimers();
+
+      expect(cerrado).toBe(true);
+    });
+
+    // CA-18 — la inactividad cierra la CONEXIÓN, nunca la conversación. Es
+    // estructural: RealtimeService no conoce ConversationsService, así que no tiene
+    // forma de cerrar una conversación. Esto lo deja verificado igual: al cerrarse
+    // por inactividad no se publica ningún cambio de estado.
+    it('cerrar por inactividad NO cambia el estado de la conversación', async () => {
+      jest.useFakeTimers();
+
+      conIdle(3000).sseStreamFor('conv-1', {}).subscribe();
+
+      await jest.advanceTimersByTimeAsync(4000);
+      jest.useRealTimers();
+
+      expect(redis.publish).not.toHaveBeenCalled();
+    });
+
+    it('el cierre por inactividad libera la suscripción (RF-009)', async () => {
+      jest.useFakeTimers();
+
+      conIdle(3000).sseStreamFor('conv-1', {}).subscribe();
+
+      await jest.advanceTimersByTimeAsync(4000);
+      jest.useRealTimers();
+
+      expect(subscriber.unsubscribe).toHaveBeenCalledWith(
+        conversationChannel('conv-1'),
+      );
+    });
   });
 });

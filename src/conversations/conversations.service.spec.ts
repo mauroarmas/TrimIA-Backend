@@ -593,6 +593,83 @@ describe('ConversationsService — takeover/release/replyManually', () => {
     });
   });
 
+  // ⭐ US6 / RF-024 — el primer camino del proyecto que escribe CLOSED.
+  describe('close — terminar la conversación (spec 004, US6)', () => {
+    it('pasa la conversación a CLOSED y lo emite', async () => {
+      prisma.conversation.findUnique.mockResolvedValue({
+        id: 'conv-1',
+        status: 'ACTIVE',
+      });
+      prisma.conversation.update.mockResolvedValue({
+        id: 'conv-1',
+        status: 'CLOSED',
+        currentAgent: 'SALES',
+      });
+
+      await service.close('conv-1');
+
+      expect(prisma.conversation.update).toHaveBeenCalledWith({
+        where: { id: 'conv-1' },
+        data: { status: 'CLOSED' },
+      });
+      // Cerrar es un cambio de estado y viaja como cualquier otro: así la otra
+      // pestaña se entera y su entrega se corta (CL-15).
+      expect(realtime.publish).toHaveBeenCalledWith('conv-1', {
+        type: 'status',
+        conversationId: 'conv-1',
+        data: { status: 'CLOSED', currentAgent: 'SALES' },
+      });
+    });
+
+    // CL-14 — no es solo suya: hay una persona involucrada y una escalación abierta.
+    it.each(['WAITING_HUMAN', 'HUMAN_HANDLING'])(
+      'rechaza con 409 si la conversación está %s',
+      async (status) => {
+        prisma.conversation.findUnique.mockResolvedValue({
+          id: 'conv-1',
+          status,
+        });
+
+        await expect(service.close('conv-1')).rejects.toThrow(
+          ConflictException,
+        );
+        expect(prisma.conversation.update).not.toHaveBeenCalled();
+        expect(realtime.publish).not.toHaveBeenCalled();
+      },
+    );
+
+    it('rechaza con 409 si ya estaba cerrada', async () => {
+      prisma.conversation.findUnique.mockResolvedValue({
+        id: 'conv-1',
+        status: 'CLOSED',
+      });
+
+      await expect(service.close('conv-1')).rejects.toThrow(ConflictException);
+    });
+
+    it('da 404 si la conversación no existe', async () => {
+      prisma.conversation.findUnique.mockResolvedValue(null);
+
+      await expect(service.close('conv-1')).rejects.toThrow(NotFoundException);
+    });
+
+    // Es LA consecuencia de cerrar, y la razón por la que solo puede ser explícito:
+    // getOrCreate() filtra las cerradas, así que el próximo mensaje abre otro hilo
+    // y con él se reinician el agente sticky y el historial que ve el LLM.
+    it('después de cerrar, getOrCreate abre una conversación NUEVA', async () => {
+      prisma.conversation.findFirst.mockResolvedValue(null);
+      prisma.conversation.create.mockResolvedValue({ id: 'conv-2' });
+
+      const nueva = await service.getOrCreate('5491100000000', 'WEB');
+
+      // El filtro es el mecanismo: sin él, cerrar no tendría ningún efecto.
+      expect(prisma.conversation.findFirst).toHaveBeenCalledWith({
+        where: expect.objectContaining({ status: { not: 'CLOSED' } }),
+      });
+      expect(nueva).toEqual({ id: 'conv-2' });
+    });
+  });
+
   describe('notas internas', () => {
     it('addInternalNote crea la nota asociada a la conversación y al autor', async () => {
       prisma.internalNote.create.mockResolvedValue({

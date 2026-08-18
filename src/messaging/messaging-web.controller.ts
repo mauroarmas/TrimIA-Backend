@@ -140,6 +140,35 @@ export class MessagingWebController {
   }
 
   /**
+   * Termina la conversación con el asistente (spec 004, US6, RF-024).
+   *
+   * Misma autorización que el stream y el historial —el mismo método privado, no una
+   * regla nueva—, así que un `SUPERVISOR` tampoco puede cerrar el chat de otra
+   * persona: terminar es del dueño (RN-2).
+   *
+   * Devuelve `409` si la conversación está esperando a una persona o alguien la tiene
+   * tomada: no se cierra un caso que un responsable está trabajando (CL-14).
+   */
+  @Post(':convId/close')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Termina la conversación con el asistente (RF-024)',
+    description:
+      'El próximo mensaje abre una conversación NUEVA, sin el agente sticky ni el ' +
+      'historial anterior. Solo lo puede hacer el dueño, y solo explícitamente: ' +
+      'ninguna inactividad produce este efecto.',
+  })
+  async close(
+    @Param('convId', ParseUUIDPipe) convId: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    await this.assertOwnership(convId, req.user.id);
+    const conversation = await this.conversations.close(convId);
+
+    return { closed: true, conversationId: conversation.id };
+  }
+
+  /**
    * Único lugar donde se decide si esta conversación es de quien pregunta.
    *
    * La pertenencia se decide por teléfono, no por "quién la creó": es el mismo

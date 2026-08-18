@@ -617,11 +617,18 @@ posición de RF-004, no el momento en que llegan.
 ---
 
 **CL-13 — El tiempo de inactividad vence justo cuando hay un turno en curso.**
-**No se cierra.** La inactividad se mide sobre el usuario **y** sobre el turno: si
-el asistente está trabajando —o el caso está esperando a una persona— la entrega se
-mantiene abierta por más quieto que esté el usuario. Cerrar ahí sería reintroducir
-por otra puerta el defecto que esta spec vino a arreglar: rendirse antes de que
-llegue la respuesta (RF-008 vs RF-023).
+**No se cierra.** La inactividad se mide sobre el usuario **y** sobre el turno: si el
+asistente está trabajando en una respuesta, la entrega se mantiene abierta por más
+quieto que esté el usuario. Cerrar ahí sería reintroducir por otra puerta el defecto
+que esta spec vino a arreglar: rendirse antes de que llegue la respuesta (RF-008 vs
+RF-023).
+
+**En cambio, un caso que espera a una persona SÍ se cierra por inactividad**, y la
+distinción es deliberada: un turno del asistente dura segundos, pero un caso escalado
+puede esperar horas o días. Mantener la conexión abierta todo ese tiempo es
+exactamente la fuga que RF-023 viene a tapar, y no cuesta nada cerrarla — cuando el
+supervisor responda, esa respuesta está registrada y aparece al reconectar (RF-006,
+RF-007). "Hay alguien involucrado" no es lo mismo que "la respuesta está por llegar".
 
 **CL-14 — El empleado intenta terminar la conversación mientras un supervisor la
 atiende.** **No se permite.** Un caso en `WAITING_HUMAN` o `HUMAN_HANDLING` no es

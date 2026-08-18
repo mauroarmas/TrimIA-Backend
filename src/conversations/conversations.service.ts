@@ -310,6 +310,50 @@ export class ConversationsService {
   }
 
   /**
+   * Termina la conversación a pedido de su dueño (spec 004, RF-024, US6).
+   *
+   * **Es el primer camino del proyecto que escribe `CLOSED`**: hasta ahora las seis
+   * apariciones del estado eran lecturas (`not: 'CLOSED'`) o el guard del takeover.
+   * Y tiene una consecuencia que no es obvia: `getOrCreate()` filtra por
+   * `not: 'CLOSED'`, así que cerrar hace que **el próximo mensaje cree otra
+   * conversación**, reiniciando el agente sticky y el historial que ve el LLM.
+   *
+   * Eso es exactamente lo que se busca —"terminé este tema, empiezo otro"— pero solo
+   * cuando la persona lo pide. **Ningún temporizador puede llamar a este método**: un
+   * reinicio de contexto disparado por un reloj borraría una capacitación en
+   * silencio. La inactividad cierra la CONEXIÓN, que es otra cosa (RF-023).
+   */
+  async close(conversationId: string) {
+    const conversation = await this.prisma.conversation.findUnique({
+      where: { id: conversationId },
+    });
+    if (!conversation) {
+      throw new NotFoundException('Conversación no encontrada');
+    }
+    if (conversation.status === 'CLOSED') {
+      throw new ConflictException('La conversación ya está cerrada');
+    }
+    // No se cierra un caso que una persona está trabajando: dejaría al supervisor
+    // respondiendo sobre un hilo abandonado y la escalación abierta huérfana
+    // (CL-14). No es solo suyo.
+    if (conversation.status !== 'ACTIVE') {
+      throw new ConflictException(
+        'No podés terminar la conversación mientras un responsable la está atendiendo',
+      );
+    }
+
+    const updated = await this.prisma.conversation.update({
+      where: { id: conversationId },
+      data: { status: 'CLOSED' },
+    });
+    // Cerrar es un cambio de estado, así que viaja como cualquier otro: la otra
+    // pestaña se entera y su entrega se corta (CL-15).
+    this.publishStatus(updated);
+
+    return updated;
+  }
+
+  /**
    * Envía un mensaje manual al usuario mientras dura el control (FR-007).
    * Solo lo puede hacer quien tiene la conversación tomada.
    */
