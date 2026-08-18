@@ -70,3 +70,18 @@ cliente lo cierra. Al cerrarse se libera la suscripción (RF-009).
 | CL-7 empleado sin teléfono | `403`, y el panel muestra la explicación del `POST` (que un supervisor debe cargarlo) en vez de intentar abrir el stream |
 | CL-9 empleado dado de baja | Deja de pertenecerle la conversación: el stream abierto se corta y un intento nuevo da `403` |
 | CL-11 conversación sin mensajes | `200` y el stream espera. No es error |
+| CL-13 inactividad con turno en curso | **No se cierra.** El timeout de inactividad no corre mientras el asistente trabaja o el caso espera a una persona |
+| CL-15 la conversación se termina | El stream **se cierra**: una conversación cerrada no vuelve a recibir mensajes, así que la entrega no tiene nada más que entregar |
+| CL-16 la sesión vence con un turno en curso | **El stream se cierra igual.** No se entrega sobre una credencial vencida ni para terminar una respuesta en camino; se recupera al reconectar con `after` |
+
+## Motivos de cierre, y qué debe hacer el cliente con cada uno
+
+No todos los cierres son iguales, y confundirlos degrada la experiencia o la
+seguridad:
+
+| Motivo | ¿Reabrir? | Nota |
+|---|---|---|
+| Inactividad (RF-023) | **Sí, en silencio** | Al primer signo de actividad, con `after`. La conversación es la misma; el usuario no tiene por qué enterarse |
+| Sesión vencida (RF-022, CL-16) | Sí, **después de renovar la sesión** | Reabrir con el token viejo vuelve a fallar |
+| Derecho perdido (RF-021, CL-9) | **No** | Reintentar contra un `403` en bucle es reinventar el polling que esta spec vino a sacar |
+| Conversación terminada (RF-024, CL-15) | **No sobre esa conversación** | El `convId` quedó muerto; el próximo mensaje abre otro |

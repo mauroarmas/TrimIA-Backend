@@ -35,12 +35,17 @@ quedaría huérfana.
 1. La conversación pasa a `CLOSED`.
 2. Se emite un `event: status` con `status: "CLOSED"`, así que **cualquier otra
    pestaña abierta se entera** (CL-15) y no sigue escribiendo sobre un hilo cerrado.
-3. **El próximo mensaje del usuario crea una conversación nueva**, porque
+3. **Las entregas abiertas de esa conversación se cierran**, en todas las pestañas y
+   en todas las instancias. No es solo higiene de recursos: una conversación cerrada
+   **no puede volver a recibir un mensaje** —los siguientes van a la conversación
+   nueva—, así que un stream que siguiera abierto ahí es una conexión que por
+   definición no va a entregar nada nunca más. El cliente debe descartar ese `convId`.
+4. **El próximo mensaje del usuario crea una conversación nueva**, porque
    `getOrCreate()` filtra `status: { not: 'CLOSED' }`
    ([conversations.service.ts:46](../../../src/conversations/conversations.service.ts#L46)).
    Con ella se reinician el agente sticky y el historial que se le pasa al LLM.
 
-Ese punto 3 **es** el propósito de la acción, y es la razón por la que solo puede
+Ese último punto **es** el propósito de la acción, y es la razón por la que solo puede
 dispararla una persona: el panel debe confirmarlo antes de enviarlo, diciendo que el
 asistente no va a recordar lo anterior.
 

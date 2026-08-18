@@ -226,6 +226,13 @@ que el asistente no arrastra el tema anterior.
 
 > Describen **qué** se observa, no cómo se implementa. El transporte lo decide
 > [research.md](./research.md).
+>
+> **Sobre la numeración.** Los identificadores se asignan **en orden de creación y no
+> se reasignan nunca**: los referencian las tareas, los tests, los contratos y los
+> mensajes de commit, así que renumerarlos rompería esa trazabilidad. Los requisitos
+> están agrupados **por tema**, que es como conviene leerlos; por eso los agregados
+> más tarde (RF-021 a RF-024) aparecen dentro del grupo al que pertenecen y no al
+> final. El índice numérico está más abajo para buscar por número.
 
 ### Entrega en tiempo real
 
@@ -261,8 +268,8 @@ que el asistente no arrastra el tema anterior.
   recursos de una pestaña que nadie está mirando. Cerrarla NO DEBE perder nada: al
   volver, el usuario reanuda desde el último mensaje que vio (RF-006) y **sigue en la
   misma conversación**, con su mismo contexto.
-- **RF-024**: Un usuario DEBE poder **terminar explícitamente** su conversación con
-  el asistente. Terminarla cierra el hilo: el mensaje siguiente empieza una
+- **RF-024**: **El dueño de una conversación** DEBE poder **terminarla
+  explícitamente**. Terminarla cierra el hilo: el mensaje siguiente empieza una
   conversación nueva. Esto NO DEBE ocurrir nunca por inactividad ni por ninguna otra
   causa automática — solo cuando la persona lo pide.
 - **RF-009**: El sistema DEBE liberar los recursos de una entrega cuando el
@@ -310,6 +317,21 @@ que el asistente no arrastra el tema anterior.
   mismo comportamiento que el Chat con el Asistente.
 - **RF-020**: La puerta de entrada del canal de WhatsApp DEBE seguir exigiendo
   su secreto compartido y NO DEBE aceptar una sesión del panel como sustituto.
+
+### Índice numérico de requisitos
+
+Para encontrar un RF por número; el orden de lectura es el temático de arriba.
+
+| | | | |
+|---|---|---|---|
+| RF-001 entrega inmediata | RF-007 registro como verdad | RF-013 solo lo legible | RF-019 simulador en vivo |
+| RF-002 todo mensaje nuevo | RF-008 vivo con turno en curso | RF-014 rechazo antes de abrir | RF-020 WhatsApp intacto |
+| RF-003 cambios de estado | RF-009 liberar recursos | RF-015 nada extra al historial | RF-021 revalidar en vivo |
+| RF-004 id y orden | RF-010 acuse inmediato | RF-016 teléfono cualquiera | RF-022 no sobrevivir a la sesión |
+| RF-005 una sola vez | RF-011 turno en curso a la vista | RF-017 sesión + rol, sin secreto | RF-023 cerrar conexión ociosa |
+| RF-006 reanudación | RF-012 fracaso visible | RF-018 la whitelist decide | RF-024 cierre explícito del dueño |
+
+---
 
 ### Entidades clave *(Key Entities)*
 
@@ -608,8 +630,26 @@ rechaza explicando por qué, en vez de cerrar un caso que alguien está trabajan
 
 **CL-15 — Se termina la conversación con dos pestañas abiertas.**
 La otra pestaña **se entera**, porque cerrar es un cambio de estado y los cambios de
-estado se entregan (RF-003). No puede quedar una pestaña escribiendo sobre un hilo
-que ya se cerró y que en el próximo mensaje va a ser otro.
+estado se entregan (RF-003). Y además la entrega de esa conversación **se cierra**:
+una conversación terminada no vuelve a recibir mensajes nunca —los siguientes van a
+la conversación nueva—, así que mantener la entrega abierta sería sostener una
+conexión que por definición ya no puede entregar nada. La otra pestaña debe descartar
+esa conversación y empezar de cero en su próximo mensaje, no seguir escribiendo sobre
+un hilo cerrado.
+
+**CL-16 — La sesión vence justo cuando hay un turno en curso.**
+**Gana el vencimiento: la entrega se cierra.** Es el único caso donde RF-008
+(mantener viva la entrega mientras haya un turno en curso) y RF-022 (una entrega no
+sobrevive a la sesión que la autorizó) piden cosas opuestas, y se resuelve del lado
+de RF-022 sin dudar: **no se sigue entregando sobre una credencial vencida**, ni
+siquiera para terminar de dar una respuesta que ya estaba en camino.
+
+No se pierde nada, y por eso el desempate es barato: la respuesta se registra igual
+—el trabajo del asistente no depende de que alguien esté escuchando (RF-007)— y
+aparece completa cuando la persona vuelve a entrar y la entrega se reanuda (RF-006).
+La diferencia con CL-13 es exactamente esta: la inactividad **no** es motivo para
+cortar un turno en curso, porque no hay ningún riesgo en esperar; una sesión vencida
+**sí** lo es, porque el permiso dejó de existir.
 
 ## 8. Fuera de alcance
 
@@ -630,6 +670,10 @@ que ya se cerró y que en el próximo mensaje va a ser otro.
   multi-instancia, del Sprint 8. Esta spec no lo agrava ni lo arregla; solo
   introduce la infraestructura donde después va a poder resolverse
   ([research.md §1](./research.md)).
+- **Que un supervisor termine la conversación de otra persona.** Terminar es del
+  dueño (RF-024). Un supervisor tiene sus propias herramientas sobre una conversación
+  ajena —tomar el control, responder, liberarla— y cerrarle el hilo a alguien más,
+  con el reinicio de contexto que eso implica, no es una de ellas ni nadie la pidió.
 - **Notificaciones fuera del panel** (escritorio, correo, push): recibir en vivo
   requiere tener el chat abierto.
 - **Historial infinito y buscador de conversaciones** en el panel.

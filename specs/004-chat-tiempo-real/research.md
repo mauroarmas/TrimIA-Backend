@@ -703,3 +703,47 @@ con un turno en curso **no** se cierra por más quieto que esté el usuario (CL-
 reconectar después de un cierre por inactividad, la conversación es **la misma** ·
 terminar explícitamente hace que el próximo mensaje abra otra · terminar se rechaza si
 la conversación está en `WAITING_HUMAN` o `HUMAN_HANDLING` (CL-14).
+
+## 19. Los cuatro motivos de cierre de una entrega, y por qué no son intercambiables
+
+**Decisión**: una entrega se cierra por cuatro motivos, y cada uno le dice al cliente
+algo distinto: **inactividad** (reabrir en silencio), **sesión vencida** (renovar y
+reabrir), **derecho perdido** (no reabrir) y **conversación terminada** (no reabrir
+sobre esa conversación).
+
+**Rationale**: al revisar el alcance ampliado aparecieron dos huecos, los dos por
+tratar "se cerró el stream" como un evento único.
+
+**(a) RF-008 contra RF-022 — el único choque entre dos MUST.** RF-008 manda mantener
+la entrega viva *mientras haya un turno en curso*; RF-022 manda cerrarla cuando vence
+la sesión. Si el token vence con el asistente respondiendo, piden cosas opuestas.
+Gana **RF-022**: no se entrega sobre una credencial vencida, ni para terminar una
+respuesta ya en camino. Y el desempate no cuesta nada, porque la respuesta se registra
+igual —el trabajo no depende de que alguien escuche (RF-007)— y aparece completa al
+reconectar (RF-006).
+
+Vale marcar el contraste con CL-13, que resuelve el choque hermano al revés: la
+inactividad **no** corta un turno en curso. La diferencia no es de estilo: esperar a
+que termine un turno no tiene ningún riesgo, mientras seguir entregando sin permiso
+sí. Cuando la disyuntiva es comodidad contra permiso, gana el permiso; cuando es
+comodidad contra recursos, gana la comodidad hasta que el turno cierre.
+
+**(b) Una conversación terminada dejaba streams vivos.** CL-15 decía que la otra
+pestaña "se entera" del cambio de estado, pero nada cerraba su entrega. Y una
+conversación cerrada **no puede volver a recibir un mensaje**: `getOrCreate()` filtra
+`not: 'CLOSED'` (§18), así que los siguientes van a otra conversación. Ese stream
+quedaba abierto sin poder entregar nada nunca más — hasta que lo juntara el timeout de
+inactividad, media hora después. Ahora cerrar la conversación cierra sus entregas, en
+todas las pestañas y todas las instancias, porque el cierre viaja por el mismo bus que
+todo lo demás.
+
+**Alternativa considerada** — un solo "cerrado" genérico y que el cliente reabra
+siempre: es lo que había implícito, y produce dos comportamientos malos. Reabrir tras
+un derecho perdido es un bucle contra un `403` —el polling que esta spec vino a sacar,
+reinventado por la puerta de atrás—, y reabrir tras una sesión vencida sin renovarla
+falla en loop. El motivo del cierre **es** información que el cliente necesita.
+
+**Consecuencia a testear**: un token que vence con un turno en curso cierra la entrega
+y la respuesta aparece al reconectar (CL-16) · terminar una conversación cierra sus
+entregas abiertas, incluida la de otra pestaña (CL-15) · cada motivo de cierre llega
+distinguible para el cliente.

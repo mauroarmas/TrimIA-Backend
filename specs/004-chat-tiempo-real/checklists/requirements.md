@@ -79,6 +79,11 @@
 | RF-023 | CA-17 | CL-13 |
 | RF-024 | CA-18 | CL-14, CL-15 |
 
+Los dos casos límite agregados en la iteración 5 no cuelgan de un RF nuevo, sino que
+**desempatan** requisitos que ya existían: CL-16 resuelve RF-008 contra RF-022, y
+CL-15 se amplió para cubrir qué pasa con una entrega abierta sobre una conversación
+que se cerró.
+
 Sin requisitos huérfanos: cada RF tiene al menos un criterio de aceptación.
 
 ### Resultados medibles → requisito que los sostiene
@@ -159,6 +164,31 @@ consumo de recursos:
    que una persona atiende) y CL-15 (la otra pestaña se entera). **Nunca** por
    inactividad: cerrar reinicia el agente sticky y el historial del LLM, y eso no puede
    dispararlo un reloj ([research.md §18](../research.md)).
+
+**Iteración 5 (2026-08-18, segundo `/speckit-analyze`)** — la pasada sobre el alcance
+ampliado no encontró críticos ni regresiones de los 9 anteriores. Sí encontró un
+choque real y un hueco:
+
+5. **RF-008 contra RF-022 era el único choque entre dos MUST del documento.** Uno manda
+   mantener la entrega viva mientras haya un turno en curso; el otro, cerrarla cuando
+   vence la sesión. Nada los desempataba. → **CL-16**: gana RF-022, no se entrega sobre
+   una credencial vencida ni para terminar una respuesta en camino, y no se pierde nada
+   porque la respuesta se registra igual y aparece al reconectar. Es el contraste
+   deliberado con CL-13, que resuelve el choque hermano al revés.
+6. **Una conversación terminada dejaba streams vivos que no podían entregar nada.**
+   CL-15 decía que la otra pestaña se enteraba, pero nada cerraba su entrega — y una
+   conversación cerrada no vuelve a recibir mensajes nunca. → T039, y los **cuatro
+   motivos de cierre** quedaron tipificados en el contrato, porque cada uno pide una
+   acción distinta del cliente (reabrir en silencio / renovar y reabrir / no reabrir /
+   descartar el `convId`).
+
+Menores: se citan RF-021 y RF-024 en sus tareas, el test de CL-14 fija el `409`, T048
+aclara su relación con `SSE_IDLE_TIMEOUT_MS`, y se separó el manejo de errores **al
+abrir** del manejo del **cierre** de un stream ya abierto.
+
+Sobre la numeración fuera de orden que la pasada marcó: **no se renumeró, a propósito**.
+Los IDs los referencian tareas, tests, contratos y commits; reasignarlos rompe esa
+trazabilidad. Se agregó en cambio la nota de estabilidad y un índice numérico en §4.
 
 **Sin marcadores de clarificación.** El encargo trajo el estado real del sistema
 verificado y el spike resolvió las decisiones abiertas (transporte, fan-out,
