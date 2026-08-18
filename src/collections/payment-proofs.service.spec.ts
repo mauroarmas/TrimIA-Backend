@@ -669,14 +669,10 @@ describe('PaymentProofsService', () => {
         impactVerifiedAt: new Date(),
       });
 
-      const result = await service.verifyImpact(
-        'proof-accepted',
-        'controller-1',
-        {
-          impactStatus: ImpactStatusDto.CONFIRMED,
-          observation: 'Confirmado en la cuenta',
-        },
-      );
+      await service.verifyImpact('proof-accepted', 'controller-1', {
+        impactStatus: ImpactStatusDto.CONFIRMED,
+        observation: 'Confirmado en la cuenta',
+      });
 
       expect(prisma.paymentProof.update).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -726,14 +722,10 @@ describe('PaymentProofsService', () => {
         impactStatus: ImpactStatusDto.MISSING,
       });
 
-      const result = await service.verifyImpact(
-        'proof-accepted',
-        'controller-1',
-        {
-          impactStatus: ImpactStatusDto.MISSING,
-          observation: 'No figura en la cuenta',
-        },
-      );
+      await service.verifyImpact('proof-accepted', 'controller-1', {
+        impactStatus: ImpactStatusDto.MISSING,
+        observation: 'No figura en la cuenta',
+      });
 
       expect(prisma.paymentProof.update).toHaveBeenCalledWith(
         expect.objectContaining({

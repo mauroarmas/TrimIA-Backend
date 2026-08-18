@@ -30,10 +30,12 @@ function buildJob(attemptsMade = 0, attempts = 3) {
   } as never;
 }
 
-function buildProcessor(options: {
-  extractResult?: string | Error;
-  file?: Record<string, unknown> | null;
-} = {}) {
+function buildProcessor(
+  options: {
+    extractResult?: string | Error;
+    file?: Record<string, unknown> | null;
+  } = {},
+) {
   const file =
     options.file === undefined
       ? {
@@ -110,9 +112,9 @@ describe('KnowledgeIngestionProcessor — un fallo no deja documento (FR-005)', 
 
     await processor.process(buildJob()).catch(() => undefined);
 
-    expect(prisma.knowledgeFile.update.mock.calls[0][0].data.failureReason).toMatch(
-      /Guardar como/,
-    );
+    expect(
+      prisma.knowledgeFile.update.mock.calls[0][0].data.failureReason,
+    ).toMatch(/Guardar como/);
   });
 
   it('no reintenta un archivo que nunca va a extraerse', async () => {
