@@ -66,8 +66,9 @@ SC-010 acuse del envío < 1 s · SC-008 ~0 peticiones/min por chat en reposo (ho
 - Sin dependencias nuevas y sin cambios de schema.
 
 **Scale/Scope**: uso interno; decenas de empleados, no miles. Dos endpoints de
-stream, un `POST` nuevo (simulador), un módulo nuevo (`RealtimeModule`), una
-variable de entorno nueva (`SSE_HEARTBEAT_MS`).
+stream, dos `POST` nuevos (simulador y cierre de conversación), un módulo nuevo
+(`RealtimeModule`), **dos** variables de entorno nuevas (`SSE_HEARTBEAT_MS`,
+`SSE_IDLE_TIMEOUT_MS`).
 
 ## Constitution Check
 
@@ -81,7 +82,7 @@ variable de entorno nueva (`SSE_HEARTBEAT_MS`).
 | **IV. Procesamiento asíncrono y resiliente** | ✅ PASA | El `POST` sigue validando, encolando y devolviendo `202`; el trabajo sigue en `MessageProcessor` con sus 3 intentos. El stream **no produce** nada, solo entrega lo ya registrado. La puerta del simulador reusa `MessagingService.enqueue()`, el mismo camino del webhook. |
 | **V. Arquitectura modular y desacoplada** | ✅ PASA | `RealtimeModule` es un módulo propio con un servicio (`RealtimeService`), siguiendo el patrón ya establecido en el proyecto de extraer a módulo chico para no acoplar ni generar ciclos (`WhatsappSenderModule`, `OrchestrationLoggerModule`). DI siempre; la lógica no vive en los controladores. |
 | **Stack fijo** | ✅ PASA | No sustituye ni agrega nada al stack: Redis y NestJS ya están. |
-| **Env vars con Joi + `.env.example`** | ⚠️ OBLIGA | `SSE_HEARTBEAT_MS` **debe** validarse en `config.module.ts` y documentarse en `.env.example`. Es una tarea, no una excepción. |
+| **Env vars con Joi + `.env.example`** | ⚠️ OBLIGA | `SSE_HEARTBEAT_MS` y `SSE_IDLE_TIMEOUT_MS` **deben** validarse en `config.module.ts` y documentarse en `.env.example`. Son tareas (T001, T002, T035), no excepciones. |
 | **Tests obligatorios** | ⚠️ OBLIGA | Toda la autorización nueva de los streams y la puerta del simulador van con `*.spec.ts`. El panel no lleva tests (banco de pruebas). |
 | **Trazabilidad** | ✅ PASA | Entregable **E4** (Panel), objetivos **OE-10** (confidencialidad) y **OE-11** (auditoría); habilitador del Sprint 5B. |
 | **Cierre de spec: tareas de panel** | ⏳ PENDIENTE | Se cumple en `/speckit-tasks`: la última fase de `tasks.md` enumera el trabajo de `trimIA-frontend`, **sin implementarlo**. |
@@ -103,6 +104,7 @@ specs/004-chat-tiempo-real/
 ├── contracts/
 │   ├── sse-events.md            # Contrato de los eventos que viajan
 │   ├── messaging-web-stream.md  # GET /messaging/web/:convId/stream
+│   ├── messaging-web-close.md   # POST /messaging/web/:convId/close (US6)
 │   ├── supervisor-stream.md     # GET /supervisor/conversations/:id/stream
 │   └── messaging-simulate.md    # POST /messaging/simulate
 ├── checklists/
@@ -121,11 +123,13 @@ src/
 │   └── realtime.types.ts              # tipos del evento (contrato compartido)
 ├── conversations/
 │   ├── conversations.service.ts       # MODIFICADO — emite en addMessage/setStatus/
-│   │                                  # takeover/release; replyManually pasa por addMessage
+│   │                                  # takeover/release; replyManually pasa por addMessage;
+│   │                                  # + close() → CLOSED (US6, primer camino que lo escribe)
 │   ├── conversations.service.spec.ts  # MODIFICADO — un mensaje ⇒ exactamente un evento
 │   └── conversations.module.ts        # MODIFICADO — importa RealtimeModule
 ├── messaging/
 │   ├── messaging-web.controller.ts    # MODIFICADO — + GET :convId/stream (@Sse)
+│   │                                  # + POST :convId/close (US6, cierre explícito)
 │   ├── messaging-web.controller.spec.ts # MODIFICADO — 401/403/200 del stream
 │   ├── messaging-simulate.controller.ts # NUEVO — POST /messaging/simulate (SUPERVISOR)
 │   ├── messaging-simulate.controller.spec.ts # NUEVO — rol, y teléfono libre
@@ -190,5 +194,22 @@ Dos obligaciones que el gate deja abiertas y que `tasks.md` tiene que recoger:
   a WhatsApp, donde hoy la disculpa se envía pero no queda registrada. Es lo
   correcto (auditoría, OE-11) pero no es invisible — fundamento en
   [research.md §13](./research.md).
+
+### Alcance agregado después del análisis
+
+Dos capacidades que no estaban en el encargo original y entraron al resolver una
+pregunta sobre consumo de recursos:
+
+- **Cierre por inactividad de la *conexión*** (RF-023, Fase 9). Obligó a **corregir
+  RF-008**, que decía "sin vencimiento por inactividad" — una redacción más amplia que
+  el problema que resolvía (rendirse mientras la respuesta se produce). Ahora RF-008
+  protege el turno en curso y RF-023 cierra lo ocioso, con CL-13 marcando el límite.
+- **Cierre explícito de la *conversación*** (RF-024, US6, Fase 10). Es la primera vez
+  que algo en este proyecto escribe `ConvStatus.CLOSED`, y trae una consecuencia que
+  no es obvia: reinicia el agente sticky y el historial que ve el LLM. Por eso es
+  **solo** explícito y se rechaza sobre casos que una persona está atendiendo.
+
+La distinción entre las dos —conexión contra conversación— es la decisión de diseño
+que sostiene ambas ([research.md §18](./research.md)).
 
 **Complexity Tracking**: no aplica. Sin violaciones que justificar.

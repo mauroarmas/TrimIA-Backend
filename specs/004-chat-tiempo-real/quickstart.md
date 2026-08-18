@@ -20,6 +20,7 @@ Variables que esta feature agrega (deben existir validadas por Joi):
 | Variable | Default | Para qué |
 |---|---|---|
 | `SSE_HEARTBEAT_MS` | `15000` | Cada cuánto se manda el `: keepalive` que mantiene la conexión viva |
+| `SSE_IDLE_TIMEOUT_MS` | `1800000` | Tras cuánta inactividad se cierra la **conexión** (no la conversación) |
 
 ## Tests automatizados
 
@@ -181,7 +182,40 @@ mensaje.
 **Esperado**: el evento llega a los dos, una sola vez en cada uno, sin ningún `429`
 — hoy dos pestañas con polling alcanzan el techo de 60 peticiones/minuto.
 
-## Escenario 10 — Multi-instancia *(research §1, preparatorio de Sprint 8)*
+## Escenario 10 — Fin de sesión: conexión ociosa y cierre explícito *(CA-17, CA-18, CL-13, CL-14)*
+
+Bajar `SSE_IDLE_TIMEOUT_MS` a algo chico (ej. `20000`) para poder probarlo.
+
+**(a) La conexión ociosa se cierra y no cuesta nada:**
+
+```bash
+curl -N -H "Authorization: Bearer $EMP" "localhost:3000/messaging/web/$CONV/stream"
+# esperar sin enviar nada → el stream se cierra solo
+# reabrirlo y comprobar que la conversación es LA MISMA:
+curl -s -H "Authorization: Bearer $EMP" "localhost:3000/messaging/web/$CONV/messages?limit=5" | jq '.conversation.id, (.data|length)'
+```
+
+**Esperado**: el stream se cierra pasado el umbral, y al volver el `conversationId`
+es el mismo y el historial está completo. **La conversación no se cerró.**
+
+**(b) Con un turno en curso NO se cierra (CL-13):** enviar un mensaje y quedarse
+quieto mientras el asistente trabaja. El stream **sigue abierto** aunque pase el
+umbral de inactividad, y entrega la respuesta.
+
+**(c) Cierre explícito y su bloqueo (CL-14):**
+
+```bash
+curl -s -o /dev/null -w '%{http_code}\n' -X POST "localhost:3000/messaging/web/$CONV/close" -H "Authorization: Bearer $EMP"   # 200
+# el próximo mensaje abre OTRA conversación:
+curl -s -X POST localhost:3000/messaging/web -H "Authorization: Bearer $EMP" \
+  -H 'Content-Type: application/json' -d '{"message":"tema nuevo"}' | jq -r .conversationId   # != $CONV
+
+# y sobre un caso que atiende una persona, se rechaza:
+curl -X POST "localhost:3000/supervisor/conversations/$NUEVA/takeover" -H "Authorization: Bearer $SUP"
+curl -s -o /dev/null -w '%{http_code}\n' -X POST "localhost:3000/messaging/web/$NUEVA/close" -H "Authorization: Bearer $EMP"  # 409
+```
+
+## Escenario 11 — Multi-instancia *(research §1, preparatorio de Sprint 8)*
 
 Sin levantar una segunda instancia, se puede probar el fan-out publicando a mano en
 el bus, que es lo que haría el worker de otro proceso:

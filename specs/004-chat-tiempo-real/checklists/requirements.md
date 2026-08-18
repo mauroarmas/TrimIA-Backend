@@ -74,6 +74,10 @@
 | RF-018 | CA-11 | CL-9 |
 | RF-019 | CA-01 | — |
 | RF-020 | CA-12 | — |
+| RF-021 | CA-15 | CL-9 |
+| RF-022 | CA-16 | — |
+| RF-023 | CA-17 | CL-13 |
+| RF-024 | CA-18 | CL-14, CL-15 |
 
 Sin requisitos huérfanos: cada RF tiene al menos un criterio de aceptación.
 
@@ -91,7 +95,8 @@ Sin requisitos huérfanos: cada RF tiene al menos un criterio de aceptación.
 | SC-008 ~0 peticiones/min en reposo | RF-001 |
 | SC-009 0 secretos en pantalla | RF-017 |
 | SC-010 acuse < 1 s | RF-010 |
-| SC-011 0 fugas de conversación ajena | RF-013, RF-014, RF-015 |
+| SC-011 0 fugas de conversación ajena | RF-013, RF-014, RF-015, RF-021, RF-022 |
+| SC-012 0 suscripciones de pestañas olvidadas | RF-023 |
 
 ## Notes
 
@@ -123,6 +128,37 @@ Sin requisitos huérfanos: cada RF tiene al menos un criterio de aceptación.
 4. **No se creó un feature nuevo.** El flujo por defecto habría abierto un
    `005-…` con su rama: se trabajó sobre `004-chat-tiempo-real`, que es la rama y
    el directorio de este feature, ya apuntado por `.specify/feature.json`.
+
+**Iteración 3 (2026-08-18, `/speckit-analyze`)** — se cerraron 9 hallazgos, dos de
+ellos críticos y los dos de constitución:
+
+1. **El aviso por el bus podía romper el envío** (Principio IV). `addMessage()` corre
+   dentro del request de `POST /messaging/web`, así que emitir desde ahí mete un
+   `PUBLISH` en el camino del request: con Redis caído se habría caído el envío, que es
+   justo lo que CL-10 prohibía. → RF reafirmado, T005/T008/T014.
+2. **La autorización se validaba una sola vez, al abrir** (Principio I). Los guards
+   corren al entrar a la ruta; un stream vive horas. Un empleado dado de baja seguía
+   recibiendo, y el token vence a las 8 h mientras el stream seguía emitiendo. →
+   **RF-021 y RF-022 nuevos**, CA-15/CA-16, T016/T017/T019.
+
+Los otros siete: heartbeat movido a Fase 2 (lo usan los dos endpoints), test de
+no-regresión de latencia donde el diseño introduce el riesgo, corrida larga real para
+SC-004, unificación HU→US, "crear" en vez de "extender" el spec del supervisor, y la
+aclaración de que cerrar el backend no cumple los SC (RF-005 y RF-011 dependen de la
+fase de panel diferida).
+
+**Iteración 4 (2026-08-18)** — alcance agregado a pedido, tras una pregunta sobre
+consumo de recursos:
+
+3. **RF-008 estaba sobre-extendido.** Decía "sin vencimiento por inactividad", cuando
+   el defecto que resolvía era *rendirse mientras la respuesta se produce*. Corregido:
+   RF-008 protege el turno en curso, **RF-023** cierra la conexión ociosa, y **CL-13**
+   marca el límite — con un turno en curso la inactividad no cierra nada.
+4. **RF-024 y US6: cierre explícito de la conversación.** Es el primer camino del
+   proyecto que escribe `ConvStatus.CLOSED`, y por eso trae CL-14 (no se cierra un caso
+   que una persona atiende) y CL-15 (la otra pestaña se entera). **Nunca** por
+   inactividad: cerrar reinicia el agente sticky y el historial del LLM, y eso no puede
+   dispararlo un reloj ([research.md §18](../research.md)).
 
 **Sin marcadores de clarificación.** El encargo trajo el estado real del sistema
 verificado y el spike resolvió las decisiones abiertas (transporte, fan-out,

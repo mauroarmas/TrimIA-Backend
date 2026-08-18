@@ -35,10 +35,20 @@ ACTIVE ──escalate()──────────► WAITING_HUMAN     (setS
 ACTIVE ─────────takeover()──► HUMAN_HANDLING     (takeover)
 WAITING_HUMAN ──takeover()──► HUMAN_HANDLING     (takeover)
 HUMAN_HANDLING ──release()──► ACTIVE             (release)
+ACTIVE ──────close() ───────► CLOSED             (RF-024 — NUEVO, solo explícito)
 ```
 
-`CLOSED` no la produce esta feature; si aparece, se emite como cualquier otro
-cambio de estado.
+**`CLOSED` es nueva en esta feature y hay que tratarla con cuidado.** Hoy **nada** en
+el código la produce: las seis apariciones del estado son lecturas
+(`status: { not: 'CLOSED' }`) o el guard del takeover. RF-024 abre el primer camino
+que la escribe, y tiene una consecuencia que no es obvia: `getOrCreate()` filtra por
+`not: 'CLOSED'` ([:46](../../src/conversations/conversations.service.ts#L46)), así que
+**una conversación cerrada hace que el próximo mensaje cree otra**, reiniciando el
+agente sticky y el historial que ve el LLM.
+
+Por eso el cierre es **solo explícito** (nunca por inactividad, ver
+[research.md §18](./research.md)) y **se rechaza** sobre `WAITING_HUMAN` o
+`HUMAN_HANDLING`: no se cierra un caso que una persona está atendiendo (CL-14).
 
 ### `Message` — sin cambios
 

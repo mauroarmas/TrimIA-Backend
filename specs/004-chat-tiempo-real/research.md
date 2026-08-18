@@ -652,3 +652,54 @@ porque la ventana que queda es de segundos, no de horas.
 **Consecuencia a testear**: con un stream abierto, dar de baja al empleado corta el
 stream y no le llega ningún mensaje posterior; un token vencido cierra el stream
 (T016, T017, T019, T030).
+
+## 18. Fin de sesión — la inactividad cierra la conexión, nunca la conversación
+
+**Decisión**: dos mecanismos separados y deliberadamente distintos.
+
+1. **Inactividad** cierra **la conexión** pasado `SSE_IDLE_TIMEOUT_MS`. No toca la
+   conversación.
+2. **Terminar la conversación** (`ConvStatus.CLOSED`) es **solo** una acción
+   explícita de la persona. Ningún temporizador la produce.
+
+**Rationale**: la pregunta que originó esto era de recursos —una pestaña olvidada no
+debería retener una suscripción para siempre— y para eso alcanza con cerrar la
+conexión. Cerrarla es **gratis** en términos de datos: la base es la fuente de verdad
+(RF-007) y el cliente reabre con `after` (§10), así que no se pierde ni un mensaje.
+Es el mismo argumento que hace segura la reconexión por wifi caído.
+
+**Y por qué la inactividad no puede cerrar la conversación**, que era la opción
+tentadora: `getOrCreate()` busca la conversación con `status: { not: 'CLOSED' }`
+([conversations.service.ts:46](../../src/conversations/conversations.service.ts#L46)).
+O sea que cerrar una conversación hace que **el próximo mensaje abra un hilo nuevo**,
+y con él se reinician el agente sticky y **el historial que se le pasa al LLM**. Un
+temporizador que hiciera eso **borraría el contexto de una capacitación en silencio**
+— justo el caso de uso para el que existe esta spec (Sprint 5B). Un reinicio de
+contexto tiene que ser una decisión de la persona, nunca un efecto secundario de
+haberse ido a almorzar.
+
+Hay que notar además que **hoy nada pone una conversación en `CLOSED`**: las seis
+apariciones del estado en el código son lecturas (`not: 'CLOSED'`) o el guard del
+takeover. RF-024 introduce el primer camino que lo produce, y por eso trae su propio
+caso límite (CL-14): un caso que un supervisor está atendiendo no se puede cerrar.
+
+**Corrección a RF-008**: decía "sin vencimiento por inactividad del usuario", que era
+más amplio que el problema que resolvía. El defecto original era *rendirse mientras la
+respuesta se está produciendo*; de ahí no se sigue que una conexión ociosa deba vivir
+para siempre. Ahora RF-008 protege el turno en curso y RF-023 cierra lo ocioso, con
+CL-13 marcando el límite entre los dos: **con un turno en curso, la inactividad no
+cierra nada**.
+
+**Alternativa considerada** — no hacer nada y confiar en el tope del token (RF-022,
+8 h): acota el peor caso pero deja una pestaña olvidada retenida toda la jornada.
+Cierra el riesgo de seguridad, no el de recursos.
+
+**Alternativa considerada (2)** — cerrar la conversación por inactividad, con un aviso
+al usuario: sigue siendo un reinicio de contexto disparado por un reloj. Se descarta
+por CL-13 y por el caso de la capacitación.
+
+**Consecuencia a testear**: un stream ocioso se cierra pasado el umbral · un stream
+con un turno en curso **no** se cierra por más quieto que esté el usuario (CL-13) · al
+reconectar después de un cierre por inactividad, la conversación es **la misma** ·
+terminar explícitamente hace que el próximo mensaje abra otra · terminar se rechaza si
+la conversación está en `WAITING_HUMAN` o `HUMAN_HANDLING` (CL-14).

@@ -178,18 +178,55 @@ Arreglarlo es lo correcto (auditoría, OE-11) pero no es invisible. Fundamento e
 
 ---
 
-## Phase 9: Polish & Cross-Cutting Concerns
+## Phase 9: Conexión ociosa — no retener recursos de una pestaña olvidada
 
-- [ ] T035 [P] Actualizar el comentario de `src/messaging/whatsapp-sender.service.ts` ([:17-23](../../src/messaging/whatsapp-sender.service.ts#L17-L23)), que hoy dice que la respuesta del chat web "la lee el frontend por polling". Sigue siendo un no-op deliberado, pero por el motivo nuevo: la respuesta se entrega por el stream
-- [ ] T036 [P] Actualizar `docs/CONTEXTO_TECNICO.md` con el módulo `realtime`, los dos endpoints de stream, la puerta del simulador, el bus de Redis y la revalidación de autorización en streams abiertos (constitución: documentación viva en el mismo trabajo)
-- [ ] T037 Correr `docker compose exec nestjs npm test` y `npm run lint` — puerta de calidad obligatoria antes de dar la fase por terminada
-- [ ] T038 Recorrer los 10 escenarios de [quickstart.md](./quickstart.md) a mano, incluido el escenario 10 (fan-out publicando a mano en Redis, que prueba que la entrega no depende de que el productor y la conexión estén en el mismo proceso)
-- [ ] T039 Verificar que no haya fugas de recursos (CA-14): abrir y cerrar 20 streams y confirmar por logs que las suscripciones se desuscriben y el `Map` no crece
-- [ ] T040 Verificar SC-004 con una **corrida larga real**: un stream abierto **45 minutos** con turnos espaciados sigue entregando, sin recargar. El escenario 8 del quickstart solo cubre dos intervalos de heartbeat (~30 s), que no es lo que SC-004 promete — este es el único criterio medible que ninguna otra tarea verifica
+**Purpose**: RF-023 y SC-012. Transversal, no pertenece a una historia: es una medida
+de recursos sobre el transporte.
+
+**⚠️ El límite de esta fase es CL-13**: la inactividad se mide sobre el usuario **y**
+sobre el turno. Con un turno en curso —o con el caso esperando a una persona— **no se
+cierra nada**, por más quieto que esté el usuario. Cerrar ahí sería reintroducir por
+otra puerta el defecto que esta spec vino a arreglar.
+
+- [ ] T035 Validar `SSE_IDLE_TIMEOUT_MS` con Joi en `src/common/config/config.module.ts` (entero positivo, default sugerido `1800000` = 30 min) y documentarlo en `.env.example`, explicando que cierra la **conexión** y **no** la conversación
+- [ ] T036 Cerrar el stream por inactividad en `src/realtime/realtime.service.ts` (junto al heartbeat de T006, que es el reloj que ya existe): si no hubo actividad del usuario ni turno en curso durante `SSE_IDLE_TIMEOUT_MS`, completar el observable. El cierre **no** toca la conversación y **no** pierde nada — el cliente reabre con `after` (RF-023)
+- [ ] T037 Tests en `src/realtime/realtime.service.spec.ts`: un stream ocioso se cierra pasado el umbral · **un stream con un turno en curso NO se cierra** aunque el usuario esté quieto (CL-13) · un stream cerrado por inactividad libera su suscripción como cualquier otro (RF-009) · reconectar después de un cierre por inactividad devuelve **la misma** conversación, no una nueva
 
 ---
 
-## Phase 10: Panel web — consumir los streams desde el frontend (Priority: P2)
+## Phase 10: User Story 6 — Terminar una conversación y empezar de nuevo (Priority: P3)
+
+**Goal**: que la persona pueda cerrar el hilo a propósito, y solo a propósito.
+
+**Independent Test**: terminar la conversación, escribir de nuevo y comprobar que el
+asistente no arrastra el tema anterior.
+
+**⚠️ Consecuencia que hay que tener presente**: `getOrCreate()` filtra
+`status: { not: 'CLOSED' }` ([conversations.service.ts:46](../../src/conversations/conversations.service.ts#L46)),
+así que cerrar hace que **el próximo mensaje cree otra conversación**, reiniciando el
+agente sticky y el historial que ve el LLM. Es lo que se busca, pero solo cuando la
+persona lo pide: ningún temporizador puede producirlo ([research.md §18](./research.md)).
+Hoy **nada** en el código escribe `CLOSED`; esta fase abre el primer camino.
+
+- [ ] T038 [US6] Agregar `close(conversationId)` a `src/conversations/conversations.service.ts`: pasa el estado a `CLOSED` y **emite el evento de estado** como cualquier otra transición (T011), para que una segunda pestaña se entere (CL-15). **Rechaza** si la conversación está en `WAITING_HUMAN` o `HUMAN_HANDLING`: no se cierra un caso que una persona está atendiendo (CL-14)
+- [ ] T039 [US6] Agregar `POST /messaging/web/:convId/close` en `src/messaging/messaging-web.controller.ts` según [contracts/messaging-web-close.md](./contracts/messaging-web-close.md), con el **mismo chequeo de pertenencia** de T015 — no una regla nueva. Solo el dueño de la conversación puede cerrarla; un `SUPERVISOR` tampoco entra por acá (RN-2)
+- [ ] T040 [US6] Tests de autorización en `src/messaging/messaging-web.controller.spec.ts`: `401` sin token · `403` sobre una conversación ajena · `403` para un `SUPERVISOR` sobre el chat de otra persona · `200`/`204` para el dueño
+- [ ] T041 [US6] Tests de comportamiento en `src/conversations/conversations.service.spec.ts`: cerrar emite el evento de estado · después de cerrar, el mensaje siguiente crea una conversación **nueva** (y por lo tanto sin el agente sticky anterior) · cerrar se **rechaza** en `WAITING_HUMAN` y en `HUMAN_HANDLING` (CL-14) · **ninguna** ruta de inactividad llama a `close()` (CA-18)
+
+---
+
+## Phase 11: Polish & Cross-Cutting Concerns
+
+- [ ] T042 [P] Actualizar el comentario de `src/messaging/whatsapp-sender.service.ts` ([:17-23](../../src/messaging/whatsapp-sender.service.ts#L17-L23)), que hoy dice que la respuesta del chat web "la lee el frontend por polling". Sigue siendo un no-op deliberado, pero por el motivo nuevo: la respuesta se entrega por el stream
+- [ ] T043 [P] Actualizar `docs/CONTEXTO_TECNICO.md` con el módulo `realtime`, los dos endpoints de stream, la puerta del simulador, el bus de Redis y la revalidación de autorización en streams abiertos (constitución: documentación viva en el mismo trabajo)
+- [ ] T044 Correr `docker compose exec nestjs npm test` y `npm run lint` — puerta de calidad obligatoria antes de dar la fase por terminada
+- [ ] T045 Recorrer los 11 escenarios de [quickstart.md](./quickstart.md) a mano, incluido el escenario 11 (fan-out publicando a mano en Redis, que prueba que la entrega no depende de que el productor y la conexión estén en el mismo proceso)
+- [ ] T046 Verificar que no haya fugas de recursos (CA-14): abrir y cerrar 20 streams y confirmar por logs que las suscripciones se desuscriben y el `Map` no crece
+- [ ] T047 Verificar SC-004 con una **corrida larga real**: un stream abierto **45 minutos** con turnos espaciados sigue entregando, sin recargar. El escenario 8 del quickstart solo cubre dos intervalos de heartbeat (~30 s), que no es lo que SC-004 promete — este es el único criterio medible que ninguna otra tarea verifica
+
+---
+
+## Phase 12: Panel web — consumir los streams desde el frontend (Priority: P2)
 
 > **Estas tareas se enumeran, no se implementan acá.** La spec de backend se da por
 > terminada con esta fase escrita; el panel se trabaja después, por separado. La
@@ -209,27 +246,32 @@ Arreglarlo es lo correcto (auditoría, OE-11) pero no es invisible. Fundamento e
 
 ### Base — el cliente HTTP
 
-- [ ] T041 Agregar a `src/api.js` un `openConversationStream(token, path, { after, onMessage, onStatus, onError })` que lea el stream con **`fetch`** y `ReadableStream`, **no con `EventSource`**: `EventSource` no admite headers y obligaría a poner el JWT en la query string, donde termina en los logs de acceso ([research.md §2](./research.md)). Reusar el armado de headers de `request()`. Debe parsear los bloques `event:`/`data:` de a líneas e **ignorar los comentarios** (`: keepalive`)
-- [ ] T042 Agregar a `src/api.js` un `simulateMessage(token, { phone, message })` para `POST /messaging/simulate`, y **eliminar** el uso de `sendWebhookMessage` desde el simulador (la función puede quedar si algo más la usa, pero el simulador no la llama más)
-- [ ] T043 Devolver desde `openConversationStream` una forma de cerrarlo (`AbortController`) y usarla en el cleanup de los `useEffect`, para no dejar streams colgados al desmontar o al cambiar de pestaña
+- [ ] T048 Agregar a `src/api.js` un `openConversationStream(token, path, { after, onMessage, onStatus, onError })` que lea el stream con **`fetch`** y `ReadableStream`, **no con `EventSource`**: `EventSource` no admite headers y obligaría a poner el JWT en la query string, donde termina en los logs de acceso ([research.md §2](./research.md)). Reusar el armado de headers de `request()`. Debe parsear los bloques `event:`/`data:` de a líneas e **ignorar los comentarios** (`: keepalive`)
+- [ ] T049 Agregar a `src/api.js` un `simulateMessage(token, { phone, message })` para `POST /messaging/simulate`, y **eliminar** el uso de `sendWebhookMessage` desde el simulador (la función puede quedar si algo más la usa, pero el simulador no la llama más)
+- [ ] T050 Devolver desde `openConversationStream` una forma de cerrarlo (`AbortController`) y usarla en el cleanup de los `useEffect`, para no dejar streams colgados al desmontar o al cambiar de pestaña
 
 ### US1 + US2 + US5 — Chat con el Asistente
 
-- [ ] T044 Reescribir `src/components/WebChat.jsx` para consumir el stream en vez de hacer polling: **eliminar `POLL_INTERVAL_MS` y `POLL_MAX_TRIES`** ([:4-5](../../../trimIA-frontend/src/components/WebChat.jsx#L4-L5)). Ya no existe "no llegó respuesta a tiempo": un turno lento no es un error (SC-005)
-- [ ] T045 Deduplicar por `message.id` al recibir y ordenar por `createdAt` en `WebChat.jsx` (RF-004, RF-005). Es lo que hace seguras las dos pestañas y la reconexión, y lo que cubre el empate por milisegundo del cursor `after`
-- [ ] T046 Reconectar en `WebChat.jsx` pasando `after=<id del último mensaje mostrado>`, con reintento espaciado ante corte de red. Al reconectar **no** limpiar los mensajes ya en pantalla: la reanudación trae solo lo posterior
-- [ ] T047 Mostrar el estado de la conversación en `WebChat.jsx` a partir del evento `status`, y **no** dejar el indicador de "el asistente está escribiendo" cuando el estado es `WAITING_HUMAN` o `HUMAN_HANDLING` (CL-1, CA-07). **Distinción que la UI no puede aplastar**: `WAITING_HUMAN` es "nadie lo tomó todavía" y `HUMAN_HANDLING` es "una persona lo está atendiendo" — son dos mensajes distintos para el usuario, no el mismo cartel
+- [ ] T051 Reescribir `src/components/WebChat.jsx` para consumir el stream en vez de hacer polling: **eliminar `POLL_INTERVAL_MS` y `POLL_MAX_TRIES`** ([:4-5](../../../trimIA-frontend/src/components/WebChat.jsx#L4-L5)). Ya no existe "no llegó respuesta a tiempo": un turno lento no es un error (SC-005)
+- [ ] T052 Deduplicar por `message.id` al recibir y ordenar por `createdAt` en `WebChat.jsx` (RF-004, RF-005). Es lo que hace seguras las dos pestañas y la reconexión, y lo que cubre el empate por milisegundo del cursor `after`
+- [ ] T053 Reconectar en `WebChat.jsx` pasando `after=<id del último mensaje mostrado>`, con reintento espaciado ante corte de red. Al reconectar **no** limpiar los mensajes ya en pantalla: la reanudación trae solo lo posterior
+- [ ] T054 Mostrar el estado de la conversación en `WebChat.jsx` a partir del evento `status`, y **no** dejar el indicador de "el asistente está escribiendo" cuando el estado es `WAITING_HUMAN` o `HUMAN_HANDLING` (CL-1, CA-07). **Distinción que la UI no puede aplastar**: `WAITING_HUMAN` es "nadie lo tomó todavía" y `HUMAN_HANDLING` es "una persona lo está atendiendo" — son dos mensajes distintos para el usuario, no el mismo cartel
 
 ### US3 + US4 — Simulador
 
-- [ ] T048 Quitar de `src/components/ChatSimulator.jsx` el campo del secreto y su estado ([:9-13](../../../trimIA-frontend/src/components/ChatSimulator.jsx#L9-L13)), y pasar a `simulateMessage()`. Con esto **ninguna credencial de producción vuelve a pasar por el navegador**
-- [ ] T049 Usar el `conversationId` que devuelve `POST /messaging/simulate` para abrir `GET /supervisor/conversations/:id/stream` en `ChatSimulator.jsx`, y **eliminar** la búsqueda de la conversación por teléfono en la lista del panel ([:22-25](../../../trimIA-frontend/src/components/ChatSimulator.jsx#L22-L25)), que existía solo porque el webhook no devolvía el id
-- [ ] T050 Advertir en `ChatSimulator.jsx`, antes de enviar, que simular escribe en la conversación **real** de ese teléfono (CL-8). Advertir, **no impedir**: es el comportamiento correcto y es la razón por la que el simulador es de supervisores
+- [ ] T055 Quitar de `src/components/ChatSimulator.jsx` el campo del secreto y su estado ([:9-13](../../../trimIA-frontend/src/components/ChatSimulator.jsx#L9-L13)), y pasar a `simulateMessage()`. Con esto **ninguna credencial de producción vuelve a pasar por el navegador**
+- [ ] T056 Usar el `conversationId` que devuelve `POST /messaging/simulate` para abrir `GET /supervisor/conversations/:id/stream` en `ChatSimulator.jsx`, y **eliminar** la búsqueda de la conversación por teléfono en la lista del panel ([:22-25](../../../trimIA-frontend/src/components/ChatSimulator.jsx#L22-L25)), que existía solo porque el webhook no devolvía el id
+- [ ] T057 Advertir en `ChatSimulator.jsx`, antes de enviar, que simular escribe en la conversación **real** de ese teléfono (CL-8). Advertir, **no impedir**: es el comportamiento correcto y es la razón por la que el simulador es de supervisores
+
+### US6 + inactividad — fin de sesión
+
+- [ ] T058 Reconectar en silencio en `WebChat.jsx` cuando el servidor cierra el stream por **inactividad**: reabrir con `after` al primer signo de actividad del usuario (foco en el input, o al enviar). **No** mostrarlo como error ni como desconexión: la conversación sigue siendo la misma y el usuario no tiene por qué enterarse (RF-023, CA-17). Distinguirlo del cierre por **token vencido** (RF-022), que sí exige volver a loguear
+- [ ] T059 Agregar en `WebChat.jsx` una acción de **terminar conversación** contra `POST /messaging/web/:convId/close`, con confirmación previa que diga lo que realmente pasa: el próximo mensaje empieza un hilo nuevo y el asistente no va a recordar lo anterior. Deshabilitarla —con el motivo a la vista— cuando el estado es `WAITING_HUMAN` o `HUMAN_HANDLING`, porque el backend la va a rechazar (CL-14)
 
 ### Manejo de errores — dos códigos que piden acciones distintas
 
-- [ ] T051 Distinguir en `WebChat.jsx` y `ChatSimulator.jsx` el `401` del `403` al abrir un stream, porque piden acciones opuestas: **`401`** es sesión vencida → volver a loguear y reintentar; **`403`** es "esta conversación no es tuya" o "te falta el rol" → **no reintentar nunca** (un reintento en bucle contra un `403` es el equivalente nuevo del polling que se acaba de sacar). Usar `ApiError.status`, que ya viene con el cuerpo del backend
-- [ ] T052 Manejar el `409` de `POST /messaging/web` cuando el empleado **no tiene teléfono cargado** en su perfil (CL-7): mostrar la explicación que ya manda el backend —que un supervisor tiene que cargarlo— y **no** intentar abrir el stream de una conversación que no existe
+- [ ] T060 Distinguir en `WebChat.jsx` y `ChatSimulator.jsx` el `401` del `403` al abrir un stream, porque piden acciones opuestas: **`401`** es sesión vencida → volver a loguear y reintentar; **`403`** es "esta conversación no es tuya" o "te falta el rol" → **no reintentar nunca** (un reintento en bucle contra un `403` es el equivalente nuevo del polling que se acaba de sacar). Usar `ApiError.status`, que ya viene con el cuerpo del backend
+- [ ] T061 Manejar el `409` de `POST /messaging/web` cuando el empleado **no tiene teléfono cargado** en su perfil (CL-7): mostrar la explicación que ya manda el backend —que un supervisor tiene que cargarlo— y **no** intentar abrir el stream de una conversación que no existe
 
 ### Nota sobre tests en el frontend
 
@@ -250,8 +292,10 @@ Fase 1 (Setup)
           ├─► Fase 3 US1 ──┬─► Fase 4 US2
           │                └─► Fase 7 US5 (también necesita US4)
           ├─► Fase 5 US3 ──► Fase 6 US4 ──► Fase 7 US5
-          └─► Fase 8 (RF-012, transversal — solo necesita Fase 2)
-                 └─► Fase 9 (Polish) ──► Fase 10 (Panel, después y aparte)
+          ├─► Fase 8 (RF-012, transversal — solo necesita Fase 2)
+          ├─► Fase 9 (conexión ociosa, transversal — solo necesita Fase 2)
+          └─► Fase 10 US6 (terminar conversación — necesita Fase 2)
+                 └─► Fase 11 (Polish) ──► Fase 12 (Panel, después y aparte)
 ```
 
 ### User Story Dependencies
@@ -263,6 +307,7 @@ Fase 1 (Setup)
 | US3 (P1) | Fase 2 (nada de otras historias) | ✅ Sí, independiente |
 | US4 (P2) | Fase 2 + US3 + **US1** (T016-T017: la revalidación y el corte por token vencido se reusan, no se duplican) | ✅ Sí |
 | US5 (P2) | Fase 2 (T012) + US1 + US4 | ✅ Sí |
+| US6 (P3) | Fase 2 (T011, para el evento de estado) | ✅ Sí — no depende de ninguna otra historia |
 
 ### Parallel Opportunities
 
@@ -274,7 +319,11 @@ Fase 1 (Setup)
   paralelización más aprovechable del plan.
 - **Fase 8 (RF-012)** corre en paralelo con cualquier historia: solo necesita la
   Fase 2 y toca únicamente `message.processor.ts`.
-- **T035 y T036** (documentación) en paralelo con todo lo demás.
+- **Fase 9 (conexión ociosa)** corre en paralelo con las historias: toca
+  `realtime.service.ts`, que después de la Fase 2 nadie más modifica.
+- **Fase 10 (US6)** es independiente de US1-US5: solo necesita el evento de estado
+  de la Fase 2.
+- **T042 y T043** (documentación) en paralelo con todo lo demás.
 
 ## Parallel Example: US1 + US3 a la vez
 
@@ -297,7 +346,7 @@ por sí solo.
 > **Qué significa "terminado" acá.** Cerrar las Fases 1-9 termina el **backend**, no
 > los criterios medibles de la spec. RF-005 (mostrar cada mensaje una sola vez) y
 > RF-011 (indicar que el turno está en curso) se cumplen **solo** con tareas de la
-> Fase 10, y SC-006/007/008/009 dependen de que el panel consuma los streams. Es por
+> Fase 12, y SC-006/007/008/009 dependen de que el panel consuma los streams. Es por
 > diseño —la constitución manda enumerar el trabajo de panel y hacerlo aparte—, pero
 > conviene no confundir "la spec de backend está cerrada" con "los SC están cumplidos".
 
@@ -310,12 +359,14 @@ por sí solo.
 4. **+ Fases 5-6** → el simulador deja de exponer el secreto de producción y se ve
    en vivo (SC-009).
 5. **+ Fase 7** → reanudación sin pérdida (SC-006).
-6. **+ Fase 9** → documentación y verificación completa.
-7. **Fase 10**, después y por separado → el panel consume todo esto.
+6. **+ Fase 9** → una pestaña olvidada deja de retener recursos (SC-012).
+7. **+ Fase 10** → se puede terminar una conversación a propósito y empezar limpia.
+8. **+ Fase 11** → documentación y verificación completa.
+9. **Fase 12**, después y por separado → el panel consume todo esto.
 
 ### Orden sugerido si se trabaja solo
 
-Fase 1 → 2 → 3 (MVP, cortar y verificar) → 4 → 8 → 5 → 6 → 7 → 9 → 10.
+Fase 1 → 2 → 3 (MVP, cortar y verificar) → 4 → 8 → 5 → 6 → 7 → 9 → 10 → 11 → 12.
 
 Poner la Fase 8 temprano tiene una razón: es chica, es independiente y arregla un
 defecto que hoy hace que el panel mienta sobre lo que pasó. No conviene que quede

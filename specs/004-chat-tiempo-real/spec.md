@@ -194,6 +194,32 @@ el asistente termine, reconectar, y ver la respuesta.
 
 ---
 
+### US6 — Terminar una conversación y empezar de nuevo (Prioridad: P3)
+
+Como **empleado en una capacitación**, quiero poder **cerrar** la conversación
+cuando terminé un tema, para que la siguiente empiece limpia en vez de arrastrar
+todo lo anterior.
+
+**Por qué P3**: mejora la capacitación pero nada se rompe sin ella. Es además la
+contraparte necesaria de RF-023: si la inactividad **no** cierra la conversación (y
+no debe), tiene que existir alguna forma de cerrarla a propósito.
+
+**Prueba independiente**: terminar la conversación, escribir de nuevo y comprobar
+que el asistente no arrastra el tema anterior.
+
+**Escenarios de aceptación**:
+1. **Dado** un empleado con una conversación en curso, **cuando** la termina,
+   **entonces** el chat lo refleja y el mensaje siguiente abre una conversación
+   nueva.
+2. **Dado** un empleado que dejó el chat abierto sin escribir, **cuando** pasa el
+   tiempo de inactividad, **entonces** la conexión se cierra pero la conversación
+   **no**: al volver a escribir sigue el mismo hilo.
+3. **Dado** un caso que está en manos de una persona, **cuando** el empleado intenta
+   terminar la conversación, **entonces** el sistema no lo permite: no puede cerrar
+   un caso que un supervisor está atendiendo.
+
+---
+
 ## 4. Requisitos funcionales
 
 *(Requirements → Functional Requirements — sección obligatoria del template)*
@@ -226,8 +252,19 @@ el asistente termine, reconectar, y ver la respuesta.
 - **RF-007**: El sistema DEBE poder reconstruir la conversación completa aunque
   la entrega en tiempo real haya fallado por completo: los mensajes se registran
   **antes** de entregarse, y esa registración es la fuente de verdad.
-- **RF-008**: El sistema DEBE mantener viva la entrega durante conversaciones
-  largas, sin límite de intentos ni vencimiento por inactividad del usuario.
+- **RF-008**: El sistema DEBE mantener viva la entrega **mientras haya un turno en
+  curso**, sin límite de intentos y sin declarar que no llegó respuesta cuando la
+  respuesta todavía se está produciendo. Una conversación larga no puede quedar
+  cortada por el solo hecho de que el asistente tarde.
+- **RF-023**: El sistema DEBE cerrar una entrega que quedó **ociosa** —sin turno en
+  curso y sin actividad del usuario durante un tiempo configurable— para no retener
+  recursos de una pestaña que nadie está mirando. Cerrarla NO DEBE perder nada: al
+  volver, el usuario reanuda desde el último mensaje que vio (RF-006) y **sigue en la
+  misma conversación**, con su mismo contexto.
+- **RF-024**: Un usuario DEBE poder **terminar explícitamente** su conversación con
+  el asistente. Terminarla cierra el hilo: el mensaje siguiente empieza una
+  conversación nueva. Esto NO DEBE ocurrir nunca por inactividad ni por ninguna otra
+  causa automática — solo cuando la persona lo pide.
 - **RF-009**: El sistema DEBE liberar los recursos de una entrega cuando el
   panel se desconecta, sin acumularlos indefinidamente.
 
@@ -399,6 +436,12 @@ declarativa.)*
   sigue funcionando igual que antes. *(RF-020)*
 - **CA-13 — El envío sigue siendo inmediato.** El acuse del envío llega en
   milisegundos, muy antes que la respuesta. *(RF-010)*
+- **CA-17 — La conexión ociosa se cierra sin costo.** Un chat abierto y sin
+  actividad se desconecta pasado el tiempo configurado; al volver a escribir, el
+  usuario **sigue en la misma conversación** y ve todo su historial. *(RF-023)*
+- **CA-18 — Terminar es explícito y solo explícito.** Terminar la conversación hace
+  que el mensaje siguiente abra un hilo nuevo; **ninguna** inactividad produce ese
+  efecto. *(RF-024)*
 - **CA-15 — El permiso se revalida en vivo.** Con una entrega abierta, se le quita
   a esa persona el derecho a leer esa conversación (por ejemplo, se la da de baja):
   la entrega **se corta** y no le llega ningún mensaje posterior. *(RF-021)*
@@ -450,6 +493,11 @@ para que "mejoró" sea una afirmación comprobable.
 - **SC-010 — El acuse sigue siendo inmediato.** El acuse del envío llega en
   **menos de 1 segundo**, sin regresión respecto de hoy: la entrega en tiempo real
   no puede haber metido trabajo dentro del request.
+- **SC-012 — Recursos de pestañas abandonadas.** Una pestaña abierta y olvidada deja
+  de retener recursos del servidor pasado el tiempo de inactividad configurado; **0**
+  suscripciones vivas por chats que nadie está mirando. *Línea de base*: hoy no
+  aplica —el polling no retiene nada—, pero sin este requisito el diseño nuevo sí
+  retendría.
 - **SC-011 — Confidencialidad sin regresión.** **0** casos en que un pedido de
   entrega en tiempo real devuelva mensajes de una conversación que su solicitante
   no puede leer por el historial, incluido un supervisor sobre la conversación de
@@ -545,6 +593,23 @@ Se entregan todos, en orden, sin que uno pise al otro. El orden lo garantiza la
 posición de RF-004, no el momento en que llegan.
 
 ---
+
+**CL-13 — El tiempo de inactividad vence justo cuando hay un turno en curso.**
+**No se cierra.** La inactividad se mide sobre el usuario **y** sobre el turno: si
+el asistente está trabajando —o el caso está esperando a una persona— la entrega se
+mantiene abierta por más quieto que esté el usuario. Cerrar ahí sería reintroducir
+por otra puerta el defecto que esta spec vino a arreglar: rendirse antes de que
+llegue la respuesta (RF-008 vs RF-023).
+
+**CL-14 — El empleado intenta terminar la conversación mientras un supervisor la
+atiende.** **No se permite.** Un caso en `WAITING_HUMAN` o `HUMAN_HANDLING` no es
+solo suyo: hay una persona involucrada y una escalación abierta. El sistema lo
+rechaza explicando por qué, en vez de cerrar un caso que alguien está trabajando.
+
+**CL-15 — Se termina la conversación con dos pestañas abiertas.**
+La otra pestaña **se entera**, porque cerrar es un cambio de estado y los cambios de
+estado se entregan (RF-003). No puede quedar una pestaña escribiendo sobre un hilo
+que ya se cerró y que en el próximo mensaje va a ser otro.
 
 ## 8. Fuera de alcance
 
