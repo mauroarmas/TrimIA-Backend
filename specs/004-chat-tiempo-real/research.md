@@ -389,3 +389,193 @@ sin ninguna señal (§5b). Son defectos, no incomodidades.
 | Un evento se pierde si la conexión se corta justo cuando se emite | El stream es una **notificación, no el almacén**: la base es la fuente de verdad y al reconectar se reanuda desde el último mensaje visto (§2, y §7 CL3 de la spec) |
 | Conexiones largas mantienen viva una instancia de Cloud Run (costo) | Sprint 8; aplica igual a WebSocket, no desempata (§3) |
 | El lock en memoria de `MessageProcessor` sigue roto en multi-instancia | Preexistente y fuera de alcance, dicho explícitamente (§1) |
+
+---
+
+# Fase 0 — Decisiones de diseño (`/speckit-plan`)
+
+El spike (§1–§8) resolvió **el transporte**. Lo de abajo resuelve las decisiones
+que quedaron abiertas para poder planificar, en el mismo formato. No reabre nada
+de arriba.
+
+## 9. Dónde vive cada stream — dos puertas, no una
+
+**Decisión**: dos endpoints de stream, cada uno detrás de los guards que **ya**
+gobiernan su superficie.
+
+| Endpoint | Guards | Para qué |
+|---|---|---|
+| `GET /messaging/web/:convId/stream` | `JwtAuthGuard` + el chequeo de pertenencia por teléfono normalizado que ya existe en ese controller | El Chat con el Asistente: la conversación propia del empleado |
+| `GET /supervisor/conversations/:id/stream` | `JwtAuthGuard` + `RolesGuard` + `@Roles('SUPERVISOR')` | El Simulador, y cualquier vista del panel del supervisor sobre una conversación ajena |
+
+**Rationale**: la alternativa obvia era **un** endpoint que resolviera por rol
+("si es supervisor puede cualquiera, si no solo la propia"). Se descarta porque
+concentraría **dos reglas de autorización distintas en un solo handler**, que es
+exactamente la duplicación que el Principio I prohíbe: hoy esas dos reglas viven
+en dos lugares distintos y probados —el `403` por pertenencia en
+[messaging-web.controller.ts:74-83](../../src/messaging/messaging-web.controller.ts#L74-L83)
+y el `@Roles('SUPERVISOR')` de
+[supervisor.controller.ts:62-64](../../src/supervisor/supervisor.controller.ts#L62-L64)—.
+Dos endpoints hacen que **no haya que escribir ninguna regla nueva**: cada stream
+hereda la que ya rige el `GET` de al lado.
+
+Como efecto deseado, RN-2 de la spec se cumple por construcción: un supervisor
+**no** entra a la conversación de un empleado por la puerta del chat propio,
+porque ese endpoint no mira roles, mira pertenencia.
+
+**Alternativa considerada** — un endpoint único con ramificación por rol:
+rechazada arriba. **Alternativa considerada (2)** — un stream por empleado en vez
+de por conversación (`/messaging/web/stream`, sin id): más cómodo para el chat
+propio, pero el simulador necesita seguir una conversación **ajena**, así que
+haría falta el otro endpoint igual, y perderíamos el `403` por conversación que
+la spec exige verificar (CA-08).
+
+**Consecuencia a testear**: sin token → `401`; empleado autenticado pidiendo el
+stream de una conversación ajena → `403`; **supervisor** pidiendo el stream del
+chat propio de un empleado por `/messaging/web/...` → `403` también; empleado sin
+rol supervisor en el endpoint del supervisor → `403`.
+
+## 10. Reanudación — se agrega `after` a `listMessages()`
+
+**Decisión**: agregarle un parámetro `after` (id de mensaje) a
+`ConversationsService.listMessages()` y aceptarlo como query param al abrir el
+stream. El servicio resuelve el `createdAt` de ese mensaje y devuelve los
+estrictamente posteriores.
+
+**Rationale**: §4 dejó dos caminos y hay que elegir uno. Se elige el del backend
+—y no el de "que el panel repida la última página y descarte por id"— por una
+razón de la constitución, no de elegancia: RF-006 está redactado como un
+comportamiento **del sistema** ("el sistema DEBE entregar los mensajes que
+ocurrieron desde el último que el panel dice haber visto"), y el panel es un banco
+de pruebas **sin tests**. Dejar la reanudación del lado del frontend pondría un
+requisito verificable en el único lugar del proyecto donde no se verifica nada.
+Del lado del backend son ~10 líneas y un `*.spec.ts`.
+
+Beneficio lateral: el `GET` de historial gana el mismo parámetro, así que el panel
+puede pedir "lo nuevo" en vez de traer 50 mensajes para descubrir que no hay
+ninguno.
+
+**Límite conocido, dicho explícitamente**: el corte es por `createdAt`, y dos
+mensajes del mismo turno pueden compartir milisegundo. Si eso pasa, uno podría
+reenviarse. **No es un problema**, porque RF-005 ya obliga al panel a no mostrar
+dos veces el mismo id — la deduplicación por id es la red que cubre el empate, y
+hace falta de todos modos para el caso de las dos pestañas.
+
+**Alternativa considerada** — cursor compuesto (`createdAt`, `id`) para eliminar
+el empate en el servidor: correcto y más caro, y no compra nada que la
+deduplicación por id no dé ya.
+
+**Consecuencia a testear**: con tres mensajes, pedir `after=<id del primero>`
+devuelve exactamente los dos últimos; un `after` inexistente no puede devolver la
+conversación entera en silencio (debe fallar de forma explícita).
+
+## 11. El bus — canal por conversación y una conexión duplicada
+
+**Decisión**: publicar en `trimia:conversation:<conversationId>`. Cada instancia
+mantiene **una** conexión suscriptora, obtenida con `redis.duplicate()`, y se
+suscribe/desuscribe por canal con **conteo de referencias**: se suscribe cuando se
+abre el primer stream local de esa conversación y se desuscribe cuando se cierra
+el último.
+
+**Rationale**: el `duplicate()` no es opcional. `RedisService` **extiende** `Redis`
+y es una conexión compartida por todo el proceso
+([redis.service.ts:6-16](../../src/redis/redis.service.ts#L6-L16)); una conexión
+ioredis en modo *subscriber* no puede ejecutar comandos normales, así que
+suscribirse sobre la instancia inyectada **rompería BullMQ y todo lo demás que use
+Redis en el proceso**. Es el riesgo más concreto de toda la implementación.
+
+El conteo de referencias es lo que hace que RF-009 (liberar recursos al
+desconectarse) sea verificable: sin él, cada chat abierto dejaría una suscripción
+colgada para siempre.
+
+**Alternativa considerada** — `psubscribe trimia:conversation:*`: menos código
+(una suscripción y listo, sin refcount), pero cada instancia recibiría los eventos
+de **todas** las conversaciones y tendría que descartarlos. A esta escala funciona;
+se descarta igual porque el costo del refcount es bajo y esta es justo la decisión
+que no conviene tener que rehacer en Sprint 8.
+
+**Consecuencia a testear**: dos streams sobre la misma conversación producen
+**una** suscripción; al cerrar uno la suscripción sigue viva; al cerrar el segundo
+se desuscribe. Y un evento publicado "desde otra instancia" (publicando a mano en
+el canal) llega a un stream abierto.
+
+## 12. Puntos de emisión — dos, y los dos ya son embudos
+
+**Decisión**: emitir mensajes desde `ConversationsService.addMessage()` y cambios
+de estado desde `setStatus()`, `takeover()` y `release()`.
+
+**Rationale**: §6 ya justificó `addMessage()` para los mensajes. Para el estado se
+verificó lo mismo y da igual de bien: **todas** las transiciones pasan por
+`ConversationsService` — `setStatus()`
+([conversations.service.ts:146-151](../../src/conversations/conversations.service.ts#L146-L151)),
+que es por donde `EscalationsService` deja la conversación en `WAITING_HUMAN`
+([escalations.service.ts:101](../../src/escalations/escalations.service.ts#L101)),
+más `takeover()` (→ `HUMAN_HANDLING`,
+[:176-184](../../src/conversations/conversations.service.ts#L176-L184)) y
+`release()` (→ `ACTIVE`,
+[:226-230](../../src/conversations/conversations.service.ts#L226-L230)).
+No hay ningún `conversation.update({status})` suelto fuera de ese servicio, así que
+RF-003 se cubre en tres métodos de un solo archivo.
+
+**Consecuencia a testear**: escalar una conversación emite un evento de estado; un
+takeover y un release también.
+
+## 13. El aviso de fracaso se persiste para todos los canales
+
+**Decisión**: en el `catch` de `MessageProcessor`, persistir el `FALLBACK` con
+`addMessage()` **antes** de intentar enviarlo, y hacerlo para todos los canales,
+no solo para web.
+
+**Rationale**: hoy el `FALLBACK` se manda por `sender.send()` y no se persiste
+([message.processor.ts:210-228](../../src/queue/processors/message.processor.ts#L210-L228)),
+y `send()` es un no-op para canales distintos de WhatsApp. Persistirlo arregla el
+canal web (RF-012) y, de paso, arregla algo que también está mal en WhatsApp: hoy
+el cliente **recibe** la disculpa pero la conversación guardada no la tiene, así
+que el historial que ve un supervisor miente sobre lo que se le dijo al cliente.
+
+**Esto es un cambio de contrato** y hay que decirlo: a partir de acá, un turno
+fracasado **deja un mensaje** en la conversación de WhatsApp que antes no dejaba.
+Es lo correcto (auditoría, OE-11) y la spec lo pide (RN-5), pero no es un cambio
+invisible.
+
+**Alternativa considerada** — persistirlo solo cuando el canal no es WhatsApp:
+arregla el panel sin tocar WhatsApp, pero deja la persistencia del historial
+dependiendo del canal, que es la clase de ramificación que después nadie recuerda.
+
+**Consecuencia a testear**: un turno que agota sus 3 intentos deja exactamente
+**un** mensaje visible (no uno por intento: solo el último intento avisa, y esa
+condición ya existe).
+
+## 14. Heartbeat y su variable de entorno
+
+**Decisión**: emitir un comentario SSE cada `SSE_HEARTBEAT_MS` (default 15000),
+validado con Joi en `config.module.ts` y documentado en `.env.example`.
+
+**Rationale**: lo pide §3 (es lo único que los headers no resuelven) y lo obliga la
+constitución: toda variable de entorno nueva se valida y se documenta. Un
+comentario (`: keepalive`) no llega al `onmessage` del cliente, así que mantiene la
+conexión viva sin contaminar el flujo de eventos.
+
+**Consecuencia a testear**: un stream sin actividad sigue abierto después de dos
+intervalos de heartbeat.
+
+## 15. Puerta del simulador — reusa el mismo camino que el webhook
+
+**Decisión**: `POST /messaging/simulate` con `JwtAuthGuard` + `RolesGuard` +
+`@Roles('SUPERVISOR')`, cuerpo `{ phone, message }`, que llama a
+`MessagingService.enqueue()` — **el mismo método que usa el webhook de n8n**.
+
+**Rationale**: que el simulador sea fiel depende de que recorra el camino real. Si
+tuviera su propio camino de encolado, dejaría de probar lo que dice probar.
+Reusando `enqueue()`, el `userType` lo sigue resolviendo `MessageProcessor`
+buscando el teléfono en la tabla `Employee`, que es la whitelist: el simulador
+**elige el teléfono, no el rol** (RF-018, RN-3), y no hay nada en el cuerpo del
+request que permita declararlo.
+
+`POST /messaging/webhook` no se toca: sigue con `WebhookSecretGuard` y sin aceptar
+JWT (RF-020).
+
+**Consecuencia a testear**: un empleado sin rol `SUPERVISOR` recibe `403`; un
+teléfono fuera de la whitelist se resuelve como `CLIENTE` (con lo que eso implica:
+solo `SALES`/`COLLECTIONS` y solo audiencia `PUBLICO`); el webhook sigue exigiendo
+su secreto.
