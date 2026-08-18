@@ -1,4 +1,5 @@
 import {
+  ConflictException,
   Injectable,
   Logger,
   NotFoundException,
@@ -81,6 +82,12 @@ export interface UpdateInput {
   origin?: KnowledgeChangeOrigin;
   /** Qué le pidió el supervisor a la IA, cuando el origen es AI_ACCEPTED. */
   aiInstruction?: string;
+  /**
+   * Versión sobre la que se preparó el cambio. Si ya no es la vigente, el
+   * update falla con 409 en vez de pisar la edición de otro (FR-033).
+   * Opcional: el `PUT` manual no lo usa.
+   */
+  expectedVersion?: number;
 }
 
 /**
@@ -438,6 +445,28 @@ export class KnowledgeService implements OnModuleInit {
       where: { id },
     });
     if (!current) throw new NotFoundException('Documento no encontrado');
+
+    // Bloqueo optimista (FR-033). Va acá y no en el controller para que valga
+    // sin importar quién llame — el chequeo protege el documento, no la ruta.
+    //
+    // Solo aplica cuando el llamador dice sobre qué versión trabajó: `PUT`
+    // manual no la manda (el supervisor está mirando el texto que edita),
+    // pero "editar con la IA" sí, porque entre el preview y el apply pasa un
+    // rato en el que otro pudo haber guardado.
+    if (
+      input.expectedVersion !== undefined &&
+      input.expectedVersion !== current.version
+    ) {
+      throw new ConflictException({
+        statusCode: 409,
+        reason: 'VERSION_CONFLICT',
+        currentVersion: current.version,
+        message:
+          `Otra persona editó este documento mientras preparabas el cambio ` +
+          `(ahora va por la versión ${current.version}). Volvé a generar la ` +
+          `propuesta sobre el texto actual para no pisar lo que hizo.`,
+      });
+    }
 
     const changedFields = (
       ['title', 'content', 'category', 'audience', 'agentType'] as const

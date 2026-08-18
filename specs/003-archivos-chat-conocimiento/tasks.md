@@ -242,16 +242,16 @@ Proyecto backend único: `src/` en la raíz del repositorio. Los tests viven
 
 ### Implementación
 
-- [ ] T070 [US6] Crear `KnowledgeAiEditService` en `src/ai/knowledge/knowledge-ai-edit.service.ts`: genera contenido propuesto, resumen y `changedSections` con salida estructurada (FR-030, FR-031)
-- [ ] T071 [US6] Devolver `confident: false` cuando el modelo no pueda resolver el pedido con claridad, sin alterar contenido arbitrariamente, en `src/ai/knowledge/knowledge-ai-edit.service.ts` (FR-033)
-- [ ] T072 [US6] Agregar `POST /knowledge/:id/ai-edit/preview` (**no persiste nada**) y `POST /knowledge/:id/ai-edit/apply` en `src/ai/knowledge/knowledge.controller.ts` (contracts)
-- [ ] T073 [US6] Implementar el control de `baseVersion` en `apply` dentro de `src/ai/knowledge/knowledge.controller.ts`: 409 con `currentVersion` si otro supervisor editó mientras tanto (FR-033)
-- [ ] T074 [US6] Registrar el `KnowledgeChange` con `origin: AI_ACCEPTED` y la `aiInstruction` al aplicar, en `src/ai/knowledge/knowledge-ai-edit.service.ts` (FR-049)
+- [X] T070 [US6] Crear `KnowledgeAiEditService` en `src/ai/knowledge/knowledge-ai-edit.service.ts`: genera contenido propuesto, resumen y `changedSections` con salida estructurada (FR-030, FR-031)
+- [X] T071 [US6] Devolver `confident: false` cuando el modelo no pueda resolver el pedido con claridad, sin alterar contenido arbitrariamente, en `src/ai/knowledge/knowledge-ai-edit.service.ts` (FR-033)
+- [X] T072 [US6] Agregar `POST /knowledge/:id/ai-edit/preview` (**no persiste nada**) y `POST /knowledge/:id/ai-edit/apply` en `src/ai/knowledge/knowledge.controller.ts` (contracts)
+- [X] T073 [US6] Implementar el control de `baseVersion` en `apply` **implementado en `knowledge.service.ts` (`expectedVersion`)**, no en el controller: la convención del proyecto es que los controladores solo orquesten, y así el chequeo vale sin importar quién llame: 409 con `currentVersion` si otro supervisor editó mientras tanto (FR-033)
+- [X] T074 [US6] Registrar el `KnowledgeChange` con `origin: AI_ACCEPTED` y la `aiInstruction` al aplicar, en `src/ai/knowledge/knowledge-ai-edit.service.ts` (FR-049)
 
 ### Tests
 
-- [ ] T075 [P] [US6] Test en `src/ai/knowledge/knowledge-ai-edit.service.spec.ts`: tras un `preview`, el documento en base **no cambió** (FR-032)
-- [ ] T076 [P] [US6] Test en `src/ai/knowledge/knowledge.controller.spec.ts`: `apply` con una `baseVersion` desactualizada devuelve 409 y no pisa el cambio ajeno (FR-033)
+- [X] T075 [P] [US6] Test en `src/ai/knowledge/knowledge-ai-edit.service.spec.ts`: tras un `preview`, el documento en base **no cambió** (FR-032)
+- [X] T076 [P] [US6] Test en `src/ai/knowledge/knowledge-crud.spec.ts` (donde vive la lógica): `apply` con una `baseVersion` desactualizada devuelve 409 y no pisa el cambio ajeno (FR-033)
 
 **Checkpoint**: todas las historias completas.
 

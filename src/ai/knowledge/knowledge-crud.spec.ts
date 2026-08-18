@@ -6,6 +6,7 @@
  * embeddings; editar el contenido —o la audiencia— no puede dejar a ChromaDB
  * respondiendo la versión vieja.
  */
+import { ConflictException } from '@nestjs/common';
 import { KnowledgeSyncStatus } from '@prisma/client';
 import { KnowledgeService } from './knowledge.service';
 
@@ -136,6 +137,81 @@ describe('KnowledgeService.update — qué dispara reindexación', () => {
         origin: 'MANUAL',
       }),
     });
+  });
+});
+
+/**
+ * Bloqueo optimista — Sprint 5A (US6, FR-033).
+ *
+ * (tasks.md ubicaba este test contra el controller, pero el chequeo vive en
+ * el service para que valga sin importar quién llame: el test va donde está
+ * la lógica que protege.)
+ */
+describe('KnowledgeService.update — baseVersion desactualizada (FR-033)', () => {
+  it('409 si otro supervisor editó entre el preview y el apply', async () => {
+    // El caso real: dos personas abren el mismo documento, una guarda, la
+    // otra aprueba una propuesta generada sobre el texto viejo. Sin esto, el
+    // segundo apply pisa el trabajo del primero sin que nadie se entere.
+    const { service } = buildService({ version: 5 });
+
+    await expect(
+      service.update(
+        DOC_ID,
+        { content: 'texto nuevo', expectedVersion: 3 },
+        AUTHOR,
+      ),
+    ).rejects.toBeInstanceOf(ConflictException);
+  });
+
+  it('el 409 dice cuál es la versión vigente, para poder regenerar', async () => {
+    // Sin `currentVersion`, el frontend solo puede decir "falló": con él
+    // puede ofrecer volver a generar la propuesta sobre el texto actual.
+    const { service } = buildService({ version: 5 });
+
+    const error = await service
+      .update(DOC_ID, { content: 'texto nuevo', expectedVersion: 3 }, AUTHOR)
+      .catch((e: unknown) => e);
+
+    const body = (error as ConflictException).getResponse() as Record<
+      string,
+      unknown
+    >;
+    expect(body.currentVersion).toBe(5);
+    expect(body.reason).toBe('VERSION_CONFLICT');
+  });
+
+  it('NO pisa el cambio ajeno: no escribe ni encola reindexación', async () => {
+    const { service, update, queueAdd } = buildService({ version: 5 });
+
+    await service
+      .update(DOC_ID, { content: 'texto nuevo', expectedVersion: 3 }, AUTHOR)
+      .catch(() => undefined);
+
+    expect(update).not.toHaveBeenCalled();
+    expect(queueAdd).not.toHaveBeenCalled();
+  });
+
+  it('con la versión correcta, aplica normalmente', async () => {
+    const { service, update } = buildService({ version: 5 });
+
+    await service.update(
+      DOC_ID,
+      { content: 'texto nuevo', expectedVersion: 5 },
+      AUTHOR,
+    );
+
+    expect(update).toHaveBeenCalled();
+  });
+
+  it('el PUT manual, que no manda expectedVersion, sigue funcionando igual', async () => {
+    // El bloqueo es opt-in: el supervisor que edita a mano está mirando el
+    // texto que modifica, no hay una propuesta preparada sobre una versión
+    // que pudo quedar vieja.
+    const { service, update } = buildService({ version: 5 });
+
+    await service.update(DOC_ID, { content: 'texto nuevo' }, AUTHOR);
+
+    expect(update).toHaveBeenCalled();
   });
 });
 
