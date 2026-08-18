@@ -18,6 +18,7 @@ import {
 } from '@prisma/client';
 import { createHash } from 'crypto';
 import { PrismaService } from '../../database/prisma.service';
+import { KnowledgeUsageService } from './knowledge-usage.service';
 
 /** Nombre de la colección en ChromaDB donde viven todos los chunks. */
 const COLLECTION = 'trimia_knowledge';
@@ -102,6 +103,7 @@ export class KnowledgeService implements OnModuleInit {
     private readonly prisma: PrismaService,
     @InjectQueue('knowledge-reindex')
     private readonly reindexQueue: Queue,
+    private readonly usage: KnowledgeUsageService,
   ) {
     this.client = new ChromaClient({
       path: this.config.get<string>('CHROMA_URL'),
@@ -333,17 +335,65 @@ export class KnowledgeService implements OnModuleInit {
       this.prisma.knowledgeDocument.count({ where }),
     ]);
 
+    // Una sola query para el uso de TODA la página, en vez de una por fila
+    // (US7, FR-047).
+    const usage = await this.usage.forDocuments(rows.map((r) => r.id));
+
     return {
       data: rows.map(({ content, ...doc }) => ({
         ...doc,
         // El listado no manda el contenido entero: son N documentos y el panel
         // solo muestra un resumen. El texto completo va en findById().
         summary: content.slice(0, SUMMARY_LENGTH),
+        usage: usage.get(doc.id),
       })),
       page,
       limit,
       total,
       hasMore: skip + rows.length < total,
+    };
+  }
+
+  /**
+   * De dónde salió el documento (US7, FR-026).
+   *
+   * `sourceId` no tiene FK a propósito (tres columnas nullable excluyentes
+   * serían peor, ver data-model.md), así que el destino se resuelve acá según
+   * el `sourceType` en vez de por un `include` de Prisma.
+   */
+  private async buildSource(doc: {
+    sourceType: KnowledgeSourceType;
+    sourceId: string | null;
+    uploadedFile?: {
+      id: string;
+      filename: string;
+      mimeType: string;
+      storagePath: string | null;
+    } | null;
+  }) {
+    if (doc.sourceType === KnowledgeSourceType.ESCALADO && doc.sourceId) {
+      const escalation = await this.prisma.escalation.findUnique({
+        where: { id: doc.sourceId },
+        select: { id: true, reason: true, resolvedAt: true },
+      });
+      return { type: doc.sourceType, escalation };
+    }
+
+    const file = doc.uploadedFile;
+    return {
+      type: doc.sourceType,
+      // `file: null` cuando el origen fue un audio —el binario se eliminó al
+      // transcribir (FR-004)— o cuando se cargó como texto plano. Sin el
+      // `storagePath` no hay nada que descargar, así que no se ofrece el link.
+      file:
+        file && file.storagePath
+          ? {
+              id: file.id,
+              filename: file.filename,
+              mimeType: file.mimeType,
+              downloadUrl: `/knowledge/files/${file.id}/download`,
+            }
+          : null,
     };
   }
 
@@ -361,7 +411,13 @@ export class KnowledgeService implements OnModuleInit {
       },
     });
     if (!doc) throw new NotFoundException('Documento no encontrado');
-    return doc;
+
+    const { uploadedFile: _file, ...rest } = doc;
+    return {
+      ...rest,
+      source: await this.buildSource(doc),
+      usage: await this.usage.forDocument(id),
+    };
   }
 
   /**

@@ -4,6 +4,7 @@ import { KnowledgeService } from './knowledge.service';
 import { KnowledgeController } from './knowledge.controller';
 import { KnowledgeStorageService } from './knowledge-storage.service';
 import { KnowledgeIngestionService } from './knowledge-ingestion.service';
+import { KnowledgeUsageService } from './knowledge-usage.service';
 import { TEXT_EXTRACTORS } from './extractors/text-extractor.port';
 import { PdfExtractor } from './extractors/pdf.extractor';
 import { DocxExtractor } from './extractors/docx.extractor';
@@ -33,6 +34,7 @@ import { AudioExtractor } from './extractors/audio.extractor';
     KnowledgeService,
     KnowledgeStorageService,
     KnowledgeIngestionService,
+    KnowledgeUsageService,
     PdfExtractor,
     DocxExtractor,
     ImageExtractor,
@@ -48,6 +50,7 @@ import { AudioExtractor } from './extractors/audio.extractor';
     KnowledgeService,
     KnowledgeStorageService,
     KnowledgeIngestionService,
+    KnowledgeUsageService,
     TEXT_EXTRACTORS,
   ],
 })

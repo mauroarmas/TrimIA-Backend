@@ -3,6 +3,7 @@ import { ConversationsService } from '../../conversations/conversations.service'
 import { WhatsappSenderService } from '../../messaging/whatsapp-sender.service';
 import { OrchestratorService } from '../../ai/orchestrator/orchestrator.service';
 import { EmployeesService } from '../../employees/employees.service';
+import { OrchestrationLogger } from '../../ai/orchestrator/orchestration-logger.service';
 
 /**
  * Test del gate de pausa human-in-the-loop (Sprint 3): mientras una
@@ -20,6 +21,7 @@ describe('MessageProcessor — pausa human-in-the-loop', () => {
     getLastAssistantMessage: jest.Mock;
   };
   let sender: { send: jest.Mock };
+  let orchestrationLogger: { trackRetrievals: jest.Mock };
   let orchestrator: { invoke: jest.Mock };
   let employees: { findByPhone: jest.Mock };
 
@@ -45,6 +47,7 @@ describe('MessageProcessor — pausa human-in-the-loop', () => {
       getLastAssistantMessage: jest.fn().mockResolvedValue(null),
     };
     sender = { send: jest.fn() };
+    orchestrationLogger = { trackRetrievals: jest.fn() };
     orchestrator = { invoke: jest.fn() };
     employees = { findByPhone: jest.fn() };
 
@@ -53,6 +56,7 @@ describe('MessageProcessor — pausa human-in-the-loop', () => {
       sender as unknown as WhatsappSenderService,
       orchestrator as unknown as OrchestratorService,
       employees as unknown as EmployeesService,
+      orchestrationLogger as unknown as OrchestrationLogger,
     );
   });
 
@@ -197,6 +201,7 @@ describe('MessageProcessor — revalidación del userType contra la whitelist', 
   let employees: { findByPhone: jest.Mock };
   let orchestrator: { invoke: jest.Mock };
   let sender: { send: jest.Mock };
+  let orchestrationLogger: { trackRetrievals: jest.Mock };
 
   const job = {
     data: {
@@ -229,13 +234,121 @@ describe('MessageProcessor — revalidación del userType contra la whitelist', 
       invoke: jest.fn().mockResolvedValue({ response: 'ok', agentType: null }),
     };
     sender = { send: jest.fn() };
+    orchestrationLogger = { trackRetrievals: jest.fn() };
 
     processor = new MessageProcessor(
       conversations as unknown as ConversationsService,
       sender as unknown as WhatsappSenderService,
       orchestrator as unknown as OrchestratorService,
       employees as unknown as EmployeesService,
+      orchestrationLogger as unknown as OrchestrationLogger,
     );
+  });
+
+  /**
+   * Registro de recuperaciones — Sprint 5A (US7, FR-046).
+   *
+   * El `outcome` es la razón de ser de este registro: contar cuántas veces se
+   * recuperó un documento, sin saber si el turno terminó respondiendo o
+   * escalando, no distingue un documento que sirve de uno que aparece siempre
+   * y nunca alcanza. De ahí sale `answeredCount < retrievedCount`.
+   */
+  describe('registro de recuperaciones del RAG (FR-046)', () => {
+    const docs = [
+      { documentId: 'doc-a', score: 81.2, rank: 0 },
+      { documentId: 'doc-b', score: 64.5, rank: 1 },
+    ];
+
+    beforeEach(() => {
+      conversations.findById.mockResolvedValue(activeConversation('CLIENTE'));
+      employees.findByPhone.mockResolvedValue(null);
+    });
+
+    it('un turno que ESCALA registra los candidatos con outcome ESCALATED', async () => {
+      orchestrator.invoke.mockResolvedValue({
+        response: 'te derivo con un responsable',
+        agentType: 'COLLECTIONS',
+        escalated: true,
+        retrievedDocs: docs,
+      });
+
+      await processor.process(job);
+
+      expect(orchestrationLogger.trackRetrievals).toHaveBeenCalledWith(
+        expect.objectContaining({
+          outcome: 'ESCALATED',
+          agentType: 'COLLECTIONS',
+          docs,
+        }),
+      );
+    });
+
+    it('un turno que RESPONDE los registra como ANSWERED', async () => {
+      orchestrator.invoke.mockResolvedValue({
+        response: 'la garantía es de 12 meses',
+        agentType: 'SALES',
+        escalated: false,
+        retrievedDocs: docs,
+      });
+
+      await processor.process(job);
+
+      expect(orchestrationLogger.trackRetrievals).toHaveBeenCalledWith(
+        expect.objectContaining({ outcome: 'ANSWERED', docs }),
+      );
+    });
+
+    it('registra TODOS los candidatos, no solo el que ganó', async () => {
+      // Un documento que sale siempre cuarto no influye nunca en la
+      // respuesta; eso solo se ve si se guardan los que perdieron.
+      orchestrator.invoke.mockResolvedValue({
+        response: 'ok',
+        agentType: 'SALES',
+        escalated: false,
+        retrievedDocs: docs,
+      });
+
+      await processor.process(job);
+
+      const call = orchestrationLogger.trackRetrievals.mock.calls[0][0];
+      expect(call.docs).toHaveLength(2);
+      expect(call.docs.map((d: { rank: number }) => d.rank)).toEqual([0, 1]);
+    });
+
+    it('un turno sin RAG (saludo trivial) no registra nada', async () => {
+      orchestrator.invoke.mockResolvedValue({
+        response: '¡Hola!',
+        agentType: null,
+        isTrivial: true,
+        retrievedDocs: null,
+      });
+
+      await processor.process(job);
+
+      expect(orchestrationLogger.trackRetrievals).toHaveBeenCalledWith(
+        expect.objectContaining({ docs: [] }),
+      );
+    });
+
+    it('se registra DESPUÉS de responderle al usuario, no antes', async () => {
+      // Es telemetría: no tiene por qué meterse en el camino que el usuario
+      // está esperando (research §9).
+      const order: string[] = [];
+      sender.send.mockImplementation(async () => void order.push('send'));
+      orchestrationLogger.trackRetrievals.mockImplementation(
+        async () => void order.push('track'),
+      );
+      orchestrator.invoke.mockResolvedValue({
+        response: 'ok',
+        agentType: 'SALES',
+        escalated: false,
+        retrievedDocs: docs,
+      });
+
+      await processor.process(job);
+
+      expect(order).toEqual(['send', 'track']);
+    });
   });
 
   it('un mensaje de un chat WEB (US4) llama a sender.send con Channel.WEB', async () => {
@@ -378,12 +491,14 @@ describe('MessageProcessor — runExclusive (serialización por conversación)',
       getLastAssistantMessage: jest.fn().mockResolvedValue(null),
     };
     const sender = { send: jest.fn().mockResolvedValue(undefined) };
+    const orchestrationLogger = { trackRetrievals: jest.fn() };
     const employees = { findByPhone: jest.fn().mockResolvedValue(null) };
-    return { conversations, sender, employees };
+    return { conversations, sender, employees, orchestrationLogger };
   }
 
   it('dos mensajes de la MISMA conversación se procesan uno a la vez, no en paralelo', async () => {
-    const { conversations, sender, employees } = buildDeps('conv-1');
+    const { conversations, sender, employees, orchestrationLogger } =
+      buildDeps('conv-1');
     const first = deferred();
     let secondStarted = false;
     const orchestrator = {
@@ -403,6 +518,7 @@ describe('MessageProcessor — runExclusive (serialización por conversación)',
       sender as unknown as WhatsappSenderService,
       orchestrator as unknown as OrchestratorService,
       employees as unknown as EmployeesService,
+      orchestrationLogger as unknown as OrchestrationLogger,
     );
 
     const p1 = processor.process(makeJob('conv-1', 'primero'));
@@ -421,7 +537,8 @@ describe('MessageProcessor — runExclusive (serialización por conversación)',
   });
 
   it('mensajes de conversaciones DISTINTAS se procesan en paralelo', async () => {
-    const { conversations, sender, employees } = buildDeps('conv-x');
+    const { conversations, sender, employees, orchestrationLogger } =
+      buildDeps('conv-x');
     const first = deferred();
     let secondStarted = false;
     const orchestrator = {
@@ -441,6 +558,7 @@ describe('MessageProcessor — runExclusive (serialización por conversación)',
       sender as unknown as WhatsappSenderService,
       orchestrator as unknown as OrchestratorService,
       employees as unknown as EmployeesService,
+      orchestrationLogger as unknown as OrchestrationLogger,
     );
 
     const p1 = processor.process(makeJob('conv-A', 'primero'));
@@ -455,7 +573,8 @@ describe('MessageProcessor — runExclusive (serialización por conversación)',
   });
 
   it('si el turno de una conversación falla, no traba el siguiente mensaje de esa misma conversación', async () => {
-    const { conversations, sender, employees } = buildDeps('conv-1');
+    const { conversations, sender, employees, orchestrationLogger } =
+      buildDeps('conv-1');
     const orchestrator = {
       invoke: jest
         .fn()
@@ -467,6 +586,7 @@ describe('MessageProcessor — runExclusive (serialización por conversación)',
       sender as unknown as WhatsappSenderService,
       orchestrator as unknown as OrchestratorService,
       employees as unknown as EmployeesService,
+      orchestrationLogger as unknown as OrchestrationLogger,
     );
 
     const failingJob = makeJob('conv-1', 'primero');

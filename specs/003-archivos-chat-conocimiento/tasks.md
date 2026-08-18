@@ -219,16 +219,16 @@ Proyecto backend único: `src/` en la raíz del repositorio. Los tests viven
 
 ### Implementación
 
-- [ ] T063 [US7] Agregar `retrievedDocs` (documentId, score, rank) a `src/ai/orchestrator/orchestrator.state.ts`
-- [ ] T064 [US7] Propagar los hits del RAG al estado desde `retrieve_context` en `src/ai/agents/shared/rag-agent.graph.ts`, sin cambiar el comportamiento de `evaluate_confidence`
-- [ ] T065 [US7] Persistir las recuperaciones con `createMany` **después** de terminado el turno, con el `outcome` (`ANSWERED`/`ESCALATED`), en `src/queue/processors/message.processor.ts` (FR-046, research §9)
-- [ ] T066 [P] [US7] Crear `KnowledgeUsageService` en `src/ai/knowledge/knowledge-usage.service.ts`: `retrievedCount`, `answeredCount`, `avgScore` y `hasData` por documento (FR-047)
-- [ ] T067 [US7] Incluir `usage` y `source` (archivo o escalación) en las respuestas de `GET /knowledge` y `GET /knowledge/:id` en `src/ai/knowledge/knowledge.controller.ts` (FR-026, contracts)
+- [X] T063 [US7] Agregar `retrievedDocs` (documentId, score, rank) a `src/ai/orchestrator/orchestrator.state.ts`
+- [X] T064 [US7] Propagar los hits del RAG al estado desde `retrieve_context` en `src/ai/agents/shared/rag-agent.graph.ts`, sin cambiar el comportamiento de `evaluate_confidence`
+- [X] T065 [US7] Persistir las recuperaciones con `createMany` **después** de terminado el turno, con el `outcome` (`ANSWERED`/`ESCALATED`), en `src/queue/processors/message.processor.ts` (FR-046, research §9)
+- [X] T066 [P] [US7] Crear `KnowledgeUsageService` en `src/ai/knowledge/knowledge-usage.service.ts`: `retrievedCount`, `answeredCount`, `avgScore` y `hasData` por documento (FR-047)
+- [X] T067 [US7] Incluir `usage` y `source` (archivo o escalación) en las respuestas de `GET /knowledge` y `GET /knowledge/:id` en `src/ai/knowledge/knowledge.controller.ts` (FR-026, contracts)
 
 ### Tests
 
-- [ ] T068 [P] [US7] Test en `src/ai/knowledge/knowledge-usage.service.spec.ts`: un documento sin recuperaciones devuelve `hasData: false` y **no** `avgScore: 0` (FR-028)
-- [ ] T069 [P] [US7] Test en `src/queue/processors/message.processor.spec.ts`: un turno que escala registra las recuperaciones con `outcome: ESCALATED`, de modo que `answeredCount < retrievedCount` (FR-046)
+- [X] T068 [P] [US7] Test en `src/ai/knowledge/knowledge-usage.service.spec.ts`: un documento sin recuperaciones devuelve `hasData: false` y **no** `avgScore: 0` (FR-028)
+- [X] T069 [P] [US7] Test en `src/queue/processors/message.processor.spec.ts`: un turno que escala registra las recuperaciones con `outcome: ESCALATED`, de modo que `answeredCount < retrievedCount` (FR-046)
 
 **Checkpoint**: el indicador de recuperación reemplaza a la "confianza de la IA" del prototipo con datos reales.
 

@@ -3,6 +3,21 @@ import { AgentType, UserType } from '@prisma/client';
 import { ConversationTurn } from '../../conversations/conversations.service';
 
 /**
+ * Un candidato que el RAG devolvió en el turno (Sprint 5A, US7).
+ *
+ * `rank` se guarda además del score porque responde otra pregunta: el score
+ * dice cuán parecido era, el rank dice si llegó a competir. Un documento que
+ * siempre sale cuarto nunca influye en la respuesta aunque tenga buen score.
+ */
+export interface RetrievedDoc {
+  documentId: string;
+  /** 0-100, como lo guarda `KnowledgeRetrieval.score` (no el 0-1 del hit). */
+  score: number;
+  /** Posición en el top-k; 0 es el mejor. */
+  rank: number;
+}
+
+/**
  * El State es el objeto que viaja por todo el grafo.
  * Cada nodo lo lee y devuelve una parte actualizada.
  *
@@ -24,6 +39,18 @@ export const OrchestratorState = Annotation.Root({
   // --- Flujo RAG del agente ---
   context: Annotation<string | null>, // chunks recuperados por retrieve_context
   confidence: Annotation<number | null>, // score del mejor chunk (0-1)
+  /**
+   * TODOS los candidatos que devolvió el RAG este turno, no solo el que ganó
+   * (Sprint 5A, US7, FR-046).
+   *
+   * Viaja por el estado y NO se escribe en `retrieve_context` porque el dato
+   * que le da sentido —si el turno terminó respondiendo o escalando— todavía
+   * no existe cuando el nodo corre: lo deciden `evaluate_confidence` y
+   * `evaluate_handoff` después. Persistirlo acá obligaría a un UPDATE
+   * posterior; acumularlo y escribirlo una vez al final es una sola query
+   * fuera del camino que el usuario espera (research §9).
+   */
+  retrievedDocs: Annotation<RetrievedDoc[] | null>,
   escalated: Annotation<boolean | null>, // true si se derivó a humano (por baja confianza O a pedido del agente)
 
   // --- Derivación decidida por el propio agente (no por el score del RAG) ---

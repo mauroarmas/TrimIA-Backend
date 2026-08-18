@@ -6,6 +6,7 @@ import { ConversationsService } from '../../conversations/conversations.service'
 import { WhatsappSenderService } from '../../messaging/whatsapp-sender.service';
 import { OrchestratorService } from '../../ai/orchestrator/orchestrator.service';
 import { EmployeesService } from '../../employees/employees.service';
+import { OrchestrationLogger } from '../../ai/orchestrator/orchestration-logger.service';
 
 interface MessageJob {
   conversationId: string;
@@ -48,6 +49,7 @@ export class MessageProcessor extends WorkerHost {
     private readonly sender: WhatsappSenderService,
     private readonly orchestrator: OrchestratorService,
     private readonly employees: EmployeesService,
+    private readonly orchestrationLogger: OrchestrationLogger,
   ) {
     super();
   }
@@ -189,6 +191,20 @@ export class MessageProcessor extends WorkerHost {
         result.agentType ?? undefined,
       );
       await this.sender.send(externalId, response, channel);
+
+      // Recién acá se sabe cómo terminó el turno, que es el dato que le da
+      // sentido a la lista de candidatos (FR-046): un documento que aparece
+      // siempre pero en turnos que igual escalan NO está sirviendo, y eso es
+      // invisible si solo se cuenta cuántas veces se recuperó.
+      //
+      // Va después del send() a propósito: es telemetría, y no tiene por qué
+      // meterse en el camino que el usuario está esperando (research §9).
+      await this.orchestrationLogger.trackRetrievals({
+        conversationId,
+        agentType: result.agentType,
+        outcome: result.escalated ? 'ESCALATED' : 'ANSWERED',
+        docs: result.retrievedDocs ?? [],
+      });
 
       this.logger.log(`Response sent to ${externalId}`);
     } catch (err) {
