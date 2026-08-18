@@ -385,52 +385,52 @@ tres salidas.
 
 ### Base — el cliente HTTP
 
-- [ ] T082 Agregar al cliente `src/api.js` las 17 funciones que faltan del Sprint 5A, siguiendo el estilo del archivo (una función por endpoint, `token` como primer parámetro): gestión (`listKnowledge`, `getKnowledgeDoc`, `updateKnowledgeDoc`, `setKnowledgeActive`, `deleteKnowledgeDoc`, `reindexKnowledgeDoc`), archivos (`uploadKnowledgeFile`, `listKnowledgeFiles`, `downloadKnowledgeFile`), IA (`previewAiEdit`, `applyAiEdit`), escalaciones (`getEscalationSuggestion`, `saveEscalationUnsent`, `discardEscalation`), chat web (`sendWebMessage`, `getWebMessages`) y `getContactTimeline`
-- [ ] T083 **Arreglar `request()` para multipart** en `src/api.js`: hoy fuerza `Content-Type: application/json` y hace `JSON.stringify` del body **siempre**, así que `POST /knowledge/upload` es imposible tal como está. Cuando el body sea un `FormData` hay que **omitir** el header — el browser lo pone solo, con el `boundary` que el server necesita para parsear
-- [ ] T084 [P] Manejar en `request()` los cuerpos de error estructurados que el Sprint 5A devuelve (`{ reason, limitMb, currentVersion, existing }`): hoy se aplasta todo a `data.message` y se pierde lo que distingue un `FILE_LIMIT` de un `MULTIMODAL_LIMIT`, o el `currentVersion` de un 409 de edición
+- [X] T082 Agregar al cliente `src/api.js` las 17 funciones que faltan del Sprint 5A, siguiendo el estilo del archivo (una función por endpoint, `token` como primer parámetro): gestión (`listKnowledge`, `getKnowledgeDoc`, `updateKnowledgeDoc`, `setKnowledgeActive`, `deleteKnowledgeDoc`, `reindexKnowledgeDoc`), archivos (`uploadKnowledgeFile`, `listKnowledgeFiles`, `downloadKnowledgeFile`), IA (`previewAiEdit`, `applyAiEdit`), escalaciones (`getEscalationSuggestion`, `saveEscalationUnsent`, `discardEscalation`), chat web (`sendWebMessage`, `getWebMessages`) y `getContactTimeline`
+- [X] T083 **Arreglar `request()` para multipart** en `src/api.js`: hoy fuerza `Content-Type: application/json` y hace `JSON.stringify` del body **siempre**, así que `POST /knowledge/upload` es imposible tal como está. Cuando el body sea un `FormData` hay que **omitir** el header — el browser lo pone solo, con el `boundary` que el server necesita para parsear
+- [X] T084 [P] Manejar en `request()` los cuerpos de error estructurados que el Sprint 5A devuelve (`{ reason, limitMb, currentVersion, existing }`): hoy se aplasta todo a `data.message` y se pierde lo que distingue un `FILE_LIMIT` de un `MULTIMODAL_LIMIT`, o el `currentVersion` de un 409 de edición
 
 ### US2 — Gestión de la base de conocimiento
 
-- [ ] T085 [US2] Convertir `src/components/KnowledgeIngest.jsx` en la pantalla de gestión (Fig 15): listado paginado con filtros por área, categoría y estado, sin perder el alta por texto ni la búsqueda que ya tiene
-- [ ] T086 [US2] Pantalla de detalle (Fig 16) en `src/components/KnowledgeDetail.jsx`: contenido completo, edición de los campos, y la bitácora de cambios con autor, origen (`MANUAL`/`AI_ACCEPTED`) e `aiInstruction`
-- [ ] T087 [US2] Interruptor de activo/inactivo y borrado definitivo con confirmación, en `src/components/KnowledgeDetail.jsx`
-- [ ] T088 [US2] Mostrar el indicador de desincronización cuando `syncStatus != "SYNCED"`, con el botón de reintentar sobre `REINDEX_FAILED`. **Aclarar en la UI que el documento sigue respondiendo con su contenido anterior** hasta que el worker termine — si no, un `PENDING_REINDEX` se lee como "se perdió el cambio"
+- [X] T085 [US2] Convertir `src/components/KnowledgeIngest.jsx` en la pantalla de gestión (Fig 15): listado paginado con filtros por área, categoría y estado, sin perder el alta por texto ni la búsqueda que ya tiene
+- [X] T086 [US2] Pantalla de detalle (Fig 16) en `src/components/KnowledgeDetail.jsx`: contenido completo, edición de los campos, y la bitácora de cambios con autor, origen (`MANUAL`/`AI_ACCEPTED`) e `aiInstruction`
+- [X] T087 [US2] Interruptor de activo/inactivo y borrado definitivo con confirmación, en `src/components/KnowledgeDetail.jsx`
+- [X] T088 [US2] Mostrar el indicador de desincronización cuando `syncStatus != "SYNCED"`, con el botón de reintentar sobre `REINDEX_FAILED`. **Aclarar en la UI que el documento sigue respondiendo con su contenido anterior** hasta que el worker termine — si no, un `PENDING_REINDEX` se lee como "se perdió el cambio"
 
 ### US1 — Cargar conocimiento desde un archivo
 
-- [ ] T089 [US1] Componente de subida en `src/components/KnowledgeUpload.jsx`: `multipart/form-data` con los campos del contrato, respondiendo al **202** con el archivo en estado `PROCESSING` (no esperar a que termine)
-- [ ] T090 [US1] Columna "Cargas recientes" con polling sobre `GET /knowledge/files`, hasta que no queden `PROCESSING`. Reusar el patrón de polling que ya está en `ChatSimulator.jsx` (`POLL_INTERVAL_MS` + tope de intentos), no inventar otro
-- [ ] T091 [US1] Mostrar `failureReason` **tal cual** en los archivos `FAILED`: viene redactado en castellano y sin jerga a propósito (FR-005), así que no hay que reemplazarlo por un "Error al procesar" genérico
-- [ ] T092 [US1] Diferenciar los dos rechazos por tamaño usando el `reason` del 413 (`FILE_LIMIT` vs `MULTIMODAL_LIMIT`): la acción que le toca al supervisor es distinta —partir el material o comprimirlo— y un mensaje único no se la dice
-- [ ] T093 [US1] Ofrecer reintentar con `?force=true` ante el 409 de duplicado, mostrando **cuál** era el archivo previo (viene en `existing`): "ya existe" a secas no alcanza para decidir si insistir
-- [ ] T094 [US1] Link de descarga del original solo cuando `source.file` no sea `null` — en los documentos que salieron de un audio no hay nada que bajar (FR-004)
+- [X] T089 [US1] Componente de subida en `src/components/KnowledgeUpload.jsx`: `multipart/form-data` con los campos del contrato, respondiendo al **202** con el archivo en estado `PROCESSING` (no esperar a que termine)
+- [X] T090 [US1] Columna "Cargas recientes" con polling sobre `GET /knowledge/files`, hasta que no queden `PROCESSING`. Reusar el patrón de polling que ya está en `ChatSimulator.jsx` (`POLL_INTERVAL_MS` + tope de intentos), no inventar otro
+- [X] T091 [US1] Mostrar `failureReason` **tal cual** en los archivos `FAILED`: viene redactado en castellano y sin jerga a propósito (FR-005), así que no hay que reemplazarlo por un "Error al procesar" genérico
+- [X] T092 [US1] Diferenciar los dos rechazos por tamaño usando el `reason` del 413 (`FILE_LIMIT` vs `MULTIMODAL_LIMIT`): la acción que le toca al supervisor es distinta —partir el material o comprimirlo— y un mensaje único no se la dice
+- [X] T093 [US1] Ofrecer reintentar con `?force=true` ante el 409 de duplicado, mostrando **cuál** era el archivo previo (viene en `existing`): "ya existe" a secas no alcanza para decidir si insistir
+- [X] T094 [US1] Link de descarga del original solo cuando `source.file` no sea `null` — en los documentos que salieron de un audio no hay nada que bajar (FR-004)
 
 ### US3 — Responder una consulta escalada
 
-- [ ] T095 [US3] Botón "Proponer respuesta" en `src/components/EscalationsQueue.jsx`: llama a `GET .../suggestion` y precarga el texto en el editor, dejándolo **editable** — lo que se envía es siempre lo que el supervisor confirma (FR-036)
-- [ ] T096 [US3] Mostrar las `sources` con su score, para que el supervisor pueda verificar de dónde salió cada afirmación antes de mandarla
-- [ ] T097 [US3] Mostrar `audienceUsed` de forma visible: es la señal de que la propuesta se redactó con el conocimiento que corresponde a **quien va a recibirla**, no al supervisor que la pide (Principio I)
-- [ ] T098 [US3] Con `hasContext: false`, mostrar el `reason` y **no** ofrecer aplicar: el supervisor redacta desde cero y el sistema le dice por qué (FR-035)
-- [ ] T099 [US3] Agregar los otros dos cierres junto a "Responder": "Guardar sin enviar" y "Descartar", con la diferencia explicada en la propia UI — hoy la pantalla solo puede responder y enviar
+- [X] T095 [US3] Botón "Proponer respuesta" en `src/components/EscalationsQueue.jsx`: llama a `GET .../suggestion` y precarga el texto en el editor, dejándolo **editable** — lo que se envía es siempre lo que el supervisor confirma (FR-036)
+- [X] T096 [US3] Mostrar las `sources` con su score, para que el supervisor pueda verificar de dónde salió cada afirmación antes de mandarla
+- [X] T097 [US3] Mostrar `audienceUsed` de forma visible: es la señal de que la propuesta se redactó con el conocimiento que corresponde a **quien va a recibirla**, no al supervisor que la pide (Principio I)
+- [X] T098 [US3] Con `hasContext: false`, mostrar el `reason` y **no** ofrecer aplicar: el supervisor redacta desde cero y el sistema le dice por qué (FR-035)
+- [X] T099 [US3] Agregar los otros dos cierres junto a "Responder": "Guardar sin enviar" y "Descartar", con la diferencia explicada en la propia UI — hoy la pantalla solo puede responder y enviar
 
 ### US4 — Chat web
 
-- [ ] T100 [US4] Nuevo `src/components/WebChat.jsx` contra `POST /messaging/web` + polling de `GET /messaging/web/:convId/messages`, disponible para **cualquier empleado autenticado** (no solo `SUPERVISOR`): agregar la tab correspondiente en `App.jsx`
-- [ ] T101 [US4] 🔴 **Sacar el secreto hardcodeado de `src/components/ChatSimulator.jsx`.** Hoy tiene el valor real de `N8N_WEBHOOK_SECRET` escrito en el código y commiteado. El chat web lo vuelve innecesario: usa JWT y no comparte ningún secreto. Migrar el simulador a `/messaging/web` (o dejar el secreto como campo que el usuario escribe, nunca como default en el fuente)
-- [ ] T102 [US4] Mostrar el mensaje de "esperando a una persona" cuando la conversación esté en `WAITING_HUMAN`: el mensaje se guarda y responde 202 igual, pero el asistente no contesta y sin aviso parece que se colgó
-- [ ] T103 [P] [US4] Vista de línea de tiempo unificada por contacto (`GET /supervisor/conversations/by-contact/:externalId/timeline`), mostrando el `channel` de **cada** mensaje: sin esa marca, dos hilos con agentes distintos intercalados se leen como una conversación que nunca existió
+- [X] T100 [US4] Nuevo `src/components/WebChat.jsx` contra `POST /messaging/web` + polling de `GET /messaging/web/:convId/messages`, disponible para **cualquier empleado autenticado** (no solo `SUPERVISOR`): agregar la tab correspondiente en `App.jsx`
+- [X] T101 [US4] 🔴 **Sacar el secreto hardcodeado de `src/components/ChatSimulator.jsx`.** Hoy tiene el valor real de `N8N_WEBHOOK_SECRET` escrito en el código y commiteado. El chat web lo vuelve innecesario: usa JWT y no comparte ningún secreto. Migrar el simulador a `/messaging/web` (o dejar el secreto como campo que el usuario escribe, nunca como default en el fuente)
+- [X] T102 [US4] Mostrar el mensaje de "esperando a una persona" cuando la conversación esté en `WAITING_HUMAN`: el mensaje se guarda y responde 202 igual, pero el asistente no contesta y sin aviso parece que se colgó
+- [X] T103 [P] [US4] Vista de línea de tiempo unificada por contacto (`GET /supervisor/conversations/by-contact/:externalId/timeline`), mostrando el `channel` de **cada** mensaje: sin esa marca, dos hilos con agentes distintos intercalados se leen como una conversación que nunca existió
 
 ### US7 — Origen y uso del conocimiento
 
-- [ ] T104 [US7] Mostrar `usage` en el listado y el detalle. **`hasData: false` NO se dibuja como 0**: hay que decir "sin datos todavía", o un documento recién cargado parece inútil y alguien lo da de baja (FR-028)
-- [ ] T105 [US7] Mostrar `source` en el detalle en sus tres formas: archivo con su link, escalación con el caso que lo originó, o nada cuando se cargó como texto plano
+- [X] T104 [US7] Mostrar `usage` en el listado y el detalle. **`hasData: false` NO se dibuja como 0**: hay que decir "sin datos todavía", o un documento recién cargado parece inútil y alguien lo da de baja (FR-028)
+- [X] T105 [US7] Mostrar `source` en el detalle en sus tres formas: archivo con su link, escalación con el caso que lo originó, o nada cuando se cargó como texto plano
 
 ### US6 — Editar con la IA
 
-- [ ] T106 [US6] Editor asistido en `src/components/KnowledgeDetail.jsx`: campo de instrucción en lenguaje natural → `POST .../ai-edit/preview`, mostrando el `summary` y los `changedSections` como antes/después
-- [ ] T107 [US6] El texto propuesto tiene que quedar **editable** antes de aplicar, y aplicar manda `baseVersion` + el texto final. Es la única forma de que el supervisor corrija la propuesta sin perderla
-- [ ] T108 [US6] Con `confident: false`, mostrar la advertencia y **no** habilitar el botón de aplicar (FR-033)
-- [ ] T109 [US6] Ante el 409 de `apply`, ofrecer regenerar la propuesta sobre el texto vigente usando el `currentVersion` que trae el error — no dejarlo en "falló"
+- [X] T106 [US6] Editor asistido en `src/components/KnowledgeDetail.jsx`: campo de instrucción en lenguaje natural → `POST .../ai-edit/preview`, mostrando el `summary` y los `changedSections` como antes/después
+- [X] T107 [US6] El texto propuesto tiene que quedar **editable** antes de aplicar, y aplicar manda `baseVersion` + el texto final. Es la única forma de que el supervisor corrija la propuesta sin perderla
+- [X] T108 [US6] Con `confident: false`, mostrar la advertencia y **no** habilitar el botón de aplicar (FR-033)
+- [X] T109 [US6] Ante el 409 de `apply`, ofrecer regenerar la propuesta sobre el texto vigente usando el `currentVersion` que trae el error — no dejarlo en "falló"
 
 **Checkpoint**: todo el Sprint 5A es demostrable desde el navegador.
 
