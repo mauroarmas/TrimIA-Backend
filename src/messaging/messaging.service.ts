@@ -9,6 +9,7 @@ import { PaymentProofsService } from '../collections/payment-proofs.service';
 import { EmployeesService } from '../employees/employees.service';
 import { WebhookMessageDto } from './dto/webhook-message.dto';
 import { normalizePhone } from '../common/phone';
+import { messageForStorage } from '../ai/orchestrator/utils/trivial-filter';
 
 @Injectable()
 export class MessagingService {
@@ -37,7 +38,12 @@ export class MessagingService {
     const message = await this.conversations.addMessage(
       conversation.id,
       'USER',
-      dto.message ?? '',
+      // Lo que se GUARDA puede diferir de lo que se PROCESA: el marcador de
+      // audio no transcribible se persiste como un texto legible, mientras
+      // que el job sigue llevando el marcador crudo para que el orquestador
+      // lo detecte. Sin esto, el centinela terminaba en el panel del
+      // supervisor y —peor— en el historial que se le pasa al LLM.
+      messageForStorage(dto.message ?? ''),
     );
     return { conversation, message };
   }

@@ -92,6 +92,31 @@ describe('MessagingService', () => {
     expect(paymentProofs.receiveFromWhatsapp).not.toHaveBeenCalled();
   });
 
+  it('el marcador de audio se GUARDA legible pero se PROCESA crudo', async () => {
+    // Las dos mitades importan y son opuestas: lo persistido tiene que ser
+    // legible para el supervisor y para el historial del LLM, y lo encolado
+    // tiene que seguir siendo el centinela o el orquestador no lo reconoce.
+    await service.enqueue({
+      phone: '5491100000000',
+      message: '__AUDIO_NO_TRANSCRIBIBLE__',
+      channel: Channel.WHATSAPP,
+    } as any);
+
+    expect(conversations.addMessage).toHaveBeenCalledWith(
+      'conv-1',
+      'USER',
+      expect.stringContaining('audio'),
+    );
+    expect(conversations.addMessage).not.toHaveBeenCalledWith(
+      expect.anything(),
+      expect.anything(),
+      '__AUDIO_NO_TRANSCRIBIBLE__',
+    );
+    expect(queue.add.mock.calls[0][1].message).toBe(
+      '__AUDIO_NO_TRANSCRIBIBLE__',
+    );
+  });
+
   it('con una imagen, guarda el binario, crea el PaymentProof y NO encola process-message', async () => {
     await service.enqueue({
       phone: '5491100000000',

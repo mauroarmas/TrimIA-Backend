@@ -43,6 +43,37 @@ export function isUntranscribableAudio(message: string): boolean {
   return message.trim() === UNTRANSCRIBABLE_AUDIO_MARKER;
 }
 
+/**
+ * Lo que se GUARDA como texto del mensaje cuando el audio no se entendió.
+ *
+ * El marcador es un token de protocolo entre n8n y el backend; no tiene por
+ * qué quedar en la conversación. Persistirlo crudo traía dos problemas:
+ *
+ * 1. El supervisor abría el panel y veía `__AUDIO_NO_TRANSCRIBIBLE__` como si
+ *    el cliente lo hubiera tipeado.
+ * 2. El más serio: `getRecentHistory()` le pasa los mensajes USER/ASSISTANT
+ *    al agente en el turno siguiente, así que el token entraba al contexto
+ *    del LLM como algo dicho por la persona. Un centinela interno metido en
+ *    el historial es ruido que el modelo puede intentar interpretar.
+ *
+ * La detección sigue haciéndose sobre el marcador (improbable de tipear), no
+ * sobre este texto — que sí es escribible por cualquiera.
+ */
+export const UNTRANSCRIBABLE_AUDIO_PLACEHOLDER =
+  '🎤 (audio que no se pudo transcribir)';
+
+/**
+ * Texto con el que se persiste un mensaje entrante.
+ *
+ * Solo traduce el marcador de audio; cualquier otro mensaje se guarda tal
+ * cual llegó.
+ */
+export function messageForStorage(message: string): string {
+  return isUntranscribableAudio(message)
+    ? UNTRANSCRIBABLE_AUDIO_PLACEHOLDER
+    : message;
+}
+
 export const OPENING_REPLY = '¡Hola! 👋 ¿En qué puedo ayudarte hoy?';
 export const CLOSING_REPLY = '¡Gracias a vos! Cualquier cosa, escribime. 👋';
 

@@ -2,7 +2,9 @@ import {
   isTrivial,
   isUntranscribableAudio,
   cannedReply,
+  messageForStorage,
   UNTRANSCRIBABLE_AUDIO_MARKER,
+  UNTRANSCRIBABLE_AUDIO_PLACEHOLDER,
   TRANSCRIPTION_FAILED_REPLY,
 } from './trivial-filter';
 
@@ -96,6 +98,38 @@ describe('isUntranscribableAudio (FR-009)', () => {
     // Son dos rutas distintas: el saludo se atajaba solo sin agente sticky,
     // el audio fallido tiene que atajarse SIEMPRE (ver entryRouter).
     expect(isTrivial(UNTRANSCRIBABLE_AUDIO_MARKER)).toBe(false);
+  });
+});
+
+describe('messageForStorage — lo que se guarda ≠ lo que se procesa', () => {
+  it('el marcador se persiste como texto legible, no crudo', () => {
+    // Hallazgo mirando el panel con datos reales (2026-08-18): el supervisor
+    // veía `__AUDIO_NO_TRANSCRIBIBLE__` como si el cliente lo hubiera
+    // tipeado.
+    const guardado = messageForStorage(UNTRANSCRIBABLE_AUDIO_MARKER);
+
+    expect(guardado).toBe(UNTRANSCRIBABLE_AUDIO_PLACEHOLDER);
+    expect(guardado).not.toContain(UNTRANSCRIBABLE_AUDIO_MARKER);
+  });
+
+  it('el texto guardado le dice a una persona qué pasó', () => {
+    expect(UNTRANSCRIBABLE_AUDIO_PLACEHOLDER).toMatch(/audio/i);
+  });
+
+  it('un mensaje normal se guarda intacto', () => {
+    expect(messageForStorage('quiero pagar la cuota')).toBe(
+      'quiero pagar la cuota',
+    );
+    expect(messageForStorage('')).toBe('');
+  });
+
+  it('el placeholder NO dispara la detección: se detecta por el marcador', () => {
+    // El marcador es improbable de tipear; el placeholder lo puede escribir
+    // cualquiera. Si la detección mirara el texto guardado, un cliente
+    // podría cortocircuitar su propio turno escribiéndolo.
+    expect(isUntranscribableAudio(UNTRANSCRIBABLE_AUDIO_PLACEHOLDER)).toBe(
+      false,
+    );
   });
 });
 
