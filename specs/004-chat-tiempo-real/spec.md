@@ -12,6 +12,15 @@
 mantener el polling** con evidencia. Esta spec describe el comportamiento
 observable; el *cómo* vive allá.
 
+**Input**: Llevar a tiempo real los dos chats del panel web —"Chat con el
+Asistente" y "Simulador de Chat"— para que la respuesta aparezca cuando está
+lista sin que el navegador la pida en bucle cada 2 segundos. Habilitador del
+Sprint 5B (Capacitación de empleados), cuyas sesiones son conversacionales y
+largas. Incluye que la respuesta escrita a mano por un supervisor llegue al chat
+abierto, reanudación sin pérdida ni duplicados tras una desconexión, que un turno
+que agota sus reintentos deje un aviso visible, y que el simulador pase a exigir
+sesión válida con rol SUPERVISOR en vez del secreto compartido de producción.
+
 ---
 
 ## 1. Objetivo y contexto de negocio
@@ -69,6 +78,8 @@ lo que ya se produce.
 ---
 
 ## 3. Escenarios de usuario (historias)
+
+*(User Scenarios & Testing — sección obligatoria del template)*
 
 ### HU1 — Chat con el Asistente en vivo (Prioridad: P1)
 
@@ -185,6 +196,8 @@ el asistente termine, reconectar, y ver la respuesta.
 
 ## 4. Requisitos funcionales
 
+*(Requirements → Functional Requirements — sección obligatoria del template)*
+
 > Describen **qué** se observa, no cómo se implementa. El transporte lo decide
 > [research.md](./research.md).
 
@@ -254,7 +267,7 @@ el asistente termine, reconectar, y ver la respuesta.
 - **RF-020**: La puerta de entrada del canal de WhatsApp DEBE seguir exigiendo
   su secreto compartido y NO DEBE aceptar una sesión del panel como sustituto.
 
-### Entidades
+### Entidades clave *(Key Entities)*
 
 - **Conversación**: hilo identificado por el teléfono normalizado del contacto y
   su canal. Tiene un estado que decide si el asistente responde o no.
@@ -334,7 +347,14 @@ por el panel y por WhatsApp. Verificable: comparar ambas.
 
 ---
 
-## 6. Criterios de aceptación (verificables sin código)
+## 6. Criterios de aceptación y resultados medibles
+
+*(Success Criteria — sección obligatoria del template. Los **CA** verifican
+comportamiento observable a mano; los **SC** del final son los resultados
+medibles, con la línea de base de hoy para que la mejora sea comprobable y no
+declarativa.)*
+
+### Criterios de aceptación (verificables sin código)
 
 - **CA-01 — Aparece solo.** Un empleado envía un mensaje y la respuesta aparece
   en pantalla **sin tocar nada y sin recargar**. *(RF-001)*
@@ -377,7 +397,57 @@ por el panel y por WhatsApp. Verificable: comparar ambas.
 
 ---
 
+### Resultados medibles *(Measurable Outcomes)*
+
+Cada uno es medible sin conocer la implementación, y varios se enuncian contra la
+**línea de base actual** —verificada en el código, [research.md §5](./research.md)—
+para que "mejoró" sea una afirmación comprobable.
+
+- **SC-001 — Latencia percibida.** La respuesta del asistente se ve en pantalla
+  **en menos de 2 segundos** desde que queda registrada, sin ninguna acción del
+  usuario. *Línea de base*: hoy la demora es de hasta 2 s de espera del ciclo de
+  consulta, y puede ser infinita en los casos SC-002 y SC-006.
+- **SC-002 — La respuesta del supervisor llega siempre.** **100%** de las
+  respuestas que un supervisor escribe a mano sobre un caso escalado aparecen en
+  el chat abierto de la otra persona. *Línea de base*: **0%** — hoy no llega
+  ninguna.
+- **SC-003 — Un turno nunca termina en silencio.** **100%** de los turnos
+  terminan con algo visible para el usuario del panel: una respuesta, el aviso de
+  que su caso pasó a una persona, o el aviso de que no se pudo procesar. *Línea de
+  base*: un turno que agota sus reintentos deja el panel **sin ninguna señal**.
+- **SC-004 — Sesión larga sin rendirse.** Una sesión de capacitación de **45
+  minutos** con turnos espaciados se sostiene sin recargar la página y sin que el
+  chat declare que no llegó respuesta. *Línea de base*: el chat se rinde a los
+  **~50 segundos** (~40 s en el simulador).
+- **SC-005 — Turno lento.** Con el asistente tardando **más de 2 minutos** en un
+  turno, la respuesta igual aparece. *Línea de base*: por encima de ~50 s el panel
+  informa un error aunque la respuesta ya esté registrada.
+- **SC-006 — Recuperación sin pérdida ni duplicados.** Tras una desconexión de
+  hasta **5 minutos** durante la cual el asistente responde, al reconectar se ven
+  **0 mensajes perdidos y 0 duplicados**.
+- **SC-007 — Dos pestañas conviven.** Dos pestañas de la misma sesión funcionan a
+  la vez durante **10 minutos** con **0 rechazos por exceso de peticiones**.
+  *Línea de base*: dos pestañas consumen 60 consultas/minuto y alcanzan el techo
+  de la propia aplicación.
+- **SC-008 — Tráfico en reposo.** Un chat abierto sin actividad genera
+  **~0 peticiones por minuto**. *Línea de base*: **30 por minuto** por chat
+  abierto.
+- **SC-009 — Ninguna credencial de producción en pantalla.** El simulador se usa
+  con **0 secretos** visibles o pegados a mano en el navegador. *Línea de base*: se
+  pega a mano el mismo secreto que protege el canal real de WhatsApp.
+- **SC-010 — El acuse sigue siendo inmediato.** El acuse del envío llega en
+  **menos de 1 segundo**, sin regresión respecto de hoy: la entrega en tiempo real
+  no puede haber metido trabajo dentro del request.
+- **SC-011 — Confidencialidad sin regresión.** **0** casos en que un pedido de
+  entrega en tiempo real devuelva mensajes de una conversación que su solicitante
+  no puede leer por el historial, incluido un supervisor sobre la conversación de
+  un empleado.
+
+---
+
 ## 7. Casos límite
+
+*(Edge Cases — sección obligatoria del template)*
 
 **CL-1 — ¿Qué ve el usuario si el asistente no va a responder porque el caso es
 de una persona?**
@@ -487,7 +557,7 @@ posición de RF-004, no el momento en que llegan.
 
 ---
 
-## Supuestos
+## Supuestos *(Assumptions)*
 
 - El panel de pruebas (`trimIA-frontend`) es un banco de pruebas para demos, no
   un producto: no lleva tests propios. Todo lo que esta spec manda testear
