@@ -98,6 +98,9 @@ src/
 ├── config/                      # ConfigModule + validación Joi de TODAS las env vars
 ├── database/                    # PrismaService (cliente Prisma global)
 ├── redis/                       # RedisService (ioredis)
+├── realtime/                    # Bus de eventos de los chats del panel (Sprint 5B)
+│   ├── realtime.service.ts      # publish() / streamFor() / sseStreamFor() sobre Redis pub/sub
+│   └── realtime.types.ts        # contrato del evento, compartido por quien publica y quien sirve
 ├── health/                      # GET /health (postgres, redis, memoria)
 ├── common/
 │   └── guards/
@@ -106,6 +109,8 @@ src/
 ├── messaging/                   # ENTRADA
 │   ├── messaging.controller.ts  # POST /messaging/webhook (n8n, secreto compartido)
 │   ├── messaging-web.controller.ts # /messaging/web — chat del panel, JWT (Sprint 5A)
+│   │                            #   + GET :id/stream (SSE) y POST :id/close (Sprint 5B)
+│   ├── messaging-simulate.controller.ts # POST /messaging/simulate — JWT + SUPERVISOR (Sprint 5B)
 │   ├── messaging.service.ts     # crea/recupera conversación + encola job
 │   ├── whatsapp-sender.service.ts  # envía la respuesta vía n8n
 │   └── dto/webhook-message.dto.ts  # { phone, message, channel? }
@@ -385,6 +390,104 @@ pide reformulación **sin llamar al LLM y sin escalar**; ese atajo corre
 
 ---
 
+### 5.9 Sprint 5B: los chats del panel en tiempo real (spec 004)
+
+Los dos chats del panel —**Chat con el Asistente** y **Simulador de Chat**— dejaron
+de preguntar en bucle cada 2 segundos. Ahora reciben los mensajes cuando quedan
+registrados.
+
+**El transporte es SSE, no WebSocket, y la razón no es la que parece.** El flujo es
+unidireccional, sí, pero el desempate real fue otro: una ruta `@Sse()` **es una ruta
+HTTP común**, así que `JwtAuthGuard`, `RolesGuard` y el chequeo de pertenencia se
+reusan tal cual. Un gateway WebSocket habría necesitado un camino de autorización
+paralelo, que es justo lo que el Principio I prohíbe. Cuesta además cero dependencias
+nuevas. Multi-instancia **no** desempató: las dos tecnologías necesitan el mismo bus.
+
+**El evento es una notificación, no un almacén.** El mensaje está en Postgres
+**antes** de publicarse, así que perder un evento no pierde nada: se recupera al
+recargar o al reconectar. De ahí se sigue todo lo demás.
+
+#### Los dos puntos de emisión
+
+| Qué | Dónde | Por qué ahí |
+|---|---|---|
+| Mensajes | `ConversationsService.addMessage()` | Es el embudo por el que pasan los siete caminos que persisten un mensaje |
+| Cambios de estado | `setStatus()`, `takeover()`, `release()`, `close()` | Son los únicos lugares donde cambia el estado |
+
+Emitir desde el worker en vez de desde `addMessage()` habría dejado afuera la
+respuesta manual de un supervisor —que era justamente el mensaje que **nunca llegaba**
+al chat abierto del otro lado—. `replyManually()` era el único de los siete caminos
+que escribía Prisma directo; ahora pasa por el embudo.
+
+**Solo se emiten roles `USER` y `ASSISTANT`**, igual que `listMessages()`. Emitir
+`TOOL` o `SYSTEM` mostraría por el stream mensajes que el historial no devuelve: una
+fuga, y encima inconsistente (al recargar desaparecerían).
+
+#### Dos endpoints de stream, no uno
+
+- `GET /messaging/web/:convId/stream` — el chat propio. Autoriza por **pertenencia**
+  (teléfono normalizado), así que **un SUPERVISOR tampoco entra**.
+- `GET /supervisor/conversations/:id/stream` — cualquier conversación. Autoriza por
+  **rol**.
+
+Un endpoint único que ramificara por rol concentraría dos reglas de autorización
+distintas en un handler. Separados, cada uno hereda la del `GET` de al lado y no hubo
+que escribir ninguna regla nueva.
+
+Los dos aceptan `?after=<messageId>` para reanudar tras una desconexión. **El orden
+importa**: el servicio se suscribe al vivo *antes* de leer los mensajes perdidos y
+bufferea, porque al revés un mensaje publicado en el medio se caería.
+
+#### La autorización se revalida mientras el stream vive
+
+Los guards de NestJS corren **una sola vez, al abrir la ruta**. Con polling eso
+alcanzaba —cada consulta era un request nuevo—, pero un stream vive horas. Sin
+revalidación, una conexión abierta sobrevive al permiso que la habilitó. Se revalida
+en cada keepalive (ventana acotada a `SSE_HEARTBEAT_MS`) y el stream **no sobrevive al
+token que lo abrió** — los JWT duran 8h y un stream abierto a las 9 seguiría emitiendo
+a las 18.
+
+#### Cerrar la conexión ≠ cerrar la conversación
+
+Son dos mecanismos distintos **a propósito**:
+
+| | Qué cierra | Quién lo dispara | Efecto |
+|---|---|---|---|
+| `SSE_IDLE_TIMEOUT_MS` | La **conexión** | Un temporizador | Ninguno sobre los datos: al volver se sigue en el mismo hilo |
+| `POST /messaging/web/:id/close` | La **conversación** | **Solo la persona** | El próximo mensaje abre otro hilo |
+
+La inactividad **nunca** cierra una conversación, y no es un detalle: `getOrCreate()`
+filtra `status: { not: 'CLOSED' }`, así que cerrar reinicia el agente sticky y el
+historial que ve el LLM. Un temporizador que hiciera eso borraría el contexto de una
+capacitación en silencio. Y con un turno en curso la inactividad tampoco corta la
+conexión — un turno dura segundos; una espera humana, que sí se cierra, puede durar
+días.
+
+`close()` es **el primer camino del proyecto que escribe `CLOSED`** y da `409` sobre un
+caso que un responsable está atendiendo.
+
+#### El simulador ya no usa el secreto de producción
+
+`POST /messaging/simulate` con **JWT + rol `SUPERVISOR`**. Antes pegaba contra el
+webhook y pedía el `N8N_WEBHOOK_SECRET` —el mismo que protege WhatsApp en producción—
+escrito a mano en un input. Ese rol no es arbitrario: un supervisor **ya** puede
+escribir en cualquier conversación vía takeover, así que la puerta no amplía el
+privilegio de nadie.
+
+Reusa `MessagingService.enqueue()`, el mismo método del webhook, para que el simulador
+recorra el camino real — y **fuerza `channel: WEB`**: si aceptara `WHATSAPP`, un
+teléfono cualquiera escrito ahí recibiría un WhatsApp de verdad.
+
+El `POST /messaging/webhook` no se tocó: sigue con su secreto y sigue sin aceptar JWT.
+
+#### Un turno ya no termina en silencio
+
+El `FALLBACK` de un turno que agota sus 3 intentos **se persiste**, para todos los
+canales. Antes solo se enviaba con `sender.send()`, que es no-op fuera de WhatsApp: por
+WhatsApp el usuario recibía la disculpa y por el panel no recibía nada. Persistirlo
+arregla además que el historial de WhatsApp no registrara lo que sí se le dijo al
+cliente.
+
 ---
 
 ## 6. Modelo de datos (Prisma — `prisma/schema.prisma`)
@@ -473,10 +576,13 @@ memoria conversacional y auditoría/métricas. Hay corpus de prueba cargado para
 > conversaciones, `agents/status`) ✅, Sprint 3 (human-in-the-loop, §5.7) ✅,
 > Sprint 4 (Cobranzas: comprobantes, recordatorios, verificación de impacto, panel) ✅,
 > Sprint 5A (archivos, chat web y gestión del conocimiento, §5.8) ✅ **backend**.
-> El panel todavía no consume esos endpoints: las tareas están en
-> `specs/003-archivos-chat-conocimiento/tasks.md` §Phase 11, sobre el repo
-> hermano `trimIA-frontend`.
-> Próximo: Sprint 5B en adelante — ver el plan de trabajo para el detalle.
+> Sprint 5B — habilitador: chats del panel en tiempo real (§5.9) ✅ **backend**.
+> El panel todavía no consume esos endpoints en ninguno de los dos casos: las
+> tareas están en `specs/003-archivos-chat-conocimiento/tasks.md` §Phase 11 y en
+> `specs/004-chat-tiempo-real/tasks.md` §Phase 12, sobre el repo hermano
+> `trimIA-frontend`.
+> Próximo: el contenido de la capacitación del Sprint 5B — la superficie
+> conversacional que necesita ya está.
 
 ### 7.1 Lectura del comprobante: es un processor, no un tool del grafo
 
@@ -686,6 +792,20 @@ docker compose exec nestjs npx jest --no-coverage
   `54...` (sin el 9). n8n ya lo normaliza.
 - **`DATABASE_URL`:** dentro de Docker el host es `postgres:5432`; desde el host (pgAdmin)
   es `localhost:5433`.
+- **Redis pub/sub:** el suscriptor **tiene que ser un `redis.duplicate()`**, nunca el
+  `RedisService` inyectado. `RedisService` extiende `Redis` y es la conexión compartida
+  de todo el proceso; una conexión ioredis en modo *subscriber* no puede ejecutar
+  comandos normales, así que suscribirse sobre ella rompe BullMQ y todo lo demás.
+- **Keepalive de SSE:** no es un comentario (`: keepalive`) porque `@Sse()` de NestJS no
+  expone API para comentarios, y su `writeMessage()` le pone un `id` incremental a todo
+  mensaje. Sale como `id: N` sin `data` — mismo efecto: bytes en el cable, ningún evento
+  del lado del cliente.
+- **Handlers `@Sse()` asíncronos:** son válidos y hacen falta. NestJS espera la promesa
+  **antes** de escribir los headers, así que un `403` sale como error HTTP y no como un
+  stream que se abre y nunca emite.
+- **Tests con streams abiertos:** el keepalive es un `interval`; si un test deja un
+  stream suscrito, Jest se cuelga. Hay que desuscribir al final — es el mismo motivo por
+  el que el panel tiene que abortar el `fetch` al desmontar el componente.
 
 ---
 
@@ -693,6 +813,7 @@ docker compose exec nestjs npx jest --no-coverage
 
 | Documento | Para qué |
 |-----------|----------|
+| `specs/004-chat-tiempo-real/` | Spec, spike (SSE vs WebSocket) y contratos de la entrega en tiempo real (§5.9) |
 | `README.md` | Setup del entorno paso a paso |
 | `setup-prompt.md` | Prompts listos para pegar en Antigravity (contexto + setup) |
 | `docs/ArquitecturaFLujoTrabajo.md` | Arquitectura conceptual ampliada (capas, frontend) |

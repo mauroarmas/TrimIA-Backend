@@ -219,10 +219,10 @@ Hoy **nada** en el código escribe `CLOSED`; esta fase abre el primer camino.
 ## Phase 11: Polish & Cross-Cutting Concerns
 
 - [X] T043 [P] *(adelantada de esta fase: el comentario quedó falso al cerrar la Fase 3)* Actualizar el comentario de `src/messaging/whatsapp-sender.service.ts` ([:17-23](../../src/messaging/whatsapp-sender.service.ts#L17-L23)), que hoy dice que la respuesta del chat web "la lee el frontend por polling". Sigue siendo un no-op deliberado, pero por el motivo nuevo: la respuesta se entrega por el stream
-- [ ] T044 [P] Actualizar `docs/CONTEXTO_TECNICO.md` con el módulo `realtime`, los dos endpoints de stream, la puerta del simulador, el bus de Redis y la revalidación de autorización en streams abiertos (constitución: documentación viva en el mismo trabajo)
+- [X] T044 [P] Actualizar `docs/CONTEXTO_TECNICO.md` con el módulo `realtime`, los dos endpoints de stream, la puerta del simulador, el bus de Redis y la revalidación de autorización en streams abiertos (constitución: documentación viva en el mismo trabajo)
 - [ ] T045 Correr `docker compose exec nestjs npm test` y `npm run lint` — puerta de calidad obligatoria antes de dar la fase por terminada
 - [ ] T046 Recorrer los 11 escenarios de [quickstart.md](./quickstart.md) a mano, incluido el escenario 11 (fan-out publicando a mano en Redis, que prueba que la entrega no depende de que el productor y la conexión estén en el mismo proceso)
-- [ ] T047 Verificar que no haya fugas de recursos (CA-14): abrir y cerrar 20 streams y confirmar por logs que las suscripciones se desuscriben y el `Map` no crece
+- [X] T047 Verificar que no haya fugas de recursos (CA-14): abrir y cerrar 20 streams y confirmar por logs que las suscripciones se desuscriben y el `Map` no crece
 - [ ] T048 Verificar SC-004 con una **corrida larga real**: un stream abierto **45 minutos** con turnos espaciados **por debajo de `SSE_IDLE_TIMEOUT_MS`** sigue entregando, sin recargar. Si los silencios superan ese umbral el stream se cierra —y está bien que se cierre (RF-023)—, pero entonces sostener los 45 minutos depende de la reconexión silenciosa del panel (T059, Fase 12): el criterio se cierra del todo recién ahí. El escenario 8 del quickstart solo cubre dos intervalos de heartbeat (~30 s), que no es lo que SC-004 promete — este es el único criterio medible que ninguna otra tarea verifica
 
 ---
