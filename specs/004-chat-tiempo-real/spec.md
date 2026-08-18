@@ -81,7 +81,7 @@ lo que ya se produce.
 
 *(User Scenarios & Testing — sección obligatoria del template)*
 
-### HU1 — Chat con el Asistente en vivo (Prioridad: P1)
+### US1 — Chat con el Asistente en vivo (Prioridad: P1)
 
 Como **empleado**, quiero que la respuesta del asistente **aparezca sola** en
 cuanto está lista, para poder sostener una conversación larga de capacitación
@@ -104,7 +104,7 @@ tocar nada, incluso si el asistente tarda más de un minuto en contestar.
 
 ---
 
-### HU2 — La respuesta del supervisor llega al chat abierto (Prioridad: P1)
+### US2 — La respuesta del supervisor llega al chat abierto (Prioridad: P1)
 
 Como **empleado con un caso escalado**, quiero ver la respuesta que escribió un
 supervisor **en el mismo chat donde pregunté**, para no tener que enterarme por
@@ -127,7 +127,7 @@ recargar.
 
 ---
 
-### HU3 — Simulador sin el secreto de producción (Prioridad: P1)
+### US3 — Simulador sin el secreto de producción (Prioridad: P1)
 
 Como **supervisor**, quiero probar el sistema escribiendo desde un teléfono
 cualquiera **usando mi sesión del panel**, para no tener que pegar a mano el
@@ -151,13 +151,13 @@ secreto a la vista.
 
 ---
 
-### HU4 — Ver la experiencia del cliente en vivo (Prioridad: P2)
+### US4 — Ver la experiencia del cliente en vivo (Prioridad: P2)
 
 Como **supervisor**, quiero ver **en vivo** la respuesta que el sistema le da a
 un teléfono fuera de la whitelist, para comprobar que a un cliente no se le
 sirve conocimiento interno ni se lo deriva a un agente que no le corresponde.
 
-**Por qué P2**: es el motivo de existir del simulador, pero depende de HU3 y no
+**Por qué P2**: es el motivo de existir del simulador, pero depende de US3 y no
 bloquea la capacitación.
 
 **Prueba independiente**: simular desde un teléfono que no es de ningún
@@ -173,7 +173,7 @@ empleado y verificar que el sistema responde como a un cliente.
 
 ---
 
-### HU5 — Recuperación sin pérdida (Prioridad: P2)
+### US5 — Recuperación sin pérdida (Prioridad: P2)
 
 Como **empleado**, quiero que si se me cae el wifi o suspendo la computadora
 mientras el asistente trabaja, **al volver esté todo**, para no tener que
@@ -252,6 +252,13 @@ el asistente termine, reconectar, y ver la respuesta.
   no le corresponde. No es aceptable abrir una entrega que después nunca emita.
 - **RF-015**: La entrega en tiempo real NO DEBE exponer ningún dato de la
   conversación que el solicitante no pueda ya obtener por el historial.
+- **RF-021**: El sistema DEBE **revalidar** el derecho a recibir mientras la
+  entrega está abierta, y **cortarla** si ese derecho se pierde. Autorizar solo al
+  abrir no alcanza: una entrega vive indefinidamente (RF-008), así que sin esto una
+  conexión abierta sobrevive al permiso que la habilitó.
+- **RF-022**: Una entrega abierta NO DEBE sobrevivir a la sesión que la autorizó.
+  Cuando esa sesión vence, la entrega se cierra y el usuario la reabre con una
+  sesión válida — sin perder nada, porque la reanudación lo garantiza (RF-006).
 
 ### Simulador
 
@@ -392,6 +399,11 @@ declarativa.)*
   sigue funcionando igual que antes. *(RF-020)*
 - **CA-13 — El envío sigue siendo inmediato.** El acuse del envío llega en
   milisegundos, muy antes que la respuesta. *(RF-010)*
+- **CA-15 — El permiso se revalida en vivo.** Con una entrega abierta, se le quita
+  a esa persona el derecho a leer esa conversación (por ejemplo, se la da de baja):
+  la entrega **se corta** y no le llega ningún mensaje posterior. *(RF-021)*
+- **CA-16 — La entrega no sobrevive a la sesión.** Cuando la sesión que abrió la
+  entrega vence, la entrega se cierra en vez de seguir emitiendo. *(RF-022)*
 - **CA-14 — Sin fugas.** Abrir y cerrar el chat repetidamente no degrada el
   sistema: las entregas cerradas no quedan acumuladas. *(RF-009)*
 
@@ -513,13 +525,16 @@ El sistema resuelve quién es el remitente **en cada mensaje**, no una vez por
 conversación. Desde el mensaje siguiente pasa a tratarse como cliente. La
 entrega en tiempo real no puede cachear ese dato ni mantener abierta una
 entrega con permisos viejos: si el derecho a leer esa conversación se pierde, la
-entrega se corta.
+entrega se corta (**RF-021**, CA-15). Es la razón por la que ese requisito existe:
+sin él, este caso límite quedaba descrito pero sin nada que obligara a cumplirlo.
 
 **CL-10 — Se pierde el bus interno de entrega.**
 Se degrada, no se cae: los mensajes se siguen registrando (RF-007) y el usuario
 los ve al recargar o al reconectar. Lo que **no** es aceptable es que el envío
 de mensajes deje de funcionar porque la entrega en tiempo real no esté
-disponible.
+disponible — y el riesgo es concreto, porque el mensaje se registra **dentro** del
+request que lo recibe: si avisar por el bus fallara ahí, se caería el envío. El
+aviso nunca puede propagar su error a quien lo dispara.
 
 **CL-11 — Una conversación sin ningún mensaje todavía.**
 La entrega se abre igual y espera. No es un error: es el estado inicial del
@@ -545,7 +560,7 @@ posición de RF-004, no el momento en que llegan.
   ([research.md §4](./research.md)).
 - **Que el Panel del Supervisor se actualice solo.** Las listas de conversaciones
   y de escalamientos siguen refrescándose como hoy. Lo que sí entra es que **la
-  respuesta que un supervisor escribe** llegue al chat del otro lado (HU2).
+  respuesta que un supervisor escribe** llegue al chat del otro lado (US2).
 - **El lock en memoria de `MessageProcessor`.** Defecto preexistente de
   multi-instancia, del Sprint 8. Esta spec no lo agrava ni lo arregla; solo
   introduce la infraestructura donde después va a poder resolverse

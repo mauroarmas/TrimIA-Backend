@@ -54,15 +54,19 @@ Redis**. Ver [research.md §11](./research.md).
 
 - [ ] T003 [P] Crear `src/realtime/realtime.types.ts` con el tipo del evento (`type: 'message' | 'status'`, `conversationId`, `data`) exactamente como lo fija [contracts/sse-events.md](./contracts/sse-events.md). Es el contrato compartido entre quien publica y quien sirve el stream
 - [ ] T004 Crear `src/realtime/realtime.service.ts` con `publish(conversationId, event)` y `streamFor(conversationId): Observable<RealtimeEvent>`. Publica en `trimia:conversation:<id>`. El suscriptor es **una** conexión obtenida con `redis.duplicate()` (nunca la inyectada), con **conteo de referencias** por canal: `subscribe` al abrirse el primer stream local de esa conversación, `unsubscribe` y borrado del `Map` al cerrarse el último
-- [ ] T005 Crear `src/realtime/realtime.module.ts` exportando `RealtimeService`. Módulo propio, no dentro de `conversations/`: lo consumen tres módulos y aislarlo evita el ciclo con quien sirve los streams (mismo patrón que `WhatsappSenderModule`)
-- [ ] T006 Crear `src/realtime/realtime.service.spec.ts`: un evento publicado llega a un stream abierto · dos streams de la misma conversación producen **una** suscripción · cerrar uno de dos no desuscribe · cerrar el último desuscribe y limpia el `Map` (RF-009) · el suscriptor es un `duplicate()` y no la instancia inyectada
-- [ ] T007 Importar `RealtimeModule` en `src/conversations/conversations.module.ts`
-- [ ] T008 Emitir el evento `message` desde `ConversationsService.addMessage()` en `src/conversations/conversations.service.ts`, **después** de que la escritura cerró (RF-007). **Filtrar a roles `USER` y `ASSISTANT`**: `listMessages()` devuelve solo esos dos ([:349-352](../../src/conversations/conversations.service.ts#L349-L352)), y emitir `TOOL`/`SYSTEM` sería exponer por el stream mensajes que el historial no muestra — fuga contra RF-015
-- [ ] T009 Emitir el evento `status` desde `setStatus()`, `takeover()` y `release()` en `src/conversations/conversations.service.ts`. Son los tres únicos lugares donde cambia el estado; el evento lleva `status` y `currentAgent`, y **no** lleva `handledById` (RF-015, ver [contracts/sse-events.md](./contracts/sse-events.md))
-- [ ] T010 Agregar el parámetro `after` (id de mensaje) a `ConversationsService.listMessages()` en `src/conversations/conversations.service.ts`: resuelve el `createdAt` de ese id y devuelve los estrictamente posteriores. Usa el índice `@@index([conversationId, createdAt])` que ya existe. Un `after` inexistente **falla explícitamente**, no devuelve la conversación entera en silencio
-- [ ] T011 Extender `src/conversations/conversations.service.spec.ts`: un mensaje escrito por cualquiera de los caminos que pasan por `addMessage` produce **exactamente un** evento · un cambio de estado produce un evento · `after` con tres mensajes devuelve solo los dos posteriores · `after` inexistente falla
+- [ ] T005 **Hacer que `publish()` no pueda romper a quien lo llama** (CL-10): captura el error, lo loguea y sigue — nunca lo propaga. **Es obligatorio, no una mejora**: `addMessage()` corre **dentro del request** de `POST /messaging/web` ([messaging.service.ts:38](../../src/messaging/messaging.service.ts#L38), vía `prepareConversation`), así que un `publish` que lance con Redis caído **dejaría de poder enviarse mensajes**. La spec ya lo prohíbe: "lo que no es aceptable es que el envío deje de funcionar porque la entrega en tiempo real no esté disponible" (CL-10). El registro en Postgres ya cerró; el evento es solo el aviso
+- [ ] T006 Emitir el heartbeat cada `SSE_HEARTBEAT_MS` como comentario SSE (`: keepalive`), **en `RealtimeService` y no en un controller**: lo usan los dos endpoints de stream y duplicarlo sería la copia que el Principio V evita. No debe llegar al manejador de mensajes del cliente ni contarse como evento de dominio
+- [ ] T007 Crear `src/realtime/realtime.module.ts` exportando `RealtimeService`. Módulo propio, no dentro de `conversations/`: lo consumen tres módulos y aislarlo evita el ciclo con quien sirve los streams (mismo patrón que `WhatsappSenderModule`)
+- [ ] T008 Crear `src/realtime/realtime.service.spec.ts`: un evento publicado llega a un stream abierto · dos streams de la misma conversación producen **una** suscripción · cerrar uno de dos no desuscribe · cerrar el último desuscribe y limpia el `Map` (RF-009) · el suscriptor es un `duplicate()` y no la instancia inyectada · **un fallo del bus no propaga excepción al llamador de `publish()`** (T005)
+- [ ] T009 Importar `RealtimeModule` en `src/conversations/conversations.module.ts`
+- [ ] T010 Emitir el evento `message` desde `ConversationsService.addMessage()` en `src/conversations/conversations.service.ts`, **después** de que la escritura cerró (RF-007). **Filtrar a roles `USER` y `ASSISTANT`**: `listMessages()` devuelve solo esos dos ([:349-352](../../src/conversations/conversations.service.ts#L349-L352)), y emitir `TOOL`/`SYSTEM` sería exponer por el stream mensajes que el historial no muestra — fuga contra RF-015
+- [ ] T011 Emitir el evento `status` desde `setStatus()`, `takeover()` y `release()` en `src/conversations/conversations.service.ts`. Son los tres únicos lugares donde cambia el estado; el evento lleva `status` y `currentAgent`, y **no** lleva `handledById` (RF-015, ver [contracts/sse-events.md](./contracts/sse-events.md))
+- [ ] T012 Agregar el parámetro `after` (id de mensaje) a `ConversationsService.listMessages()` en `src/conversations/conversations.service.ts`: resuelve el `createdAt` de ese id y devuelve los estrictamente posteriores. Usa el índice `@@index([conversationId, createdAt])` que ya existe. Un `after` inexistente **falla explícitamente**, no devuelve la conversación entera en silencio
+- [ ] T013 Extender `src/conversations/conversations.service.spec.ts`: un mensaje escrito por cualquiera de los caminos que pasan por `addMessage` produce **exactamente un** evento · un cambio de estado produce un evento · `after` con tres mensajes devuelve solo los dos posteriores · `after` inexistente falla
 
-**Checkpoint**: el bus funciona y todo mensaje o cambio de estado ya emite. Las historias pueden empezar.
+- [ ] T014 Test de no-regresión de latencia en `src/messaging/messaging.service.spec.ts` (RF-010, SC-010): `POST /messaging/web` **no espera al bus** — sigue acusando aunque el `publish` falle o tarde. Es la única métrica que este diseño pone en riesgo, porque T010 agrega trabajo a un camino que antes solo escribía y encolaba
+
+**Checkpoint**: el bus funciona, todo mensaje o cambio de estado emite, y un Redis caído no rompe el envío. Las historias pueden empezar.
 
 ---
 
@@ -74,9 +78,11 @@ Redis**. Ver [research.md §11](./research.md).
 ver llegar la respuesta sin tocar nada, incluso si tarda más de dos minutos
 ([quickstart.md](./quickstart.md) escenario 1).
 
-- [ ] T012 [US1] Agregar `GET /messaging/web/:convId/stream` con `@Sse()` en `src/messaging/messaging-web.controller.ts`, según [contracts/messaging-web-stream.md](./contracts/messaging-web-stream.md). **Reusar el chequeo de pertenencia que ya existe** en `getMessages()` ([:74-83](../../src/messaging/messaging-web.controller.ts#L74-L83)) extrayéndolo a un método privado del controller — no escribir una regla de autorización nueva. El rechazo ocurre **antes** de abrir el stream (RF-014)
-- [ ] T013 [US1] Emitir el heartbeat cada `SSE_HEARTBEAT_MS` como comentario SSE (`: keepalive`) en el observable del stream. No debe llegar al manejador de mensajes del cliente ni contarse como evento de dominio
-- [ ] T014 [US1] Extender `src/messaging/messaging-web.controller.spec.ts`: `401` sin token · `404` con `convId` inexistente · `403` con una conversación ajena · `403` para un empleado **sin teléfono** cargado · **`403` para un `SUPERVISOR`** que pide el chat propio de otra persona (RN-2: este endpoint mira pertenencia, no roles) · `200` con `text/event-stream` en el caso feliz
+- [ ] T015 [US1] Agregar `GET /messaging/web/:convId/stream` con `@Sse()` en `src/messaging/messaging-web.controller.ts`, según [contracts/messaging-web-stream.md](./contracts/messaging-web-stream.md). **Reusar el chequeo de pertenencia que ya existe** en `getMessages()` ([:74-83](../../src/messaging/messaging-web.controller.ts#L74-L83)) extrayéndolo a un método privado reutilizable — no escribir una regla de autorización nueva. El rechazo ocurre **antes** de abrir el stream (RF-014). Usa el heartbeat de T006
+- [ ] T016 [US1] **Revalidar la autorización mientras el stream está abierto y cortarlo si el derecho se perdió** (CL-9, Principio I). Hoy los guards corren **una sola vez, al abrir**, y un stream vive indefinidamente (RF-008): sin esto, un empleado dado de baja seguiría recibiendo mensajes por una conexión ya abierta. Revalidar en cada tick del heartbeat —lo que acota la ventana de exposición a `SSE_HEARTBEAT_MS`— reusando el mismo chequeo de pertenencia de T015, y cerrar el stream cuando falle
+- [ ] T017 [US1] **Cerrar el stream cuando expira el token** que lo abrió. Los JWT del proyecto duran 8 horas (`expiresIn: '8h'`, [auth.module.ts:20](../../src/auth/auth.module.ts#L20)); un stream abierto a las 9 y sin vencimiento por inactividad seguiría emitiendo a las 18 con un token vencido. Acotar la vida del stream al `exp` del token y dejar que el cliente reconecte con uno fresco (la reanudación de US5 hace que no se pierda nada)
+- [ ] T018 [US1] Extender `src/messaging/messaging-web.controller.spec.ts` — autorización **al abrir**: `401` sin token · `404` con `convId` inexistente · `403` con una conversación ajena · `403` para un empleado **sin teléfono** cargado · **`403` para un `SUPERVISOR`** que pide el chat propio de otra persona (RN-2: este endpoint mira pertenencia, no roles) · `200` con `text/event-stream` en el caso feliz
+- [ ] T019 [US1] Tests de autorización **durante** la vida del stream, en el mismo spec: con un stream abierto, dar de baja al empleado (o cambiarle el teléfono) hace que el stream **se corte** y no emita ningún mensaje posterior (CL-9) · un token vencido cierra el stream (T017). Son los tests que sostienen el Principio I en esta feature: sin ellos la autorización solo está probada en el instante de apertura
 
 **Checkpoint**: US1 funciona sola. Es el MVP entregable: el chat en vivo ya sirve para el Sprint 5B.
 
@@ -92,9 +98,9 @@ desde el panel del supervisor; el mensaje aparece sin recargar
 
 **Depende de**: Fase 2 y US1 (necesita el stream del chat propio donde aterriza).
 
-- [ ] T015 [US2] Hacer que `ConversationsService.replyManually()` persista con `addMessage()` en vez de `this.prisma.message.create()` directo ([:270-277](../../src/conversations/conversations.service.ts#L270-L277)). Es el séptimo camino de persistencia y el único que hoy no pasa por el embudo, y por eso el evento no se emite. Preservar la forma del valor de retorno: hay llamadores que lo consumen
-- [ ] T016 [US2] Extender `src/conversations/conversations.service.spec.ts`: `replyManually()` emite un evento `message` con rol `ASSISTANT` · sigue exigiendo `HUMAN_HANDLING` y que quien responde sea quien tiene el control (no relajar esa autorización al refactorizar) · sigue enviando por el sender antes de persistir
-- [ ] T017 [US2] Test de integración en `src/messaging/messaging-web.controller.spec.ts`: un takeover emite `status: HUMAN_HANDLING` y la respuesta manual posterior emite `message`, **en ese orden**, sobre el stream del dueño de la conversación
+- [ ] T020 [US2] Hacer que `ConversationsService.replyManually()` persista con `addMessage()` en vez de `this.prisma.message.create()` directo ([:270-277](../../src/conversations/conversations.service.ts#L270-L277)). Es el séptimo camino de persistencia y el único que hoy no pasa por el embudo, y por eso el evento no se emite. Preservar la forma del valor de retorno: hay llamadores que lo consumen
+- [ ] T021 [US2] Extender `src/conversations/conversations.service.spec.ts`: `replyManually()` emite un evento `message` con rol `ASSISTANT` · sigue exigiendo `HUMAN_HANDLING` y que quien responde sea quien tiene el control (no relajar esa autorización al refactorizar) · sigue enviando por el sender antes de persistir
+- [ ] T022 [US2] Test de integración en `src/messaging/messaging-web.controller.spec.ts`: un takeover emite `status: HUMAN_HANDLING` y la respuesta manual posterior emite `message`, **en ese orden**, sobre el stream del dueño de la conversación
 
 **Checkpoint**: US1 + US2 funcionan. La falla de corrección más grave está cerrada.
 
@@ -111,12 +117,12 @@ secreto → `202`; con un empleado sin rol → `403`
 **Depende de**: nada de las otras historias. Se puede entregar sola (el simulador
 seguiría leyendo por donde lee hoy hasta que llegue US4).
 
-- [ ] T018 [P] [US3] Crear `src/messaging/dto/simulate-message.dto.ts` con `phone` (requerido, normalizado en el borde con `@Transform(normalizePhone)` igual que `WebhookMessageDto`) y `message` (requerido, `@MaxLength(4096)`). **Sin campo `channel`, sin `userType`, sin `role`**: quién es el remitente no se declara, se resuelve
-- [ ] T019 [US3] Crear `src/messaging/messaging-simulate.controller.ts` con `POST /messaging/simulate`, `@HttpCode(202)`, `@UseGuards(JwtAuthGuard, RolesGuard)` y `@Roles('SUPERVISOR')`, según [contracts/messaging-simulate.md](./contracts/messaging-simulate.md). Llama a `MessagingService.enqueue()` —**el mismo método que usa el webhook**, para que el simulador recorra el camino real— **forzando `channel: WEB`**. Devuelve `{ queued: true, conversationId }`
-- [ ] T020 [US3] Registrar `MessagingSimulateController` en `src/messaging/messaging.module.ts` (y `AuthModule`/`EmployeesModule` si hicieran falta para los guards)
-- [ ] T021 [US3] Crear `src/messaging/messaging-simulate.controller.spec.ts`: `401` sin token · **`403` con un empleado autenticado sin rol `SUPERVISOR`** · `202` con supervisor · el body **no puede** forzar `channel` (queda `WEB` siempre; `forbidNonWhitelisted` global rechaza el campo extra) · el teléfono se normaliza antes de encolar
-- [ ] T022 [US3] Test que sostiene el Principio I, en el mismo spec: un teléfono que **no** está en `Employee` se resuelve como `CLIENTE`, con lo que eso implica — solo `SALES` y `COLLECTIONS` (`allowedAgentsFor`) y solo audiencia `PUBLICO`; un teléfono de un empleado activo se resuelve como `EMPLEADO`. **El simulador elige el teléfono, no el rol** (RF-018, RN-3)
-- [ ] T023 [US3] Test de no-regresión en `src/messaging/messaging.service.spec.ts` o el spec del controller del webhook: `POST /messaging/webhook` **sigue** exigiendo `x-n8n-secret` y **sigue rechazando** un JWT válido como sustituto (RF-020, RN-7, CA-12)
+- [ ] T023 [P] [US3] Crear `src/messaging/dto/simulate-message.dto.ts` con `phone` (requerido, normalizado en el borde con `@Transform(normalizePhone)` igual que `WebhookMessageDto`) y `message` (requerido, `@MaxLength(4096)`). **Sin campo `channel`, sin `userType`, sin `role`**: quién es el remitente no se declara, se resuelve
+- [ ] T024 [US3] Crear `src/messaging/messaging-simulate.controller.ts` con `POST /messaging/simulate`, `@HttpCode(202)`, `@UseGuards(JwtAuthGuard, RolesGuard)` y `@Roles('SUPERVISOR')`, según [contracts/messaging-simulate.md](./contracts/messaging-simulate.md). Llama a `MessagingService.enqueue()` —**el mismo método que usa el webhook**, para que el simulador recorra el camino real— **forzando `channel: WEB`**. Devuelve `{ queued: true, conversationId }`
+- [ ] T025 [US3] Registrar `MessagingSimulateController` en `src/messaging/messaging.module.ts` (y `AuthModule`/`EmployeesModule` si hicieran falta para los guards)
+- [ ] T026 [US3] Crear `src/messaging/messaging-simulate.controller.spec.ts`: `401` sin token · **`403` con un empleado autenticado sin rol `SUPERVISOR`** · `202` con supervisor · el body **no puede** forzar `channel` (queda `WEB` siempre; `forbidNonWhitelisted` global rechaza el campo extra) · el teléfono se normaliza antes de encolar
+- [ ] T027 [US3] Test que sostiene el Principio I, en el mismo spec: un teléfono que **no** está en `Employee` se resuelve como `CLIENTE`, con lo que eso implica — solo `SALES` y `COLLECTIONS` (`allowedAgentsFor`) y solo audiencia `PUBLICO`; un teléfono de un empleado activo se resuelve como `EMPLEADO`. **El simulador elige el teléfono, no el rol** (RF-018, RN-3)
+- [ ] T028 [US3] Test de no-regresión en `src/messaging/messaging.service.spec.ts` o el spec del controller del webhook: `POST /messaging/webhook` **sigue** exigiendo `x-n8n-secret` y **sigue rechazando** un JWT válido como sustituto (RF-020, RN-7, CA-12)
 
 **Checkpoint**: el secreto de producción ya no se pega a mano en ningún navegador.
 
@@ -131,8 +137,8 @@ la respuesta llegar al stream, tratada como cliente.
 
 **Depende de**: Fase 2 y US3.
 
-- [ ] T024 [US4] Agregar `GET /supervisor/conversations/:id/stream` con `@Sse()` en `src/supervisor/supervisor.controller.ts`, con `@UseGuards(JwtAuthGuard, RolesGuard)` y `@Roles('SUPERVISOR')` — el mismo trío que ya gobierna el `GET` de al lado ([:94-96](../../src/supervisor/supervisor.controller.ts#L94-L96)). Ver [contracts/supervisor-stream.md](./contracts/supervisor-stream.md). Reusar el heartbeat de T013 en vez de duplicarlo
-- [ ] T025 [US4] Extender `src/supervisor/supervisor.controller.spec.ts`: `401` sin token · **`403` con empleado sin rol `SUPERVISOR`** · `404` con id inexistente · `200` con `text/event-stream` para un supervisor
+- [ ] T029 [US4] Agregar `GET /supervisor/conversations/:id/stream` con `@Sse()` en `src/supervisor/supervisor.controller.ts`, con `@UseGuards(JwtAuthGuard, RolesGuard)` y `@Roles('SUPERVISOR')` — el mismo trío que ya gobierna el `GET` de al lado ([:94-96](../../src/supervisor/supervisor.controller.ts#L94-L96)). Ver [contracts/supervisor-stream.md](./contracts/supervisor-stream.md). Reusar el heartbeat de T006 y la revalidación de T016/T017 en vez de duplicarlos
+- [ ] T030 [US4] **Crear** `src/supervisor/supervisor.controller.spec.ts` (no existe todavía: hoy el módulo solo tiene `supervisor.service.spec.ts` y `supervisor-timeline.spec.ts`): `401` sin token · **`403` con empleado sin rol `SUPERVISOR`** · `404` con id inexistente · `200` con `text/event-stream` para un supervisor · el stream se corta si el token vence (T017)
 
 **Checkpoint**: el simulador es útil de punta a punta y en vivo.
 
@@ -148,8 +154,8 @@ la respuesta llegar al stream, tratada como cliente.
 
 **Depende de**: Fase 2 (T010) y los dos endpoints de stream (US1, US4).
 
-- [ ] T026 [US5] Aceptar `?after=<messageId>` en los **dos** endpoints de stream y emitir los mensajes posteriores **antes** de conectar el flujo en vivo (RF-006). Esto cierra la carrera de CL-6: no puede existir una ventana entre "envié" y "estoy escuchando" donde un mensaje se caiga
-- [ ] T027 [US5] Tests de reanudación en `src/messaging/messaging-web.controller.spec.ts` y `src/supervisor/supervisor.controller.spec.ts`: con `after`, el stream emite primero los mensajes perdidos en orden y después los nuevos · sin `after`, solo los nuevos · un mensaje ya visto no se re-emite por otro camino (la deduplicación por id del cliente cubre el empate por milisegundo, ver [research.md §10](./research.md))
+- [ ] T031 [US5] Aceptar `?after=<messageId>` en los **dos** endpoints de stream y emitir los mensajes posteriores **antes** de conectar el flujo en vivo (RF-006). Esto cierra la carrera de CL-6: no puede existir una ventana entre "envié" y "estoy escuchando" donde un mensaje se caiga
+- [ ] T032 [US5] Tests de reanudación en `src/messaging/messaging-web.controller.spec.ts` y `src/supervisor/supervisor.controller.spec.ts` (creado en T030): con `after`, el stream emite primero los mensajes perdidos en orden y después los nuevos · sin `after`, solo los nuevos · un mensaje ya visto no se re-emite por otro camino (la deduplicación por id del cliente cubre el empate por milisegundo, ver [research.md §10](./research.md))
 
 **Checkpoint**: todas las historias funcionan de forma independiente.
 
@@ -167,18 +173,19 @@ el historial que lee un supervisor miente sobre lo que se le dijo al cliente.
 Arreglarlo es lo correcto (auditoría, OE-11) pero no es invisible. Fundamento en
 [research.md §13](./research.md).
 
-- [ ] T028 En el `catch` de `MessageProcessor.processExclusive()` (`src/queue/processors/message.processor.ts`, [:210-228](../../src/queue/processors/message.processor.ts#L210-L228)), persistir el `FALLBACK` con `addMessage()` **antes** de intentar enviarlo con `sender.send()`, para **todos** los canales. Mantener la condición de "solo en el último intento" que ya existe, para no dejar tres avisos
-- [ ] T029 Extender `src/queue/processors/message.processor.spec.ts`: un turno que agota sus 3 intentos deja **exactamente un** mensaje visible en la conversación · un turno que falla y **después** sale bien no deja ningún aviso de error · el aviso se persiste también con canal `WHATSAPP` (el cambio de contrato, explícito en un test para que quede a la vista)
+- [ ] T033 En el `catch` de `MessageProcessor.processExclusive()` (`src/queue/processors/message.processor.ts`, [:210-228](../../src/queue/processors/message.processor.ts#L210-L228)), persistir el `FALLBACK` con `addMessage()` **antes** de intentar enviarlo con `sender.send()`, para **todos** los canales. Mantener la condición de "solo en el último intento" que ya existe, para no dejar tres avisos
+- [ ] T034 Extender `src/queue/processors/message.processor.spec.ts`: un turno que agota sus 3 intentos deja **exactamente un** mensaje visible en la conversación · un turno que falla y **después** sale bien no deja ningún aviso de error · el aviso se persiste también con canal `WHATSAPP` (el cambio de contrato, explícito en un test para que quede a la vista)
 
 ---
 
 ## Phase 9: Polish & Cross-Cutting Concerns
 
-- [ ] T030 [P] Actualizar el comentario de `src/messaging/whatsapp-sender.service.ts` ([:17-23](../../src/messaging/whatsapp-sender.service.ts#L17-L23)), que hoy dice que la respuesta del chat web "la lee el frontend por polling". Sigue siendo un no-op deliberado, pero por el motivo nuevo: la respuesta se entrega por el stream
-- [ ] T031 [P] Actualizar `docs/CONTEXTO_TECNICO.md` con el módulo `realtime`, los dos endpoints de stream, la puerta del simulador y el bus de Redis (constitución: documentación viva en el mismo trabajo)
-- [ ] T032 Correr `docker compose exec nestjs npm test` y `npm run lint` — puerta de calidad obligatoria antes de dar la fase por terminada
-- [ ] T033 Recorrer los 10 escenarios de [quickstart.md](./quickstart.md) a mano, incluido el escenario 10 (fan-out publicando a mano en Redis, que prueba que la entrega no depende de que el productor y la conexión estén en el mismo proceso)
-- [ ] T034 Verificar que no haya fugas de recursos (CA-14): abrir y cerrar 20 streams y confirmar por logs que las suscripciones se desuscriben y el `Map` no crece
+- [ ] T035 [P] Actualizar el comentario de `src/messaging/whatsapp-sender.service.ts` ([:17-23](../../src/messaging/whatsapp-sender.service.ts#L17-L23)), que hoy dice que la respuesta del chat web "la lee el frontend por polling". Sigue siendo un no-op deliberado, pero por el motivo nuevo: la respuesta se entrega por el stream
+- [ ] T036 [P] Actualizar `docs/CONTEXTO_TECNICO.md` con el módulo `realtime`, los dos endpoints de stream, la puerta del simulador, el bus de Redis y la revalidación de autorización en streams abiertos (constitución: documentación viva en el mismo trabajo)
+- [ ] T037 Correr `docker compose exec nestjs npm test` y `npm run lint` — puerta de calidad obligatoria antes de dar la fase por terminada
+- [ ] T038 Recorrer los 10 escenarios de [quickstart.md](./quickstart.md) a mano, incluido el escenario 10 (fan-out publicando a mano en Redis, que prueba que la entrega no depende de que el productor y la conexión estén en el mismo proceso)
+- [ ] T039 Verificar que no haya fugas de recursos (CA-14): abrir y cerrar 20 streams y confirmar por logs que las suscripciones se desuscriben y el `Map` no crece
+- [ ] T040 Verificar SC-004 con una **corrida larga real**: un stream abierto **45 minutos** con turnos espaciados sigue entregando, sin recargar. El escenario 8 del quickstart solo cubre dos intervalos de heartbeat (~30 s), que no es lo que SC-004 promete — este es el único criterio medible que ninguna otra tarea verifica
 
 ---
 
@@ -202,27 +209,27 @@ Arreglarlo es lo correcto (auditoría, OE-11) pero no es invisible. Fundamento e
 
 ### Base — el cliente HTTP
 
-- [ ] T035 Agregar a `src/api.js` un `openConversationStream(token, path, { after, onMessage, onStatus, onError })` que lea el stream con **`fetch`** y `ReadableStream`, **no con `EventSource`**: `EventSource` no admite headers y obligaría a poner el JWT en la query string, donde termina en los logs de acceso ([research.md §2](./research.md)). Reusar el armado de headers de `request()`. Debe parsear los bloques `event:`/`data:` de a líneas e **ignorar los comentarios** (`: keepalive`)
-- [ ] T036 Agregar a `src/api.js` un `simulateMessage(token, { phone, message })` para `POST /messaging/simulate`, y **eliminar** el uso de `sendWebhookMessage` desde el simulador (la función puede quedar si algo más la usa, pero el simulador no la llama más)
-- [ ] T037 Devolver desde `openConversationStream` una forma de cerrarlo (`AbortController`) y usarla en el cleanup de los `useEffect`, para no dejar streams colgados al desmontar o al cambiar de pestaña
+- [ ] T041 Agregar a `src/api.js` un `openConversationStream(token, path, { after, onMessage, onStatus, onError })` que lea el stream con **`fetch`** y `ReadableStream`, **no con `EventSource`**: `EventSource` no admite headers y obligaría a poner el JWT en la query string, donde termina en los logs de acceso ([research.md §2](./research.md)). Reusar el armado de headers de `request()`. Debe parsear los bloques `event:`/`data:` de a líneas e **ignorar los comentarios** (`: keepalive`)
+- [ ] T042 Agregar a `src/api.js` un `simulateMessage(token, { phone, message })` para `POST /messaging/simulate`, y **eliminar** el uso de `sendWebhookMessage` desde el simulador (la función puede quedar si algo más la usa, pero el simulador no la llama más)
+- [ ] T043 Devolver desde `openConversationStream` una forma de cerrarlo (`AbortController`) y usarla en el cleanup de los `useEffect`, para no dejar streams colgados al desmontar o al cambiar de pestaña
 
 ### US1 + US2 + US5 — Chat con el Asistente
 
-- [ ] T038 Reescribir `src/components/WebChat.jsx` para consumir el stream en vez de hacer polling: **eliminar `POLL_INTERVAL_MS` y `POLL_MAX_TRIES`** ([:4-5](../../../trimIA-frontend/src/components/WebChat.jsx#L4-L5)). Ya no existe "no llegó respuesta a tiempo": un turno lento no es un error (SC-005)
-- [ ] T039 Deduplicar por `message.id` al recibir y ordenar por `createdAt` en `WebChat.jsx` (RF-004, RF-005). Es lo que hace seguras las dos pestañas y la reconexión, y lo que cubre el empate por milisegundo del cursor `after`
-- [ ] T040 Reconectar en `WebChat.jsx` pasando `after=<id del último mensaje mostrado>`, con reintento espaciado ante corte de red. Al reconectar **no** limpiar los mensajes ya en pantalla: la reanudación trae solo lo posterior
-- [ ] T041 Mostrar el estado de la conversación en `WebChat.jsx` a partir del evento `status`, y **no** dejar el indicador de "el asistente está escribiendo" cuando el estado es `WAITING_HUMAN` o `HUMAN_HANDLING` (CL-1, CA-07). **Distinción que la UI no puede aplastar**: `WAITING_HUMAN` es "nadie lo tomó todavía" y `HUMAN_HANDLING` es "una persona lo está atendiendo" — son dos mensajes distintos para el usuario, no el mismo cartel
+- [ ] T044 Reescribir `src/components/WebChat.jsx` para consumir el stream en vez de hacer polling: **eliminar `POLL_INTERVAL_MS` y `POLL_MAX_TRIES`** ([:4-5](../../../trimIA-frontend/src/components/WebChat.jsx#L4-L5)). Ya no existe "no llegó respuesta a tiempo": un turno lento no es un error (SC-005)
+- [ ] T045 Deduplicar por `message.id` al recibir y ordenar por `createdAt` en `WebChat.jsx` (RF-004, RF-005). Es lo que hace seguras las dos pestañas y la reconexión, y lo que cubre el empate por milisegundo del cursor `after`
+- [ ] T046 Reconectar en `WebChat.jsx` pasando `after=<id del último mensaje mostrado>`, con reintento espaciado ante corte de red. Al reconectar **no** limpiar los mensajes ya en pantalla: la reanudación trae solo lo posterior
+- [ ] T047 Mostrar el estado de la conversación en `WebChat.jsx` a partir del evento `status`, y **no** dejar el indicador de "el asistente está escribiendo" cuando el estado es `WAITING_HUMAN` o `HUMAN_HANDLING` (CL-1, CA-07). **Distinción que la UI no puede aplastar**: `WAITING_HUMAN` es "nadie lo tomó todavía" y `HUMAN_HANDLING` es "una persona lo está atendiendo" — son dos mensajes distintos para el usuario, no el mismo cartel
 
 ### US3 + US4 — Simulador
 
-- [ ] T042 Quitar de `src/components/ChatSimulator.jsx` el campo del secreto y su estado ([:9-13](../../../trimIA-frontend/src/components/ChatSimulator.jsx#L9-L13)), y pasar a `simulateMessage()`. Con esto **ninguna credencial de producción vuelve a pasar por el navegador**
-- [ ] T043 Usar el `conversationId` que devuelve `POST /messaging/simulate` para abrir `GET /supervisor/conversations/:id/stream` en `ChatSimulator.jsx`, y **eliminar** la búsqueda de la conversación por teléfono en la lista del panel ([:22-25](../../../trimIA-frontend/src/components/ChatSimulator.jsx#L22-L25)), que existía solo porque el webhook no devolvía el id
-- [ ] T044 Advertir en `ChatSimulator.jsx`, antes de enviar, que simular escribe en la conversación **real** de ese teléfono (CL-8). Advertir, **no impedir**: es el comportamiento correcto y es la razón por la que el simulador es de supervisores
+- [ ] T048 Quitar de `src/components/ChatSimulator.jsx` el campo del secreto y su estado ([:9-13](../../../trimIA-frontend/src/components/ChatSimulator.jsx#L9-L13)), y pasar a `simulateMessage()`. Con esto **ninguna credencial de producción vuelve a pasar por el navegador**
+- [ ] T049 Usar el `conversationId` que devuelve `POST /messaging/simulate` para abrir `GET /supervisor/conversations/:id/stream` en `ChatSimulator.jsx`, y **eliminar** la búsqueda de la conversación por teléfono en la lista del panel ([:22-25](../../../trimIA-frontend/src/components/ChatSimulator.jsx#L22-L25)), que existía solo porque el webhook no devolvía el id
+- [ ] T050 Advertir en `ChatSimulator.jsx`, antes de enviar, que simular escribe en la conversación **real** de ese teléfono (CL-8). Advertir, **no impedir**: es el comportamiento correcto y es la razón por la que el simulador es de supervisores
 
 ### Manejo de errores — dos códigos que piden acciones distintas
 
-- [ ] T045 Distinguir en `WebChat.jsx` y `ChatSimulator.jsx` el `401` del `403` al abrir un stream, porque piden acciones opuestas: **`401`** es sesión vencida → volver a loguear y reintentar; **`403`** es "esta conversación no es tuya" o "te falta el rol" → **no reintentar nunca** (un reintento en bucle contra un `403` es el equivalente nuevo del polling que se acaba de sacar). Usar `ApiError.status`, que ya viene con el cuerpo del backend
-- [ ] T046 Manejar el `409` de `POST /messaging/web` cuando el empleado **no tiene teléfono cargado** en su perfil (CL-7): mostrar la explicación que ya manda el backend —que un supervisor tiene que cargarlo— y **no** intentar abrir el stream de una conversación que no existe
+- [ ] T051 Distinguir en `WebChat.jsx` y `ChatSimulator.jsx` el `401` del `403` al abrir un stream, porque piden acciones opuestas: **`401`** es sesión vencida → volver a loguear y reintentar; **`403`** es "esta conversación no es tuya" o "te falta el rol" → **no reintentar nunca** (un reintento en bucle contra un `403` es el equivalente nuevo del polling que se acaba de sacar). Usar `ApiError.status`, que ya viene con el cuerpo del backend
+- [ ] T052 Manejar el `409` de `POST /messaging/web` cuando el empleado **no tiene teléfono cargado** en su perfil (CL-7): mostrar la explicación que ya manda el backend —que un supervisor tiene que cargarlo— y **no** intentar abrir el stream de una conversación que no existe
 
 ### Nota sobre tests en el frontend
 
@@ -254,29 +261,29 @@ Fase 1 (Setup)
 | US1 (P1) | Fase 2 | ✅ Sí — **es el MVP** |
 | US2 (P1) | Fase 2 + US1 | ✅ Sí, una vez que hay stream donde aterrizar |
 | US3 (P1) | Fase 2 (nada de otras historias) | ✅ Sí, independiente |
-| US4 (P2) | Fase 2 + US3 | ✅ Sí |
-| US5 (P2) | Fase 2 (T010) + US1 + US4 | ✅ Sí |
+| US4 (P2) | Fase 2 + US3 + **US1** (T016-T017: la revalidación y el corte por token vencido se reusan, no se duplican) | ✅ Sí |
+| US5 (P2) | Fase 2 (T012) + US1 + US4 | ✅ Sí |
 
 ### Parallel Opportunities
 
 - **T001 y T002** en paralelo (archivos distintos).
-- **T003** en paralelo con nada más de la Fase 2 (el resto depende de los tipos).
+- **T003** primero: el resto de la Fase 2 depende de los tipos del evento.
 - **US3 (Fase 5) corre en paralelo con US1 y US2**: no comparte ningún archivo con
   ellas — toca `messaging-simulate.controller.ts` y su DTO, mientras US1 toca
   `messaging-web.controller.ts` y US2 `conversations.service.ts`. Es la
   paralelización más aprovechable del plan.
 - **Fase 8 (RF-012)** corre en paralelo con cualquier historia: solo necesita la
   Fase 2 y toca únicamente `message.processor.ts`.
-- **T030 y T031** (documentación) en paralelo con todo lo demás.
+- **T035 y T036** (documentación) en paralelo con todo lo demás.
 
 ## Parallel Example: US1 + US3 a la vez
 
 ```text
 Con la Fase 2 cerrada, dos frentes sin colisión de archivos:
 
-Frente A (US1):  T012 → T013 → T014        (messaging-web.controller.ts)
-Frente B (US3):  T018 → T019 → T020 → T021 → T022 → T023   (messaging-simulate.*)
-Frente C (RF-012): T028 → T029             (message.processor.ts)
+Frente A (US1):    T015 → T016 → T017 → T018 → T019   (messaging-web.controller.ts)
+Frente B (US3):    T023 → T024 → T025 → T026 → T027 → T028   (messaging-simulate.*)
+Frente C (RF-012): T033 → T034                         (message.processor.ts)
 ```
 
 ## Implementation Strategy
@@ -286,6 +293,13 @@ Frente C (RF-012): T028 → T029             (message.processor.ts)
 El chat del empleado en vivo. Es lo que el Sprint 5B necesita para arrancar: una
 sesión de capacitación deja de morirse a los 50 segundos. Entregable y demostrable
 por sí solo.
+
+> **Qué significa "terminado" acá.** Cerrar las Fases 1-9 termina el **backend**, no
+> los criterios medibles de la spec. RF-005 (mostrar cada mensaje una sola vez) y
+> RF-011 (indicar que el turno está en curso) se cumplen **solo** con tareas de la
+> Fase 10, y SC-006/007/008/009 dependen de que el panel consuma los streams. Es por
+> diseño —la constitución manda enumerar el trabajo de panel y hacerlo aparte—, pero
+> conviene no confundir "la spec de backend está cerrada" con "los SC están cumplidos".
 
 ### Entrega incremental
 

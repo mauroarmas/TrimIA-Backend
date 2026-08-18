@@ -131,7 +131,7 @@ curl -s -o /dev/null -w '%{http_code}\n' -H "Authorization: Bearer $EMP" "localh
 **Esperado**: los cuatro códigos, y **antes** de abrir el stream (RF-014) — no un
 `200` que después nunca emite.
 
-## Escenario 6 — Simulador sin secreto, y el cliente tratado como cliente *(CA-09/10/11, SC-009, HU4)*
+## Escenario 6 — Simulador sin secreto, y el cliente tratado como cliente *(CA-09/10/11, SC-009, US4)*
 
 ```bash
 # Sin ningún secreto: solo la sesión de supervisor

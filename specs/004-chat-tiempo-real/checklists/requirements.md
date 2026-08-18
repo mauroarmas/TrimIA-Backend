@@ -46,8 +46,9 @@
       autorización existente en vez de duplicarla ([research.md §2](../research.md)).
 - [x] **Tests obligatorios** — ruteo, autorización y resolución del remitente
       quedan como consecuencias a testear en [research.md §2, §7](../research.md).
-- [x] **Cierre de spec: tareas de panel** — pendiente. Se cumple en `tasks.md`
-      con una fase final, en `/speckit-tasks`.
+- [x] **Cierre de spec: tareas de panel** — **cumplido**. `tasks.md` cierra con la
+      Fase 10, que enumera el trabajo de `trimIA-frontend` sin implementarlo
+      (T041-T052).
 
 ## Trazabilidad de cobertura
 

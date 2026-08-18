@@ -46,7 +46,7 @@ El simulador combina este stream con [messaging-simulate.md](./messaging-simulat
 2. `GET /supervisor/conversations/<conversationId>/stream` → ve llegar la respuesta
    que el sistema le da a ese teléfono, en vivo
 
-Así se cumple HU4: el supervisor ve **en vivo** cómo el sistema le responde a un
+Así se cumple US4: el supervisor ve **en vivo** cómo el sistema le responde a un
 teléfono fuera de la whitelist, que es la razón de existir del simulador.
 
 ## Response

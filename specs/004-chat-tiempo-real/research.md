@@ -579,3 +579,76 @@ JWT (RF-020).
 teléfono fuera de la whitelist se resuelve como `CLIENTE` (con lo que eso implica:
 solo `SALES`/`COLLECTIONS` y solo audiencia `PUBLICO`); el webhook sigue exigiendo
 su secreto.
+
+---
+
+# Correcciones surgidas del análisis (`/speckit-analyze`)
+
+El análisis de consistencia encontró dos huecos donde la implementación "natural"
+producía un sistema que violaba algo que la propia spec ya había previsto. Se
+resuelven acá, en el mismo formato.
+
+## 16. El aviso por el bus no puede romper el envío
+
+**Decisión**: `RealtimeService.publish()` captura sus errores, los loguea y **nunca
+los propaga** al llamador.
+
+**Rationale**: `addMessage()` no corre solo en el worker — corre **dentro del
+request** de `POST /messaging/web`, porque `MessagingService.prepareConversation()`
+lo llama antes de encolar ([messaging.service.ts:38](../../src/messaging/messaging.service.ts#L38),
+usado por `enqueueWeb()` en [:122](../../src/messaging/messaging.service.ts#L122)).
+Emitir desde `addMessage()` (§6) mete entonces un `PUBLISH` a Redis en el camino
+del request. Si ese publish lanzara con Redis caído, **dejaría de poder enviarse
+mensajes** — y CL-10 ya lo había prohibido explícitamente: *"lo que no es aceptable
+es que el envío de mensajes deje de funcionar porque la entrega en tiempo real no
+esté disponible"*.
+
+Es coherente con la naturaleza del evento fijada en §8: el registro en Postgres ya
+cerró antes de publicar, así que **perder el aviso no pierde el mensaje**. Un aviso
+que puede tirar abajo lo que está avisando tiene la relación de dependencia al
+revés.
+
+**Alternativa considerada** — publicar desde el worker en vez de desde
+`addMessage()`, para mantener el request limpio: vuelve a dejar afuera la respuesta
+manual del supervisor, que es justamente el caso que §6 resolvió. Se descarta por
+reintroducir el defecto principal.
+
+**Consecuencia a testear**: con el bus caído, `POST /messaging/web` sigue
+respondiendo `202` y el mensaje queda registrado; ninguna excepción del publish
+llega al request (T005, T008, T014).
+
+## 17. La autorización se revalida mientras el stream vive
+
+**Decisión**: revalidar el derecho a recibir en cada tick del heartbeat y cortar el
+stream si se perdió; y acotar la vida del stream al vencimiento del token que lo
+abrió.
+
+**Rationale**: los guards de NestJS corren **una sola vez, al abrir la ruta**. Con
+polling eso no importaba —cada consulta era un request nuevo, reautorizado—, pero un
+stream sin vencimiento por inactividad (RF-008) puede vivir horas. Dos consecuencias
+concretas:
+
+1. **CL-9 quedaba sin cumplir.** Un empleado dado de baja mientras tiene el chat
+   abierto seguiría recibiendo por la conexión ya abierta. El contrato prometía que
+   "el stream se corta" y nada lo implementaba. Es el Principio I: una conexión en
+   tiempo real no puede volverse una vía para recibir mensajes que ya no
+   corresponden.
+2. **El token vence antes que el stream.** Los JWT del proyecto duran 8 horas
+   (`expiresIn: '8h'`, "jornada laboral", [auth.module.ts:20](../../src/auth/auth.module.ts#L20)).
+   Un stream abierto a las 9 seguiría emitiendo a las 18 con un token vencido.
+
+Revalidar **en el tick del heartbeat** y no en cada evento acota el costo a una
+consulta indexada cada `SSE_HEARTBEAT_MS` y deja la ventana de exposición en un
+heartbeat, que es un límite explícito y configurable en vez de "indefinido".
+
+Cortar el stream no pierde nada: la base es la fuente de verdad y el cliente reabre
+con `after` (§10). Es el mismo argumento que hace segura la reconexión.
+
+**Alternativa considerada** — revalidar antes de reenviar **cada** evento: cierra la
+ventana por completo, a costa de una consulta por mensaje entregado. A esta escala
+sería tolerable; se descarta porque el heartbeat ya da una cota configurable y
+porque la ventana que queda es de segundos, no de horas.
+
+**Consecuencia a testear**: con un stream abierto, dar de baja al empleado corta el
+stream y no le llega ningún mensaje posterior; un token vencido cierra el stream
+(T016, T017, T019, T030).
