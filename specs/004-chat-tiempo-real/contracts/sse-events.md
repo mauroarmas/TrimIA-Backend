@@ -6,19 +6,33 @@ autorización para abrirlo.
 
 ## Formato sobre el cable
 
-`Content-Type: text/event-stream`. Cada evento es un bloque `event:` + `data:`
-(JSON en una línea) separado por una línea en blanco. `@Sse()` de NestJS lo
-serializa así a partir de `{ type, data }`.
+`Content-Type: text/event-stream`. Cada evento es un bloque `event:` + `id:` +
+`data:` (JSON en una línea) separado por una línea en blanco.
+
+**Copiado de una corrida real**, no de un borrador:
 
 ```text
 event: message
-data: {"conversationId":"3f2b...","message":{"id":"a91c...","role":"ASSISTANT","content":"El plan de cuotas...","agentType":"COLLECTIONS","createdAt":"2026-08-18T14:03:11.482Z"}}
+id: 1
+data: {"type":"message","conversationId":"222e513d-...","data":{"id":"2c459842-...","role":"USER","content":"un mensaje para las dos","agentType":null,"createdAt":"2026-08-18T21:42:39.027Z"}}
 
 event: status
-data: {"conversationId":"3f2b...","status":"WAITING_HUMAN","currentAgent":"COLLECTIONS"}
+id: 2
+data: {"type":"status","conversationId":"222e513d-...","data":{"status":"WAITING_HUMAN","currentAgent":null}}
 
-: keepalive
+id: 3
 ```
+
+Tres cosas que conviene mirar bien antes de escribir el cliente:
+
+- **El payload es el evento completo**, con su `type` adentro y la carga útil bajo
+  `data`. No es `{conversationId, message}`: hay un nivel de anidado.
+- **`type` viaja dos veces**, en la línea `event:` y dentro del JSON. Es a propósito:
+  un cliente que lee con `fetch` puede despachar por el JSON sin llevar la cuenta de
+  la última línea `event:` que vio.
+- **El `id:` lo pone NestJS solo**, con un contador incremental. No es el id del
+  mensaje y no sirve como cursor: la reanudación va con `after=<id del mensaje>`, que
+  sale de `data.id`.
 
 ## `event: message`
 
@@ -27,12 +41,13 @@ cerró.
 
 | Campo | Tipo | Notas |
 |---|---|---|
+| `type` | `"message"` | |
 | `conversationId` | uuid | |
-| `message.id` | uuid | **Clave de deduplicación** (RF-005). El cliente descarta un id que ya mostró |
-| `message.role` | `USER` \| `ASSISTANT` | **Solo estos dos.** `TOOL` y `SYSTEM` no se emiten nunca — el historial tampoco los devuelve (ver [data-model.md](../data-model.md) §1) |
-| `message.content` | string | |
-| `message.agentType` | string \| null | `null` para mensajes del usuario y para avisos del sistema |
-| `message.createdAt` | ISO 8601 | **Orden** (RF-004). El cliente ordena por esto, no por orden de llegada |
+| `data.id` | uuid | **Clave de deduplicación** (RF-005) y **cursor de la reanudación** (`after`) |
+| `data.role` | `USER` \| `ASSISTANT` | **Solo estos dos.** `TOOL` y `SYSTEM` no se emiten nunca — el historial tampoco los devuelve (ver [data-model.md](../data-model.md) §1) |
+| `data.content` | string | |
+| `data.agentType` | string \| null | `null` para mensajes del usuario y para avisos del sistema |
+| `data.createdAt` | ISO 8601 | **Orden** (RF-004). El cliente ordena por esto, no por orden de llegada |
 
 Se emite para **todo** mensaje, sin importar quién lo originó (RF-002): el
 asistente, el acuse automático de espera, el aviso de fracaso de un turno, y **la
@@ -44,8 +59,14 @@ Se emite en cada transición de estado de la conversación (RF-003).
 
 | Campo | Tipo | Notas |
 |---|---|---|
-| `status` | `ACTIVE` \| `WAITING_HUMAN` \| `HUMAN_HANDLING` \| `CLOSED` | |
-| `currentAgent` | string \| null | Agente sticky al momento del cambio |
+| `type` | `"status"` | |
+| `conversationId` | uuid | |
+| `data.status` | `ACTIVE` \| `WAITING_HUMAN` \| `HUMAN_HANDLING` \| `CLOSED` | |
+| `data.currentAgent` | string \| null | Agente sticky al momento del cambio |
+
+Un `data.status` de **`CLOSED`** es además el último evento del stream: la
+conversación terminó, no va a recibir más mensajes, y la entrega se cierra
+inmediatamente después de entregarlo (CL-15).
 
 No lleva `handledById` ni quién tomó el control: al dueño del chat no le
 corresponde saber **qué** persona lo atiende, solo que una persona lo atiende. Es

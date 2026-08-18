@@ -84,12 +84,15 @@ Postgres antes de que el evento se publique.
 
 ```text
 RealtimeEvent
-├── type: 'message' | 'status' | 'heartbeat'
+├── type: 'message' | 'status'
 ├── conversationId: uuid
 └── data:
     ├── (type='message')  { id, role, content, agentType, createdAt }
     └── (type='status')   { status, currentAgent }
 ```
+
+El keepalive **no** es un `RealtimeEvent` y no tiene `type`: es un evento SSE sin
+`data`, que el cliente no despacha. Ver [contracts/sse-events.md](./contracts/sse-events.md).
 
 Reglas de la entidad:
 

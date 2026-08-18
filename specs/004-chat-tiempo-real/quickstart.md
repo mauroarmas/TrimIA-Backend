@@ -43,13 +43,24 @@ Lo que **tiene** que estar cubierto (constitución: ruteo, autorización, audien
 
 ## Preparación: obtener tokens
 
+Los tres que hacen falta salen del seed (`prisma/seed.ts`), con la contraseña de
+desarrollo `trimia2026`. Hacen falta **dos empleados distintos**: varios escenarios
+comprueban que uno no puede leer la conversación del otro.
+
 ```bash
-# Empleado (sin rol supervisor) y supervisor
-EMP=$(curl -s -X POST localhost:3000/auth/login -H 'Content-Type: application/json' \
-  -d '{"email":"empleado@credimision.com","password":"..."}' | jq -r .accessToken)
-SUP=$(curl -s -X POST localhost:3000/auth/login -H 'Content-Type: application/json' \
-  -d '{"email":"supervisor@credimision.com","password":"..."}' | jq -r .accessToken)
+login() {
+  curl -s -X POST localhost:3000/auth/login -H 'Content-Type: application/json' \
+    -d "{\"email\":\"$1\",\"password\":\"trimia2026\"}" | jq -r .accessToken
+}
+
+EMP=$(login ana.torres@credimision.com)       # EMPLEADO — el dueño del chat
+OTRO_EMP=$(login laura.gomez@credimision.com) # EMPLEADO — para probar el 403
+SUP=$(login diego.bazan@credimision.com)      # SUPERVISOR
 ```
+
+> El campo del login es **`accessToken`**, no `access_token`. Suena a detalle y no lo
+> es: con el nombre equivocado el token queda vacío y todo devuelve `401`, que se
+> parece mucho a un problema de autenticación real.
 
 ---
 

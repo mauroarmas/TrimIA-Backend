@@ -26,6 +26,12 @@ nueva:
 | La conversación está en `WAITING_HUMAN` o `HUMAN_HANDLING` | **`409`** — hay una persona atendiendo el caso (CL-14) |
 | Dueño, conversación `ACTIVE` | `200` |
 
+Respuesta del caso feliz:
+
+```json
+{ "closed": true, "conversationId": "3f2b8c11-..." }
+```
+
 El `409` no es un detalle: cerrar un caso escalado dejaría a un supervisor
 trabajando sobre un hilo que el usuario ya abandonó, y la escalación abierta
 quedaría huérfana.

@@ -254,7 +254,7 @@ Hoy **nada** en el código escribe `CLOSED`; esta fase abre el primer camino.
 ### US1 + US2 + US5 — Chat con el Asistente
 
 - [ ] T052 Reescribir `src/components/WebChat.jsx` para consumir el stream en vez de hacer polling: **eliminar `POLL_INTERVAL_MS` y `POLL_MAX_TRIES`** ([:4-5](../../../trimIA-frontend/src/components/WebChat.jsx#L4-L5)). Ya no existe "no llegó respuesta a tiempo": un turno lento no es un error (SC-005)
-- [ ] T053 Deduplicar por `message.id` al recibir y ordenar por `createdAt` en `WebChat.jsx` (RF-004, RF-005). Es lo que hace seguras las dos pestañas y la reconexión, y lo que cubre el empate por milisegundo del cursor `after`
+- [ ] T053 Deduplicar por `data.id` al recibir y ordenar por `data.createdAt` en `WebChat.jsx` (ojo con el anidado: el payload del evento es `{type, conversationId, data}`, ver [contracts/sse-events.md](./contracts/sse-events.md)) (RF-004, RF-005). Es lo que hace seguras las dos pestañas y la reconexión, y lo que cubre el empate por milisegundo del cursor `after`
 - [ ] T054 Reconectar en `WebChat.jsx` pasando `after=<id del último mensaje mostrado>`, con reintento espaciado ante corte de red. Al reconectar **no** limpiar los mensajes ya en pantalla: la reanudación trae solo lo posterior
 - [ ] T055 Mostrar el estado de la conversación en `WebChat.jsx` a partir del evento `status`, y **no** dejar el indicador de "el asistente está escribiendo" cuando el estado es `WAITING_HUMAN` o `HUMAN_HANDLING` (CL-1, CA-07). **Distinción que la UI no puede aplastar**: `WAITING_HUMAN` es "nadie lo tomó todavía" y `HUMAN_HANDLING` es "una persona lo está atendiendo" — son dos mensajes distintos para el usuario, no el mismo cartel
 
