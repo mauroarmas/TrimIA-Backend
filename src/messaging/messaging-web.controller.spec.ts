@@ -50,6 +50,7 @@ function buildController(
       total: 0,
       hasMore: false,
     }),
+    messagesSince: jest.fn().mockResolvedValue([]),
   };
   const employees = {
     findById: jest.fn().mockResolvedValue({
@@ -460,5 +461,58 @@ describe('⭐ US2 — la respuesta del supervisor llega al chat abierto (T022)',
         content: 'igual queda registrado',
       }),
     );
+  });
+});
+
+describe('MessagingWebController.stream — reanudación con `after` (RF-006, T032)', () => {
+  it('sin `after`, no configura reanudación', async () => {
+    const { controller, streamOptions } = buildController({
+      employeePhone: '5493865505362',
+      conversationExternalId: '5493865505362',
+    });
+
+    await controller.stream(CONV_ID, { user: { id: 'emp-1' } });
+
+    expect(streamOptions().replay).toBeUndefined();
+  });
+
+  it('con `after`, valida el cursor antes de abrir el stream', async () => {
+    const { controller, conversations } = buildController({
+      employeePhone: '5493865505362',
+      conversationExternalId: '5493865505362',
+    });
+
+    await controller.stream(CONV_ID, { user: { id: 'emp-1' } }, 'msg-1');
+
+    expect(conversations.messagesSince).toHaveBeenCalledWith(CONV_ID, 'msg-1');
+  });
+
+  // Los headers de un stream se escriben al abrirlo: si el cursor se validara
+  // adentro, un cursor inválido saldría como un evento de error en un 200 y el
+  // cliente no podría distinguirlo de un problema del servidor.
+  it('un cursor inválido da 404 y NO abre el stream', async () => {
+    const { controller, conversations, realtime } = buildController({
+      employeePhone: '5493865505362',
+      conversationExternalId: '5493865505362',
+    });
+    conversations.messagesSince.mockRejectedValue(new NotFoundException());
+
+    await expect(
+      controller.stream(CONV_ID, { user: { id: 'emp-1' } }, 'no-existe'),
+    ).rejects.toBeInstanceOf(NotFoundException);
+    expect(realtime.sseStreamFor).not.toHaveBeenCalled();
+  });
+
+  // La autorización manda sobre la reanudación: si no es tuya, ni se lee el cursor.
+  it('sobre una conversación ajena no llega ni a leer el cursor', async () => {
+    const { controller, conversations } = buildController({
+      employeePhone: '5493865505362',
+      conversationExternalId: '5493800000000',
+    });
+
+    await expect(
+      controller.stream(CONV_ID, { user: { id: 'emp-1' } }, 'msg-1'),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(conversations.messagesSince).not.toHaveBeenCalled();
   });
 });

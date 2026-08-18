@@ -115,10 +115,22 @@ export class MessagingWebController {
   async stream(
     @Param('convId', ParseUUIDPipe) convId: string,
     @Req() req: AuthenticatedRequest,
+    @Query('after') after?: string,
   ): Promise<Observable<unknown>> {
     await this.assertOwnership(convId, req.user.id);
 
+    // El cursor se valida ACÁ, antes de abrir el stream, para que uno inválido
+    // salga como 404 y no como un evento de error dentro de un stream ya abierto
+    // (los headers ya estarían escritos). La lectura de verdad va en el thunk,
+    // que corre después de conectarse al vivo — ver RealtimeService.sseStreamFor.
+    if (after) {
+      await this.conversations.messagesSince(convId, after);
+    }
+
     return this.realtime.sseStreamFor(convId, {
+      replay: after
+        ? () => this.conversations.messagesSince(convId, after)
+        : undefined,
       // Los guards corren una sola vez, al abrir. Un stream vive horas, así que
       // sin esto una conexión abierta sobreviviría al permiso que la habilitó:
       // a un empleado dado de baja le seguirían llegando mensajes (CL-9).

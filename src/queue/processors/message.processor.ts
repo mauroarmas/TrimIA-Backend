@@ -218,6 +218,29 @@ export class MessageProcessor extends WorkerHost {
       );
       const maxAttempts = job.opts.attempts ?? 1;
       if (job.attemptsMade + 1 >= maxAttempts) {
+        // Se PERSISTE el aviso, y para todos los canales. Antes solo se enviaba
+        // con sender.send(), que para canales distintos de WHATSAPP es un no-op:
+        // por WhatsApp el usuario recibía la disculpa y por el panel no recibía
+        // absolutamente nada — el chat quedaba mudo (spec 004, RF-012).
+        //
+        // Persistirlo arregla las dos puntas. En el panel, el mensaje viaja por la
+        // misma entrega en tiempo real que todo lo demás. Y en WhatsApp arregla algo
+        // que también estaba mal: la disculpa se enviaba pero no quedaba registrada,
+        // así que el historial que lee un supervisor mentía sobre lo que se le dijo
+        // al cliente (OE-11). Es un cambio de contrato y está declarado como tal.
+        //
+        // Va primero el registro y después el envío: si el envío falla, el aviso
+        // igual existe. Y ninguno de los dos puede tapar el error original, que se
+        // relanza abajo para que BullMQ cuente el intento.
+        try {
+          await this.conversations.addMessage(
+            conversationId,
+            'ASSISTANT',
+            MessageProcessor.FALLBACK,
+          );
+        } catch (dbErr) {
+          this.logger.error(`No se pudo registrar el aviso de fallo: ${dbErr}`);
+        }
         await this.sender
           .send(externalId, MessageProcessor.FALLBACK, channel)
           .catch((sendErr) =>

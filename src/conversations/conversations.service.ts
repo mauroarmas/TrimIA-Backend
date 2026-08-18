@@ -15,6 +15,7 @@ import {
 import { WhatsappSenderService } from '../messaging/whatsapp-sender.service';
 import { OrchestrationLogger } from '../ai/orchestrator/orchestration-logger.service';
 import { RealtimeService } from '../realtime/realtime.service';
+import { RealtimeEvent } from '../realtime/realtime.types';
 
 export interface ConversationTurn {
   role: 'USER' | 'ASSISTANT';
@@ -471,6 +472,43 @@ export class ConversationsService {
     ]);
 
     return { data, page, limit, total, hasMore: skip + data.length < total };
+  }
+
+  /**
+   * Mensajes posteriores a `after`, en forma de eventos (spec 004, RF-006).
+   *
+   * Es la reanudación de un stream: lo que el panel se perdió mientras estuvo
+   * desconectado, con la **misma forma** que los eventos en vivo para que el
+   * cliente no tenga que parsear dos formatos.
+   *
+   * Lanza `NotFoundException` si el cursor no existe o es de otra conversación —
+   * lo hereda de `listMessages()`. Los controllers lo validan **antes** de abrir
+   * el stream justamente para que ese error salga como un 404 y no como un evento
+   * de error dentro de un stream ya abierto.
+   */
+  async messagesSince(
+    conversationId: string,
+    after: string,
+  ): Promise<RealtimeEvent[]> {
+    // 200 es el techo de listMessages(). Alcanza de sobra para una reconexión: si
+    // alguien se perdió más de 200 mensajes, recargar la página es más sensato que
+    // reproducirlos por el stream.
+    const { data } = await this.listMessages(conversationId, {
+      after,
+      limit: 200,
+    });
+
+    return data.map((message) => ({
+      type: 'message' as const,
+      conversationId,
+      data: {
+        id: message.id,
+        role: message.role as 'USER' | 'ASSISTANT',
+        content: message.content,
+        agentType: message.agentType,
+        createdAt: message.createdAt.toISOString(),
+      },
+    }));
   }
 
   /**

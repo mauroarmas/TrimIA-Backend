@@ -251,6 +251,88 @@ describe('RealtimeService', () => {
     });
   });
 
+  /**
+   * ⭐ El test que sostiene RF-006 y CL-6.
+   *
+   * Lo obvio sería leer los mensajes perdidos y después conectarse al vivo, pero eso
+   * deja un hueco: un mensaje publicado entre la lectura y la suscripción se cae
+   * para siempre. El servicio lo hace al revés —se conecta primero y bufferea—, y
+   * esto es lo que lo prueba.
+   */
+  describe('sseStreamFor — reanudación (RF-006, CL-6)', () => {
+    const perdido: RealtimeEvent = {
+      type: 'message',
+      conversationId: 'conv-1',
+      data: {
+        id: 'msg-perdido',
+        role: 'ASSISTANT',
+        content: 'me lo perdí',
+        agentType: null,
+        createdAt: '2026-08-18T13:59:00.000Z',
+      },
+    };
+
+    /** Ids de los mensajes emitidos, en orden. `RealtimeEvent` es una unión. */
+    const idsDe = (mensajes: { data: unknown }[]) =>
+      mensajes.map(
+        (m) => (m.data as Extract<RealtimeEvent, { type: 'message' }>).data.id,
+      );
+
+    it('emite primero los perdidos y después el vivo, en orden', async () => {
+      const recibidos: any[] = [];
+      const sub = service
+        .sseStreamFor('conv-1', { replay: async () => [perdido] })
+        .subscribe((m) => recibidos.push(m));
+
+      await new Promise((r) => setImmediate(r));
+      onMessage(conversationChannel('conv-1'), JSON.stringify(evento));
+      await new Promise((r) => setImmediate(r));
+      sub.unsubscribe();
+
+      expect(idsDe(recibidos)).toEqual(['msg-perdido', 'msg-1']);
+    });
+
+    it('un mensaje publicado DURANTE la reanudación no se pierde', async () => {
+      const recibidos: any[] = [];
+      // La reanudación tarda: mientras se resuelve, llega un mensaje en vivo.
+      const replay = () =>
+        new Promise<RealtimeEvent[]>((resolve) => {
+          onMessage(conversationChannel('conv-1'), JSON.stringify(evento));
+          setImmediate(() => resolve([perdido]));
+        });
+
+      const sub = service
+        .sseStreamFor('conv-1', { replay })
+        .subscribe((m) => recibidos.push(m));
+
+      await new Promise((r) => setImmediate(r));
+      await new Promise((r) => setImmediate(r));
+      sub.unsubscribe();
+
+      // El que llegó durante la lectura quedó buffereado y sale DESPUÉS de los
+      // perdidos, pero sale. Si el servicio leyera antes de suscribirse, este
+      // mensaje no estaría.
+      expect(idsDe(recibidos)).toEqual(['msg-perdido', 'msg-1']);
+    });
+
+    it('la forma del evento es la misma en la reanudación y en el vivo', async () => {
+      const recibidos: any[] = [];
+      const sub = service
+        .sseStreamFor('conv-1', { replay: async () => [perdido] })
+        .subscribe((m) => recibidos.push(m));
+
+      await new Promise((r) => setImmediate(r));
+      onMessage(conversationChannel('conv-1'), JSON.stringify(evento));
+      await new Promise((r) => setImmediate(r));
+      sub.unsubscribe();
+
+      // Si difirieran, el cliente tendría que parsear dos formatos según de dónde
+      // vino el mensaje.
+      expect(recibidos[0]).toEqual({ type: 'message', data: perdido });
+      expect(recibidos[1]).toEqual({ type: 'message', data: evento });
+    });
+  });
+
   it('onModuleDestroy cierra la conexión suscriptora', async () => {
     service.streamFor('conv-1').subscribe();
 

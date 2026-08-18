@@ -40,6 +40,7 @@ function buildController(
     {} as never, // EscalationSuggestionService
     conversations as never,
     employees as never,
+    {} as never, // RealtimeService: no lo toca este endpoint
   );
 
   return { controller, conversations, employees };

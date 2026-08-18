@@ -3,8 +3,11 @@ import { ConfigService } from '@nestjs/config';
 import Redis from 'ioredis';
 import {
   Observable,
+  ReplaySubject,
   Subject,
+  concat,
   concatMap,
+  defer,
   filter,
   interval,
   map,
@@ -20,6 +23,16 @@ interface SseMessage {
   type?: string;
 }
 
+/**
+ * Un evento de dominio, en la forma que sale por el cable. Lo usan **el vivo y la
+ * reanudación**: si difirieran, el cliente tendría que parsear dos formatos según
+ * de dónde vino el mensaje.
+ */
+const toSseMessage = (event: RealtimeEvent): SseMessage => ({
+  type: event.type,
+  data: event,
+});
+
 export interface StreamOptions {
   /**
    * Se ejecuta en cada keepalive para confirmar que quien abrió el stream
@@ -34,6 +47,12 @@ export interface StreamOptions {
    * sobrevivir a la sesión que lo autorizó (RF-022).
    */
   expiresAt?: number;
+  /**
+   * Devuelve los mensajes que el cliente se perdió, para emitirlos **antes** del
+   * flujo en vivo (RF-006). Es una función y no un array porque se ejecuta
+   * DESPUÉS de conectarse al vivo — ver `sseStreamFor()`.
+   */
+  replay?: () => Promise<RealtimeEvent[]>;
 }
 
 /**
@@ -131,9 +150,7 @@ export class RealtimeService implements OnModuleDestroy {
     const heartbeatMs = this.config.get<number>('SSE_HEARTBEAT_MS') ?? 15000;
     const stop$ = new Subject<void>();
 
-    const events$ = this.streamFor(conversationId).pipe(
-      map((event): SseMessage => ({ type: event.type, data: event })),
-    );
+    const events$ = this.streamFor(conversationId).pipe(map(toSseMessage));
 
     const keepalive$ = interval(heartbeatMs).pipe(
       concatMap(async (): Promise<SseMessage | null> => {
@@ -157,7 +174,36 @@ export class RealtimeService implements OnModuleDestroy {
       filter((message): message is SseMessage => message !== null),
     );
 
-    return merge(events$, keepalive$).pipe(takeUntil(stop$));
+    const live$ = merge(events$, keepalive$).pipe(takeUntil(stop$));
+
+    if (!options.replay) return live$;
+
+    // Reanudación (RF-006) sin la ventana de CL-6.
+    //
+    // Lo obvio sería leer los mensajes perdidos y después conectarse al vivo, pero
+    // eso deja un hueco: un mensaje publicado entre la lectura y la suscripción se
+    // cae para siempre. Así que se hace al revés — **primero** se conecta al vivo
+    // y se bufferea todo lo que llegue, después se leen los perdidos, y recién
+    // entonces se vuelca el buffer. No puede existir un instante en el que nadie
+    // esté escuchando.
+    //
+    // El empate por milisegundo entre el cursor y un mensaje buffereado lo cubre la
+    // deduplicación por id del cliente, que hace falta igual para las dos pestañas.
+    const replay = options.replay;
+    return new Observable<SseMessage>((subscriber) => {
+      const buffer = new ReplaySubject<SseMessage>();
+      const liveSub = live$.subscribe(buffer);
+
+      const missed$ = defer(replay).pipe(
+        concatMap((events) => events.map(toSseMessage)),
+      );
+      const outSub = concat(missed$, buffer).subscribe(subscriber);
+
+      return () => {
+        outSub.unsubscribe();
+        liveSub.unsubscribe();
+      };
+    });
   }
 
   /**

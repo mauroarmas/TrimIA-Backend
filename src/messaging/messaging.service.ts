@@ -48,7 +48,12 @@ export class MessagingService {
     return { conversation, message };
   }
 
-  async enqueue(dto: WebhookMessageDto): Promise<void> {
+  /**
+   * Devuelve el `conversationId` para que el simulador del panel pueda abrir el
+   * stream de esa conversación sin tener que buscarla por teléfono en la lista
+   * (spec 004, US3). El webhook de n8n ignora el valor: no le sirve de nada.
+   */
+  async enqueue(dto: WebhookMessageDto): Promise<{ conversationId: string }> {
     const channel = dto.channel ?? Channel.WHATSAPP;
     const { conversation, message } = await this.prepareConversation(
       dto,
@@ -68,7 +73,7 @@ export class MessagingService {
         messageId: message.id,
         imagePath,
       });
-      return;
+      return { conversationId: conversation.id };
     }
 
     await this.queue.add(
@@ -90,6 +95,8 @@ export class MessagingService {
         removeOnFail: { count: 500 },
       },
     );
+
+    return { conversationId: conversation.id };
   }
 
   /**

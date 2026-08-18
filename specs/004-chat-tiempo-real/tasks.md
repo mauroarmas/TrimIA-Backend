@@ -117,12 +117,12 @@ secreto → `202`; con un empleado sin rol → `403`
 **Depende de**: nada de las otras historias. Se puede entregar sola (el simulador
 seguiría leyendo por donde lee hoy hasta que llegue US4).
 
-- [ ] T023 [P] [US3] Crear `src/messaging/dto/simulate-message.dto.ts` con `phone` (requerido, normalizado en el borde con `@Transform(normalizePhone)` igual que `WebhookMessageDto`) y `message` (requerido, `@MaxLength(4096)`). **Sin campo `channel`, sin `userType`, sin `role`**: quién es el remitente no se declara, se resuelve
-- [ ] T024 [US3] Crear `src/messaging/messaging-simulate.controller.ts` con `POST /messaging/simulate`, `@HttpCode(202)`, `@UseGuards(JwtAuthGuard, RolesGuard)` y `@Roles('SUPERVISOR')`, según [contracts/messaging-simulate.md](./contracts/messaging-simulate.md). Llama a `MessagingService.enqueue()` —**el mismo método que usa el webhook**, para que el simulador recorra el camino real— **forzando `channel: WEB`**. Devuelve `{ queued: true, conversationId }`
-- [ ] T025 [US3] Registrar `MessagingSimulateController` en `src/messaging/messaging.module.ts` (y `AuthModule`/`EmployeesModule` si hicieran falta para los guards)
-- [ ] T026 [US3] Crear `src/messaging/messaging-simulate.controller.spec.ts`: `401` sin token · **`403` con un empleado autenticado sin rol `SUPERVISOR`** · `202` con supervisor · el body **no puede** forzar `channel` (queda `WEB` siempre; `forbidNonWhitelisted` global rechaza el campo extra) · el teléfono se normaliza antes de encolar
-- [ ] T027 [US3] Test que sostiene el Principio I, en el mismo spec: un teléfono que **no** está en `Employee` se resuelve como `CLIENTE`, con lo que eso implica — solo `SALES` y `COLLECTIONS` (`allowedAgentsFor`) y solo audiencia `PUBLICO`; un teléfono de un empleado activo se resuelve como `EMPLEADO`. **El simulador elige el teléfono, no el rol** (RF-018, RN-3)
-- [ ] T028 [US3] Test de no-regresión en `src/messaging/messaging.service.spec.ts` o el spec del controller del webhook: `POST /messaging/webhook` **sigue** exigiendo `x-n8n-secret` y **sigue rechazando** un JWT válido como sustituto (RF-020, RN-7, CA-12)
+- [X] T023 [P] [US3] Crear `src/messaging/dto/simulate-message.dto.ts` con `phone` (requerido, normalizado en el borde con `@Transform(normalizePhone)` igual que `WebhookMessageDto`) y `message` (requerido, `@MaxLength(4096)`). **Sin campo `channel`, sin `userType`, sin `role`**: quién es el remitente no se declara, se resuelve
+- [X] T024 [US3] Crear `src/messaging/messaging-simulate.controller.ts` con `POST /messaging/simulate`, `@HttpCode(202)`, `@UseGuards(JwtAuthGuard, RolesGuard)` y `@Roles('SUPERVISOR')`, según [contracts/messaging-simulate.md](./contracts/messaging-simulate.md). Llama a `MessagingService.enqueue()` —**el mismo método que usa el webhook**, para que el simulador recorra el camino real— **forzando `channel: WEB`**. Devuelve `{ queued: true, conversationId }`
+- [X] T025 [US3] Registrar `MessagingSimulateController` en `src/messaging/messaging.module.ts` (y `AuthModule`/`EmployeesModule` si hicieran falta para los guards)
+- [X] T026 [US3] Crear `src/messaging/messaging-simulate.controller.spec.ts`: `401` sin token · **`403` con un empleado autenticado sin rol `SUPERVISOR`** · `202` con supervisor · el body **no puede** forzar `channel` (queda `WEB` siempre; `forbidNonWhitelisted` global rechaza el campo extra) · el teléfono se normaliza antes de encolar
+- [X] T027 [US3] Test que sostiene el Principio I, en el mismo spec: un teléfono que **no** está en `Employee` se resuelve como `CLIENTE`, con lo que eso implica — solo `SALES` y `COLLECTIONS` (`allowedAgentsFor`) y solo audiencia `PUBLICO`; un teléfono de un empleado activo se resuelve como `EMPLEADO`. **El simulador elige el teléfono, no el rol** (RF-018, RN-3)
+- [X] T028 [US3] Test de no-regresión en `src/messaging/messaging.service.spec.ts` o el spec del controller del webhook: `POST /messaging/webhook` **sigue** exigiendo `x-n8n-secret` y **sigue rechazando** un JWT válido como sustituto (RF-020, RN-7, CA-12)
 
 **Checkpoint**: el secreto de producción ya no se pega a mano en ningún navegador.
 
@@ -137,8 +137,8 @@ la respuesta llegar al stream, tratada como cliente.
 
 **Depende de**: Fase 2 y US3.
 
-- [ ] T029 [US4] Agregar `GET /supervisor/conversations/:id/stream` con `@Sse()` en `src/supervisor/supervisor.controller.ts`, con `@UseGuards(JwtAuthGuard, RolesGuard)` y `@Roles('SUPERVISOR')` — el mismo trío que ya gobierna el `GET` de al lado ([:94-96](../../src/supervisor/supervisor.controller.ts#L94-L96)). Ver [contracts/supervisor-stream.md](./contracts/supervisor-stream.md). Reusar el heartbeat de T006 y la revalidación de T016/T017 en vez de duplicarlos
-- [ ] T030 [US4] **Crear** `src/supervisor/supervisor.controller.spec.ts` (no existe todavía: hoy el módulo solo tiene `supervisor.service.spec.ts` y `supervisor-timeline.spec.ts`): `401` sin token · **`403` con empleado sin rol `SUPERVISOR`** · `404` con id inexistente · `200` con `text/event-stream` para un supervisor · el stream se corta si el token vence (T017)
+- [X] T029 [US4] Agregar `GET /supervisor/conversations/:id/stream` con `@Sse()` en `src/supervisor/supervisor.controller.ts`, con `@UseGuards(JwtAuthGuard, RolesGuard)` y `@Roles('SUPERVISOR')` — el mismo trío que ya gobierna el `GET` de al lado ([:94-96](../../src/supervisor/supervisor.controller.ts#L94-L96)). Ver [contracts/supervisor-stream.md](./contracts/supervisor-stream.md). Reusar el heartbeat de T006 y la revalidación de T016/T017 en vez de duplicarlos
+- [X] T030 [US4] **Crear** `src/supervisor/supervisor.controller.spec.ts` (no existe todavía: hoy el módulo solo tiene `supervisor.service.spec.ts` y `supervisor-timeline.spec.ts`): `401` sin token · **`403` con empleado sin rol `SUPERVISOR`** · `404` con id inexistente · `200` con `text/event-stream` para un supervisor · el stream se corta si el token vence (T017)
 
 **Checkpoint**: el simulador es útil de punta a punta y en vivo.
 
@@ -154,8 +154,8 @@ la respuesta llegar al stream, tratada como cliente.
 
 **Depende de**: Fase 2 (T010) y los dos endpoints de stream (US1, US4).
 
-- [ ] T031 [US5] Aceptar `?after=<messageId>` en los **dos** endpoints de stream y emitir los mensajes posteriores **antes** de conectar el flujo en vivo (RF-006). Esto cierra la carrera de CL-6: no puede existir una ventana entre "envié" y "estoy escuchando" donde un mensaje se caiga
-- [ ] T032 [US5] Tests de reanudación en `src/messaging/messaging-web.controller.spec.ts` y `src/supervisor/supervisor.controller.spec.ts` (creado en T030): con `after`, el stream emite primero los mensajes perdidos en orden y después los nuevos · sin `after`, solo los nuevos · un mensaje ya visto no se re-emite por otro camino (la deduplicación por id del cliente cubre el empate por milisegundo, ver [research.md §10](./research.md))
+- [X] T031 [US5] Aceptar `?after=<messageId>` en los **dos** endpoints de stream y emitir los mensajes posteriores **antes** de conectar el flujo en vivo (RF-006). Esto cierra la carrera de CL-6: no puede existir una ventana entre "envié" y "estoy escuchando" donde un mensaje se caiga
+- [X] T032 [US5] Tests de reanudación en `src/messaging/messaging-web.controller.spec.ts` y `src/supervisor/supervisor.controller.spec.ts` (creado en T030): con `after`, el stream emite primero los mensajes perdidos en orden y después los nuevos · sin `after`, solo los nuevos · un mensaje ya visto no se re-emite por otro camino (la deduplicación por id del cliente cubre el empate por milisegundo, ver [research.md §10](./research.md))
 
 **Checkpoint**: todas las historias funcionan de forma independiente.
 
@@ -173,8 +173,8 @@ el historial que lee un supervisor miente sobre lo que se le dijo al cliente.
 Arreglarlo es lo correcto (auditoría, OE-11) pero no es invisible. Fundamento en
 [research.md §13](./research.md).
 
-- [ ] T033 En el `catch` de `MessageProcessor.processExclusive()` (`src/queue/processors/message.processor.ts`, [:210-228](../../src/queue/processors/message.processor.ts#L210-L228)), persistir el `FALLBACK` con `addMessage()` **antes** de intentar enviarlo con `sender.send()`, para **todos** los canales. Mantener la condición de "solo en el último intento" que ya existe, para no dejar tres avisos
-- [ ] T034 Extender `src/queue/processors/message.processor.spec.ts`: un turno que agota sus 3 intentos deja **exactamente un** mensaje visible en la conversación · un turno que falla y **después** sale bien no deja ningún aviso de error · el aviso se persiste también con canal `WHATSAPP` (el cambio de contrato, explícito en un test para que quede a la vista)
+- [X] T033 En el `catch` de `MessageProcessor.processExclusive()` (`src/queue/processors/message.processor.ts`, [:210-228](../../src/queue/processors/message.processor.ts#L210-L228)), persistir el `FALLBACK` con `addMessage()` **antes** de intentar enviarlo con `sender.send()`, para **todos** los canales. Mantener la condición de "solo en el último intento" que ya existe, para no dejar tres avisos
+- [X] T034 Extender `src/queue/processors/message.processor.spec.ts`: un turno que agota sus 3 intentos deja **exactamente un** mensaje visible en la conversación · un turno que falla y **después** sale bien no deja ningún aviso de error · el aviso se persiste también con canal `WHATSAPP` (el cambio de contrato, explícito en un test para que quede a la vista)
 
 ---
 

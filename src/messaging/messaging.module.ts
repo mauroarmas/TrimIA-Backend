@@ -6,6 +6,7 @@ import { CollectionsModule } from '../collections/collections.module';
 import { EmployeesModule } from '../employees/employees.module';
 import { MessagingController } from './messaging.controller';
 import { MessagingWebController } from './messaging-web.controller';
+import { MessagingSimulateController } from './messaging-simulate.controller';
 import { MessagingService } from './messaging.service';
 import { WhatsappSenderModule } from './whatsapp-sender.module';
 import { WhatsappMediaModule } from './whatsapp-media.module';
@@ -22,7 +23,11 @@ import { RealtimeModule } from '../realtime/realtime.module';
     EmployeesModule,
     RealtimeModule,
   ],
-  controllers: [MessagingController, MessagingWebController],
+  controllers: [
+    MessagingController,
+    MessagingWebController,
+    MessagingSimulateController,
+  ],
   providers: [MessagingService],
   exports: [WhatsappSenderModule],
 })

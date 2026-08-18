@@ -599,3 +599,163 @@ describe('MessageProcessor — runExclusive (serialización por conversación)',
     expect(orchestrator.invoke).toHaveBeenCalledTimes(2);
   });
 });
+
+/**
+ * ⭐ RF-012 — un turno nunca termina en silencio (spec 004, Fase 8).
+ *
+ * Hasta acá, el aviso de fallo se enviaba con `sender.send()` y **no se
+ * persistía**. Y ese send es un no-op para canales distintos de WHATSAPP, así que
+ * el resultado era asimétrico: por WhatsApp el usuario recibía la disculpa, por el
+ * panel no recibía absolutamente nada y el chat quedaba mudo.
+ */
+describe('⭐ MessageProcessor — el aviso de fallo se registra (RF-012)', () => {
+  let processor: MessageProcessor;
+  let conversations: {
+    findById: jest.Mock;
+    getRecentHistory: jest.Mock;
+    setCurrentAgent: jest.Mock;
+    addMessage: jest.Mock;
+    setUserType: jest.Mock;
+    getLastAssistantMessage: jest.Mock;
+  };
+  let sender: { send: jest.Mock };
+  let orchestrator: { invoke: jest.Mock };
+
+  const FALLBACK = /Disculpá, tuve un problema/;
+
+  const jobEn = (channel: string, attemptsMade: number) =>
+    ({
+      data: {
+        conversationId: 'conv-1',
+        externalId: '5491100000000',
+        channel,
+        message: 'hola',
+        messageId: 'msg-actual',
+      },
+      attemptsMade,
+      opts: { attempts: 3 },
+    }) as any;
+
+  beforeEach(() => {
+    conversations = {
+      findById: jest.fn().mockResolvedValue({
+        id: 'conv-1',
+        status: 'ACTIVE',
+        currentAgent: null,
+        userType: 'CLIENTE',
+      }),
+      getRecentHistory: jest.fn().mockResolvedValue([]),
+      setCurrentAgent: jest.fn(),
+      addMessage: jest.fn().mockResolvedValue({ id: 'msg-nuevo' }),
+      setUserType: jest.fn(),
+      getLastAssistantMessage: jest.fn().mockResolvedValue(null),
+    };
+    sender = { send: jest.fn().mockResolvedValue(undefined) };
+    orchestrator = { invoke: jest.fn() };
+
+    processor = new MessageProcessor(
+      conversations as unknown as ConversationsService,
+      sender as unknown as WhatsappSenderService,
+      orchestrator as unknown as OrchestratorService,
+      {
+        findByPhone: jest.fn().mockResolvedValue(null),
+      } as unknown as EmployeesService,
+      { trackRetrievals: jest.fn() } as unknown as OrchestrationLogger,
+    );
+  });
+
+  /** Los avisos de fallo registrados (el FALLBACK), no las respuestas normales. */
+  const avisos = () =>
+    conversations.addMessage.mock.calls.filter(([, , content]) =>
+      FALLBACK.test(content as string),
+    );
+
+  it('en el ÚLTIMO intento registra el aviso, en canal WEB', async () => {
+    orchestrator.invoke.mockRejectedValue(new Error('Gemini caído'));
+
+    // attemptsMade 2 + 1 === attempts 3 → es el último.
+    await expect(processor.process(jobEn('WEB', 2))).rejects.toThrow();
+
+    expect(avisos()).toHaveLength(1);
+    expect(avisos()[0][0]).toBe('conv-1');
+    expect(avisos()[0][1]).toBe('ASSISTANT');
+  });
+
+  // El cambio de contrato, explícito: antes por WhatsApp se enviaba sin registrar,
+  // así que el historial que lee un supervisor mentía sobre lo que se le dijo al
+  // cliente (OE-11).
+  it('también lo registra en WHATSAPP, donde antes solo se enviaba', async () => {
+    orchestrator.invoke.mockRejectedValue(new Error('Gemini caído'));
+
+    await expect(processor.process(jobEn('WHATSAPP', 2))).rejects.toThrow();
+
+    expect(avisos()).toHaveLength(1);
+    expect(sender.send).toHaveBeenCalledWith(
+      '5491100000000',
+      expect.stringMatching(FALLBACK),
+      'WHATSAPP',
+    );
+  });
+
+  it('registra ANTES de enviar: si el envío falla, el aviso igual existe', async () => {
+    orchestrator.invoke.mockRejectedValue(new Error('Gemini caído'));
+    sender.send.mockRejectedValue(new Error('n8n caído'));
+
+    await expect(processor.process(jobEn('WHATSAPP', 2))).rejects.toThrow();
+
+    expect(avisos()).toHaveLength(1);
+    expect(conversations.addMessage.mock.invocationCallOrder[0]).toBeLessThan(
+      sender.send.mock.invocationCallOrder[0],
+    );
+  });
+
+  // Tres intentos no pueden dejar tres disculpas: el usuario vería el error
+  // repetido y el historial quedaría lleno de ruido.
+  it.each([0, 1])(
+    'en el intento %s (no el último) NO registra ningún aviso',
+    async (attemptsMade) => {
+      orchestrator.invoke.mockRejectedValue(new Error('Gemini caído'));
+
+      await expect(
+        processor.process(jobEn('WEB', attemptsMade)),
+      ).rejects.toThrow();
+
+      expect(avisos()).toHaveLength(0);
+      expect(sender.send).not.toHaveBeenCalled();
+    },
+  );
+
+  it('un turno que falla y después sale bien no deja ningún aviso', async () => {
+    // Primer intento: falla y no avisa (no es el último).
+    orchestrator.invoke.mockRejectedValueOnce(new Error('Gemini caído'));
+    await expect(processor.process(jobEn('WEB', 0))).rejects.toThrow();
+
+    // Reintento: sale bien.
+    orchestrator.invoke.mockResolvedValue({
+      response: 'Acá va la respuesta.',
+      agentType: 'SALES',
+      retrievedDocs: [],
+    });
+    await processor.process(jobEn('WEB', 1));
+
+    expect(avisos()).toHaveLength(0);
+    expect(conversations.addMessage).toHaveBeenCalledWith(
+      'conv-1',
+      'ASSISTANT',
+      'Acá va la respuesta.',
+      'SALES',
+    );
+  });
+
+  it('si no se puede registrar el aviso, igual intenta enviarlo y relanza', async () => {
+    orchestrator.invoke.mockRejectedValue(new Error('Gemini caído'));
+    conversations.addMessage.mockRejectedValue(new Error('DB caída'));
+
+    await expect(processor.process(jobEn('WHATSAPP', 2))).rejects.toThrow(
+      'Gemini caído',
+    );
+
+    // El error original no queda tapado por el del registro, y el envío se intenta.
+    expect(sender.send).toHaveBeenCalled();
+  });
+});
