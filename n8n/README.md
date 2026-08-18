@@ -127,12 +127,37 @@ pedido de reformulación y no en un usuario sin ninguna respuesta.
 - El audio se baja, se pasa a base64 en memoria y se descarta: al backend viaja
   **solo texto** (a diferencia de la rama de imagen, que sí manda `mediaBase64`
   porque el comprobante hay que conservarlo).
-- El workflow lleva `saveDataSuccessExecution: none` y `saveDataErrorExecution:
-  none` en `settings` — sin eso, n8n guarda la salida de cada nodo en su base
-  de ejecuciones, y el base64 del audio quedaría ahí.
-- **Verificar al importar**: n8n puede pisar esos settings con los globales de
-  la instancia (`EXECUTIONS_DATA_SAVE_ON_SUCCESS`). Conviene confirmarlo en
-  Settings del workflow después de importarlo.
+- **Los settings del workflow NO alcanzan.** En la prueba real del 2026-08-18,
+  con `saveDataSuccessExecution: none` puesto en el JSON, la nota de voz quedó
+  igual persistida **dos veces**:
+  - `n8n/data/storage/workflows/<id>/executions/<n>/binary_data/<uuid>` — el
+    `.ogg` crudo y reproducible, porque el modo de binarios era `filesystem`.
+  - Dentro de `execution_data` en `database.sqlite` — los 23 KB de base64 que
+    el nodo `Preparar audio para Gemini` devuelve en su salida.
+
+  Los settings del workflow son advisory: mandan los de la instancia. Por eso
+  la protección real vive en `docker-compose.yml`, no acá:
+
+  ```yaml
+  N8N_DEFAULT_BINARY_DATA_MODE: default   # memoria, no disco
+  EXECUTIONS_DATA_SAVE_ON_SUCCESS: none
+  EXECUTIONS_DATA_SAVE_ON_ERROR: none
+  ```
+
+  **Costo asumido**: se pierde el historial de ejecuciones de n8n para todos
+  los workflows, que es la herramienta principal para depurarlos. Se aceptó
+  igual: la voz de una persona pesa más que la comodidad de ver qué devolvió
+  cada nodo.
+
+- **Hay que recrear el contenedor** para que tome esas variables, y **purgar lo
+  ya guardado**: cambiar la config no borra las ejecuciones viejas.
+
+- Queda una mejora posible, más robusta que depender de la config: hacer la
+  descarga y la transcripción **dentro de un solo Code node**, de modo que el
+  binario nunca sea salida de ningún nodo y no haya nada que persistir. No se
+  hizo porque no está confirmado que `fetch` funcione en el sandbox del Task
+  Runner de n8n, y una config verificable es mejor que una arquitectura linda
+  sin probar.
 
 ### Puntos que quedan pendientes de verificación real
 

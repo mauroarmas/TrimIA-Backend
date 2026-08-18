@@ -69,6 +69,22 @@ services:
       # Permite leerla como {{ $env.GOOGLE_API_KEY }} desde una expresión: n8n
       # bloquea el acceso a env vars en los nodos por defecto.
       N8N_BLOCK_ENV_ACCESS_IN_NODE: "false"
+      # --- FR-011: el audio de una nota de voz no se persiste en ningún lado ---
+      # Estas tres van a nivel INSTANCIA y no en el JSON del workflow porque el
+      # `saveDataSuccessExecution: none` del workflow NO alcanzó: en la prueba
+      # real del 2026-08-18 la nota de voz quedó igual guardada dos veces —el
+      # .ogg en disco (modo filesystem) y su base64 dentro de execution_data—.
+      # Los settings del workflow son advisory; los de la instancia mandan.
+      #
+      # `default` = binarios en memoria. Con `filesystem` n8n escribe cada
+      # binario a storage/workflows/<id>/executions/<n>/binary_data/.
+      N8N_DEFAULT_BINARY_DATA_MODE: default
+      # Sin esto, la salida de cada nodo —incluido el base64 del audio— queda
+      # en la base de ejecuciones. Se pierde el historial de ejecuciones de
+      # n8n para depurar, y es un costo real: la voz de una persona pesa más
+      # que la comodidad de ver qué devolvió cada nodo.
+      EXECUTIONS_DATA_SAVE_ON_SUCCESS: none
+      EXECUTIONS_DATA_SAVE_ON_ERROR: none
     env_file:
       - .env
     volumes:
