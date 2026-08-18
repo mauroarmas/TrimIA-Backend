@@ -554,6 +554,45 @@ describe('RealtimeService', () => {
       expect(cerrado).toBe(true);
     });
 
+    /**
+     * ⭐ Regresión encontrada probando en vivo, no con tests.
+     *
+     * El turno se deduce de los eventos: un USER lo abre, un ASSISTANT lo cierra. Y
+     * hay un caso real donde el segundo NUNCA llega — con la conversación en
+     * WAITING_HUMAN el agente no responde, y el acuse de espera no se repite si el
+     * usuario insiste. Sin cota, ese stream quedaba retenido para siempre: la fuga
+     * exacta que RF-023 viene a tapar.
+     *
+     * Los tests de abajo no lo detectaban porque emitían el status SIN un USER
+     * previo, que es justo la combinación que no se da en la realidad.
+     */
+    it('un turno sin respuesta NO retiene la conexión para siempre', async () => {
+      jest.useFakeTimers();
+      const svc = conIdle(3000);
+      let cerrado = false;
+
+      svc
+        .sseStreamFor('conv-1', {})
+        .subscribe({ complete: () => (cerrado = true) });
+
+      // El usuario escribe con el caso ya escalado: el agente no va a contestar.
+      await jest.advanceTimersByTimeAsync(500);
+      onMessage(
+        conversationChannel('conv-1'),
+        JSON.stringify(mensajeDe('USER')),
+      );
+
+      // Pasado el umbral sigue abierto: el turno se considera en curso (CL-13).
+      await jest.advanceTimersByTimeAsync(10000);
+      expect(cerrado).toBe(false);
+
+      // Pero no para siempre: pasada la cota, se cierra.
+      await jest.advanceTimersByTimeAsync(130000);
+      jest.useRealTimers();
+
+      expect(cerrado).toBe(true);
+    });
+
     // La distinción deliberada: un turno dura segundos, una espera humana puede
     // durar días. Mantener la conexión abierta todo ese tiempo es justo la fuga
     // que RF-023 tapa, y no cuesta nada — la respuesta del supervisor se registra

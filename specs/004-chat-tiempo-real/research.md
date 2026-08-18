@@ -747,3 +747,31 @@ falla en loop. El motivo del cierre **es** información que el cliente necesita.
 y la respuesta aparece al reconectar (CL-16) · terminar una conversación cierra sus
 entregas abiertas, incluida la de otra pestaña (CL-15) · cada motivo de cierre llega
 distinguible para el cliente.
+
+### Apéndice a §18 — la protección del turno necesita una cota (hallado en vivo)
+
+El turno "en curso" que CL-13 protege se deduce de los eventos: un mensaje `USER` lo
+abre y uno `ASSISTANT` lo cierra. Probando la feature contra el sistema corriendo
+apareció el caso que rompe esa deducción: **con la conversación en `WAITING_HUMAN` el
+agente no responde**, y el acuse de espera no se repite si el usuario insiste
+([message.processor.ts:247](../../src/queue/processors/message.processor.ts#L247)). No
+llega ningún `ASSISTANT`, así que el turno quedaba abierto **para siempre** y la
+conexión no se cerraba nunca — la fuga exacta que RF-023 viene a tapar, reintroducida
+por la protección pensada para evitarla.
+
+**Decisión**: acotar el turno a `TURN_MAX_MS` (2 minutos). Pasado eso deja de contar
+como en curso.
+
+**Rationale**: dos minutos es holgado contra lo que un turno puede tardar —3 intentos
+de BullMQ con backoff exponencial desde 2s, más el tiempo del LLM en cada uno—, y el
+caso de un turno que falla de verdad no depende de la cota: produce un mensaje (el
+aviso de disculpa, RF-012) que cierra el turno por la vía normal. La cota solo actúa
+cuando el sistema decidió deliberadamente no responder.
+
+**Por qué los tests no lo encontraron**: los de CL-13 emitían el cambio de estado a
+`WAITING_HUMAN` **sin un `USER` previo**, que es justo la combinación que no ocurre en
+la realidad — el usuario escribe primero y por eso el estado ya venía de antes. El test
+de regresión ahora reproduce la secuencia real.
+
+**Consecuencia a testear**: un `USER` sin `ASSISTANT` mantiene la conexión un rato
+(CL-13) pero no indefinidamente; verificado en vivo, cerró a los 122 s.

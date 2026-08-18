@@ -82,6 +82,22 @@ export interface StreamOptions {
  * Postgres antes de publicarse, así que perder un evento no pierde nada
  * (RF-007). De ahí se sigue todo lo demás, incluida la resiliencia de publish().
  */
+/**
+ * Cuánto puede durar, como mucho, un turno "en curso" a los efectos de no cerrar la
+ * conexión por inactividad (CL-13).
+ *
+ * Hace falta una cota porque el turno se deduce de los eventos —un mensaje USER lo
+ * abre, uno ASSISTANT lo cierra— y hay un caso real en el que el segundo **nunca
+ * llega**: con la conversación en WAITING_HUMAN el agente no responde, y el acuse de
+ * espera no se repite si el usuario insiste. Sin cota, ese stream quedaba retenido
+ * para siempre — justo la fuga que RF-023 viene a tapar.
+ *
+ * Dos minutos es holgado: un turno son 3 intentos de BullMQ con backoff exponencial
+ * desde 2s más el tiempo del LLM. Y un turno que falla de verdad **sí** produce un
+ * mensaje (el aviso de disculpa, RF-012), que cierra el turno por la vía normal.
+ */
+const TURN_MAX_MS = 120_000;
+
 @Injectable()
 export class RealtimeService implements OnModuleDestroy {
   private readonly logger = new Logger(RealtimeService.name);
@@ -169,7 +185,7 @@ export class RealtimeService implements OnModuleDestroy {
     // Estado de inactividad, por stream. No es compartido: cada conexión tiene su
     // propia noción de "hace cuánto que no pasa nada".
     let lastActivity = Date.now();
-    let turnPending = false;
+    let turnStartedAt: number | null = null;
 
     const events$ = this.streamFor(conversationId).pipe(
       tap((event) => {
@@ -178,7 +194,7 @@ export class RealtimeService implements OnModuleDestroy {
         // cierra. Es lo que permite no cortar mientras el asistente trabaja
         // (CL-13) sin tener que consultar la base en cada tick.
         if (event.type === 'message') {
-          turnPending = event.data.role === 'USER';
+          turnStartedAt = event.data.role === 'USER' ? Date.now() : null;
         }
       }),
       map(toSseMessage),
@@ -199,6 +215,11 @@ export class RealtimeService implements OnModuleDestroy {
         // trabaja sería reintroducir por otra puerta el defecto que esta spec vino a
         // arreglar. Un caso que espera a una PERSONA sí se cierra, y la distinción
         // es deliberada: un turno dura segundos, una espera humana puede durar días.
+        // Acotado: ver TURN_MAX_MS. Un turno que se quedó sin respuesta —porque el
+        // caso pasó a manos de una persona— no puede retener la conexión eternamente.
+        const turnPending =
+          turnStartedAt !== null && Date.now() - turnStartedAt < TURN_MAX_MS;
+
         if (!turnPending && Date.now() - lastActivity >= idleMs) {
           this.logger.debug(
             `Stream de [${conversationId}] cerrado por inactividad. La conversación queda intacta.`,

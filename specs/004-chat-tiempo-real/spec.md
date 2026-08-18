@@ -630,6 +630,12 @@ exactamente la fuga que RF-023 viene a tapar, y no cuesta nada cerrarla — cuan
 supervisor responda, esa respuesta está registrada y aparece al reconectar (RF-006,
 RF-007). "Hay alguien involucrado" no es lo mismo que "la respuesta está por llegar".
 
+**La protección del turno está acotada en el tiempo**, y hace falta que lo esté: hay un
+caso donde el usuario escribe con el caso ya escalado y el asistente **nunca** va a
+contestar —el acuse de espera no se repite—, así que "hay un turno en curso" sería
+verdad para siempre y la conexión no se cerraría nunca. Pasado un máximo razonable, el
+turno deja de contar como en curso. Se encontró probando en vivo, no con tests.
+
 **CL-14 — El empleado intenta terminar la conversación mientras un supervisor la
 atiende.** **No se permite.** Un caso en `WAITING_HUMAN` o `HUMAN_HANDLING` no es
 solo suyo: hay una persona involucrada y una escalación abierta. El sistema lo
