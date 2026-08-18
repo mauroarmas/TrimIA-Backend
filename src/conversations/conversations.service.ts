@@ -333,4 +333,89 @@ export class ConversationsService {
       orderBy: { createdAt: 'asc' },
     });
   }
+
+  /**
+   * Historial paginado de una conversación, orden cronológico ascendente —
+   * así se lee un chat (US4, FR-015). Igual que `getRecentHistory()`, solo
+   * expone `USER`/`ASSISTANT`: `SYSTEM` y `TOOL` no son para el usuario.
+   */
+  async listMessages(
+    conversationId: string,
+    opts: { page?: number; limit?: number } = {},
+  ) {
+    const page = Math.max(1, opts.page ?? 1);
+    const limit = Math.min(200, Math.max(1, opts.limit ?? 50));
+    const skip = (page - 1) * limit;
+    const where = {
+      conversationId,
+      role: { in: ['USER' as const, 'ASSISTANT' as const] },
+    };
+
+    const [data, total] = await Promise.all([
+      this.prisma.message.findMany({
+        where,
+        orderBy: { createdAt: 'asc' },
+        skip,
+        take: limit,
+        select: {
+          id: true,
+          role: true,
+          content: true,
+          agentType: true,
+          createdAt: true,
+        },
+      }),
+      this.prisma.message.count({ where }),
+    ]);
+
+    return { data, page, limit, total, hasMore: skip + data.length < total };
+  }
+
+  /**
+   * Vista unificada de lectura (US4, FR-018): todos los mensajes de un mismo
+   * contacto, en los dos canales, en una sola línea de tiempo — sin fusionar
+   * los hilos ni compartir memoria entre ellos.
+   *
+   * Sale de una sola consulta por `externalId` sin filtrar canal, porque el
+   * chat web usa el mismo `externalId` que WhatsApp (el teléfono del
+   * empleado, research §8): no hace falta ninguna tabla de correlación.
+   *
+   * Devuelve `null` cuando el contacto no tiene ninguna conversación — el
+   * llamador decide si eso es 404 o una lista vacía.
+   */
+  async getUnifiedTimeline(externalId: string) {
+    const conversations = await this.prisma.conversation.findMany({
+      where: { externalId },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true, channel: true, status: true, currentAgent: true },
+    });
+    if (conversations.length === 0) return null;
+
+    const channelById = new Map(conversations.map((c) => [c.id, c.channel]));
+    const messages = await this.prisma.message.findMany({
+      where: {
+        conversationId: { in: conversations.map((c) => c.id) },
+        role: { in: ['USER', 'ASSISTANT'] },
+      },
+      orderBy: { createdAt: 'asc' },
+      select: {
+        conversationId: true,
+        role: true,
+        content: true,
+        agentType: true,
+        createdAt: true,
+      },
+    });
+
+    return {
+      conversations,
+      // Cada entrada lleva su `channel` y `conversationId`: es lo que evita
+      // que dos hilos con agentes distintos, intercalados en el tiempo, se
+      // lean como una sola conversación que nunca existió.
+      timeline: messages.map((m) => ({
+        ...m,
+        channel: channelById.get(m.conversationId)!,
+      })),
+    };
+  }
 }

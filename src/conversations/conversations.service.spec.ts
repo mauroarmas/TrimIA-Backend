@@ -431,3 +431,150 @@ describe('ConversationsService — takeover/release/replyManually', () => {
     });
   });
 });
+
+/**
+ * Tests de la vista de chat web y de la línea de tiempo unificada —
+ * Sprint 5A (US4, FR-015/FR-018).
+ */
+describe('ConversationsService — listMessages y getUnifiedTimeline', () => {
+  let service: ConversationsService;
+  let prisma: {
+    conversation: { findMany: jest.Mock };
+    message: { findMany: jest.Mock; count: jest.Mock };
+  };
+
+  beforeEach(() => {
+    prisma = {
+      conversation: { findMany: jest.fn() },
+      message: { findMany: jest.fn(), count: jest.fn() },
+    };
+
+    service = new ConversationsService(
+      prisma as unknown as PrismaService,
+      { send: jest.fn() } as unknown as WhatsappSenderService,
+      { logEvent: jest.fn() } as unknown as OrchestrationLogger,
+    );
+  });
+
+  describe('listMessages', () => {
+    it('solo trae USER/ASSISTANT, igual que getRecentHistory', async () => {
+      prisma.message.findMany.mockResolvedValue([]);
+      prisma.message.count.mockResolvedValue(0);
+
+      await service.listMessages('conv-1');
+
+      expect(prisma.message.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: {
+            conversationId: 'conv-1',
+            role: { in: ['USER', 'ASSISTANT'] },
+          },
+        }),
+      );
+    });
+
+    it('hasMore es true cuando quedan más páginas', async () => {
+      prisma.message.findMany.mockResolvedValue(
+        Array.from({ length: 50 }, (_, i) => ({ id: `m${i}` })),
+      );
+      prisma.message.count.mockResolvedValue(120);
+
+      const result = await service.listMessages('conv-1', {
+        page: 1,
+        limit: 50,
+      });
+
+      expect(result.hasMore).toBe(true);
+      expect(result.total).toBe(120);
+    });
+
+    it('hasMore es false en la última página', async () => {
+      prisma.message.findMany.mockResolvedValue(
+        Array.from({ length: 20 }, (_, i) => ({ id: `m${i}` })),
+      );
+      prisma.message.count.mockResolvedValue(120);
+
+      const result = await service.listMessages('conv-1', {
+        page: 3,
+        limit: 50,
+      });
+
+      expect(result.hasMore).toBe(false);
+    });
+  });
+
+  describe('getUnifiedTimeline', () => {
+    it('devuelve null si el contacto no tiene ninguna conversación', async () => {
+      prisma.conversation.findMany.mockResolvedValue([]);
+
+      const result = await service.getUnifiedTimeline('5493865505362');
+
+      expect(result).toBeNull();
+      expect(prisma.message.findMany).not.toHaveBeenCalled();
+    });
+
+    it('cada entrada del timeline lleva su channel y su conversationId', async () => {
+      // Es lo que exige el caso borde de la spec sobre alguien escribiendo
+      // por los dos canales a la vez: sin esta marca, dos hilos con agentes
+      // distintos intercalados se leen como una sola conversación que nunca
+      // existió.
+      prisma.conversation.findMany.mockResolvedValue([
+        {
+          id: 'conv-wa',
+          channel: 'WHATSAPP',
+          status: 'ACTIVE',
+          currentAgent: 'SALES',
+        },
+        {
+          id: 'conv-web',
+          channel: 'WEB',
+          status: 'ACTIVE',
+          currentAgent: 'COLLECTIONS',
+        },
+      ]);
+      prisma.message.findMany.mockResolvedValue([
+        {
+          conversationId: 'conv-wa',
+          role: 'USER',
+          content: 'a',
+          agentType: null,
+          createdAt: new Date(),
+        },
+        {
+          conversationId: 'conv-web',
+          role: 'USER',
+          content: 'b',
+          agentType: null,
+          createdAt: new Date(),
+        },
+      ]);
+
+      const result = await service.getUnifiedTimeline('5493865505362');
+
+      expect(result!.timeline).toEqual([
+        expect.objectContaining({
+          conversationId: 'conv-wa',
+          channel: 'WHATSAPP',
+        }),
+        expect.objectContaining({ conversationId: 'conv-web', channel: 'WEB' }),
+      ]);
+    });
+
+    it('busca por externalId sin filtrar channel: una sola query correlaciona los dos hilos', async () => {
+      prisma.conversation.findMany.mockResolvedValue([
+        {
+          id: 'conv-wa',
+          channel: 'WHATSAPP',
+          status: 'ACTIVE',
+          currentAgent: null,
+        },
+      ]);
+      prisma.message.findMany.mockResolvedValue([]);
+
+      await service.getUnifiedTimeline('5493865505362');
+
+      const where = prisma.conversation.findMany.mock.calls[0][0].where;
+      expect(where).toEqual({ externalId: '5493865505362' });
+    });
+  });
+});

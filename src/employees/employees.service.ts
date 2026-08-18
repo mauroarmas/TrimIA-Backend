@@ -109,6 +109,7 @@ export class EmployeesService {
       where: { phone: analyzed.phone },
       select: {
         id: true,
+        name: true,
         role: true,
         isActive: true,
         sectorId: true,

@@ -1,4 +1,4 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { ConflictException, Injectable, Logger } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import { Channel } from '@prisma/client';
@@ -6,7 +6,9 @@ import { ConversationsService } from '../conversations/conversations.service';
 import { ClientsService } from '../clients/clients.service';
 import { WhatsappMediaService } from './whatsapp-media.service';
 import { PaymentProofsService } from '../collections/payment-proofs.service';
+import { EmployeesService } from '../employees/employees.service';
 import { WebhookMessageDto } from './dto/webhook-message.dto';
+import { normalizePhone } from '../common/phone';
 
 @Injectable()
 export class MessagingService {
@@ -19,6 +21,7 @@ export class MessagingService {
     private readonly clients: ClientsService,
     private readonly media: WhatsappMediaService,
     private readonly paymentProofs: PaymentProofsService,
+    private readonly employees: EmployeesService,
   ) {}
 
   private async prepareConversation(dto: WebhookMessageDto, channel: Channel) {
@@ -81,5 +84,57 @@ export class MessagingService {
         removeOnFail: { count: 500 },
       },
     );
+  }
+
+  /**
+   * Mensaje desde el chat web del panel (US4, research §8).
+   *
+   * La conversación se identifica por el **teléfono normalizado del
+   * empleado**, no por su id: es lo que hace que la vista unificada
+   * (`ConversationsService.getUnifiedTimeline`) salga de una sola consulta
+   * por `externalId` sin tabla de correlación, y lo que hace que
+   * `MessageProcessor` derive el `userType` sin ningún cambio — ya busca el
+   * empleado por teléfono en cada mensaje.
+   */
+  async enqueueWeb(
+    employeeId: string,
+    message: string,
+  ): Promise<{ conversationId: string }> {
+    const employee = await this.employees.findById(employeeId);
+    if (!employee.phone) {
+      // 409, no 400: el dato falta del lado del empleado (algo que un
+      // supervisor tiene que cargar), no es un error de lo que mandó el
+      // request.
+      throw new ConflictException(
+        'No tenés un teléfono cargado en tu perfil, así que no se puede ' +
+          'identificar tu conversación con el asistente. Pedile a un ' +
+          'supervisor que te lo cargue.',
+      );
+    }
+    const phone = normalizePhone(employee.phone);
+
+    const { conversation, message: persisted } = await this.prepareConversation(
+      { phone, message } as WebhookMessageDto,
+      Channel.WEB,
+    );
+
+    await this.queue.add(
+      'process-message',
+      {
+        conversationId: conversation.id,
+        externalId: phone,
+        channel: Channel.WEB,
+        message,
+        messageId: persisted.id,
+      },
+      {
+        attempts: 3,
+        backoff: { type: 'exponential', delay: 2000 },
+        removeOnComplete: { count: 100 },
+        removeOnFail: { count: 500 },
+      },
+    );
+
+    return { conversationId: conversation.id };
   }
 }

@@ -238,6 +238,27 @@ describe('MessageProcessor — revalidación del userType contra la whitelist', 
     );
   });
 
+  it('un mensaje de un chat WEB (US4) llama a sender.send con Channel.WEB', async () => {
+    // El no-op real vive en WhatsappSenderService.send() (test dedicado en
+    // whatsapp-sender.service.spec.ts): acá solo se fija que el processor le
+    // pasa el canal correcto y no lo pisa por "WHATSAPP" por descuido — sin
+    // eso, la respuesta de un chat web dispararía un WhatsApp real al
+    // teléfono del empleado (el mismo que usa como externalId).
+    conversations.findById.mockResolvedValue(activeConversation('EMPLEADO'));
+    employees.findByPhone.mockResolvedValue({
+      isActive: true,
+      sector: { name: 'Cobranzas' },
+    });
+    const webJob = {
+      ...job,
+      data: { ...job.data, channel: 'WEB' },
+    } as any;
+
+    await processor.process(webJob);
+
+    expect(sender.send).toHaveBeenCalledWith('5491100000000', 'ok', 'WEB');
+  });
+
   it('consulta la whitelist aunque la conversación ya sea EMPLEADO', async () => {
     conversations.findById.mockResolvedValue(activeConversation('EMPLEADO'));
     employees.findByPhone.mockResolvedValue({

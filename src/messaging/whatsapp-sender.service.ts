@@ -13,6 +13,20 @@ export class WhatsappSenderService {
   // justamente la que espera Meta, así que un número guardado en otro formato
   // (ej. el de un empleado cargado a mano) igual llega.
   async send(phone: string, message: string, channel: Channel): Promise<void> {
+    if (channel !== Channel.WHATSAPP) {
+      // El chat web (Sprint 5A, US4) no tiene canal de salida propio: la
+      // respuesta ya quedó persistida como Message y el frontend la lee por
+      // polling (GET /messaging/web/:convId/messages). Sin este corte, cada
+      // respuesta del chat web se empujaría como un WhatsApp real al
+      // teléfono del empleado —el mismo número que usa como `externalId`,
+      // research §8— algo que nadie pidió y que además fallaría si ese
+      // número no tiene sesión de WhatsApp Business abierta con n8n.
+      this.logger.debug(
+        `Canal ${channel}: respuesta servida por polling, no se envía por WhatsApp`,
+      );
+      return;
+    }
+
     const baseUrl = this.config.get<string>('N8N_BASE_URL');
     const res = await fetch(`${baseUrl}/webhook/send-whatsapp`, {
       method: 'POST',

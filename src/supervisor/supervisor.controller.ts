@@ -9,6 +9,7 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
+import { normalizePhone } from '../common/phone';
 import { ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import {
   AgentType,
@@ -23,6 +24,7 @@ import { SupervisorService } from './supervisor.service';
 import { EscalationsService } from '../escalations/escalations.service';
 import { EscalationSuggestionService } from '../escalations/escalation-suggestion.service';
 import { ConversationsService } from '../conversations/conversations.service';
+import { EmployeesService } from '../employees/employees.service';
 import { ResolveEscalationDto } from '../escalations/dto/resolve-escalation.dto';
 import { DelegateEscalationDto } from '../escalations/dto/delegate-escalation.dto';
 import { SaveUnsentDto } from '../escalations/dto/save-unsent.dto';
@@ -50,6 +52,7 @@ export class SupervisorController {
     private readonly escalations: EscalationsService,
     private readonly suggestions: EscalationSuggestionService,
     private readonly conversations: ConversationsService,
+    private readonly employees: EmployeesService,
   ) {}
 
   /**
@@ -136,6 +139,38 @@ export class SupervisorController {
       page: page ? parseInt(page, 10) : undefined,
       limit: limit ? parseInt(limit, 10) : undefined,
     });
+  }
+
+  /**
+   * GET /supervisor/conversations/by-contact/:externalId/timeline
+   *
+   * Vista unificada de lectura (US4, FR-018): los mensajes de ambos canales
+   * de un mismo contacto en una sola línea de tiempo. Va bajo `/supervisor`,
+   * no bajo `/messaging/web`, porque es herramienta de gobernanza, no del
+   * chat — no fusiona los hilos ni le da memoria compartida al asistente.
+   */
+  @Get('conversations/by-contact/:externalId/timeline')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('SUPERVISOR')
+  @ApiOperation({
+    summary: 'Mensajes de WhatsApp y web de un mismo contacto (FR-018)',
+  })
+  async getContactTimeline(@Param('externalId') externalId: string) {
+    const normalized = normalizePhone(externalId);
+    const result = await this.conversations.getUnifiedTimeline(normalized);
+    if (!result) {
+      throw new NotFoundException('No hay conversaciones para ese contacto');
+    }
+
+    const employee = await this.employees.findByPhone(normalized);
+    return {
+      contact: {
+        externalId: normalized,
+        employee: employee ? { id: employee.id, name: employee.name } : null,
+      },
+      conversations: result.conversations,
+      timeline: result.timeline,
+    };
   }
 
   // ---------------------------------------------------------------------

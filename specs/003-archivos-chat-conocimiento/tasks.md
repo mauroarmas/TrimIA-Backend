@@ -172,17 +172,17 @@ Proyecto backend único: `src/` en la raíz del repositorio. Los tests viven
 
 ### Implementación
 
-- [ ] T051 [US4] Implementar `enqueueWeb(employee, message)` en `src/messaging/messaging.service.ts`: usa el **teléfono normalizado del empleado** como `externalId` y `Channel.WEB`, reusando `prepareConversation()` (research §8)
-- [ ] T052 [US4] Rechazar con 409 si el empleado autenticado no tiene teléfono cargado, en `src/messaging/messaging.service.ts` (research §8)
-- [ ] T053 [US4] Crear `src/messaging/messaging-web.controller.ts` con `POST /messaging/web` (responde **202**, encola — Principio IV) y `GET /messaging/web/:convId/messages`
-- [ ] T054 [US4] Implementar la comprobación de pertenencia del historial (`conversation.externalId === normalizePhone(employee.phone)`) → 403 si no coincide, en `src/messaging/messaging-web.controller.ts` (FR-015)
-- [ ] T055 [P] [US4] Implementar `getUnifiedTimeline(externalId)` en `src/conversations/conversations.service.ts`: mensajes de ambos canales por `externalId`, cada uno con su `channel` y `conversationId` (FR-018)
-- [ ] T056 [US4] Agregar `GET /supervisor/conversations/by-contact/:externalId/timeline` en `src/supervisor/supervisor.controller.ts` (SUPERVISOR-only, contracts)
+- [X] T051 [US4] Implementar `enqueueWeb(employee, message)` en `src/messaging/messaging.service.ts`: usa el **teléfono normalizado del empleado** como `externalId` y `Channel.WEB`, reusando `prepareConversation()` (research §8)
+- [X] T052 [US4] Rechazar con 409 si el empleado autenticado no tiene teléfono cargado, en `src/messaging/messaging.service.ts` (research §8)
+- [X] T053 [US4] Crear `src/messaging/messaging-web.controller.ts` con `POST /messaging/web` (responde **202**, encola — Principio IV) y `GET /messaging/web/:convId/messages`
+- [X] T054 [US4] Implementar la comprobación de pertenencia del historial (`conversation.externalId === normalizePhone(employee.phone)`) → 403 si no coincide, en `src/messaging/messaging-web.controller.ts` (FR-015)
+- [X] T055 [P] [US4] Implementar `getUnifiedTimeline(externalId)` en `src/conversations/conversations.service.ts`: mensajes de ambos canales por `externalId`, cada uno con su `channel` y `conversationId` (FR-018)
+- [X] T056 [US4] Agregar `GET /supervisor/conversations/by-contact/:externalId/timeline` en `src/supervisor/supervisor.controller.ts` (SUPERVISOR-only, contracts)
 
 ### Tests
 
-- [ ] T057 ⭐ [P] [US4] Test en `src/messaging/messaging-web.controller.spec.ts`: 401 sin JWT y 403 al pedir el historial de una conversación ajena (FR-015)
-- [ ] T058 [P] [US4] Test en `src/messaging/messaging.service.spec.ts`: escribir por web y por WhatsApp con el mismo teléfono genera **dos** conversaciones distintas, y el `currentAgent` de una no afecta al de la otra (FR-017)
+- [X] T057 ⭐ [P] [US4] Test en `src/messaging/messaging-web.controller.spec.ts`: 401 sin JWT y 403 al pedir el historial de una conversación ajena (FR-015)
+- [X] T058 [P] [US4] Test en `src/messaging/messaging.service.spec.ts`: escribir por web y por WhatsApp con el mismo teléfono genera **dos** conversaciones distintas, y el `currentAgent` de una no afecta al de la otra (FR-017)
 
 **Checkpoint**: RF-07 cubierto; la vista unificada funciona sin haber tocado el motor.
 
