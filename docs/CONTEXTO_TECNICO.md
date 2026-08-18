@@ -104,13 +104,17 @@ src/
 │       └── webhook-secret.guard.ts   # auth por secreto compartido (x-n8n-secret), timing-safe
 │
 ├── messaging/                   # ENTRADA
-│   ├── messaging.controller.ts  # POST /messaging/webhook
+│   ├── messaging.controller.ts  # POST /messaging/webhook (n8n, secreto compartido)
+│   ├── messaging-web.controller.ts # /messaging/web — chat del panel, JWT (Sprint 5A)
 │   ├── messaging.service.ts     # crea/recupera conversación + encola job
 │   ├── whatsapp-sender.service.ts  # envía la respuesta vía n8n
 │   └── dto/webhook-message.dto.ts  # { phone, message, channel? }
 │
-├── queue/                       # WORKER
-│   └── processors/message.processor.ts  # consume jobs; orquesta; persiste; responde
+├── queue/                       # WORKERS
+│   └── processors/
+│       ├── message.processor.ts        # consume jobs; orquesta; persiste; responde
+│       ├── knowledge-ingestion.processor.ts # extrae texto de un archivo subido (5A)
+│       └── knowledge-reindex.processor.ts   # re-vuelca a Chroma tras una edición (5A)
 │
 ├── conversations/               # ConversationsService: getOrCreate, addMessage,
 │                                #   getRecentHistory (memoria), setCurrentAgent (sticky)
@@ -121,9 +125,15 @@ src/
 │
 └── ai/
     ├── llm/                     # LlmService: cliente Gemini compartido
-    ├── knowledge/               # RAG: ChromaDB + embeddings; ingest() y search()
-    │   ├── knowledge.service.ts
-    │   └── knowledge.controller.ts   # POST /knowledge (dev, protegido por guard)
+    ├── knowledge/               # RAG: ChromaDB + embeddings + gestión del corpus
+    │   ├── knowledge.service.ts       # ingest/search + CRUD, versionado y reindexación
+    │   ├── knowledge.controller.ts    # /knowledge/* — JWT + rol SUPERVISOR (Sprint 5A)
+    │   ├── knowledge-ingestion.service.ts  # subida de archivos: límites, dedupe, encolado
+    │   ├── knowledge-storage.service.ts    # originales en disco, con nombre UUID
+    │   ├── knowledge-usage.service.ts      # retrievedCount/answeredCount/avgScore/hasData
+    │   ├── knowledge-ai-edit.service.ts    # "editar con la IA": preview / apply
+    │   └── extractors/                # PDF, Word, imagen y audio detrás de un puerto
+    │       ├── text-extractor.port.ts # TextExtractor + ExtractionFailedError
     ├── orchestrator/
     │   ├── orchestrator.graph.ts     # EL GRAFO (ruteo sticky + nodos)
     │   ├── orchestrator.service.ts   # compila el grafo 1 vez; expone invoke()
@@ -314,6 +324,67 @@ tocaron — siguen siendo correctas para todo lo demás (storage, matching,
 webhooks entrantes) y deberían ser también lo correcto para el `to` saliente
 una vez fuera del sandbox.
 
+### 5.8 Sprint 5A: archivos, chat web y gestión del conocimiento
+
+**Los tres cierres de una escalación.** El Sprint 3 dejó una sola salida
+—responder y enviar—. Ahora hay tres, y las tres son terminales (409 sobre un
+caso ya cerrado):
+
+| Cierre | Envía al usuario | Ingesta al RAG | Estado final |
+|---|---|---|---|
+| `POST .../resolve` | sí | solo con `teachAgent: true` | `RESOLVED` |
+| `POST .../save-unsent` | **no** | **siempre** | `SAVED_UNSENT` |
+| `POST .../discard` | no | no | `DISCARDED` |
+
+El texto de `save-unsent` va a `savedResponse` y **no** a `resolution`, a
+propósito: así "hay algo en `resolution`" sigue significando "esto se le envió
+al usuario", que es de lo que depende toda la lectura de auditoría del Sprint 3.
+
+Ninguno de los tres pisa una conversación en `HUMAN_HANDLING`: cerrar el caso
+escalado y soltar el chat son dos decisiones distintas.
+
+⭐ **`GET .../suggestion` deriva la audiencia del `userType` de la conversación
+escalada, NO del supervisor que consulta.** Es la fuga de confidencialidad más
+fácil de introducir del sprint: quien pide la propuesta es siempre un
+`SUPERVISOR`, así que derivarla del usuario autenticado daría `INTERNO`
+*siempre* y el sistema redactaría con material interno una respuesta destinada
+a un cliente. `audienceUsed` viaja en la respuesta para que la decisión sea
+visible y no implícita.
+
+**Canal WEB.** Una conversación del chat del panel usa como `externalId` el
+**teléfono normalizado del empleado**, el mismo que su hilo de WhatsApp. Los
+dos hilos quedan separados porque `getOrCreate` filtra por `(externalId,
+channel)`, y la vista unificada (`/supervisor/conversations/by-contact/…`) sale
+de una sola consulta sin tabla de correlación. Consecuencia: un empleado sin
+teléfono cargado no puede usar el chat web (409).
+
+`WhatsappSenderService.send()` es **no-op para canales != WHATSAPP**: la
+respuesta del chat web ya quedó persistida y el frontend la lee por polling.
+Sin ese corte, cada respuesta del panel dispararía un WhatsApp real al teléfono
+del empleado.
+
+**Postgres y ChromaDB no comparten transacción.** En vez de pretender
+atomicidad, la ventana de inconsistencia se hace visible: al editar contenido,
+audiencia o agente, el documento pasa a `PENDING_REINDEX` y un worker re-vuelca
+los chunks. **Mientras tanto sigue respondiendo con su contenido anterior.** Si
+el worker agota los reintentos queda en `REINDEX_FAILED` — nunca en `SYNCED`
+mintiendo.
+
+> Cambiar `audience` o `agentType` **también** reindexa, aunque el texto no
+> cambie: los dos viajan en la metadata de cada chunk, así que sin re-volcar,
+> un documento que pasa a `INTERNO` seguiría siendo recuperable por un cliente.
+> Es un agujero de confidencialidad, no una desprolijidad.
+
+**Audio.** Se transcribe en n8n (el token de Meta vive solo ahí) y el backend
+recibe **texto**. El binario no se persiste en ningún lado (FR-011) — eso se
+garantiza con variables de instancia en `docker-compose.yml`, no con los
+settings del workflow, que son advisory (ver `n8n/README.md`). Cuando la
+transcripción falla, n8n manda `__AUDIO_NO_TRANSCRIBIBLE__` y el orquestador
+pide reformulación **sin llamar al LLM y sin escalar**; ese atajo corre
+**antes** del sticky, a diferencia del de saludos.
+
+---
+
 ---
 
 ## 6. Modelo de datos (Prisma — `prisma/schema.prisma`)
@@ -331,18 +402,25 @@ una vez fuera del sandbox.
 | `Quota` (Sprint 4) | Cuota a cobrar | `clientId` (denormalizado), `financingId`, `number`, `dueDate`, `status`, `reminderAttempts` |
 | `PaymentProof` (Sprint 4) | Comprobante enviado por WhatsApp | `quotaId`, `imagePath`, `extracted*` (sugerencia de Gemini), `status`, `impactStatus` |
 | `ReminderConfig` (Sprint 4) | Fila única de configuración | `daysBefore` (7/3/0), `maxAttempts`, `templateApproved` |
-| `KnowledgeDocument` | Metadatos de docs del RAG | `audience` (PUBLICO/INTERNO), `agentType`, `checksum`, `vectorId` |
+| `KnowledgeDocument` | Metadatos de docs del RAG | `audience` (PUBLICO/INTERNO), `agentType`, `checksum`, `vectorId`; **(5A)** `isActive`, `version`, `syncStatus`, `sourceType`/`sourceId`, `updatedById` |
+| `KnowledgeFile` (Sprint 5A) | Archivo subido por el panel | `filename`, `storagePath` (**NULL para audio**: se borra al transcribir, FR-004), `checksum` (SHA256 del binario, dedupe), `status`, `failureReason` |
+| `KnowledgeChange` (Sprint 5A) | Bitácora de ediciones (FR-049) | `changedFields`, `authorId`, `origin` (MANUAL/AI_ACCEPTED), `aiInstruction` |
+| `KnowledgeRetrieval` (Sprint 5A) | Qué documentos recuperó cada turno | `documentId`, `score` (0-100), `rank`, `outcome` (ANSWERED/ESCALATED) |
 | `TokenUsage` | Consumo por turno | `inputTokens`, `outputTokens`, `durationMs`, `model` |
 | `OrchestrationEvent` | Auditoría de ruteo | `eventType`, `agentType`, `payload` (JSON) |
-| `Escalation` (Sprint 3) | Caso pendiente por baja confianza | `reason`, `status` (PENDING/RESOLVED), `resolvedById`/`resolution`, `delegatedToId`/`delegatedById` |
+| `Escalation` (Sprint 3) | Caso pendiente por baja confianza | `reason`, `status` (los **cuatro** estados desde 5A), `resolvedById`/`resolution`, `delegatedToId`/`delegatedById`; **(5A)** `suggestedResponse`/`suggestedAt`, `savedResponse`, `discardedById`/`discardedAt` |
 | `InternalNote` (Sprint 3) | Comentario interno sobre una conversación | `conversationId`, `authorId` **o** `authorAgentType`, `content` — nunca visible para el usuario |
 
 Enums: `AgentType` (ORCHESTRATOR + 5 agentes), `UserType` (CLIENTE/EMPLEADO),
 `Audience` (PUBLICO/INTERNO), `Channel` (WHATSAPP/WEB),
 `ConvStatus` (ACTIVE/WAITING_HUMAN/HUMAN_HANDLING/CLOSED), `MessageRole`,
-`EscalationStatus` (PENDING/RESOLVED, Sprint 3), `QuotaStatus`,
+`EscalationStatus` (PENDING/RESOLVED + SAVED_UNSENT/DISCARDED desde 5A), `QuotaStatus`,
 `PaymentProofStatus`, `ProofRejectionReason`, `ImpactStatus` (Sprint 4),
-`PurchaseRequestStatus`, `PaymentModality`, `CreditVerdict`, `FinancingStatus`.
+`PurchaseRequestStatus`, `PaymentModality`, `CreditVerdict`, `FinancingStatus`,
+y los de Sprint 5A: `KnowledgeSourceType` (DOCUMENTO/ENTREVISTA/ESCALADO),
+`KnowledgeSyncStatus` (SYNCED/PENDING_REINDEX/REINDEX_FAILED),
+`FileProcessingStatus` (PROCESSING/READY/FAILED),
+`KnowledgeChangeOrigin` (MANUAL/AI_ACCEPTED), `RetrievalOutcome` (ANSWERED/ESCALATED).
 
 > **Agente y Base de Conocimiento no son tablas.** El diagrama de dominio los
 > modela como entidades, pero acá viven como el enum `AgentType`:
@@ -393,8 +471,12 @@ memoria conversacional y auditoría/métricas. Hay corpus de prueba cargado para
 > se organiza en **8 sprints** (no en "Fase 5/6" a secas). Estado real:
 > Sprint 1 (Auth+Whitelist) ✅, Sprint 2 (Panel Supervisor: métricas,
 > conversaciones, `agents/status`) ✅, Sprint 3 (human-in-the-loop, §5.7) ✅,
-> Sprint 4 (Cobranzas: comprobantes, recordatorios, verificación de impacto, panel) ✅.
-> Próximo: Sprint 5 en adelante — ver el plan de trabajo para el detalle.
+> Sprint 4 (Cobranzas: comprobantes, recordatorios, verificación de impacto, panel) ✅,
+> Sprint 5A (archivos, chat web y gestión del conocimiento, §5.8) ✅ **backend**.
+> El panel todavía no consume esos endpoints: las tareas están en
+> `specs/003-archivos-chat-conocimiento/tasks.md` §Phase 11, sobre el repo
+> hermano `trimIA-frontend`.
+> Próximo: Sprint 5B en adelante — ver el plan de trabajo para el detalle.
 
 ### 7.1 Lectura del comprobante: es un processor, no un tool del grafo
 

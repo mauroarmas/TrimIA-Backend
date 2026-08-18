@@ -259,11 +259,11 @@ Proyecto backend único: `src/` en la raíz del repositorio. Los tests viven
 
 ## Phase 10: Polish & Cross-Cutting Concerns
 
-- [ ] T077 [P] Actualizar `docs/CONTEXTO_TECNICO.md`: módulo `ai/knowledge/` ampliado, modelos nuevos, canal WEB y los tres cierres de escalación (regla de documentación viva de la constitución)
-- [ ] T078 [P] Actualizar `docs/CONTRATO_API_Frontend.md` con los endpoints nuevos de los tres contratos
-- [ ] T079 [P] Actualizar `docs/plan_de_trabajo.md`: marcar el Sprint 5A y anotar los dos desvíos (`unpdf` en vez de `pdf-parse`; Gemini en vez de Google Cloud STT)
-- [ ] T080 Correr los 7 escenarios de [quickstart.md](./quickstart.md) end-to-end contra los servicios reales
-- [ ] T081 Correr `docker compose exec nestjs npx jest --no-coverage` y dejar la suite en verde (obligatorio por constitución)
+- [X] T077 [P] Actualizar `docs/CONTEXTO_TECNICO.md`: módulo `ai/knowledge/` ampliado, modelos nuevos, canal WEB y los tres cierres de escalación (regla de documentación viva de la constitución)
+- [X] T078 [P] Actualizar `docs/CONTRATO_API_Frontend.md` con los endpoints nuevos de los tres contratos
+- [X] T079 [P] Actualizar `docs/plan_de_trabajo.md`: marcar el Sprint 5A y anotar los dos desvíos (`unpdf` en vez de `pdf-parse`; Gemini en vez de Google Cloud STT)
+- [X] T080 Correr los 7 escenarios de [quickstart.md](./quickstart.md) end-to-end contra los servicios reales
+- [X] T081 Correr `docker compose exec nestjs npx jest --no-coverage` y dejar la suite en verde (obligatorio por constitución)
 
 ---
 

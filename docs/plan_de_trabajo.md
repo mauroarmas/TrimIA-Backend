@@ -150,20 +150,40 @@ graph LR
 
 ---
 
-### Sprint 5A — Archivos, Chat Web y Base de Conocimiento 📚
+### ✅ Sprint 5A — Archivos, Chat Web y Base de Conocimiento 📚 (Completado 2026-08-18)
 
 *Pantallas del prototipo: Base de Conocimiento (Fig 15), Detalle de Conocimiento (Fig 16), Responder Consulta (Fig 13).*
+
+**Estado:** las 7 historias de usuario implementadas y testeadas. 402 tests
+pasando. Spec completa en `specs/003-archivos-chat-conocimiento/`, endpoints en
+`CONTRATO_API_Frontend.md`.
+
+> **El panel todavía no consume estos endpoints.** El backend está terminado y
+> probado end-to-end contra los servicios reales, pero las pantallas quedan
+> pendientes: las tareas están en `specs/003-archivos-chat-conocimiento/tasks.md`
+> §Phase 11 (T082-T109), sobre el repo hermano `trimIA-frontend`.
+
+#### Dos desvíos respecto de lo planificado acá
+
+| Planificado | Implementado | Por qué |
+|---|---|---|
+| `pdf-parse` (5A.2) | **`unpdf`** | `pdf-parse` arrastra dependencias nativas que no compilan en la imagen Docker del proyecto. `unpdf` es pdfjs empaquetado sin eso |
+| **Google Cloud STT** (5A.5, 5A.6) | **Gemini** | Evita dar de alta un proveedor y una credencial nuevos: la `GOOGLE_API_KEY` que ya existe alcanza. Un spike contra la API real confirmó que acepta audio — con la clave `mimeType` en **camelCase**; la forma `mime_type` que documenta LangChain Python la rechaza en JS |
+
+Un tercer ajuste, más de forma que de fondo: **5A.6 no quedó como "Workflow 7"
+aparte** sino como una rama de `RecepcionMensaje-A`. Meta manda todos los
+mensajes al mismo webhook, así que un workflow separado nunca los recibiría.
 
 | # | Tarea | Dónde | Criterio |
 |---|-------|-------|---------|
 | **Pipeline de archivos (RF06)** |||
 | 5A.1 | File upload en `POST /knowledge` | `knowledge.controller.ts` | Acepta multipart: PDF, Word, imágenes, audio |
-| 5A.2 | Extracción de texto PDF | `knowledge.service.ts` | Librería `pdf-parse` |
+| 5A.2 | Extracción de texto PDF | `extractors/pdf.extractor.ts` | ~~`pdf-parse`~~ → **`unpdf`** (ver desvíos) |
 | 5A.3 | Extracción de texto Word | `knowledge.service.ts` | Librería `mammoth` |
 | 5A.4 | Extracción de texto de imágenes | `knowledge.service.ts` | Gemini Vision (ya usamos Gemini). Cubre "fotos de fichas en papel" del prototipo |
-| 5A.5 | Transcripción de audio subido | `knowledge.service.ts` | Google STT. Eliminar audio post-transcripción |
+| 5A.5 | Transcripción de audio subido | `extractors/audio.extractor.ts` | ~~Google STT~~ → **Gemini**. El audio se borra siempre, salga bien o mal |
 | **Audio WhatsApp (RF14)** |||
-| 5A.6 | Google STT para WhatsApp | n8n (Workflow 7) | Audio WA → transcripción → webhook. Si error → pedir reformulación |
+| 5A.6 | ~~Google STT~~ **Gemini** para WhatsApp | n8n (rama de `RecepcionMensaje-A`) | Audio WA → transcripción → webhook. Si falla, marcador `__AUDIO_NO_TRANSCRIBIBLE__` → pedir reformulación sin llamar al LLM ni escalar |
 | **Chat web (RF07)** |||
 | 5A.7 | `POST /messaging/web` | `src/messaging/` | Enviar mensaje, JWT auth. Mismo pipeline que WA |
 | 5A.8 | `GET /messaging/web/:convId/messages` | `src/messaging/` | Historial compartido con WA (RF07) |
@@ -346,15 +366,15 @@ graph LR
 | RF03 | S6 | CRM n8n→Sheets (Postgres fuente de verdad) |
 | RF04 | S4 | Cobranzas completo |
 | RF05 | S5B | Capacitación por rol + audio |
-| RF06 | S5A + ✅ S3 | Pipeline archivos + retroalimentación (ya funciona vía `teachAgent`) |
-| RF07 | S5A | Chat web + historial compartido |
+| RF06 | ✅ S5A + ✅ S3 | Pipeline archivos + retroalimentación (`teachAgent` y los tres cierres) |
+| RF07 | ✅ S5A | Chat web + línea de tiempo unificada por contacto |
 | RF08 | ✅ Hecho | WhatsApp |
 | RF09 | S6 | StockPort + alternativas |
 | RF10 | S6 + S7 | CreditPort + degradación |
 | RF11 | S5B | Entrevista guiada **por chat** + revisar/aprobar |
 | RF12 | ✅ S1 | Whitelist + sectores |
 | RF13 | S7 | Venta financiada E2E |
-| RF14 | S5A | STT + eliminar audio |
+| RF14 | ✅ S5A | Transcripción con Gemini + el binario nunca se persiste |
 | RNF-01 | S8 | Performance + uptime |
 | RNF-02 | ✅ + S1 | Confidencialidad + JWT |
 | RNF-03 | ✅ + S3 | RAG confidence + capitalización |
@@ -371,8 +391,18 @@ graph LR
 ## 8. Estado y próximo paso
 
 > [!IMPORTANT]
-> **Sprints 1, 2 y 3 completos.** El siguiente es el **Sprint 4 (Cobranzas)**, que arranca por el
-> modelo `Client` (4.1) porque bloquea todas las pantallas de Cobranzas y de Ventas.
+> **Sprints 1, 2, 3, 4 y 5A completos.** El siguiente es el **Sprint 5B
+> (Capacitación y Audio)**.
 >
-> Camino crítico a vigilar: **la aprobación de plantillas de WhatsApp (4.5)** depende de Meta y no
-> de nosotros. Conviene iniciarla apenas empiece el sprint, en paralelo con el resto de las tareas.
+> Dos cosas quedaron abiertas del 5A y conviene no perderlas de vista:
+>
+> 1. **El panel no consume el backend del 5A todavía.** Son 17 endpoints sin
+>    pantalla; las tareas están en `specs/003-archivos-chat-conocimiento/tasks.md`
+>    §Phase 11, sobre el repo `trimIA-frontend`.
+> 2. **La rama de audio de n8n no se probó de punta a punta con la app de Meta
+>    productiva.** Funciona con audios reales en el entorno de prueba, pero
+>    depende de configuración manual (túnel, credenciales, workflow importado)
+>    que no vive en el repo — ver `n8n/README.md`.
+>
+> Camino crítico a vigilar en adelante: **la aprobación de plantillas de WhatsApp**
+> depende de Meta y no de nosotros.
