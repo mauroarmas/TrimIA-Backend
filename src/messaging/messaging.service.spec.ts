@@ -6,6 +6,12 @@ import { WhatsappMediaService } from './whatsapp-media.service';
 import { PaymentProofsService } from '../collections/payment-proofs.service';
 import { EmployeesService } from '../employees/employees.service';
 import { Channel } from '@prisma/client';
+import { ConfigService } from '@nestjs/config';
+import { PrismaService } from '../database/prisma.service';
+import { WhatsappSenderService } from './whatsapp-sender.service';
+import { OrchestrationLogger } from '../ai/orchestrator/orchestration-logger.service';
+import { RealtimeService } from '../realtime/realtime.service';
+import { RedisService } from '../redis/redis.service';
 
 describe('MessagingService', () => {
   let service: MessagingService;
@@ -227,5 +233,80 @@ describe('MessagingService.enqueueWeb — US4 (research §8)', () => {
     // whatsapp tenga SALES fijado no filtra a la web devuelta por el mismo
     // mock de getOrCreate().
     expect(webConversation.currentAgent).toBeNull();
+  });
+});
+
+/**
+ * T014 / RF-010 / SC-010 — el acuse del envío no puede quedar atado al bus.
+ *
+ * `enqueueWeb()` llama a `ConversationsService.addMessage()` DENTRO del request
+ * (prepareConversation), y a partir de la spec 004 ese método avisa por Redis. Si
+ * ese aviso se esperara, la latencia del `202` pasaría a depender de la latencia
+ * de Redis, y con Redis colgado el envío se colgaría con él — que es justo lo que
+ * CL-10 prohíbe.
+ *
+ * Se arma con un ConversationsService REAL (no mockeado) sobre un Redis que
+ * **nunca resuelve**: es la única forma de que el test falle si alguien vuelve a
+ * poner el `await`.
+ */
+describe('MessagingService.enqueueWeb — el request no espera al bus (T014)', () => {
+  it('acusa el envío aunque el bus esté colgado', async () => {
+    const prisma = {
+      conversation: {
+        findFirst: jest
+          .fn()
+          .mockResolvedValue({ id: 'conv-1', clientId: null }),
+        update: jest.fn(),
+        create: jest.fn(),
+      },
+      message: {
+        create: jest.fn().mockResolvedValue({
+          id: 'msg-1',
+          role: 'USER',
+          content: 'hola',
+          agentType: null,
+          createdAt: new Date(),
+        }),
+      },
+    };
+
+    // Redis que acepta la llamada y no responde nunca.
+    const redis = {
+      publish: jest.fn(() => new Promise<number>(() => {})),
+      duplicate: jest.fn(),
+    };
+    const realtime = new RealtimeService(
+      redis as unknown as RedisService,
+      { get: () => 15000 } as unknown as ConfigService,
+    );
+    const conversations = new ConversationsService(
+      prisma as unknown as PrismaService,
+      { send: jest.fn() } as unknown as WhatsappSenderService,
+      { logEvent: jest.fn() } as unknown as OrchestrationLogger,
+      realtime,
+    );
+
+    const queue = { add: jest.fn() };
+    const service = new MessagingService(
+      queue as unknown as Queue,
+      conversations,
+      {
+        getByPhone: jest.fn().mockResolvedValue(null),
+      } as unknown as ClientsService,
+      {} as unknown as WhatsappMediaService,
+      {} as unknown as PaymentProofsService,
+      {
+        findById: jest
+          .fn()
+          .mockResolvedValue({ id: 'emp-1', phone: '5493865505362' }),
+      } as unknown as EmployeesService,
+    );
+
+    // Si addMessage esperara el publish, esto no resolvería nunca.
+    const res = await service.enqueueWeb('emp-1', 'hola');
+
+    expect(res).toEqual({ conversationId: 'conv-1' });
+    expect(queue.add).toHaveBeenCalledTimes(1);
+    expect(redis.publish).toHaveBeenCalledTimes(1);
   });
 });

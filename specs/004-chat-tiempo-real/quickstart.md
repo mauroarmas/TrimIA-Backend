@@ -46,9 +46,9 @@ Lo que **tiene** que estar cubierto (constitución: ruteo, autorización, audien
 ```bash
 # Empleado (sin rol supervisor) y supervisor
 EMP=$(curl -s -X POST localhost:3000/auth/login -H 'Content-Type: application/json' \
-  -d '{"email":"empleado@credimision.com","password":"..."}' | jq -r .access_token)
+  -d '{"email":"empleado@credimision.com","password":"..."}' | jq -r .accessToken)
 SUP=$(curl -s -X POST localhost:3000/auth/login -H 'Content-Type: application/json' \
-  -d '{"email":"supervisor@credimision.com","password":"..."}' | jq -r .access_token)
+  -d '{"email":"supervisor@credimision.com","password":"..."}' | jq -r .accessToken)
 ```
 
 ---

@@ -14,6 +14,7 @@ import {
 } from '@prisma/client';
 import { WhatsappSenderService } from '../messaging/whatsapp-sender.service';
 import { OrchestrationLogger } from '../ai/orchestrator/orchestration-logger.service';
+import { RealtimeService } from '../realtime/realtime.service';
 
 export interface ConversationTurn {
   role: 'USER' | 'ASSISTANT';
@@ -26,6 +27,7 @@ export class ConversationsService {
     private readonly prisma: PrismaService,
     private readonly sender: WhatsappSenderService,
     private readonly orchestrationLogger: OrchestrationLogger,
+    private readonly realtime: RealtimeService,
   ) {}
 
   /**
@@ -60,15 +62,53 @@ export class ConversationsService {
     });
   }
 
+  /**
+   * Único punto por el que se persiste un mensaje, y por eso el único que emite
+   * (spec 004). Hay siete caminos que agregan mensajes —el webhook, el worker,
+   * el acuse de espera, la resolución de un escalamiento, cuotas, comprobantes y
+   * la respuesta manual de un supervisor— y todos pasan por acá. Emitir desde el
+   * worker en cambio habría dejado afuera justo la respuesta del supervisor, que
+   * es el caso que hoy no llega al chat abierto.
+   */
   async addMessage(
     conversationId: string,
     role: MessageRole,
     content: string,
     agentType?: AgentType,
   ) {
-    return this.prisma.message.create({
+    const message = await this.prisma.message.create({
       data: { conversationId, role, content, agentType },
     });
+
+    // Se avisa DESPUÉS de que la escritura cerró: la base es la fuente de verdad
+    // y el evento es solo la notificación (RF-007).
+    //
+    // Solo USER y ASSISTANT, igual que listMessages(): emitir TOOL o SYSTEM
+    // mostraría por el stream mensajes que el historial no devuelve, lo que
+    // además de ser una fuga (RF-015) sería inconsistente — al recargar la
+    // página desaparecerían.
+    //
+    // No se hace `await`, y es a propósito: este método corre DENTRO del request
+    // de `POST /messaging/web`. `publish()` ya se traga sus errores, pero esperarlo
+    // ataría el tiempo de respuesta del envío a la latencia de Redis — un Redis
+    // *lento* (no caído) le sumaría esa demora al acuse, que tiene que llegar en
+    // milisegundos (RF-010, Principio IV). El aviso sale cuando salga; el mensaje
+    // ya está registrado.
+    if (message.role === 'USER' || message.role === 'ASSISTANT') {
+      void this.realtime.publish(conversationId, {
+        type: 'message',
+        conversationId,
+        data: {
+          id: message.id,
+          role: message.role,
+          content: message.content,
+          agentType: message.agentType,
+          createdAt: message.createdAt.toISOString(),
+        },
+      });
+    }
+
+    return message;
   }
 
   /** Devuelve la conversación por id (para leer el currentAgent sticky). */
@@ -144,9 +184,36 @@ export class ConversationsService {
    * takeover()/release() (ACTIVE ↔ HUMAN_HANDLING) de este mismo servicio.
    */
   async setStatus(conversationId: string, status: ConvStatus) {
-    return this.prisma.conversation.update({
+    const updated = await this.prisma.conversation.update({
       where: { id: conversationId },
       data: { status },
+    });
+    this.publishStatus(updated);
+    return updated;
+  }
+
+  /**
+   * Avisa un cambio de estado a los chats abiertos (RF-003).
+   *
+   * Lo llaman los tres únicos lugares donde cambia el estado: setStatus() —por
+   * donde EscalationsService deja la conversación en WAITING_HUMAN—, takeover() y
+   * release(). No hay ningún `conversation.update({status})` suelto fuera de este
+   * servicio, así que el requisito se cubre en un solo archivo.
+   *
+   * Que el chat sepa el estado es lo que evita el "pensando" eterno de CL-1: el
+   * acuse de espera no se repite si el usuario insiste, así que la UI no puede
+   * depender de que llegue un mensaje nuevo para actualizar lo que muestra.
+   */
+  private publishStatus(conversation: Conversation) {
+    // Sin `await`, por el mismo motivo que en addMessage(): quien cambia el estado
+    // no tiene que esperar a que el aviso salga.
+    void this.realtime.publish(conversation.id, {
+      type: 'status',
+      conversationId: conversation.id,
+      data: {
+        status: conversation.status,
+        currentAgent: conversation.currentAgent,
+      },
     });
   }
 
@@ -188,6 +255,7 @@ export class ConversationsService {
       eventType: 'conversation_takeover',
       payload: { employeeId },
     });
+    this.publishStatus(updated);
 
     return updated;
   }
@@ -235,6 +303,7 @@ export class ConversationsService {
       eventType: 'conversation_release',
       payload: { employeeId },
     });
+    this.publishStatus(updated);
 
     return updated;
   }
@@ -341,14 +410,43 @@ export class ConversationsService {
    */
   async listMessages(
     conversationId: string,
-    opts: { page?: number; limit?: number } = {},
+    opts: { page?: number; limit?: number; after?: string } = {},
   ) {
     const page = Math.max(1, opts.page ?? 1);
     const limit = Math.min(200, Math.max(1, opts.limit ?? 50));
     const skip = (page - 1) * limit;
+
+    // `after` es la reanudación (spec 004, RF-006): el panel declara cuál fue el
+    // último mensaje que vio y recibe lo posterior. Se resuelve en el backend y
+    // no dejando que el panel filtre, porque el panel es el único lugar del
+    // proyecto sin tests y esto es un comportamiento verificable.
+    //
+    // El corte es por `createdAt`, así que dos mensajes del mismo milisegundo
+    // podrían reenviarse. No es un problema: el cliente deduplica por id de
+    // todos modos, porque lo necesita para las dos pestañas y para la
+    // reconexión.
+    let after: Date | undefined;
+    if (opts.after) {
+      const cursor = await this.prisma.message.findUnique({
+        where: { id: opts.after },
+        select: { createdAt: true, conversationId: true },
+      });
+      // Falla explícito y no "devuelvo todo": un cursor inválido que se ignora en
+      // silencio le reenvía la conversación entera al cliente y parece que
+      // funciona. Y se exige que el mensaje sea DE esta conversación, para que el
+      // parámetro no sirva para tantear ids ajenos.
+      if (!cursor || cursor.conversationId !== conversationId) {
+        throw new NotFoundException(
+          'El mensaje indicado en `after` no existe en esta conversación',
+        );
+      }
+      after = cursor.createdAt;
+    }
+
     const where = {
       conversationId,
       role: { in: ['USER' as const, 'ASSISTANT' as const] },
+      ...(after ? { createdAt: { gt: after } } : {}),
     };
 
     const [data, total] = await Promise.all([

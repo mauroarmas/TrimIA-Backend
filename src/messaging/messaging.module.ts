@@ -9,6 +9,7 @@ import { MessagingWebController } from './messaging-web.controller';
 import { MessagingService } from './messaging.service';
 import { WhatsappSenderModule } from './whatsapp-sender.module';
 import { WhatsappMediaModule } from './whatsapp-media.module';
+import { RealtimeModule } from '../realtime/realtime.module';
 
 @Module({
   imports: [
@@ -19,6 +20,7 @@ import { WhatsappMediaModule } from './whatsapp-media.module';
     ClientsModule,
     CollectionsModule,
     EmployeesModule,
+    RealtimeModule,
   ],
   controllers: [MessagingController, MessagingWebController],
   providers: [MessagingService],

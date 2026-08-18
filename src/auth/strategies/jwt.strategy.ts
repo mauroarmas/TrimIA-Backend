@@ -26,6 +26,10 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
       sectorId: payload.sectorId,
       sectorName: payload.sectorName,
       isController: payload.isController,
+      // Lo necesitan los streams del panel para cerrarse cuando la sesión vence
+      // (spec 004, RF-022): los guards corren UNA sola vez, al abrir la ruta, y
+      // una conexión larga sobreviviría al token sin esto.
+      exp: payload.exp,
     };
   }
 }

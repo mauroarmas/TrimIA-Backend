@@ -7,6 +7,7 @@ import { ConversationsService } from './conversations.service';
 import { PrismaService } from '../database/prisma.service';
 import { WhatsappSenderService } from '../messaging/whatsapp-sender.service';
 import { OrchestrationLogger } from '../ai/orchestrator/orchestration-logger.service';
+import { RealtimeService } from '../realtime/realtime.service';
 
 /**
  * Tests de ConversationsService (Sprint 3 — control manual human-in-the-loop).
@@ -25,6 +26,7 @@ describe('ConversationsService — takeover/release/replyManually', () => {
   };
   let sender: { send: jest.Mock };
   let logger: { logEvent: jest.Mock };
+  let realtime: { publish: jest.Mock };
 
   beforeEach(() => {
     prisma = {
@@ -39,11 +41,13 @@ describe('ConversationsService — takeover/release/replyManually', () => {
     };
     sender = { send: jest.fn() };
     logger = { logEvent: jest.fn() };
+    realtime = { publish: jest.fn() };
 
     service = new ConversationsService(
       prisma as unknown as PrismaService,
       sender as unknown as WhatsappSenderService,
       logger as unknown as OrchestrationLogger,
+      realtime as unknown as RealtimeService,
     );
   });
 
@@ -173,6 +177,125 @@ describe('ConversationsService — takeover/release/replyManually', () => {
       expect(logger.logEvent).toHaveBeenCalledWith(
         expect.objectContaining({ eventType: 'internal_note_added' }),
       );
+    });
+  });
+
+  // Spec 004: addMessage y los cambios de estado son los DOS embudos por los que
+  // sale todo lo que el panel recibe en tiempo real.
+  describe('emisión de eventos en tiempo real (spec 004)', () => {
+    const nuevoMensaje = (over: Record<string, unknown> = {}) => ({
+      id: 'msg-1',
+      conversationId: 'conv-1',
+      role: 'ASSISTANT',
+      content: 'hola',
+      agentType: 'SALES',
+      createdAt: new Date('2026-08-18T14:00:00.000Z'),
+      ...over,
+    });
+
+    it('un mensaje ASSISTANT produce exactamente un evento', async () => {
+      prisma.message.create.mockResolvedValue(nuevoMensaje());
+
+      await service.addMessage('conv-1', 'ASSISTANT', 'hola', 'SALES');
+
+      expect(realtime.publish).toHaveBeenCalledTimes(1);
+      expect(realtime.publish).toHaveBeenCalledWith('conv-1', {
+        type: 'message',
+        conversationId: 'conv-1',
+        data: {
+          id: 'msg-1',
+          role: 'ASSISTANT',
+          content: 'hola',
+          agentType: 'SALES',
+          createdAt: '2026-08-18T14:00:00.000Z',
+        },
+      });
+    });
+
+    it('un mensaje USER también se emite: la otra pestaña tiene que verlo', async () => {
+      prisma.message.create.mockResolvedValue(
+        nuevoMensaje({ role: 'USER', agentType: null }),
+      );
+
+      await service.addMessage('conv-1', 'USER', 'hola');
+
+      expect(realtime.publish).toHaveBeenCalledTimes(1);
+    });
+
+    // RF-015: el stream no puede mostrar lo que el historial no muestra.
+    // listMessages() filtra a USER/ASSISTANT, así que emitir TOOL o SYSTEM sería
+    // una fuga y encima inconsistente — al recargar desaparecerían.
+    it.each(['TOOL', 'SYSTEM'] as const)(
+      'un mensaje %s NO se emite',
+      async (role) => {
+        prisma.message.create.mockResolvedValue(nuevoMensaje({ role }));
+
+        await service.addMessage('conv-1', role, 'interno');
+
+        expect(realtime.publish).not.toHaveBeenCalled();
+      },
+    );
+
+    it('setStatus emite el cambio de estado con el agente sticky', async () => {
+      prisma.conversation.update.mockResolvedValue({
+        id: 'conv-1',
+        status: 'WAITING_HUMAN',
+        currentAgent: 'COLLECTIONS',
+      });
+
+      await service.setStatus('conv-1', 'WAITING_HUMAN');
+
+      expect(realtime.publish).toHaveBeenCalledWith('conv-1', {
+        type: 'status',
+        conversationId: 'conv-1',
+        data: { status: 'WAITING_HUMAN', currentAgent: 'COLLECTIONS' },
+      });
+    });
+
+    // No lleva handledById: al dueño del chat le corresponde saber que una
+    // persona lo atiende, no cuál (RF-015).
+    it('el evento de estado no expone quién tiene el control', async () => {
+      prisma.conversation.findUnique.mockResolvedValue({
+        id: 'conv-1',
+        status: 'ACTIVE',
+        handledById: null,
+      });
+      prisma.conversation.update.mockResolvedValue({
+        id: 'conv-1',
+        status: 'HUMAN_HANDLING',
+        currentAgent: null,
+        handledById: 'sup-1',
+      });
+
+      await service.takeover('conv-1', 'sup-1');
+
+      const [, evento] = realtime.publish.mock.calls[0];
+      expect(evento.data).toEqual({
+        status: 'HUMAN_HANDLING',
+        currentAgent: null,
+      });
+      expect(JSON.stringify(evento)).not.toContain('sup-1');
+    });
+
+    it('release emite el vuelta a ACTIVE', async () => {
+      prisma.conversation.findUnique.mockResolvedValue({
+        id: 'conv-1',
+        status: 'HUMAN_HANDLING',
+        handledById: 'sup-1',
+      });
+      prisma.conversation.update.mockResolvedValue({
+        id: 'conv-1',
+        status: 'ACTIVE',
+        currentAgent: 'SALES',
+      });
+
+      await service.release('conv-1', 'sup-1');
+
+      expect(realtime.publish).toHaveBeenCalledWith('conv-1', {
+        type: 'status',
+        conversationId: 'conv-1',
+        data: { status: 'ACTIVE', currentAgent: 'SALES' },
+      });
     });
   });
 
@@ -440,19 +563,20 @@ describe('ConversationsService — listMessages y getUnifiedTimeline', () => {
   let service: ConversationsService;
   let prisma: {
     conversation: { findMany: jest.Mock };
-    message: { findMany: jest.Mock; count: jest.Mock };
+    message: { findMany: jest.Mock; count: jest.Mock; findUnique: jest.Mock };
   };
 
   beforeEach(() => {
     prisma = {
       conversation: { findMany: jest.fn() },
-      message: { findMany: jest.fn(), count: jest.fn() },
+      message: { findMany: jest.fn(), count: jest.fn(), findUnique: jest.fn() },
     };
 
     service = new ConversationsService(
       prisma as unknown as PrismaService,
       { send: jest.fn() } as unknown as WhatsappSenderService,
       { logEvent: jest.fn() } as unknown as OrchestrationLogger,
+      { publish: jest.fn() } as unknown as RealtimeService,
     );
   });
 
@@ -500,6 +624,70 @@ describe('ConversationsService — listMessages y getUnifiedTimeline', () => {
       });
 
       expect(result.hasMore).toBe(false);
+    });
+  });
+
+  // Spec 004, RF-006: la reanudación tras reconectar se resuelve en el backend y
+  // no dejando que el panel filtre — el panel no tiene tests y esto es
+  // verificable.
+  describe('listMessages con `after` (reanudación)', () => {
+    it('filtra por createdAt posterior al mensaje indicado', async () => {
+      prisma.message.findUnique.mockResolvedValue({
+        createdAt: new Date('2026-08-18T14:00:00.000Z'),
+        conversationId: 'conv-1',
+      });
+      prisma.message.findMany.mockResolvedValue([
+        { id: 'msg-2' },
+        { id: 'msg-3' },
+      ]);
+      prisma.message.count.mockResolvedValue(2);
+
+      const res = await service.listMessages('conv-1', { after: 'msg-1' });
+
+      expect(prisma.message.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            conversationId: 'conv-1',
+            createdAt: { gt: new Date('2026-08-18T14:00:00.000Z') },
+          }),
+        }),
+      );
+      expect(res.data).toHaveLength(2);
+    });
+
+    it('sin `after` no agrega ningún filtro por fecha', async () => {
+      prisma.message.findMany.mockResolvedValue([]);
+      prisma.message.count.mockResolvedValue(0);
+
+      await service.listMessages('conv-1', {});
+
+      const [[args]] = prisma.message.findMany.mock.calls;
+      expect(args.where.createdAt).toBeUndefined();
+      expect(prisma.message.findUnique).not.toHaveBeenCalled();
+    });
+
+    // Ignorar un cursor inválido en silencio le reenviaría la conversación
+    // entera al cliente y parecería que funciona.
+    it('falla explícito si el mensaje de `after` no existe', async () => {
+      prisma.message.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.listMessages('conv-1', { after: 'no-existe' }),
+      ).rejects.toThrow(NotFoundException);
+      expect(prisma.message.findMany).not.toHaveBeenCalled();
+    });
+
+    // Si no se validara la pertenencia, `after` serviría para tantear ids de
+    // otras conversaciones por la diferencia entre 404 y 200.
+    it('falla si el mensaje de `after` es de otra conversación', async () => {
+      prisma.message.findUnique.mockResolvedValue({
+        createdAt: new Date(),
+        conversationId: 'otra-conv',
+      });
+
+      await expect(
+        service.listMessages('conv-1', { after: 'msg-ajeno' }),
+      ).rejects.toThrow(NotFoundException);
     });
   });
 

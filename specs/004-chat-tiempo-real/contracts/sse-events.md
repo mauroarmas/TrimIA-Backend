@@ -55,11 +55,29 @@ Este evento es el que hace posible CL-1: cuando la conversación pasa a
 `WAITING_HUMAN`, el chat puede dejar de mostrar "pensando" **sin depender de que
 llegue un mensaje**, porque el acuse de espera no se repite si el usuario insiste.
 
-## `: keepalive`
+## Keepalive
 
-Comentario SSE cada `SSE_HEARTBEAT_MS` (default 15000). Mantiene la conexión viva
-y **no** llega al manejador de mensajes del cliente. No es un evento de dominio y
-no debe registrarse ni contarse como tal.
+Cada `SSE_HEARTBEAT_MS` (default 15000) sale un evento **sin `data`**, que en el
+cable se ve así:
+
+```text
+id: 4
+
+```
+
+**No llega al manejador de mensajes del cliente**: sin campo `data` el buffer del
+evento queda vacío, así que el navegador no despacha nada. No es un evento de
+dominio y no debe registrarse ni contarse como tal.
+
+> **Por qué no es un comentario SSE (`: keepalive`), como se planeó.** `@Sse()` de
+> NestJS no expone ninguna API para comentarios, y además su `writeMessage()` le
+> asigna un `id` incremental a **todo** mensaje que no traiga uno
+> ([sse-stream.js:71-82](../../../node_modules/@nestjs/core/router/sse-stream.js#L71-L82)),
+> así que ni siquiera se puede emitir una línea en blanco desnuda. Verificado
+> corriendo el endpoint, no deducido. El efecto es el mismo —bytes en el cable, sin
+> evento del lado del cliente— y la única diferencia observable es que consume ids
+> de evento SSE, que a este diseño no le importan: la reanudación usa `after` con
+> el id del **mensaje**, no el id del evento.
 
 ## Garantías y no-garantías
 

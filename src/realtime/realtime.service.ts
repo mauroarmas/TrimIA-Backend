@@ -1,0 +1,277 @@
+import { Injectable, Logger, OnModuleDestroy } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import Redis from 'ioredis';
+import {
+  Observable,
+  Subject,
+  concatMap,
+  filter,
+  interval,
+  map,
+  merge,
+  takeUntil,
+} from 'rxjs';
+import { RedisService } from '../redis/redis.service';
+import { RealtimeEvent, conversationChannel } from './realtime.types';
+
+/** Lo que `@Sse()` sabe serializar. `data: ''` produce solo una línea vacía. */
+interface SseMessage {
+  data: string | object;
+  type?: string;
+}
+
+export interface StreamOptions {
+  /**
+   * Se ejecuta en cada keepalive para confirmar que quien abrió el stream
+   * TODAVÍA puede leer esta conversación (RF-021, CL-9). Devolver `false`
+   * cierra el stream. Cada endpoint pasa su propio criterio: el chat propio
+   * mira pertenencia, el del supervisor mira el rol — la regla no se duplica
+   * acá.
+   */
+  revalidate?: () => Promise<boolean>;
+  /**
+   * `exp` del token que abrió el stream, en segundos epoch. Un stream no puede
+   * sobrevivir a la sesión que lo autorizó (RF-022).
+   */
+  expiresAt?: number;
+}
+
+/**
+ * Bus de eventos de los chats del panel (spec 004).
+ *
+ * Módulo propio y no parte de `conversations/` por dos razones: lo consumen tres
+ * módulos (Conversations publica; Messaging y Supervisor sirven streams) y
+ * aislarlo evita el ciclo que aparecería si Conversations dependiera de quien
+ * sirve los streams. Es el mismo patrón de WhatsappSenderModule.
+ *
+ * El evento es una **notificación, no un almacén**: el mensaje ya está en
+ * Postgres antes de publicarse, así que perder un evento no pierde nada
+ * (RF-007). De ahí se sigue todo lo demás, incluida la resiliencia de publish().
+ */
+@Injectable()
+export class RealtimeService implements OnModuleDestroy {
+  private readonly logger = new Logger(RealtimeService.name);
+
+  /**
+   * Suscripciones locales por conversación, con conteo de referencias: dos
+   * pestañas sobre la misma conversación comparten UNA suscripción a Redis, y
+   * al cerrarse la última se desuscribe (RF-009).
+   *
+   * Ojo con la confusión fácil: esto NO es el `Map` de locks de
+   * MessageProcessor, que solo es correcto con una instancia. Este es correcto
+   * con varias porque no coordina nada — solo cuenta conexiones **locales**, y
+   * el fan-out entre procesos lo hace Redis.
+   */
+  private readonly channels = new Map<
+    string,
+    { subscribers: number; subject: Subject<RealtimeEvent> }
+  >();
+
+  private subscriber?: Redis;
+
+  constructor(
+    private readonly redis: RedisService,
+    private readonly config: ConfigService,
+  ) {}
+
+  async onModuleDestroy() {
+    await this.subscriber?.quit();
+  }
+
+  /**
+   * Avisa que hay algo nuevo en una conversación.
+   *
+   * **Nunca lanza, y eso es obligatorio, no una comodidad.** `addMessage()` corre
+   * DENTRO del request de `POST /messaging/web` (MessagingService.prepareConversation
+   * lo llama antes de encolar), así que un publish que propagara su error dejaría
+   * de poder enviarse mensajes con Redis caído. La spec lo prohíbe explícitamente:
+   * el envío no puede depender de que la entrega en tiempo real esté disponible
+   * (CL-10). El registro en Postgres ya cerró; esto es solo el aviso.
+   */
+  async publish(conversationId: string, event: RealtimeEvent): Promise<void> {
+    try {
+      await this.redis.publish(
+        conversationChannel(conversationId),
+        JSON.stringify(event),
+      );
+    } catch (err) {
+      this.logger.error(
+        `No se pudo publicar el evento ${event.type} de [${conversationId}]: ${
+          err instanceof Error ? err.message : err
+        }. El mensaje quedó registrado igual; se recupera al recargar.`,
+      );
+    }
+  }
+
+  /** Eventos de dominio de una conversación, sin keepalive ni autorización. */
+  streamFor(conversationId: string): Observable<RealtimeEvent> {
+    return new Observable<RealtimeEvent>((subscriber) => {
+      const entry = this.acquire(conversationId);
+      const inner = entry.subject.subscribe(subscriber);
+      return () => {
+        inner.unsubscribe();
+        this.release(conversationId);
+      };
+    });
+  }
+
+  /**
+   * Stream listo para servir con `@Sse()`: eventos de dominio + keepalive, y el
+   * keepalive hace de reloj para revalidar el permiso y detectar el token
+   * vencido.
+   *
+   * Que las tres cosas vivan acá y no en cada controller es deliberado: los dos
+   * endpoints de stream necesitan exactamente lo mismo, y duplicarlo era la
+   * copia que el Principio V evita.
+   */
+  sseStreamFor(
+    conversationId: string,
+    options: StreamOptions = {},
+  ): Observable<SseMessage> {
+    const heartbeatMs = this.config.get<number>('SSE_HEARTBEAT_MS') ?? 15000;
+    const stop$ = new Subject<void>();
+
+    const events$ = this.streamFor(conversationId).pipe(
+      map((event): SseMessage => ({ type: event.type, data: event })),
+    );
+
+    const keepalive$ = interval(heartbeatMs).pipe(
+      concatMap(async (): Promise<SseMessage | null> => {
+        if (!(await this.stillAllowed(conversationId, options))) {
+          stop$.next();
+          return null;
+        }
+        // Keepalive: un evento SIN `data`. Pone bytes en el cable —que es lo que
+        // evita que un intermediario corte la conexión por inactividad— y del
+        // lado del cliente no despacha nada, porque sin `data` el buffer del
+        // evento queda vacío.
+        //
+        // Se planeó como comentario SSE (`: keepalive`) y no se puede: @Sse() no
+        // expone API para comentarios, y su writeMessage() le pone un `id`
+        // incremental a todo mensaje que no traiga uno, así que en el cable esto
+        // sale como `id: N` y una línea en blanco. El efecto es el mismo. Lo
+        // único que consume son ids de evento SSE, que acá no se usan: la
+        // reanudación va por `after` con el id del mensaje.
+        return { data: '' };
+      }),
+      filter((message): message is SseMessage => message !== null),
+    );
+
+    return merge(events$, keepalive$).pipe(takeUntil(stop$));
+  }
+
+  /**
+   * Dos motivos para cerrar un stream ya abierto, chequeados en cada keepalive.
+   *
+   * El orden importa poco, pero el criterio de falla sí: si la revalidación
+   * lanza, se cierra el stream. Fail-closed — ante la duda sobre un permiso, no
+   * se sigue entregando.
+   */
+  private async stillAllowed(
+    conversationId: string,
+    options: StreamOptions,
+  ): Promise<boolean> {
+    // RF-022: el token que abrió el stream no puede sobrevivirlo. Y esto gana
+    // sobre "mantener vivo el turno en curso" (RF-008): no se entrega sobre una
+    // credencial vencida ni para terminar una respuesta en camino (CL-16). No se
+    // pierde nada — la respuesta se registra igual y aparece al reconectar.
+    if (options.expiresAt && Date.now() >= options.expiresAt * 1000) {
+      this.logger.debug(
+        `Stream de [${conversationId}] cerrado: el token que lo abrió venció.`,
+      );
+      return false;
+    }
+
+    if (options.revalidate) {
+      let allowed: boolean;
+      try {
+        allowed = await options.revalidate();
+      } catch (err) {
+        this.logger.error(
+          `No se pudo revalidar el permiso del stream de [${conversationId}]: ${
+            err instanceof Error ? err.message : err
+          }. Se cierra por precaución.`,
+        );
+        return false;
+      }
+      if (!allowed) {
+        this.logger.log(
+          `Stream de [${conversationId}] cerrado: quien lo abrió ya no puede leer esta conversación.`,
+        );
+        return false;
+      }
+    }
+
+    return true;
+  }
+
+  private acquire(conversationId: string) {
+    const existing = this.channels.get(conversationId);
+    if (existing) {
+      existing.subscribers += 1;
+      return existing;
+    }
+
+    const entry = { subscribers: 1, subject: new Subject<RealtimeEvent>() };
+    this.channels.set(conversationId, entry);
+    this.ensureSubscriber()
+      .subscribe(conversationChannel(conversationId))
+      .catch((err) =>
+        this.logger.error(
+          `No se pudo suscribir al canal de [${conversationId}]: ${err}`,
+        ),
+      );
+    return entry;
+  }
+
+  private release(conversationId: string) {
+    const entry = this.channels.get(conversationId);
+    if (!entry) return;
+
+    entry.subscribers -= 1;
+    if (entry.subscribers > 0) return;
+
+    entry.subject.complete();
+    this.channels.delete(conversationId);
+    this.subscriber
+      ?.unsubscribe(conversationChannel(conversationId))
+      .catch((err) =>
+        this.logger.error(
+          `No se pudo desuscribir del canal de [${conversationId}]: ${err}`,
+        ),
+      );
+  }
+
+  /**
+   * Conexión suscriptora, creada al primer stream.
+   *
+   * **Tiene que ser un `duplicate()`.** `RedisService` extiende `Redis` y es la
+   * conexión compartida de todo el proceso; una conexión ioredis en modo
+   * subscriber no puede ejecutar comandos normales, así que suscribirse sobre la
+   * instancia inyectada rompería BullMQ y todo lo demás que use Redis acá.
+   */
+  private ensureSubscriber(): Redis {
+    if (!this.subscriber) {
+      this.subscriber = this.redis.duplicate();
+      this.subscriber.on('message', (channel, payload) =>
+        this.dispatch(channel, payload),
+      );
+    }
+    return this.subscriber;
+  }
+
+  private dispatch(channel: string, payload: string) {
+    let event: RealtimeEvent;
+    try {
+      event = JSON.parse(payload) as RealtimeEvent;
+    } catch {
+      this.logger.warn(`Evento ilegible en ${channel}, se descarta.`);
+      return;
+    }
+
+    const entry = this.channels.get(event.conversationId);
+    // Puede no haber nadie escuchando localmente: el evento venía para otra
+    // instancia, o la pestaña se cerró entre el publish y la entrega.
+    entry?.subject.next(event);
+  }
+}
