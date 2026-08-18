@@ -336,14 +336,18 @@ export class ConversationsService {
       conversation.channel,
     );
 
-    return this.prisma.message.create({
-      data: {
-        conversationId,
-        role: 'ASSISTANT',
-        content: message,
-        agentType: conversation.currentAgent ?? undefined,
-      },
-    });
+    // Pasa por addMessage() y no por prisma.message.create() directo, que es lo
+    // que hacía antes. Era el único de los siete caminos de persistencia que se
+    // salteaba el embudo, y por eso esta respuesta —la que un supervisor escribe
+    // a mano sobre un caso escalado— era la única que NO llegaba al chat abierto
+    // de la otra persona: la pestaña se quedaba muda para siempre (spec 004,
+    // US2). Ahora emite como cualquier otro mensaje.
+    return this.addMessage(
+      conversationId,
+      'ASSISTANT',
+      message,
+      conversation.currentAgent ?? undefined,
+    );
   }
 
   /**

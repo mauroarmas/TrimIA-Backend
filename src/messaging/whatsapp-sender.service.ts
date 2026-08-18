@@ -14,15 +14,15 @@ export class WhatsappSenderService {
   // (ej. el de un empleado cargado a mano) igual llega.
   async send(phone: string, message: string, channel: Channel): Promise<void> {
     if (channel !== Channel.WHATSAPP) {
-      // El chat web (Sprint 5A, US4) no tiene canal de salida propio: la
-      // respuesta ya quedó persistida como Message y el frontend la lee por
-      // polling (GET /messaging/web/:convId/messages). Sin este corte, cada
+      // El chat web no tiene canal de salida propio: la respuesta ya quedó
+      // persistida como Message y se entrega por el stream del panel
+      // (GET /messaging/web/:convId/stream, spec 004). Sin este corte, cada
       // respuesta del chat web se empujaría como un WhatsApp real al
       // teléfono del empleado —el mismo número que usa como `externalId`,
       // research §8— algo que nadie pidió y que además fallaría si ese
       // número no tiene sesión de WhatsApp Business abierta con n8n.
       this.logger.debug(
-        `Canal ${channel}: respuesta servida por polling, no se envía por WhatsApp`,
+        `Canal ${channel}: respuesta entregada por el stream del panel, no se envía por WhatsApp`,
       );
       return;
     }

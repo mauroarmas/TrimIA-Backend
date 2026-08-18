@@ -98,9 +98,9 @@ desde el panel del supervisor; el mensaje aparece sin recargar
 
 **Depende de**: Fase 2 y US1 (necesita el stream del chat propio donde aterriza).
 
-- [ ] T020 [US2] Hacer que `ConversationsService.replyManually()` persista con `addMessage()` en vez de `this.prisma.message.create()` directo ([:270-277](../../src/conversations/conversations.service.ts#L270-L277)). Es el séptimo camino de persistencia y el único que hoy no pasa por el embudo, y por eso el evento no se emite. Preservar la forma del valor de retorno: hay llamadores que lo consumen
-- [ ] T021 [US2] Extender `src/conversations/conversations.service.spec.ts`: `replyManually()` emite un evento `message` con rol `ASSISTANT` · sigue exigiendo `HUMAN_HANDLING` y que quien responde sea quien tiene el control (no relajar esa autorización al refactorizar) · sigue enviando por el sender antes de persistir
-- [ ] T022 [US2] Test de integración en `src/messaging/messaging-web.controller.spec.ts`: un takeover emite `status: HUMAN_HANDLING` y la respuesta manual posterior emite `message`, **en ese orden**, sobre el stream del dueño de la conversación
+- [X] T020 [US2] Hacer que `ConversationsService.replyManually()` persista con `addMessage()` en vez de `this.prisma.message.create()` directo ([:270-277](../../src/conversations/conversations.service.ts#L270-L277)). Es el séptimo camino de persistencia y el único que hoy no pasa por el embudo, y por eso el evento no se emite. Preservar la forma del valor de retorno: hay llamadores que lo consumen
+- [X] T021 [US2] Extender `src/conversations/conversations.service.spec.ts`: `replyManually()` emite un evento `message` con rol `ASSISTANT` · sigue exigiendo `HUMAN_HANDLING` y que quien responde sea quien tiene el control (no relajar esa autorización al refactorizar) · sigue enviando por el sender antes de persistir
+- [X] T022 [US2] Test de integración en `src/messaging/messaging-web.controller.spec.ts`: un takeover emite `status: HUMAN_HANDLING` y la respuesta manual posterior emite `message`, **en ese orden**, sobre el stream del dueño de la conversación
 
 **Checkpoint**: US1 + US2 funcionan. La falla de corrección más grave está cerrada.
 
@@ -218,7 +218,7 @@ Hoy **nada** en el código escribe `CLOSED`; esta fase abre el primer camino.
 
 ## Phase 11: Polish & Cross-Cutting Concerns
 
-- [ ] T043 [P] Actualizar el comentario de `src/messaging/whatsapp-sender.service.ts` ([:17-23](../../src/messaging/whatsapp-sender.service.ts#L17-L23)), que hoy dice que la respuesta del chat web "la lee el frontend por polling". Sigue siendo un no-op deliberado, pero por el motivo nuevo: la respuesta se entrega por el stream
+- [X] T043 [P] *(adelantada de esta fase: el comentario quedó falso al cerrar la Fase 3)* Actualizar el comentario de `src/messaging/whatsapp-sender.service.ts` ([:17-23](../../src/messaging/whatsapp-sender.service.ts#L17-L23)), que hoy dice que la respuesta del chat web "la lee el frontend por polling". Sigue siendo un no-op deliberado, pero por el motivo nuevo: la respuesta se entrega por el stream
 - [ ] T044 [P] Actualizar `docs/CONTEXTO_TECNICO.md` con el módulo `realtime`, los dos endpoints de stream, la puerta del simulador, el bus de Redis y la revalidación de autorización en streams abiertos (constitución: documentación viva en el mismo trabajo)
 - [ ] T045 Correr `docker compose exec nestjs npm test` y `npm run lint` — puerta de calidad obligatoria antes de dar la fase por terminada
 - [ ] T046 Recorrer los 11 escenarios de [quickstart.md](./quickstart.md) a mano, incluido el escenario 11 (fan-out publicando a mano en Redis, que prueba que la entrega no depende de que el productor y la conexión estén en el mismo proceso)

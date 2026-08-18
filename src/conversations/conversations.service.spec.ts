@@ -497,6 +497,88 @@ describe('ConversationsService — takeover/release/replyManually', () => {
       );
     });
 
+    // ⭐ Spec 004, US2 — la falla de corrección más grave que arregla la spec.
+    // replyManually() era el único de los siete caminos de persistencia que
+    // escribía Prisma directo, salteándose el embudo, y por eso esta respuesta
+    // nunca llegaba al chat abierto de la otra persona.
+    it('emite el mensaje para que llegue al chat abierto del otro lado', async () => {
+      prisma.conversation.findUnique.mockResolvedValue({
+        id: 'conv-1',
+        status: 'HUMAN_HANDLING',
+        handledById: 'sup-1',
+        externalId: '5491100000000',
+        channel: 'WEB',
+        currentAgent: 'COLLECTIONS',
+      });
+      prisma.message.create.mockResolvedValue({
+        id: 'msg-9',
+        role: 'ASSISTANT',
+        content: 'Te confirmo por acá: son 30 días de aviso.',
+        agentType: 'COLLECTIONS',
+        createdAt: new Date('2026-08-18T15:00:00.000Z'),
+      });
+
+      await service.replyManually(
+        'conv-1',
+        'sup-1',
+        'Te confirmo por acá: son 30 días de aviso.',
+      );
+
+      expect(realtime.publish).toHaveBeenCalledWith('conv-1', {
+        type: 'message',
+        conversationId: 'conv-1',
+        data: {
+          id: 'msg-9',
+          role: 'ASSISTANT',
+          content: 'Te confirmo por acá: son 30 días de aviso.',
+          agentType: 'COLLECTIONS',
+          createdAt: '2026-08-18T15:00:00.000Z',
+        },
+      });
+    });
+
+    // El refactor pasó por addMessage(), que no valida nada: la autorización
+    // tiene que seguir estando ANTES, y este test es el que lo sostiene.
+    it('sigue exigiendo que la conversación esté en HUMAN_HANDLING', async () => {
+      prisma.conversation.findUnique.mockResolvedValue({
+        id: 'conv-1',
+        status: 'ACTIVE',
+        handledById: 'sup-1',
+      });
+
+      await expect(
+        service.replyManually('conv-1', 'sup-1', 'hola'),
+      ).rejects.toThrow(ForbiddenException);
+      expect(prisma.message.create).not.toHaveBeenCalled();
+      expect(realtime.publish).not.toHaveBeenCalled();
+    });
+
+    // El orden importa: si se persistiera antes de enviar, un fallo del envío
+    // dejaría en el historial un mensaje que el usuario nunca recibió.
+    it('envía por el canal ANTES de persistir', async () => {
+      prisma.conversation.findUnique.mockResolvedValue({
+        id: 'conv-1',
+        status: 'HUMAN_HANDLING',
+        handledById: 'sup-1',
+        externalId: '5491100000000',
+        channel: 'WHATSAPP',
+        currentAgent: null,
+      });
+      prisma.message.create.mockResolvedValue({
+        id: 'msg-1',
+        role: 'ASSISTANT',
+        content: 'hola',
+        agentType: null,
+        createdAt: new Date(),
+      });
+
+      await service.replyManually('conv-1', 'sup-1', 'hola');
+
+      expect(sender.send.mock.invocationCallOrder[0]).toBeLessThan(
+        prisma.message.create.mock.invocationCallOrder[0],
+      );
+    });
+
     it('rechaza responder si quien lo pide no tiene el control (403)', async () => {
       prisma.conversation.findUnique.mockResolvedValue({
         id: 'conv-1',

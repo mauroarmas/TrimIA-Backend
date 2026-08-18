@@ -18,6 +18,11 @@ import { EmployeesService } from '../employees/employees.service';
 import { RealtimeService } from '../realtime/realtime.service';
 import { StreamOptions } from '../realtime/realtime.service';
 import { EMPTY } from 'rxjs';
+import { ConfigService } from '@nestjs/config';
+import { PrismaService } from '../database/prisma.service';
+import { WhatsappSenderService } from './whatsapp-sender.service';
+import { OrchestrationLogger } from '../ai/orchestrator/orchestration-logger.service';
+import { RedisService } from '../redis/redis.service';
 
 const CONV_ID = '77777777-7777-4777-8777-777777777777';
 
@@ -290,5 +295,170 @@ describe('⭐ MessagingWebController.stream — autorización DURANTE la vida (R
     });
 
     expect(streamOptions().expiresAt).toBe(1800000000);
+  });
+});
+
+/**
+ * ⭐ T022 / US2 — integración: la respuesta que un supervisor escribe a mano tiene
+ * que aparecer en el chat abierto del empleado.
+ *
+ * Es la falla de corrección más grave que arregla la spec 004, así que se prueba
+ * con las piezas REALES (ConversationsService + RealtimeService) y no con mocks:
+ * lo que estaba roto era justamente el cableado entre ellas —replyManually()
+ * escribía Prisma directo y se salteaba el embudo—, y un test con mocks no lo
+ * habría detectado.
+ *
+ * Lo único falso es Redis, y se reemplaza por un bus en memoria que devuelve cada
+ * publish a su suscriptor, que es exactamente lo que hace Redis pub/sub.
+ */
+describe('⭐ US2 — la respuesta del supervisor llega al chat abierto (T022)', () => {
+  const EMPLEADO_PHONE = '5493865505362';
+
+  /** Redis de juguete: lo que se publica vuelve por el handler del suscriptor. */
+  function fakeRedis() {
+    let onMessage: ((channel: string, payload: string) => void) | undefined;
+    const suscritos = new Set<string>();
+    const subscriber = {
+      subscribe: jest.fn(async (channel: string) => {
+        suscritos.add(channel);
+        return 1;
+      }),
+      unsubscribe: jest.fn(async (channel: string) => {
+        suscritos.delete(channel);
+        return 1;
+      }),
+      on: jest.fn((event: string, handler: never) => {
+        if (event === 'message') {
+          onMessage = handler as unknown as typeof onMessage;
+        }
+      }),
+      quit: jest.fn(),
+    };
+    return {
+      publish: jest.fn(async (channel: string, payload: string) => {
+        if (suscritos.has(channel)) onMessage?.(channel, payload);
+        return 1;
+      }),
+      duplicate: jest.fn(() => subscriber),
+    };
+  }
+
+  /** Deja correr los microtasks: publish() es fire-and-forget a propósito. */
+  const flush = () => new Promise((resolve) => setImmediate(resolve));
+
+  function build() {
+    const conversacion = {
+      id: CONV_ID,
+      externalId: EMPLEADO_PHONE,
+      status: 'WAITING_HUMAN',
+      currentAgent: 'COLLECTIONS',
+      channel: 'WEB',
+      handledById: null,
+    };
+
+    const prisma = {
+      conversation: {
+        findUnique: jest.fn(async () => conversacion),
+        update: jest.fn(async ({ data }: { data: Record<string, unknown> }) => {
+          Object.assign(conversacion, data);
+          return { ...conversacion };
+        }),
+      },
+      message: {
+        create: jest.fn(
+          async ({ data }: { data: Record<string, unknown> }) => ({
+            id: 'msg-sup',
+            agentType: null,
+            createdAt: new Date('2026-08-18T16:00:00.000Z'),
+            ...data,
+          }),
+        ),
+      },
+    };
+
+    const redis = fakeRedis();
+    const realtime = new RealtimeService(
+      redis as unknown as RedisService,
+      { get: () => 60000 } as unknown as ConfigService,
+    );
+    const conversations = new ConversationsService(
+      prisma as unknown as PrismaService,
+      { send: jest.fn() } as unknown as WhatsappSenderService,
+      { logEvent: jest.fn() } as unknown as OrchestrationLogger,
+      realtime,
+    );
+    const controller = new MessagingWebController(
+      { enqueueWeb: jest.fn() } as unknown as MessagingService,
+      conversations,
+      {
+        findById: jest.fn().mockResolvedValue({
+          id: 'emp-1',
+          phone: EMPLEADO_PHONE,
+        }),
+      } as unknown as EmployeesService,
+      realtime,
+    );
+
+    return { controller, conversations, conversacion };
+  }
+
+  it('el takeover y la respuesta manual llegan al stream del empleado, en ese orden', async () => {
+    const { controller, conversations } = build();
+
+    // El empleado tiene su chat abierto sobre un caso escalado.
+    const stream = await controller.stream(CONV_ID, { user: { id: 'emp-1' } });
+    const recibidos: any[] = [];
+    // Se guarda la suscripción para cerrarla al final: el keepalive es un
+    // `interval` que mantendría vivo el proceso de Jest si el stream quedara
+    // abierto — el mismo motivo por el que el panel tiene que abortar el fetch al
+    // desmontar el componente (RF-009).
+    const suscripcion = stream.subscribe((evento) => recibidos.push(evento));
+
+    // Del otro lado, un supervisor toma el control y responde.
+    await conversations.takeover(CONV_ID, 'sup-1');
+    await flush();
+    await conversations.replyManually(
+      CONV_ID,
+      'sup-1',
+      'Son 30 días de aviso.',
+    );
+    await flush();
+
+    expect(recibidos).toHaveLength(2);
+
+    expect(recibidos[0].type).toBe('status');
+    expect(recibidos[0].data.data).toEqual({
+      status: 'HUMAN_HANDLING',
+      currentAgent: 'COLLECTIONS',
+    });
+
+    expect(recibidos[1].type).toBe('message');
+    expect(recibidos[1].data.data).toEqual(
+      expect.objectContaining({
+        role: 'ASSISTANT',
+        content: 'Son 30 días de aviso.',
+      }),
+    );
+
+    suscripcion.unsubscribe();
+  });
+
+  // Lo que hoy ve el usuario: nada. Este test es el que impide volver a ese estado.
+  it('sin nadie escuchando, el mensaje se persiste igual (el evento solo avisa)', async () => {
+    const { conversations } = build();
+
+    await conversations.takeover(CONV_ID, 'sup-1');
+    const persistido = await conversations.replyManually(
+      CONV_ID,
+      'sup-1',
+      'igual queda registrado',
+    );
+
+    expect(persistido).toEqual(
+      expect.objectContaining({
+        role: 'ASSISTANT',
+        content: 'igual queda registrado',
+      }),
+    );
   });
 });
