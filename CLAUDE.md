@@ -38,4 +38,24 @@ curl http://localhost:3000/health
 - Confidencialidad: la autorización de agentes por `userType` vive únicamente en `allowedAgentsFor` (`src/ai/agents/agent-domains.ts`); la audiencia del RAG (`INTERNO`/`PUBLICO`) se aplica en `knowledge.search()`. No se replica esa lógica en otro lado.
 - Ninguna decisión financiera/contractual se cierra sola: verificación de pagos, aprobación de crédito y cierre de venta financiada siempre pasan por un `SUPERVISOR`.
 
+## Cierre de una spec: tareas de panel
+
+Toda spec que agregue endpoints termina agregando a su `tasks.md` una **fase final**
+con el trabajo necesario para poder ejercitarlos desde el frontend de pruebas.
+
+**Se agregan las tareas, no se implementan.** La spec de backend se da por terminada
+con la fase enumerada; el panel se trabaja después, por separado. Es para que ese
+trabajo quede en un backlog visible en vez de depender de que alguien lo recuerde.
+
+El frontend es el repo hermano `/home/mauro/Proyectos/trimIA-frontend` (Vite + React,
+JSX sin TypeScript, `oxlint`, **sin runner de tests**), y las rutas de esas tareas van
+relativas a ese repo. Es un banco de pruebas para ver lo implementado y hacer demos:
+el objetivo es **poder usar los endpoints**, no calidad de producto, y no se le exige
+el rigor del backend. El rigor va del lado de acá.
+
+Al escribir esas tareas, dos cosas que conviene mirar antes: qué funciones ya existen
+en `src/api.js` (para extender y no duplicar) y qué distinciones del backend puede
+aplastar la UI sin querer — por ejemplo `hasData: false` no es `0`, y dos códigos de
+error iguales pueden pedir acciones distintas.
+
 Las reglas de producto viven en `.specify/memory/constitution.md` y el estado del producto en `specs/README.md`.
