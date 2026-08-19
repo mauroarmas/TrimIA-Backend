@@ -52,9 +52,24 @@ describe('buildRagAgentGraph', () => {
       internalNote?: string;
     } = { response: 'Sí, la tenemos en 12 cuotas.', needsHuman: false },
     agentType: 'SALES' | 'COLLECTIONS' = 'SALES',
+    hits?: Array<{
+      documentId: string;
+      title: string;
+      content: string;
+      score: number;
+    }>,
   ) {
     const knowledge = {
-      search: jest.fn().mockResolvedValue([{ content: 'contexto', score }]),
+      search: jest.fn().mockResolvedValue(
+        hits ?? [
+          {
+            documentId: 'doc-1',
+            title: 'Documento de prueba',
+            content: 'contexto',
+            score,
+          },
+        ],
+      ),
     };
     const structuredInvoke = jest.fn().mockResolvedValue({
       parsed,
@@ -324,6 +339,213 @@ describe('buildRagAgentGraph', () => {
       expect(agentType).toBe('SALES');
       expect(internalNote).toContain('¿tienen la heladera en 12 cuotas?');
       expect(internalNote).toContain('0.30');
+    });
+  });
+
+  /**
+   * ⭐ US2 / FR-006 a FR-009 — la confianza baja tiene DOS desenlaces.
+   *
+   * El defecto original: Diego (dueño, responsable de las cinco áreas) preguntó algo
+   * que el sistema no sabía y el sistema le abrió un caso... en la cola de la que él
+   * es responsable. Se escaló a sí mismo.
+   *
+   * La mitad que protege contra regresiones está acá también: para el cliente y el
+   * empleado el camino no se toca.
+   */
+  describe('⭐ report_low_confidence (US2)', () => {
+    /** Cuatro candidatos: el mejor quedó apenas por debajo del umbral de 0.65. */
+    const candidatos = [
+      {
+        documentId: 'doc-1',
+        title: 'Devoluciones de mercadería nacional',
+        content: 'texto interno de devoluciones',
+        score: 0.61,
+      },
+      {
+        documentId: 'doc-2',
+        title: 'Garantías de fábrica',
+        content: 'texto interno de garantías',
+        score: 0.44,
+      },
+    ];
+
+    const supervisor: OrchestratorStateType = {
+      ...baseState,
+      message: '¿cuál es el protocolo de devolución de mercadería importada?',
+      userType: 'EMPLEADO',
+      caller: {
+        userType: 'EMPLEADO',
+        role: 'SUPERVISOR',
+        areas: [{ id: 's1', name: 'Ventas', agentType: 'SALES' }],
+        esGerente: false,
+      },
+    };
+
+    function graphConCandidatos() {
+      return buildGraph(0.61, undefined, 'SALES', candidatos);
+    }
+
+    it('a un SUPERVISOR no se le crea ninguna escalación', async () => {
+      const { graph, escalations } = graphConCandidatos();
+
+      const result = await graph.invoke(supervisor);
+
+      expect(escalations.create).not.toHaveBeenCalled();
+      expect(result.escalated).toBe(false);
+    });
+
+    it('al GERENTE tampoco: es responsable de todo, no hay a quién escalarle', async () => {
+      const { graph, escalations } = graphConCandidatos();
+
+      const result = await graph.invoke({
+        ...supervisor,
+        caller: { ...supervisor.caller!, esGerente: true },
+      });
+
+      expect(escalations.create).not.toHaveBeenCalled();
+      expect(result.escalated).toBe(false);
+    });
+
+    it('el aviso incluye el documento más cercano con su título y su score', async () => {
+      const { graph } = graphConCandidatos();
+
+      const result = await graph.invoke(supervisor);
+
+      expect(result.response).toContain('Devoluciones de mercadería nacional');
+      expect(result.response).toContain('61.0%');
+      // Y el umbral, que es contra qué se comparó.
+      expect(result.response).toContain('65.0%');
+    });
+
+    it('lista los candidatos en orden de cercanía', async () => {
+      const { graph } = graphConCandidatos();
+
+      const result = await graph.invoke(supervisor);
+      const texto = result.response!;
+
+      expect(texto.indexOf('Devoluciones de mercadería nacional')).toBeLessThan(
+        texto.indexOf('Garantías de fábrica'),
+      );
+    });
+
+    // No hay nada que generar: el texto se arma con datos, no se redacta.
+    it('no gasta una llamada al LLM', async () => {
+      const { graph, structuredInvoke } = graphConCandidatos();
+
+      await graph.invoke(supervisor);
+
+      expect(structuredInvoke).not.toHaveBeenCalled();
+    });
+
+    it('sin ningún candidato informa eso, sin escalar', async () => {
+      const { graph, escalations } = buildGraph(0, undefined, 'SALES', []);
+
+      const result = await graph.invoke(supervisor);
+
+      expect(escalations.create).not.toHaveBeenCalled();
+      expect(result.response).toContain(
+        'no devolvió ningún documento parecido',
+      );
+    });
+
+    /**
+     * T028 / CL-5 / Principio II — el aviso NO concluye que el dato no exista.
+     *
+     * El caso que lo hace importar es justo éste: el documento existe y quedó apenas
+     * por debajo del umbral. Decirle "no está" lo llevaría a cargar un duplicado, y
+     * dos chunks parecidos compiten y se bajan el score mutuamente: la respuesta
+     * empeora para todos, no solo para él.
+     */
+    it('informa la confianza medida, no un veredicto de que el dato no existe', async () => {
+      const { graph } = graphConCandidatos();
+
+      const result = await graph.invoke(supervisor);
+      const texto = result.response!;
+
+      expect(texto).not.toMatch(/no (está|existe|hay nada) /i);
+      expect(texto).not.toMatch(/no lo tengo cargado/i);
+      // Lo que sí dice: cuánta confianza hubo y contra qué umbral.
+      expect(texto).toMatch(/confianza/i);
+      expect(texto).toMatch(/umbral/i);
+      // Y desaconseja explícitamente el duplicado.
+      expect(texto).toMatch(/corregir/i);
+    });
+
+    describe('el cliente y el empleado no cambian (FR-006, SC-008)', () => {
+      it('a un EMPLEADO común se le crea el caso, como hoy', async () => {
+        const { graph, escalations } = graphConCandidatos();
+
+        const result = await graph.invoke({
+          ...supervisor,
+          caller: {
+            userType: 'EMPLEADO',
+            role: 'EMPLEADO',
+            areas: [],
+            esGerente: false,
+          },
+        });
+
+        expect(escalations.create).toHaveBeenCalledTimes(1);
+        expect(result.escalated).toBe(true);
+      });
+
+      it('a un CLIENTE se le crea el caso, como hoy', async () => {
+        const { graph, escalations } = graphConCandidatos();
+
+        const result = await graph.invoke({
+          ...supervisor,
+          userType: 'CLIENTE',
+          caller: {
+            userType: 'CLIENTE',
+            role: null,
+            areas: [],
+            esGerente: false,
+          },
+        });
+
+        expect(escalations.create).toHaveBeenCalledTimes(1);
+        expect(result.escalated).toBe(true);
+      });
+
+      /**
+       * ⭐ FR-009 / CL-4 — a un cliente NUNCA se le muestra qué se consultó.
+       *
+       * El informe es conocimiento interno: títulos de documentos y qué tan cerca
+       * quedaron. Que salga por acá sería una fuga por una puerta nueva, con la
+       * audiencia del RAG intacta y sin que nada la detecte.
+       */
+      it('⭐ a un CLIENTE no se le filtran títulos ni contenido de lo consultado', async () => {
+        const { graph } = graphConCandidatos();
+
+        const result = await graph.invoke({
+          ...supervisor,
+          userType: 'CLIENTE',
+          caller: {
+            userType: 'CLIENTE',
+            role: null,
+            areas: [],
+            esGerente: false,
+          },
+        });
+
+        expect(result.response).not.toContain('Devoluciones');
+        expect(result.response).not.toContain('Garantías');
+        expect(result.response).not.toContain('texto interno');
+        expect(result.response).not.toMatch(/61|umbral|confianza/i);
+        // Recibe el mensaje de derivación de siempre.
+        expect(result.response).toContain('Dejame consultarlo');
+      });
+
+      // Sin poder identificar a quien pregunta se cae al camino de siempre: un
+      // informe con documentos internos no puede escaparse por esa puerta.
+      it('sin caller escala, como antes de esta spec', async () => {
+        const { graph, escalations } = graphConCandidatos();
+
+        const result = await graph.invoke({ ...supervisor, caller: null });
+
+        expect(escalations.create).toHaveBeenCalledTimes(1);
+        expect(result.escalated).toBe(true);
+      });
     });
   });
 

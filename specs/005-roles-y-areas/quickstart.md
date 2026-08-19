@@ -22,7 +22,7 @@ login() {
 
 EMP=$(login ana.torres@credimision.com)     # EMPLEADO — Depósito
 SUP=$(login diego.bazan@credimision.com)    # SUPERVISOR de Ventas → pasa a GERENTE
-UNSUP=$(login test.supervisor2@credimision.com)  # SUPERVISOR de UNA sola área
+UNSUP=$(login silvia.rios@credimision.com)  # SUPERVISOR de UNA sola área (Cobranzas)
 ```
 
 > El campo del login es **`accessToken`**, no `access_token`. Con el nombre

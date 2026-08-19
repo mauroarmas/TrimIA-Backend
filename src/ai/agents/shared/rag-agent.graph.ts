@@ -22,6 +22,10 @@ import {
   interlocutorInstructions,
 } from './rag-agent.instructions';
 import { descriptorDe } from '../../caller/caller.types';
+import {
+  buildLowConfidenceNode,
+  esResponsableDeArea,
+} from './low-confidence.node';
 
 /** Dependencias de infraestructura comunes a todo agente RAG. */
 export interface AgentGraphDeps {
@@ -53,7 +57,13 @@ const DEFAULT_ESCALATION =
  *                 ├─ confianza ok  → generate_response → (evaluate_handoff)
  *                 │                      ├─ needsHuman → escalate_by_agent → [END]
  *                 │                      └─ no          → [END]
- *                 └─ confianza baja → escalate_to_human → [END]
+ *                 └─ confianza baja ─┬─ responsable de área → report_low_confidence → [END]
+ *                                    └─ cliente / empleado  → escalate_to_human    → [END]
+ *
+ * La confianza baja tiene DOS desenlaces (spec 005, US2): a un cliente o a un
+ * empleado se le crea el caso como siempre; a un supervisor o al gerente se le
+ * informa qué se consultó y con cuánta confianza, sin abrirle un caso a la persona
+ * que justamente iba a tener que resolverlo.
  *
  * Hay DOS vías de derivación a un humano, por motivos distintos:
  *   - escalate_to_human: el RAG no encontró contexto confiable (score bajo).
@@ -97,6 +107,10 @@ export function buildRagAgentGraph(
       // El hit trae 0-1; KnowledgeRetrieval.score está definido 0-100.
       score: Number((h.score * 100).toFixed(2)),
       rank: idx,
+      // Solo en memoria (spec 005, T022): el informe de baja confianza tiene que
+      // poder decir QUÉ se consultó, y "documento a3f2b8c1" no le sirve a nadie.
+      // `KnowledgeRetrieval` sigue guardando id, score y rank.
+      title: h.title,
     }));
 
     logger.log(
@@ -239,9 +253,25 @@ export function buildRagAgentGraph(
     };
   };
 
+  // --- NODO: report_low_confidence — confianza baja, pero quien pregunta es
+  // responsable de área: se le informa qué se consultó y NO se le crea un caso.
+  const reportLowConfidence = buildLowConfidenceNode({
+    agentType,
+    confidenceThreshold,
+    logger,
+  });
+
   // --- ROUTER: evaluate_confidence (sin LLM) ---
-  const evaluateConfidence = (state: OrchestratorStateType): string =>
-    (state.confidence ?? 0) >= confidenceThreshold ? 'generate' : 'escalate';
+  //
+  // TRES salidas, no dos. La rama nueva vive acá y no como un `if` adentro del
+  // nodo de escalado a propósito: son dos resultados distintos —uno crea un caso
+  // y el otro no— y el grafo es donde eso se expresa. Quien lee el diagrama tiene
+  // que poder ver que hay dos desenlaces posibles con confianza baja.
+  const evaluateConfidence = (state: OrchestratorStateType): string => {
+    if ((state.confidence ?? 0) >= confidenceThreshold) return 'generate';
+    // Cliente y empleado: exactamente como antes de la spec 005.
+    return esResponsableDeArea(state.caller) ? 'report' : 'escalate';
+  };
 
   // --- ROUTER: needsHuman (sin LLM — lee el flag de generate_response) ---
   const evaluateHandoff = (state: OrchestratorStateType): string =>
@@ -252,10 +282,12 @@ export function buildRagAgentGraph(
     .addNode('generate_response', generateResponse)
     .addNode('escalate_to_human', escalateToHuman)
     .addNode('escalate_by_agent', escalateByAgent)
+    .addNode('report_low_confidence', reportLowConfidence)
     .addEdge(START, 'retrieve_context')
     .addConditionalEdges('retrieve_context', evaluateConfidence, {
       generate: 'generate_response',
       escalate: 'escalate_to_human',
+      report: 'report_low_confidence',
     })
     .addConditionalEdges('generate_response', evaluateHandoff, {
       escalate: 'escalate_by_agent',
@@ -263,5 +295,6 @@ export function buildRagAgentGraph(
     })
     .addEdge('escalate_by_agent', END)
     .addEdge('escalate_to_human', END)
+    .addEdge('report_low_confidence', END)
     .compile();
 }
