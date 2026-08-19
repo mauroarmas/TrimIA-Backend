@@ -149,12 +149,12 @@ puertas y dos están en otro módulo. Ver [contracts/escritura-de-conocimiento.m
 
 ## Phase 8: Polish & Cross-Cutting Concerns
 
-- [ ] T038 [P] Actualizar `docs/CONTEXTO_TECNICO.md` con el `Caller`, la relación N:M, la tercera rama de confianza y la regla de escritura (constitución: documentación viva en el mismo trabajo)
-- [ ] T039 [P] Actualizar `docs/hallazgos-para-proxima-spec.md` marcando qué quedó implementado, para que no se lea como pendiente
-- [ ] T040 Correr `docker compose exec nestjs npm test` y `npm run lint` — puerta de calidad obligatoria
-- [ ] T041 Recorrer los 10 escenarios de [quickstart.md](./quickstart.md) a mano
-- [ ] T042 Verificar la **paridad por WhatsApp** con el Simulador de Chat (escenario 10 del quickstart): la misma persona con la misma pregunta recibe el mismo trato por los dos canales. Debería salir gratis porque la identidad se resuelve por teléfono, pero conviene comprobarlo y no suponerlo (SC-009)
-- [ ] T043 Revisar en `src/ai/agents/shared/rag-agent.graph.ts` y `src/ai/knowledge/knowledge.service.ts` que **nadie haya usado `caller.areas` para filtrar la recuperación**. El objeto lo hace posible y FR-015 lo prohíbe: la lectura no se restringe por área. Es el riesgo de diseño que el plan deja anotado
+- [X] T038 [P] Actualizar `docs/CONTEXTO_TECNICO.md` con el `Caller`, la relación N:M, la tercera rama de confianza y la regla de escritura (constitución: documentación viva en el mismo trabajo)
+- [X] T039 [P] Actualizar `docs/hallazgos-para-proxima-spec.md` marcando qué quedó implementado, para que no se lea como pendiente
+- [X] T040 Correr `docker compose exec nestjs npm test` y `npm run lint` — puerta de calidad obligatoria
+- [X] T041 Recorrer los 10 escenarios de [quickstart.md](./quickstart.md) a mano
+- [X] T042 Verificar la **paridad por WhatsApp** con el Simulador de Chat (escenario 10 del quickstart): la misma persona con la misma pregunta recibe el mismo trato por los dos canales. Debería salir gratis porque la identidad se resuelve por teléfono, pero conviene comprobarlo y no suponerlo (SC-009)
+- [X] T043 Revisar en `src/ai/agents/shared/rag-agent.graph.ts` y `src/ai/knowledge/knowledge.service.ts` que **nadie haya usado `caller.areas` para filtrar la recuperación**. El objeto lo hace posible y FR-015 lo prohíbe: la lectura no se restringe por área. Es el riesgo de diseño que el plan deja anotado
 
 ---
 
@@ -172,6 +172,16 @@ puertas y dos están en otro módulo. Ver [contracts/escritura-de-conocimiento.m
 > Lo que ya existe y hay que **extender, no duplicar**: `src/api.js` tiene un único
 > `request()` y un `ApiError` que preserva el cuerpo del backend; `WebChat.jsx` ya
 > consume el stream de la spec 004 y ya distingue estados de conversación.
+>
+> **De dónde saca el panel las áreas de quien está logueado** (lo necesitan T049 y
+> T050, y es la parte no obvia): de `GET /employees/:id` con su **propio** id, que
+> ya devuelve `areasSupervisadas`. **No** de `GET /auth/me` ni del token: las áreas
+> deliberadamente **no viajan en la sesión** (SC-005), para que ningún guard pueda
+> ramificar por ellas. Pedirlas al backend no rompe esa garantía —se leen frescas de
+> la base—, pero guardarlas en el token sí la rompería.
+>
+> **Y `GET /employees` ahora trae `areasSupervisadas` de cada persona**, así que
+> T047 no necesita pedir el detalle de a uno.
 
 - [ ] T044 Agregar a `src/api.js` la función para asignar áreas supervisadas a un empleado
 - [ ] T045 **Crear** `src/components/EmployeesPanel.jsx` y registrar su pestaña en `src/App.jsx`. ⚠️ **La pantalla de empleados no existe**: hoy `listEmployees()` se usa solo para el desplegable de delegación de `EscalationsQueue.jsx`, y no hay ninguna pestaña de empleados. Es una pantalla nueva, no un agregado a una existente
