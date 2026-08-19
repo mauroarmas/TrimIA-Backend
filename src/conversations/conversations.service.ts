@@ -14,6 +14,8 @@ import {
 } from '@prisma/client';
 import { WhatsappSenderService } from '../messaging/whatsapp-sender.service';
 import { OrchestrationLogger } from '../ai/orchestrator/orchestration-logger.service';
+import { RealtimeService } from '../realtime/realtime.service';
+import { RealtimeEvent } from '../realtime/realtime.types';
 
 export interface ConversationTurn {
   role: 'USER' | 'ASSISTANT';
@@ -26,6 +28,7 @@ export class ConversationsService {
     private readonly prisma: PrismaService,
     private readonly sender: WhatsappSenderService,
     private readonly orchestrationLogger: OrchestrationLogger,
+    private readonly realtime: RealtimeService,
   ) {}
 
   /**
@@ -60,15 +63,53 @@ export class ConversationsService {
     });
   }
 
+  /**
+   * Único punto por el que se persiste un mensaje, y por eso el único que emite
+   * (spec 004). Hay siete caminos que agregan mensajes —el webhook, el worker,
+   * el acuse de espera, la resolución de un escalamiento, cuotas, comprobantes y
+   * la respuesta manual de un supervisor— y todos pasan por acá. Emitir desde el
+   * worker en cambio habría dejado afuera justo la respuesta del supervisor, que
+   * es el caso que hoy no llega al chat abierto.
+   */
   async addMessage(
     conversationId: string,
     role: MessageRole,
     content: string,
     agentType?: AgentType,
   ) {
-    return this.prisma.message.create({
+    const message = await this.prisma.message.create({
       data: { conversationId, role, content, agentType },
     });
+
+    // Se avisa DESPUÉS de que la escritura cerró: la base es la fuente de verdad
+    // y el evento es solo la notificación (RF-007).
+    //
+    // Solo USER y ASSISTANT, igual que listMessages(): emitir TOOL o SYSTEM
+    // mostraría por el stream mensajes que el historial no devuelve, lo que
+    // además de ser una fuga (RF-015) sería inconsistente — al recargar la
+    // página desaparecerían.
+    //
+    // No se hace `await`, y es a propósito: este método corre DENTRO del request
+    // de `POST /messaging/web`. `publish()` ya se traga sus errores, pero esperarlo
+    // ataría el tiempo de respuesta del envío a la latencia de Redis — un Redis
+    // *lento* (no caído) le sumaría esa demora al acuse, que tiene que llegar en
+    // milisegundos (RF-010, Principio IV). El aviso sale cuando salga; el mensaje
+    // ya está registrado.
+    if (message.role === 'USER' || message.role === 'ASSISTANT') {
+      void this.realtime.publish(conversationId, {
+        type: 'message',
+        conversationId,
+        data: {
+          id: message.id,
+          role: message.role,
+          content: message.content,
+          agentType: message.agentType,
+          createdAt: message.createdAt.toISOString(),
+        },
+      });
+    }
+
+    return message;
   }
 
   /** Devuelve la conversación por id (para leer el currentAgent sticky). */
@@ -144,9 +185,36 @@ export class ConversationsService {
    * takeover()/release() (ACTIVE ↔ HUMAN_HANDLING) de este mismo servicio.
    */
   async setStatus(conversationId: string, status: ConvStatus) {
-    return this.prisma.conversation.update({
+    const updated = await this.prisma.conversation.update({
       where: { id: conversationId },
       data: { status },
+    });
+    this.publishStatus(updated);
+    return updated;
+  }
+
+  /**
+   * Avisa un cambio de estado a los chats abiertos (RF-003).
+   *
+   * Lo llaman los tres únicos lugares donde cambia el estado: setStatus() —por
+   * donde EscalationsService deja la conversación en WAITING_HUMAN—, takeover() y
+   * release(). No hay ningún `conversation.update({status})` suelto fuera de este
+   * servicio, así que el requisito se cubre en un solo archivo.
+   *
+   * Que el chat sepa el estado es lo que evita el "pensando" eterno de CL-1: el
+   * acuse de espera no se repite si el usuario insiste, así que la UI no puede
+   * depender de que llegue un mensaje nuevo para actualizar lo que muestra.
+   */
+  private publishStatus(conversation: Conversation) {
+    // Sin `await`, por el mismo motivo que en addMessage(): quien cambia el estado
+    // no tiene que esperar a que el aviso salga.
+    void this.realtime.publish(conversation.id, {
+      type: 'status',
+      conversationId: conversation.id,
+      data: {
+        status: conversation.status,
+        currentAgent: conversation.currentAgent,
+      },
     });
   }
 
@@ -188,6 +256,7 @@ export class ConversationsService {
       eventType: 'conversation_takeover',
       payload: { employeeId },
     });
+    this.publishStatus(updated);
 
     return updated;
   }
@@ -219,14 +288,10 @@ export class ConversationsService {
       throw new NotFoundException('Conversación no encontrada');
     }
     if (conversation.status !== 'HUMAN_HANDLING') {
-      throw new ConflictException(
-        'La conversación no está en control manual',
-      );
+      throw new ConflictException('La conversación no está en control manual');
     }
     if (!asSupervisor && conversation.handledById !== employeeId) {
-      throw new ForbiddenException(
-        'No tenés el control de esta conversación',
-      );
+      throw new ForbiddenException('No tenés el control de esta conversación');
     }
 
     const updated = await this.prisma.conversation.update({
@@ -239,6 +304,51 @@ export class ConversationsService {
       eventType: 'conversation_release',
       payload: { employeeId },
     });
+    this.publishStatus(updated);
+
+    return updated;
+  }
+
+  /**
+   * Termina la conversación a pedido de su dueño (spec 004, RF-024, US6).
+   *
+   * **Es el primer camino del proyecto que escribe `CLOSED`**: hasta ahora las seis
+   * apariciones del estado eran lecturas (`not: 'CLOSED'`) o el guard del takeover.
+   * Y tiene una consecuencia que no es obvia: `getOrCreate()` filtra por
+   * `not: 'CLOSED'`, así que cerrar hace que **el próximo mensaje cree otra
+   * conversación**, reiniciando el agente sticky y el historial que ve el LLM.
+   *
+   * Eso es exactamente lo que se busca —"terminé este tema, empiezo otro"— pero solo
+   * cuando la persona lo pide. **Ningún temporizador puede llamar a este método**: un
+   * reinicio de contexto disparado por un reloj borraría una capacitación en
+   * silencio. La inactividad cierra la CONEXIÓN, que es otra cosa (RF-023).
+   */
+  async close(conversationId: string) {
+    const conversation = await this.prisma.conversation.findUnique({
+      where: { id: conversationId },
+    });
+    if (!conversation) {
+      throw new NotFoundException('Conversación no encontrada');
+    }
+    if (conversation.status === 'CLOSED') {
+      throw new ConflictException('La conversación ya está cerrada');
+    }
+    // No se cierra un caso que una persona está trabajando: dejaría al supervisor
+    // respondiendo sobre un hilo abandonado y la escalación abierta huérfana
+    // (CL-14). No es solo suyo.
+    if (conversation.status !== 'ACTIVE') {
+      throw new ConflictException(
+        'No podés terminar la conversación mientras un responsable la está atendiendo',
+      );
+    }
+
+    const updated = await this.prisma.conversation.update({
+      where: { id: conversationId },
+      data: { status: 'CLOSED' },
+    });
+    // Cerrar es un cambio de estado, así que viaja como cualquier otro: la otra
+    // pestaña se entera y su entrega se corta (CL-15).
+    this.publishStatus(updated);
 
     return updated;
   }
@@ -247,7 +357,11 @@ export class ConversationsService {
    * Envía un mensaje manual al usuario mientras dura el control (FR-007).
    * Solo lo puede hacer quien tiene la conversación tomada.
    */
-  async replyManually(conversationId: string, employeeId: string, message: string) {
+  async replyManually(
+    conversationId: string,
+    employeeId: string,
+    message: string,
+  ) {
     const conversation = await this.prisma.conversation.findUnique({
       where: { id: conversationId },
     });
@@ -258,28 +372,38 @@ export class ConversationsService {
       conversation.status !== 'HUMAN_HANDLING' ||
       conversation.handledById !== employeeId
     ) {
-      throw new ForbiddenException(
-        'No tenés el control de esta conversación',
-      );
+      throw new ForbiddenException('No tenés el control de esta conversación');
     }
 
-    await this.sender.send(conversation.externalId, message, conversation.channel);
+    await this.sender.send(
+      conversation.externalId,
+      message,
+      conversation.channel,
+    );
 
-    return this.prisma.message.create({
-      data: {
-        conversationId,
-        role: 'ASSISTANT',
-        content: message,
-        agentType: conversation.currentAgent ?? undefined,
-      },
-    });
+    // Pasa por addMessage() y no por prisma.message.create() directo, que es lo
+    // que hacía antes. Era el único de los siete caminos de persistencia que se
+    // salteaba el embudo, y por eso esta respuesta —la que un supervisor escribe
+    // a mano sobre un caso escalado— era la única que NO llegaba al chat abierto
+    // de la otra persona: la pestaña se quedaba muda para siempre (spec 004,
+    // US2). Ahora emite como cualquier otro mensaje.
+    return this.addMessage(
+      conversationId,
+      'ASSISTANT',
+      message,
+      conversation.currentAgent ?? undefined,
+    );
   }
 
   /**
    * Nota interna sobre una conversación (FR-012). Nunca genera un Message ni
    * se envía al usuario — es visible solo para quien tiene acceso al panel.
    */
-  async addInternalNote(conversationId: string, authorId: string, content: string) {
+  async addInternalNote(
+    conversationId: string,
+    authorId: string,
+    content: string,
+  ) {
     const note = await this.prisma.internalNote.create({
       data: { conversationId, authorId, content },
     });
@@ -326,5 +450,156 @@ export class ConversationsService {
       where: { conversationId },
       orderBy: { createdAt: 'asc' },
     });
+  }
+
+  /**
+   * Historial paginado de una conversación, orden cronológico ascendente —
+   * así se lee un chat (US4, FR-015). Igual que `getRecentHistory()`, solo
+   * expone `USER`/`ASSISTANT`: `SYSTEM` y `TOOL` no son para el usuario.
+   */
+  async listMessages(
+    conversationId: string,
+    opts: { page?: number; limit?: number; after?: string } = {},
+  ) {
+    const page = Math.max(1, opts.page ?? 1);
+    const limit = Math.min(200, Math.max(1, opts.limit ?? 50));
+    const skip = (page - 1) * limit;
+
+    // `after` es la reanudación (spec 004, RF-006): el panel declara cuál fue el
+    // último mensaje que vio y recibe lo posterior. Se resuelve en el backend y
+    // no dejando que el panel filtre, porque el panel es el único lugar del
+    // proyecto sin tests y esto es un comportamiento verificable.
+    //
+    // El corte es por `createdAt`, así que dos mensajes del mismo milisegundo
+    // podrían reenviarse. No es un problema: el cliente deduplica por id de
+    // todos modos, porque lo necesita para las dos pestañas y para la
+    // reconexión.
+    let after: Date | undefined;
+    if (opts.after) {
+      const cursor = await this.prisma.message.findUnique({
+        where: { id: opts.after },
+        select: { createdAt: true, conversationId: true },
+      });
+      // Falla explícito y no "devuelvo todo": un cursor inválido que se ignora en
+      // silencio le reenvía la conversación entera al cliente y parece que
+      // funciona. Y se exige que el mensaje sea DE esta conversación, para que el
+      // parámetro no sirva para tantear ids ajenos.
+      if (!cursor || cursor.conversationId !== conversationId) {
+        throw new NotFoundException(
+          'El mensaje indicado en `after` no existe en esta conversación',
+        );
+      }
+      after = cursor.createdAt;
+    }
+
+    const where = {
+      conversationId,
+      role: { in: ['USER' as const, 'ASSISTANT' as const] },
+      ...(after ? { createdAt: { gt: after } } : {}),
+    };
+
+    const [data, total] = await Promise.all([
+      this.prisma.message.findMany({
+        where,
+        orderBy: { createdAt: 'asc' },
+        skip,
+        take: limit,
+        select: {
+          id: true,
+          role: true,
+          content: true,
+          agentType: true,
+          createdAt: true,
+        },
+      }),
+      this.prisma.message.count({ where }),
+    ]);
+
+    return { data, page, limit, total, hasMore: skip + data.length < total };
+  }
+
+  /**
+   * Mensajes posteriores a `after`, en forma de eventos (spec 004, RF-006).
+   *
+   * Es la reanudación de un stream: lo que el panel se perdió mientras estuvo
+   * desconectado, con la **misma forma** que los eventos en vivo para que el
+   * cliente no tenga que parsear dos formatos.
+   *
+   * Lanza `NotFoundException` si el cursor no existe o es de otra conversación —
+   * lo hereda de `listMessages()`. Los controllers lo validan **antes** de abrir
+   * el stream justamente para que ese error salga como un 404 y no como un evento
+   * de error dentro de un stream ya abierto.
+   */
+  async messagesSince(
+    conversationId: string,
+    after: string,
+  ): Promise<RealtimeEvent[]> {
+    // 200 es el techo de listMessages(). Alcanza de sobra para una reconexión: si
+    // alguien se perdió más de 200 mensajes, recargar la página es más sensato que
+    // reproducirlos por el stream.
+    const { data } = await this.listMessages(conversationId, {
+      after,
+      limit: 200,
+    });
+
+    return data.map((message) => ({
+      type: 'message' as const,
+      conversationId,
+      data: {
+        id: message.id,
+        role: message.role as 'USER' | 'ASSISTANT',
+        content: message.content,
+        agentType: message.agentType,
+        createdAt: message.createdAt.toISOString(),
+      },
+    }));
+  }
+
+  /**
+   * Vista unificada de lectura (US4, FR-018): todos los mensajes de un mismo
+   * contacto, en los dos canales, en una sola línea de tiempo — sin fusionar
+   * los hilos ni compartir memoria entre ellos.
+   *
+   * Sale de una sola consulta por `externalId` sin filtrar canal, porque el
+   * chat web usa el mismo `externalId` que WhatsApp (el teléfono del
+   * empleado, research §8): no hace falta ninguna tabla de correlación.
+   *
+   * Devuelve `null` cuando el contacto no tiene ninguna conversación — el
+   * llamador decide si eso es 404 o una lista vacía.
+   */
+  async getUnifiedTimeline(externalId: string) {
+    const conversations = await this.prisma.conversation.findMany({
+      where: { externalId },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true, channel: true, status: true, currentAgent: true },
+    });
+    if (conversations.length === 0) return null;
+
+    const channelById = new Map(conversations.map((c) => [c.id, c.channel]));
+    const messages = await this.prisma.message.findMany({
+      where: {
+        conversationId: { in: conversations.map((c) => c.id) },
+        role: { in: ['USER', 'ASSISTANT'] },
+      },
+      orderBy: { createdAt: 'asc' },
+      select: {
+        conversationId: true,
+        role: true,
+        content: true,
+        agentType: true,
+        createdAt: true,
+      },
+    });
+
+    return {
+      conversations,
+      // Cada entrada lleva su `channel` y `conversationId`: es lo que evita
+      // que dos hilos con agentes distintos, intercalados en el tiempo, se
+      // lean como una sola conversación que nunca existió.
+      timeline: messages.map((m) => ({
+        ...m,
+        channel: channelById.get(m.conversationId)!,
+      })),
+    };
   }
 }

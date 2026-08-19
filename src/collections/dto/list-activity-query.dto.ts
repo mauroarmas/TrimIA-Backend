@@ -1,6 +1,14 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { IsDate, IsInt, IsOptional, IsString, IsUUID, Max, Min } from 'class-validator';
+import {
+  IsDate,
+  IsInt,
+  IsOptional,
+  IsString,
+  IsUUID,
+  Max,
+  Min,
+} from 'class-validator';
 
 export class ListActivityQueryDto {
   @ApiPropertyOptional({ description: 'Solo actividad de un cliente puntual.' })
@@ -9,7 +17,8 @@ export class ListActivityQueryDto {
   clientId?: string;
 
   @ApiPropertyOptional({
-    description: 'Solo para Cobrador Controlador: ver los clientes de un cobrador puntual en vez de todos.',
+    description:
+      'Solo para Cobrador Controlador: ver los clientes de un cobrador puntual en vez de todos.',
   })
   @IsOptional()
   @IsUUID()

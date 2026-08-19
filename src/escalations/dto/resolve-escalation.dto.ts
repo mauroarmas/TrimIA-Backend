@@ -17,7 +17,8 @@ export class ResolveEscalationDto {
 
   @ApiProperty({
     required: false,
-    description: 'Si true, ingesta la respuesta al RAG como conocimiento reutilizable.',
+    description:
+      'Si true, ingesta la respuesta al RAG como conocimiento reutilizable.',
   })
   @IsBoolean()
   @IsOptional()

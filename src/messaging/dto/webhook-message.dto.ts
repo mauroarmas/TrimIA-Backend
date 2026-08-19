@@ -25,7 +25,10 @@ export class WebhookMessageDto {
   // 4096: límite de WhatsApp para un mensaje de texto, así que nunca llega
   // legítimamente algo más largo — evita mandar texto arbitrariamente largo
   // al prompt del LLM (costo) o a los regex de isTrivial (backtracking).
-  @ApiProperty({ example: 'Hola, quiero consultar por un producto', required: false })
+  @ApiProperty({
+    example: 'Hola, quiero consultar por un producto',
+    required: false,
+  })
   @IsString()
   @IsOptional()
   @MaxLength(4096)
@@ -39,7 +42,10 @@ export class WebhookMessageDto {
   // Comprobante de pago (Sprint 4): n8n resuelve y descarga el media de Meta
   // (tiene el token; el backend no) y lo reenvía en base64 — ver
   // specs/002-collections-payments/research.md §1.
-  @ApiProperty({ required: false, description: 'Imagen en base64 (comprobante de pago)' })
+  @ApiProperty({
+    required: false,
+    description: 'Imagen en base64 (comprobante de pago)',
+  })
   @IsString()
   @IsOptional()
   mediaBase64?: string;

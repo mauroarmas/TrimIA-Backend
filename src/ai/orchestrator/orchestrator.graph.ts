@@ -12,10 +12,17 @@ import { LlmService } from '../llm/llm.service';
 import { AgentsService, SpecializedAgent } from '../agents/agents.service';
 import { OrchestrationLogger } from './orchestration-logger.service';
 import { OrchestratorState, OrchestratorStateType } from './orchestrator.state';
-import { buildClassifyPrompt, buildScopePrompt } from './utils/orchestrator.prompts';
-import { buildClassificationSchema, buildScopeSchema } from './utils/orchestrator.schemas';
+import {
+  buildClassifyPrompt,
+  buildScopePrompt,
+} from './utils/orchestrator.prompts';
+import {
+  buildClassificationSchema,
+  buildScopeSchema,
+} from './utils/orchestrator.schemas';
 import {
   isTrivial,
+  isUntranscribableAudio,
   cannedReply,
   OPENING_REPLY,
   CLOSING_REPLY,
@@ -53,7 +60,6 @@ const AGENT_KEYS: SpecializedAgent[] = [
  * Los contenidos (prompts, schemas, regex) viven en archivos aparte:
  *   orchestrator.prompts.ts · orchestrator.schemas.ts · trivial-filter.ts
  */
-
 
 export function buildOrchestratorGraph(
   llm: LlmService,
@@ -94,7 +100,9 @@ export function buildOrchestratorGraph(
     return {
       agentType: isGreeting ? null : (intent as AgentType),
       isGreeting,
-      greetingType: isGreeting ? (result.parsed.greetingType ?? 'apertura') : null,
+      greetingType: isGreeting
+        ? (result.parsed.greetingType ?? 'apertura')
+        : null,
       startedAt,
       inputTokens: (state.inputTokens ?? 0) + (usage?.input_tokens ?? 0),
       outputTokens: (state.outputTokens ?? 0) + (usage?.output_tokens ?? 0),
@@ -154,13 +162,19 @@ export function buildOrchestratorGraph(
     return {
       scopeChanged,
       isGreeting,
-      greetingType: isGreeting ? (result.parsed.greetingType ?? 'apertura') : null,
+      greetingType: isGreeting
+        ? (result.parsed.greetingType ?? 'apertura')
+        : null,
       // Si sigue en el mismo dominio y no es un saludo, el agente resuelto
       // es el sticky actual. Un saludo nunca resuelve a un agente, igual que
       // en classify_intent (ver scopeRouter). Si cambió de tema, resuelve al
       // targetAgent si el modelo lo dio; si no (o es greeting), null — y
       // postHandoffRouter cae de nuevo a classify_intent como red de seguridad.
-      agentType: isGreeting ? null : scopeChanged ? (targetAgent ?? null) : state.currentAgent,
+      agentType: isGreeting
+        ? null
+        : scopeChanged
+          ? (targetAgent ?? null)
+          : state.currentAgent,
       startedAt,
       // Acumula igual que classify_intent (no pisa): hoy scope_check siempre
       // es el primer nodo LLM del turno cuando corre, así que da lo mismo —
@@ -205,7 +219,16 @@ export function buildOrchestratorGraph(
       conversationId: state.conversationId,
       // trivial_response también pasa por acá (antes no dejaba rastro:
       // ni ConversationEvent ni TokenUsage, invisible para la auditoría).
-      eventType: state.isTrivial ? 'TRIVIAL_RESPONSE' : 'ROUTED_TO_AGENT',
+      //
+      // El audio no transcribible sale por el mismo nodo pero con su propio
+      // tipo: contarlo como TRIVIAL_RESPONSE lo escondería entre los saludos,
+      // y cuán seguido falla la transcripción es justamente lo que hay que
+      // poder medir para saber si el canal de voz sirve (OE-11).
+      eventType: isUntranscribableAudio(state.message)
+        ? 'AUDIO_NOT_TRANSCRIBED'
+        : state.isTrivial
+          ? 'TRIVIAL_RESPONSE'
+          : 'ROUTED_TO_AGENT',
       agentType: state.agentType,
       payload: {
         message: state.message,
@@ -241,6 +264,15 @@ export function buildOrchestratorGraph(
   // --- ROUTERS (funciones puras, sin costo de tokens) ---
 
   const entryRouter = (state: OrchestratorStateType): string => {
+    // Audio que n8n no pudo transcribir (US5, FR-009). Va ANTES del sticky y
+    // sin la guarda de `!state.currentAgent` que sí lleva isTrivial: acá no
+    // hay ambigüedad que resolver con el historial — no existe mensaje del
+    // usuario, existe un aviso de que la transcripción falló. Mandarlo al
+    // LLM sería pedirle que responda un texto que nadie escribió, y con
+    // agente fijado terminaría escalando a una persona por un audio que
+    // simplemente no se entendió.
+    if (isUntranscribableAudio(state.message)) return 'trivial';
+
     // El atajo de 0 tokens solo es seguro sin agente sticky: con un agente
     // fijado, un "dale"/"listo"/"ok" corto puede ser la confirmación a una
     // pregunta que el bot mismo hizo en el turno anterior (mismo callejón sin

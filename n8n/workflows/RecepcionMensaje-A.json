@@ -3,7 +3,7 @@
   "nodes": [
     {
       "parameters": {
-        "jsCode": "const body = $input.first().json.body;\n\n// Formato directo (Postman/WEB): { phone, message }\nif (body?.phone && body?.message) {\n  return [{ json: { phone: body.phone, message: body.message, channel: 'WEB', isImage: 'false' } }];\n}\n\n// Formato real de WhatsApp Business API\nconst message = body?.entry?.[0]?.changes?.[0]?.value?.messages?.[0];\nif (!message) return [];\n\nif (message.type === 'text') {\n  return [{ json: { phone: message.from, message: message.text.body, channel: 'WHATSAPP', isImage: 'false' } }];\n}\n\n// Comprobante de pago (Sprint 4): acá solo extraemos el mediaId/mimeType.\n// La resolución+descarga contra la Graph API de Meta la hacen los nodos\n// HTTP Request de abajo — el Code Node de n8n (Task Runner) NO soporta\n// this.helpers.httpRequestWithAuthentication (confirmado en vivo, n8n 2.30.7).\nif (message.type === 'image') {\n  return [{\n    json: {\n      phone: message.from,\n      message: message.image.caption ?? '',\n      channel: 'WHATSAPP',\n      isImage: 'true',\n      mediaId: message.image.id,\n      mimeType: message.image.mime_type,\n    },\n  }];\n}\n\n// Otros tipos (audio, video, documento, sticker...) quedan fuera de alcance.\nreturn [];\n"
+        "jsCode": "const body = $input.first().json.body;\n\n// Formato directo (Postman/WEB): { phone, message }\nif (body?.phone && body?.message) {\n  return [{ json: { phone: body.phone, message: body.message, channel: 'WEB', mediaKind: '' } }];\n}\n\n// Formato real de WhatsApp Business API\nconst message = body?.entry?.[0]?.changes?.[0]?.value?.messages?.[0];\nif (!message) return [];\n\nif (message.type === 'text') {\n  return [{ json: { phone: message.from, message: message.text.body, channel: 'WHATSAPP', mediaKind: '' } }];\n}\n\n// Comprobante de pago (Sprint 4): acá solo extraemos el mediaId/mimeType.\n// La resolución+descarga contra la Graph API de Meta la hacen los nodos\n// HTTP Request de abajo — el Code Node de n8n (Task Runner) NO soporta\n// this.helpers.httpRequestWithAuthentication (confirmado en vivo, n8n 2.30.7).\nif (message.type === 'image') {\n  return [{\n    json: {\n      phone: message.from,\n      message: message.image.caption ?? '',\n      channel: 'WHATSAPP',\n      mediaKind: 'image',\n      mediaId: message.image.id,\n      mimeType: message.image.mime_type,\n    },\n  }];\n}\n\n// Nota de voz (Sprint 5A, US5 / RF-14). Se baja igual que la imagen —mismos\n// dos nodos HTTP— y recién después se bifurca para transcribir.\n// WhatsApp manda las notas de voz como audio/ogg (codec Opus), que Gemini\n// acepta; el mime_type real viaja igual por si Meta cambia el contenedor.\nif (message.type === 'audio') {\n  return [{\n    json: {\n      phone: message.from,\n      message: '',\n      channel: 'WHATSAPP',\n      mediaKind: 'audio',\n      mediaId: message.audio.id,\n      mimeType: message.audio.mime_type,\n    },\n  }];\n}\n\n// Otros tipos (video, documento, sticker...) quedan fuera de alcance.\nreturn [];\n"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -26,12 +26,12 @@
           "conditions": [
             {
               "id": "d1a2b3c4-1111-4a2b-8c3d-4e5f6a7b8c9d",
-              "leftValue": "={{ $json.isImage }}",
-              "rightValue": "true",
+              "leftValue": "={{ $json.mediaKind }}",
+              "rightValue": "",
               "operator": {
                 "type": "string",
-                "operation": "equals",
-                "name": "filter.operator.equals"
+                "operation": "notEmpty",
+                "singleValue": true
               }
             }
           ],
@@ -46,7 +46,7 @@
         0
       ],
       "id": "e1f2a3b4-2222-4c5d-9e6f-7a8b9c0d1e2f",
-      "name": "Es imagen?"
+      "name": "Trae media?"
     },
     {
       "parameters": {
@@ -107,7 +107,7 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        1120,
+        1344,
         -112
       ],
       "id": "b4c5d6e7-5555-4f80-9192-0d1e2f3a4b5c",
@@ -212,6 +212,103 @@
       "id": "29eef725-b5b2-4ec0-a747-b7259d4f546e",
       "name": "Verificación META",
       "webhookId": "ef9211f4-d877-40c5-aca5-47dad020a981"
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 3
+          },
+          "conditions": [
+            {
+              "id": "b2c3d4e5-8888-4d4e-af50-6b7c8d9e0f1a",
+              "leftValue": "={{ $('Code in JavaScript').item.json.mediaKind }}",
+              "rightValue": "audio",
+              "operator": {
+                "type": "string",
+                "operation": "equals",
+                "name": "filter.operator.equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        1120,
+        -208
+      ],
+      "id": "a1b2c3d4-9999-4e5f-8a61-7c8d9e0f1a2b",
+      "name": "Es audio?"
+    },
+    {
+      "parameters": {
+        "jsCode": "// getBinaryDataBuffer resuelve el binario sin importar el modo de\n// almacenamiento de n8n (memoria/filesystem/S3) — leer item.binary.data.data\n// directo solo funciona en modo memoria (mismo bug que documenta\n// \"Armar payload final\").\nconst buffer = await this.helpers.getBinaryDataBuffer(0, 'data');\nconst original = $('Code in JavaScript').item.json;\n\nreturn [{\n  json: {\n    phone: original.phone,\n    channel: original.channel,\n    mimeType: original.mimeType || 'audio/ogg',\n    audioBase64: buffer.toString('base64'),\n  },\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1120,
+        -320
+      ],
+      "id": "c5d6e7f8-5555-4a1b-9c2d-3e4f5a6b7c8d",
+      "name": "Preparar audio para Gemini"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://generativelanguage.googleapis.com/v1beta/models/gemini-3.5-flash-lite:generateContent",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {
+              "name": "Content-Type",
+              "value": "application/json"
+            },
+            {
+              "name": "x-goog-api-key",
+              "value": "={{ $env.GOOGLE_API_KEY }}"
+            }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ JSON.stringify({\n  contents: [{ parts: [\n    { text: 'Transcribí literalmente lo que se dice en este audio, en español rioplatense. No agregues nada que no se haya dicho. Si el audio está en silencio, no se entiende, o no contiene lenguaje hablado, respondé exactamente SIN_CONTENIDO y nada más.' },\n    { inline_data: { mime_type: $json.mimeType, data: $json.audioBase64 } }\n  ] }]\n}) }}",
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.4,
+      "position": [
+        1344,
+        -320
+      ],
+      "id": "d6e7f8a9-6666-4b2c-8d3e-4f5a6b7c8d9e",
+      "name": "Transcribir audio (Gemini)"
+    },
+    {
+      "parameters": {
+        "jsCode": "// Contrato con el backend (FR-009): si no hay transcripción usable, se manda\n// un marcador y el orquestador responde pidiendo reformulación SIN llamar al\n// LLM ni escalar a una persona. El literal tiene que coincidir exactamente con\n// UNTRANSCRIBABLE_AUDIO_MARKER de src/ai/orchestrator/utils/trivial-filter.ts.\nconst MARKER = '__AUDIO_NO_TRANSCRIBIBLE__';\n\nconst original = $('Code in JavaScript').item.json;\nconst res = $input.first().json;\n\n// neverError:true en el nodo HTTP → un 4xx/5xx de Gemini llega acá como body,\n// no como excepción. Se trata igual que \"no se entendió\": el usuario recibe un\n// pedido de reformulación en vez de quedarse sin respuesta.\nconst text = res?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? '';\n\nconst usable = text && !text.includes('SIN_CONTENIDO');\n\nreturn [{\n  json: {\n    phone: original.phone,\n    message: usable ? text : MARKER,\n    channel: original.channel,\n    // Sin mediaBase64/mimeType a propósito: el backend recibe TEXTO.\n    // El binario del audio muere acá (FR-011) — no se guarda en ningún lado.\n  },\n}];\n"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        1568,
+        -320
+      ],
+      "id": "e7f8a9b0-7777-4c3d-9e4f-5a6b7c8d9e0f",
+      "name": "Armar payload de audio"
     }
   ],
   "pinData": {},
@@ -220,25 +317,7 @@
       "main": [
         [
           {
-            "node": "Es imagen?",
-            "type": "main",
-            "index": 0
-          }
-        ]
-      ]
-    },
-    "Es imagen?": {
-      "main": [
-        [
-          {
-            "node": "Obtener info del media",
-            "type": "main",
-            "index": 0
-          }
-        ],
-        [
-          {
-            "node": "HTTP Request",
+            "node": "Trae media?",
             "type": "main",
             "index": 0
           }
@@ -260,7 +339,7 @@
       "main": [
         [
           {
-            "node": "Armar payload final",
+            "node": "Es audio?",
             "type": "main",
             "index": 0
           }
@@ -299,12 +378,83 @@
           }
         ]
       ]
+    },
+    "Trae media?": {
+      "main": [
+        [
+          {
+            "node": "Obtener info del media",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Es audio?": {
+      "main": [
+        [
+          {
+            "node": "Preparar audio para Gemini",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Armar payload final",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Preparar audio para Gemini": {
+      "main": [
+        [
+          {
+            "node": "Transcribir audio (Gemini)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Transcribir audio (Gemini)": {
+      "main": [
+        [
+          {
+            "node": "Armar payload de audio",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Armar payload de audio": {
+      "main": [
+        [
+          {
+            "node": "HTTP Request",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
     }
   },
   "active": true,
   "settings": {
     "executionOrder": "v1",
-    "binaryMode": "separate"
+    "binaryMode": "separate",
+    "saveDataSuccessExecution": "none",
+    "saveDataErrorExecution": "none"
   },
   "versionId": "50810fc6-db83-46c1-bc04-97134b94a897",
   "meta": {

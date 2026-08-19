@@ -1,7 +1,4 @@
-import {
-  AgentGraphDeps,
-  buildRagAgentGraph,
-} from '../shared/rag-agent.graph';
+import { AgentGraphDeps, buildRagAgentGraph } from '../shared/rag-agent.graph';
 import { SALES_PROMPT } from './sales.prompt';
 
 /**
@@ -9,10 +6,7 @@ import { SALES_PROMPT } from './sales.prompt';
  * Ver `shared/rag-agent.graph.ts` para el detalle del subgrafo.
  */
 export function buildSalesGraph(deps: AgentGraphDeps) {
-  return buildRagAgentGraph(
-    { agentType: 'SALES', prompt: SALES_PROMPT },
-    deps,
-  );
+  return buildRagAgentGraph({ agentType: 'SALES', prompt: SALES_PROMPT }, deps);
 }
 
 export type { AgentGraphDeps };

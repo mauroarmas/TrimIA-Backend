@@ -1,7 +1,4 @@
-import {
-  AgentGraphDeps,
-  buildRagAgentGraph,
-} from '../shared/rag-agent.graph';
+import { AgentGraphDeps, buildRagAgentGraph } from '../shared/rag-agent.graph';
 import { ADMIN_PROMPT } from './admin.prompt';
 
 /**

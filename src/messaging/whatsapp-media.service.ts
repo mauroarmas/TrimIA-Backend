@@ -21,11 +21,17 @@ export class WhatsappMediaService {
   private readonly baseDir = join(process.cwd(), 'storage', 'payment-proofs');
 
   /** Devuelve la ruta relativa dentro de storage/payment-proofs/. */
-  async savePaymentProofImage(base64: string, mimeType: string): Promise<string> {
+  async savePaymentProofImage(
+    base64: string,
+    mimeType: string,
+  ): Promise<string> {
     await mkdir(this.baseDir, { recursive: true });
     const extension = EXTENSION_BY_MIME[mimeType] ?? 'bin';
     const filename = `${randomUUID()}.${extension}`;
-    await writeFile(join(this.baseDir, filename), Buffer.from(base64, 'base64'));
+    await writeFile(
+      join(this.baseDir, filename),
+      Buffer.from(base64, 'base64'),
+    );
     this.logger.log(`Comprobante guardado: ${filename}`);
     return filename;
   }

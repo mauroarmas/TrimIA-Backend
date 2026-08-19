@@ -24,7 +24,9 @@ export class CollectionsService {
     const now = new Date();
     const weekAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
 
-    const clientFilter = isController ? {} : { assignedCollectorId: employeeId };
+    const clientFilter = isController
+      ? {}
+      : { assignedCollectorId: employeeId };
 
     const clientsWithPendingQuotas = await this.prisma.quota.count({
       where: {
@@ -150,7 +152,8 @@ export class CollectionsService {
     ];
 
     combined.sort(
-      (a, b) => new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
+      (a, b) =>
+        new Date(a.createdAt).getTime() - new Date(b.createdAt).getTime(),
     );
 
     return combined;
@@ -205,7 +208,9 @@ export class CollectionsService {
       return { data: [], total: 0, page, limit, hasMore: false };
     }
 
-    const conversationFilter = { conversation: { clientId: { in: clientIds } } };
+    const conversationFilter = {
+      conversation: { clientId: { in: clientIds } },
+    };
     const dateFilter: { gte?: Date; lte?: Date } = {};
     if (filter.after) dateFilter.gte = filter.after;
     if (filter.before) dateFilter.lte = filter.before;
@@ -214,7 +219,9 @@ export class CollectionsService {
       : {};
 
     const clientSelect = {
-      conversation: { select: { clientId: true, client: { select: { name: true } } } },
+      conversation: {
+        select: { clientId: true, client: { select: { name: true } } },
+      },
     };
 
     const messages = filter.eventType
@@ -232,7 +239,10 @@ export class CollectionsService {
           // `author` resuelto por relación, no el authorId crudo — mismo
           // criterio ya aplicado en SupervisorService.getConversationDetail():
           // un uuid sin nombre obliga al frontend a adivinar quién escribió.
-          include: { ...clientSelect, author: { select: { id: true, name: true } } },
+          include: {
+            ...clientSelect,
+            author: { select: { id: true, name: true } },
+          },
           orderBy: { createdAt: 'desc' },
         });
 
@@ -280,7 +290,8 @@ export class CollectionsService {
     ];
 
     combined.sort(
-      (a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
+      (a, b) =>
+        new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime(),
     );
 
     const total = combined.length;
@@ -309,7 +320,9 @@ export class CollectionsService {
     isController: boolean,
     reason: string,
   ) {
-    const client = await this.prisma.client.findUnique({ where: { id: clientId } });
+    const client = await this.prisma.client.findUnique({
+      where: { id: clientId },
+    });
     if (!client) {
       throw new NotFoundException('Cliente no encontrado');
     }

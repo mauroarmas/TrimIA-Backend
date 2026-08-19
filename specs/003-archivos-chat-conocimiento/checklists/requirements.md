@@ -6,7 +6,7 @@
 
 ## Content Quality
 
-- [x] No implementation details (languages, frameworks, APIs)
+- [ ] No implementation details (languages, frameworks, APIs)
 - [x] Focused on user value and business needs
 - [x] Written for non-technical stakeholders
 - [x] All mandatory sections completed
@@ -27,7 +27,7 @@
 - [x] All functional requirements have clear acceptance criteria
 - [x] User scenarios cover primary flows
 - [x] Feature meets measurable outcomes defined in Success Criteria
-- [x] No implementation details leak into specification
+- [ ] No implementation details leak into specification
 
 ## Notes
 
@@ -73,8 +73,39 @@ Hallazgos y correcciones aplicadas:
 - Renumeración: los antiguos FR-018…FR-042 pasaron a FR-019…FR-043 por la
   inserción del nuevo FR-018.
 
+### Iteración 3 (2026-08-11) — `/speckit-clarify`, sesión 2
+
+5 preguntas asignadas. Resueltas: retención de originales (FR-044), alcance del
+supervisor sobre áreas (FR-045), semántica del contador de recuperación
+(FR-046/047), autoría e historial de ediciones (FR-048/049) y límite de tamaño
+de archivo (FR-007, ahora cuantificado en 20 MB). Total: 49 requisitos, IDs
+únicos y sin huecos.
+
+**Nota de proceso**: la primera pregunta de esta sesión repitió una ya
+respondida en la sesión del 2026-08-08 (retención de originales) por no releer
+el archivo antes de arrancar el escaneo. La respuesta coincidió, y sirvió para
+promover a requisito verificable (FR-044) algo que hasta ahora solo vivía en
+Key Entities.
+
+**Regresión detectada** en dos ítems de calidad, ambos por la misma causa: la
+sesión de clarificación del 2026-08-08 dejó mecanismos de implementación en el
+cuerpo de la spec, no solo en la sección `## Clarifications` (donde son
+esperables). Casos concretos:
+
+- Edge Cases: "detecta por hash **SHA256** del contenido binario".
+- Key Entities: estado de sincronización "**synced/pending_reindex/reindex_failed**"
+  y "normalizado de la distancia de **ChromaDB**".
+- Clarifications: "campo `syncStatus` en `KnowledgeDocument`", "worker de
+  **BullMQ**", "patrón de `MediaService` del Sprint 4".
+
+Son decisiones correctas, pero pertenecen a `plan.md`/`data-model.md`: acá
+prefijan la solución antes de que `/speckit-plan` evalúe alternativas. **No
+bloquean el avance** — es deuda de forma, no de contenido. Se resuelve moviendo
+esos detalles al plan cuando se genere, y dejando en la spec el *qué* (detectar
+duplicados por contenido; detectar y reintentar reindexaciones fallidas).
+
 ### Estado
 
-✅ Checklist completo, sin marcadores pendientes. Spec lista para
-`/speckit-plan` (o `/speckit-clarify` si querés profundizar en algún punto
-antes).
+14/16 ítems en verde. Sin marcadores [NEEDS CLARIFICATION]. Los 2 ítems
+destildados son de forma y se saldan en `/speckit-plan`. Spec lista para
+`/speckit-plan`.

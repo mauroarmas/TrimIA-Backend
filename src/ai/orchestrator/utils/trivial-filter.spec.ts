@@ -1,4 +1,12 @@
-import { isTrivial, cannedReply } from './trivial-filter';
+import {
+  isTrivial,
+  isUntranscribableAudio,
+  cannedReply,
+  messageForStorage,
+  UNTRANSCRIBABLE_AUDIO_MARKER,
+  UNTRANSCRIBABLE_AUDIO_PLACEHOLDER,
+  TRANSCRIPTION_FAILED_REPLY,
+} from './trivial-filter';
 
 describe('isTrivial', () => {
   // Saludos que deben ser capturados (sin LLM)
@@ -51,5 +59,97 @@ describe('cannedReply', () => {
 
   it('responde a cierre con despedida', () => {
     expect(cannedReply('gracias')).toContain('Gracias');
+  });
+});
+
+/**
+ * Audio de WhatsApp que n8n no pudo transcribir — Sprint 5A (US5, FR-009).
+ *
+ * El marcador es un contrato entre el Workflow A de n8n y este backend
+ * (documentado en `n8n/README.md`): si acá cambia el literal sin cambiarlo
+ * allá, el usuario recibe el centinela crudo como si fuera una respuesta.
+ */
+describe('isUntranscribableAudio (FR-009)', () => {
+  it('reconoce el marcador que manda n8n', () => {
+    expect(isUntranscribableAudio(UNTRANSCRIBABLE_AUDIO_MARKER)).toBe(true);
+  });
+
+  it('tolera espacios alrededor', () => {
+    expect(isUntranscribableAudio(`  ${UNTRANSCRIBABLE_AUDIO_MARKER}\n`)).toBe(
+      true,
+    );
+  });
+
+  it('NO se dispara si el marcador viene embebido en una frase', () => {
+    // Un mensaje más largo no es el aviso de n8n: es texto de un usuario que
+    // (por la razón que sea) escribió el centinela. Cortocircuitar ahí sería
+    // dejarlo sin respuesta real a lo que preguntó.
+    expect(
+      isUntranscribableAudio(`hola ${UNTRANSCRIBABLE_AUDIO_MARKER} che`),
+    ).toBe(false);
+  });
+
+  it('un mensaje normal no lo activa', () => {
+    expect(isUntranscribableAudio('quiero pagar la cuota')).toBe(false);
+    expect(isUntranscribableAudio('')).toBe(false);
+  });
+
+  it('el marcador NO cuenta como saludo trivial', () => {
+    // Son dos rutas distintas: el saludo se atajaba solo sin agente sticky,
+    // el audio fallido tiene que atajarse SIEMPRE (ver entryRouter).
+    expect(isTrivial(UNTRANSCRIBABLE_AUDIO_MARKER)).toBe(false);
+  });
+});
+
+describe('messageForStorage — lo que se guarda ≠ lo que se procesa', () => {
+  it('el marcador se persiste como texto legible, no crudo', () => {
+    // Hallazgo mirando el panel con datos reales (2026-08-18): el supervisor
+    // veía `__AUDIO_NO_TRANSCRIBIBLE__` como si el cliente lo hubiera
+    // tipeado.
+    const guardado = messageForStorage(UNTRANSCRIBABLE_AUDIO_MARKER);
+
+    expect(guardado).toBe(UNTRANSCRIBABLE_AUDIO_PLACEHOLDER);
+    expect(guardado).not.toContain(UNTRANSCRIBABLE_AUDIO_MARKER);
+  });
+
+  it('el texto guardado le dice a una persona qué pasó', () => {
+    expect(UNTRANSCRIBABLE_AUDIO_PLACEHOLDER).toMatch(/audio/i);
+  });
+
+  it('un mensaje normal se guarda intacto', () => {
+    expect(messageForStorage('quiero pagar la cuota')).toBe(
+      'quiero pagar la cuota',
+    );
+    expect(messageForStorage('')).toBe('');
+  });
+
+  it('el placeholder NO dispara la detección: se detecta por el marcador', () => {
+    // El marcador es improbable de tipear; el placeholder lo puede escribir
+    // cualquiera. Si la detección mirara el texto guardado, un cliente
+    // podría cortocircuitar su propio turno escribiéndolo.
+    expect(isUntranscribableAudio(UNTRANSCRIBABLE_AUDIO_PLACEHOLDER)).toBe(
+      false,
+    );
+  });
+});
+
+describe('cannedReply con el marcador de audio', () => {
+  it('pide reformulación en vez de responder un saludo', () => {
+    expect(cannedReply(UNTRANSCRIBABLE_AUDIO_MARKER)).toBe(
+      TRANSCRIPTION_FAILED_REPLY,
+    );
+  });
+
+  it('no filtra el centinela crudo al usuario', () => {
+    // Lo que se manda por WhatsApp sale de acá: si el marcador se colara, el
+    // cliente vería "__AUDIO_NO_TRANSCRIBIBLE__" como respuesta del asistente.
+    expect(cannedReply(UNTRANSCRIBABLE_AUDIO_MARKER)).not.toContain(
+      UNTRANSCRIBABLE_AUDIO_MARKER,
+    );
+  });
+
+  it('ofrece la salida por texto, no solo repetir el audio', () => {
+    // Si el problema es el micrófono o el ruido, repetir hablado da lo mismo.
+    expect(TRANSCRIPTION_FAILED_REPLY).toMatch(/escrito/i);
   });
 });

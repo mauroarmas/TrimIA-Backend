@@ -37,8 +37,16 @@ Es una **tesis de grado**. El producto sigue PMBOK (6 fases, 12 entregables E1�
 | Conocimiento | **ChromaDB** | Vector store del RAG (embeddings) |
 | Infra | **Docker Compose** | Todo containerizado; GCP a futuro |
 
-- **Modelo LLM:** `gemini-3.1-flash-lite` (variable `GEMINI_MODEL`).
-- **Embeddings:** `gemini-embedding-001` (dim 3072, variable `EMBEDDING_MODEL`).
+- **Modelo LLM:** variable `GEMINI_MODEL` — hoy `gemini-3.5-flash-lite`.
+- **Embeddings:** variable `EMBEDDING_MODEL` — hoy `gemini-embedding-2-preview`
+  (ver §12: al cambiar de modelo de embeddings hay que limpiar ChromaDB y
+  `KnowledgeDocument`, porque los vectores viejos quedan en otro espacio).
+
+> Los valores concretos se nombran acá solo como referencia de lo que hay hoy;
+> la fuente de verdad es el `.env`, nunca un default del código. Esta sección ya
+> quedó desactualizada una vez (decía `gemini-3.1-flash-lite` y
+> `gemini-embedding-001`, contradiciendo lo que §12 indica y lo que el `.env`
+> realmente tiene). Verificado contra el entorno el 2026-08-11.
 - **Puertos (host):** NestJS 3000 · Postgres 5433 · Redis 6379 · ChromaDB 8000 · n8n 5678.
 
 > Setup del entorno: ver `README.md` y `setup-prompt.md`. Arquitectura conceptual
@@ -90,19 +98,28 @@ src/
 ├── config/                      # ConfigModule + validación Joi de TODAS las env vars
 ├── database/                    # PrismaService (cliente Prisma global)
 ├── redis/                       # RedisService (ioredis)
+├── realtime/                    # Bus de eventos de los chats del panel (Sprint 5B)
+│   ├── realtime.service.ts      # publish() / streamFor() / sseStreamFor() sobre Redis pub/sub
+│   └── realtime.types.ts        # contrato del evento, compartido por quien publica y quien sirve
 ├── health/                      # GET /health (postgres, redis, memoria)
 ├── common/
 │   └── guards/
 │       └── webhook-secret.guard.ts   # auth por secreto compartido (x-n8n-secret), timing-safe
 │
 ├── messaging/                   # ENTRADA
-│   ├── messaging.controller.ts  # POST /messaging/webhook
+│   ├── messaging.controller.ts  # POST /messaging/webhook (n8n, secreto compartido)
+│   ├── messaging-web.controller.ts # /messaging/web — chat del panel, JWT (Sprint 5A)
+│   │                            #   + GET :id/stream (SSE) y POST :id/close (Sprint 5B)
+│   ├── messaging-simulate.controller.ts # POST /messaging/simulate — JWT + SUPERVISOR (Sprint 5B)
 │   ├── messaging.service.ts     # crea/recupera conversación + encola job
 │   ├── whatsapp-sender.service.ts  # envía la respuesta vía n8n
 │   └── dto/webhook-message.dto.ts  # { phone, message, channel? }
 │
-├── queue/                       # WORKER
-│   └── processors/message.processor.ts  # consume jobs; orquesta; persiste; responde
+├── queue/                       # WORKERS
+│   └── processors/
+│       ├── message.processor.ts        # consume jobs; orquesta; persiste; responde
+│       ├── knowledge-ingestion.processor.ts # extrae texto de un archivo subido (5A)
+│       └── knowledge-reindex.processor.ts   # re-vuelca a Chroma tras una edición (5A)
 │
 ├── conversations/               # ConversationsService: getOrCreate, addMessage,
 │                                #   getRecentHistory (memoria), setCurrentAgent (sticky)
@@ -113,9 +130,15 @@ src/
 │
 └── ai/
     ├── llm/                     # LlmService: cliente Gemini compartido
-    ├── knowledge/               # RAG: ChromaDB + embeddings; ingest() y search()
-    │   ├── knowledge.service.ts
-    │   └── knowledge.controller.ts   # POST /knowledge (dev, protegido por guard)
+    ├── knowledge/               # RAG: ChromaDB + embeddings + gestión del corpus
+    │   ├── knowledge.service.ts       # ingest/search + CRUD, versionado y reindexación
+    │   ├── knowledge.controller.ts    # /knowledge/* — JWT + rol SUPERVISOR (Sprint 5A)
+    │   ├── knowledge-ingestion.service.ts  # subida de archivos: límites, dedupe, encolado
+    │   ├── knowledge-storage.service.ts    # originales en disco, con nombre UUID
+    │   ├── knowledge-usage.service.ts      # retrievedCount/answeredCount/avgScore/hasData
+    │   ├── knowledge-ai-edit.service.ts    # "editar con la IA": preview / apply
+    │   └── extractors/                # PDF, Word, imagen y audio detrás de un puerto
+    │       ├── text-extractor.port.ts # TextExtractor + ExtractionFailedError
     ├── orchestrator/
     │   ├── orchestrator.graph.ts     # EL GRAFO (ruteo sticky + nodos)
     │   ├── orchestrator.service.ts   # compila el grafo 1 vez; expone invoke()
@@ -306,6 +329,165 @@ tocaron — siguen siendo correctas para todo lo demás (storage, matching,
 webhooks entrantes) y deberían ser también lo correcto para el `to` saliente
 una vez fuera del sandbox.
 
+### 5.8 Sprint 5A: archivos, chat web y gestión del conocimiento
+
+**Los tres cierres de una escalación.** El Sprint 3 dejó una sola salida
+—responder y enviar—. Ahora hay tres, y las tres son terminales (409 sobre un
+caso ya cerrado):
+
+| Cierre | Envía al usuario | Ingesta al RAG | Estado final |
+|---|---|---|---|
+| `POST .../resolve` | sí | solo con `teachAgent: true` | `RESOLVED` |
+| `POST .../save-unsent` | **no** | **siempre** | `SAVED_UNSENT` |
+| `POST .../discard` | no | no | `DISCARDED` |
+
+El texto de `save-unsent` va a `savedResponse` y **no** a `resolution`, a
+propósito: así "hay algo en `resolution`" sigue significando "esto se le envió
+al usuario", que es de lo que depende toda la lectura de auditoría del Sprint 3.
+
+Ninguno de los tres pisa una conversación en `HUMAN_HANDLING`: cerrar el caso
+escalado y soltar el chat son dos decisiones distintas.
+
+⭐ **`GET .../suggestion` deriva la audiencia del `userType` de la conversación
+escalada, NO del supervisor que consulta.** Es la fuga de confidencialidad más
+fácil de introducir del sprint: quien pide la propuesta es siempre un
+`SUPERVISOR`, así que derivarla del usuario autenticado daría `INTERNO`
+*siempre* y el sistema redactaría con material interno una respuesta destinada
+a un cliente. `audienceUsed` viaja en la respuesta para que la decisión sea
+visible y no implícita.
+
+**Canal WEB.** Una conversación del chat del panel usa como `externalId` el
+**teléfono normalizado del empleado**, el mismo que su hilo de WhatsApp. Los
+dos hilos quedan separados porque `getOrCreate` filtra por `(externalId,
+channel)`, y la vista unificada (`/supervisor/conversations/by-contact/…`) sale
+de una sola consulta sin tabla de correlación. Consecuencia: un empleado sin
+teléfono cargado no puede usar el chat web (409).
+
+`WhatsappSenderService.send()` es **no-op para canales != WHATSAPP**: la
+respuesta del chat web ya quedó persistida y el frontend la lee por polling.
+Sin ese corte, cada respuesta del panel dispararía un WhatsApp real al teléfono
+del empleado.
+
+**Postgres y ChromaDB no comparten transacción.** En vez de pretender
+atomicidad, la ventana de inconsistencia se hace visible: al editar contenido,
+audiencia o agente, el documento pasa a `PENDING_REINDEX` y un worker re-vuelca
+los chunks. **Mientras tanto sigue respondiendo con su contenido anterior.** Si
+el worker agota los reintentos queda en `REINDEX_FAILED` — nunca en `SYNCED`
+mintiendo.
+
+> Cambiar `audience` o `agentType` **también** reindexa, aunque el texto no
+> cambie: los dos viajan en la metadata de cada chunk, así que sin re-volcar,
+> un documento que pasa a `INTERNO` seguiría siendo recuperable por un cliente.
+> Es un agujero de confidencialidad, no una desprolijidad.
+
+**Audio.** Se transcribe en n8n (el token de Meta vive solo ahí) y el backend
+recibe **texto**. El binario no se persiste en ningún lado (FR-011) — eso se
+garantiza con variables de instancia en `docker-compose.yml`, no con los
+settings del workflow, que son advisory (ver `n8n/README.md`). Cuando la
+transcripción falla, n8n manda `__AUDIO_NO_TRANSCRIBIBLE__` y el orquestador
+pide reformulación **sin llamar al LLM y sin escalar**; ese atajo corre
+**antes** del sticky, a diferencia del de saludos.
+
+---
+
+### 5.9 Sprint 5B: los chats del panel en tiempo real (spec 004)
+
+Los dos chats del panel —**Chat con el Asistente** y **Simulador de Chat**— dejaron
+de preguntar en bucle cada 2 segundos. Ahora reciben los mensajes cuando quedan
+registrados.
+
+**El transporte es SSE, no WebSocket, y la razón no es la que parece.** El flujo es
+unidireccional, sí, pero el desempate real fue otro: una ruta `@Sse()` **es una ruta
+HTTP común**, así que `JwtAuthGuard`, `RolesGuard` y el chequeo de pertenencia se
+reusan tal cual. Un gateway WebSocket habría necesitado un camino de autorización
+paralelo, que es justo lo que el Principio I prohíbe. Cuesta además cero dependencias
+nuevas. Multi-instancia **no** desempató: las dos tecnologías necesitan el mismo bus.
+
+**El evento es una notificación, no un almacén.** El mensaje está en Postgres
+**antes** de publicarse, así que perder un evento no pierde nada: se recupera al
+recargar o al reconectar. De ahí se sigue todo lo demás.
+
+#### Los dos puntos de emisión
+
+| Qué | Dónde | Por qué ahí |
+|---|---|---|
+| Mensajes | `ConversationsService.addMessage()` | Es el embudo por el que pasan los siete caminos que persisten un mensaje |
+| Cambios de estado | `setStatus()`, `takeover()`, `release()`, `close()` | Son los únicos lugares donde cambia el estado |
+
+Emitir desde el worker en vez de desde `addMessage()` habría dejado afuera la
+respuesta manual de un supervisor —que era justamente el mensaje que **nunca llegaba**
+al chat abierto del otro lado—. `replyManually()` era el único de los siete caminos
+que escribía Prisma directo; ahora pasa por el embudo.
+
+**Solo se emiten roles `USER` y `ASSISTANT`**, igual que `listMessages()`. Emitir
+`TOOL` o `SYSTEM` mostraría por el stream mensajes que el historial no devuelve: una
+fuga, y encima inconsistente (al recargar desaparecerían).
+
+#### Dos endpoints de stream, no uno
+
+- `GET /messaging/web/:convId/stream` — el chat propio. Autoriza por **pertenencia**
+  (teléfono normalizado), así que **un SUPERVISOR tampoco entra**.
+- `GET /supervisor/conversations/:id/stream` — cualquier conversación. Autoriza por
+  **rol**.
+
+Un endpoint único que ramificara por rol concentraría dos reglas de autorización
+distintas en un handler. Separados, cada uno hereda la del `GET` de al lado y no hubo
+que escribir ninguna regla nueva.
+
+Los dos aceptan `?after=<messageId>` para reanudar tras una desconexión. **El orden
+importa**: el servicio se suscribe al vivo *antes* de leer los mensajes perdidos y
+bufferea, porque al revés un mensaje publicado en el medio se caería.
+
+#### La autorización se revalida mientras el stream vive
+
+Los guards de NestJS corren **una sola vez, al abrir la ruta**. Con polling eso
+alcanzaba —cada consulta era un request nuevo—, pero un stream vive horas. Sin
+revalidación, una conexión abierta sobrevive al permiso que la habilitó. Se revalida
+en cada keepalive (ventana acotada a `SSE_HEARTBEAT_MS`) y el stream **no sobrevive al
+token que lo abrió** — los JWT duran 8h y un stream abierto a las 9 seguiría emitiendo
+a las 18.
+
+#### Cerrar la conexión ≠ cerrar la conversación
+
+Son dos mecanismos distintos **a propósito**:
+
+| | Qué cierra | Quién lo dispara | Efecto |
+|---|---|---|---|
+| `SSE_IDLE_TIMEOUT_MS` | La **conexión** | Un temporizador | Ninguno sobre los datos: al volver se sigue en el mismo hilo |
+| `POST /messaging/web/:id/close` | La **conversación** | **Solo la persona** | El próximo mensaje abre otro hilo |
+
+La inactividad **nunca** cierra una conversación, y no es un detalle: `getOrCreate()`
+filtra `status: { not: 'CLOSED' }`, así que cerrar reinicia el agente sticky y el
+historial que ve el LLM. Un temporizador que hiciera eso borraría el contexto de una
+capacitación en silencio. Y con un turno en curso la inactividad tampoco corta la
+conexión — un turno dura segundos; una espera humana, que sí se cierra, puede durar
+días.
+
+`close()` es **el primer camino del proyecto que escribe `CLOSED`** y da `409` sobre un
+caso que un responsable está atendiendo.
+
+#### El simulador ya no usa el secreto de producción
+
+`POST /messaging/simulate` con **JWT + rol `SUPERVISOR`**. Antes pegaba contra el
+webhook y pedía el `N8N_WEBHOOK_SECRET` —el mismo que protege WhatsApp en producción—
+escrito a mano en un input. Ese rol no es arbitrario: un supervisor **ya** puede
+escribir en cualquier conversación vía takeover, así que la puerta no amplía el
+privilegio de nadie.
+
+Reusa `MessagingService.enqueue()`, el mismo método del webhook, para que el simulador
+recorra el camino real — y **fuerza `channel: WEB`**: si aceptara `WHATSAPP`, un
+teléfono cualquiera escrito ahí recibiría un WhatsApp de verdad.
+
+El `POST /messaging/webhook` no se tocó: sigue con su secreto y sigue sin aceptar JWT.
+
+#### Un turno ya no termina en silencio
+
+El `FALLBACK` de un turno que agota sus 3 intentos **se persiste**, para todos los
+canales. Antes solo se enviaba con `sender.send()`, que es no-op fuera de WhatsApp: por
+WhatsApp el usuario recibía la disculpa y por el panel no recibía nada. Persistirlo
+arregla además que el historial de WhatsApp no registrara lo que sí se le dijo al
+cliente.
+
 ---
 
 ## 6. Modelo de datos (Prisma — `prisma/schema.prisma`)
@@ -323,18 +505,25 @@ una vez fuera del sandbox.
 | `Quota` (Sprint 4) | Cuota a cobrar | `clientId` (denormalizado), `financingId`, `number`, `dueDate`, `status`, `reminderAttempts` |
 | `PaymentProof` (Sprint 4) | Comprobante enviado por WhatsApp | `quotaId`, `imagePath`, `extracted*` (sugerencia de Gemini), `status`, `impactStatus` |
 | `ReminderConfig` (Sprint 4) | Fila única de configuración | `daysBefore` (7/3/0), `maxAttempts`, `templateApproved` |
-| `KnowledgeDocument` | Metadatos de docs del RAG | `audience` (PUBLICO/INTERNO), `agentType`, `checksum`, `vectorId` |
+| `KnowledgeDocument` | Metadatos de docs del RAG | `audience` (PUBLICO/INTERNO), `agentType`, `checksum`, `vectorId`; **(5A)** `isActive`, `version`, `syncStatus`, `sourceType`/`sourceId`, `updatedById` |
+| `KnowledgeFile` (Sprint 5A) | Archivo subido por el panel | `filename`, `storagePath` (**NULL para audio**: se borra al transcribir, FR-004), `checksum` (SHA256 del binario, dedupe), `status`, `failureReason` |
+| `KnowledgeChange` (Sprint 5A) | Bitácora de ediciones (FR-049) | `changedFields`, `authorId`, `origin` (MANUAL/AI_ACCEPTED), `aiInstruction` |
+| `KnowledgeRetrieval` (Sprint 5A) | Qué documentos recuperó cada turno | `documentId`, `score` (0-100), `rank`, `outcome` (ANSWERED/ESCALATED) |
 | `TokenUsage` | Consumo por turno | `inputTokens`, `outputTokens`, `durationMs`, `model` |
 | `OrchestrationEvent` | Auditoría de ruteo | `eventType`, `agentType`, `payload` (JSON) |
-| `Escalation` (Sprint 3) | Caso pendiente por baja confianza | `reason`, `status` (PENDING/RESOLVED), `resolvedById`/`resolution`, `delegatedToId`/`delegatedById` |
+| `Escalation` (Sprint 3) | Caso pendiente por baja confianza | `reason`, `status` (los **cuatro** estados desde 5A), `resolvedById`/`resolution`, `delegatedToId`/`delegatedById`; **(5A)** `suggestedResponse`/`suggestedAt`, `savedResponse`, `discardedById`/`discardedAt` |
 | `InternalNote` (Sprint 3) | Comentario interno sobre una conversación | `conversationId`, `authorId` **o** `authorAgentType`, `content` — nunca visible para el usuario |
 
 Enums: `AgentType` (ORCHESTRATOR + 5 agentes), `UserType` (CLIENTE/EMPLEADO),
 `Audience` (PUBLICO/INTERNO), `Channel` (WHATSAPP/WEB),
 `ConvStatus` (ACTIVE/WAITING_HUMAN/HUMAN_HANDLING/CLOSED), `MessageRole`,
-`EscalationStatus` (PENDING/RESOLVED, Sprint 3), `QuotaStatus`,
+`EscalationStatus` (PENDING/RESOLVED + SAVED_UNSENT/DISCARDED desde 5A), `QuotaStatus`,
 `PaymentProofStatus`, `ProofRejectionReason`, `ImpactStatus` (Sprint 4),
-`PurchaseRequestStatus`, `PaymentModality`, `CreditVerdict`, `FinancingStatus`.
+`PurchaseRequestStatus`, `PaymentModality`, `CreditVerdict`, `FinancingStatus`,
+y los de Sprint 5A: `KnowledgeSourceType` (DOCUMENTO/ENTREVISTA/ESCALADO),
+`KnowledgeSyncStatus` (SYNCED/PENDING_REINDEX/REINDEX_FAILED),
+`FileProcessingStatus` (PROCESSING/READY/FAILED),
+`KnowledgeChangeOrigin` (MANUAL/AI_ACCEPTED), `RetrievalOutcome` (ANSWERED/ESCALATED).
 
 > **Agente y Base de Conocimiento no son tablas.** El diagrama de dominio los
 > modela como entidades, pero acá viven como el enum `AgentType`:
@@ -385,8 +574,15 @@ memoria conversacional y auditoría/métricas. Hay corpus de prueba cargado para
 > se organiza en **8 sprints** (no en "Fase 5/6" a secas). Estado real:
 > Sprint 1 (Auth+Whitelist) ✅, Sprint 2 (Panel Supervisor: métricas,
 > conversaciones, `agents/status`) ✅, Sprint 3 (human-in-the-loop, §5.7) ✅,
-> Sprint 4 (Cobranzas: comprobantes, recordatorios, verificación de impacto, panel) ✅.
-> Próximo: Sprint 5 en adelante — ver el plan de trabajo para el detalle.
+> Sprint 4 (Cobranzas: comprobantes, recordatorios, verificación de impacto, panel) ✅,
+> Sprint 5A (archivos, chat web y gestión del conocimiento, §5.8) ✅ **backend**.
+> Sprint 5B — habilitador: chats del panel en tiempo real (§5.9) ✅ **backend**.
+> El panel todavía no consume esos endpoints en ninguno de los dos casos: las
+> tareas están en `specs/003-archivos-chat-conocimiento/tasks.md` §Phase 11 y en
+> `specs/004-chat-tiempo-real/tasks.md` §Phase 12, sobre el repo hermano
+> `trimIA-frontend`.
+> Próximo: el contenido de la capacitación del Sprint 5B — la superficie
+> conversacional que necesita ya está.
 
 ### 7.1 Lectura del comprobante: es un processor, no un tool del grafo
 
@@ -596,6 +792,20 @@ docker compose exec nestjs npx jest --no-coverage
   `54...` (sin el 9). n8n ya lo normaliza.
 - **`DATABASE_URL`:** dentro de Docker el host es `postgres:5432`; desde el host (pgAdmin)
   es `localhost:5433`.
+- **Redis pub/sub:** el suscriptor **tiene que ser un `redis.duplicate()`**, nunca el
+  `RedisService` inyectado. `RedisService` extiende `Redis` y es la conexión compartida
+  de todo el proceso; una conexión ioredis en modo *subscriber* no puede ejecutar
+  comandos normales, así que suscribirse sobre ella rompe BullMQ y todo lo demás.
+- **Keepalive de SSE:** no es un comentario (`: keepalive`) porque `@Sse()` de NestJS no
+  expone API para comentarios, y su `writeMessage()` le pone un `id` incremental a todo
+  mensaje. Sale como `id: N` sin `data` — mismo efecto: bytes en el cable, ningún evento
+  del lado del cliente.
+- **Handlers `@Sse()` asíncronos:** son válidos y hacen falta. NestJS espera la promesa
+  **antes** de escribir los headers, así que un `403` sale como error HTTP y no como un
+  stream que se abre y nunca emite.
+- **Tests con streams abiertos:** el keepalive es un `interval`; si un test deja un
+  stream suscrito, Jest se cuelga. Hay que desuscribir al final — es el mismo motivo por
+  el que el panel tiene que abortar el `fetch` al desmontar el componente.
 
 ---
 
@@ -603,6 +813,8 @@ docker compose exec nestjs npx jest --no-coverage
 
 | Documento | Para qué |
 |-----------|----------|
+| `specs/004-chat-tiempo-real/` | Spec, spike (SSE vs WebSocket) y contratos de la entrega en tiempo real (§5.9) |
+| `docs/hallazgos-para-proxima-spec.md` | Lo que apareció probando el panel y todavía no tiene spec: el agente no sabe si habla con un supervisor, y el escalado no distingue |
 | `README.md` | Setup del entorno paso a paso |
 | `setup-prompt.md` | Prompts listos para pegar en Antigravity (contexto + setup) |
 | `docs/ArquitecturaFLujoTrabajo.md` | Arquitectura conceptual ampliada (capas, frontend) |

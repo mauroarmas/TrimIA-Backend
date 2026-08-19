@@ -4,7 +4,7 @@
 > que consume cada módulo de la app. Permite trabajar **en paralelo**: lo que ya
 > existe se consume directo; lo pendiente se mockea contra el contrato de abajo.
 >
-> Última actualización: 2026-08-05 (Sprint 1-4 completos).
+> Última actualización: 2026-08-11 (Sprint 1-4 completos).
 
 ---
 
@@ -36,7 +36,7 @@
 | Capacitación | EMPLEADO | `/training/*` 🔴 |
 | Gobernanza (Panel del Supervisor) | SUPERVISOR | `/supervisor/*` ✅ |
 | Panel de Cobranzas | EMPLEADO (cobrador) / SUPERVISOR (controlador) | `/collections/*` ✅ |
-| Panel de Ventas | EMPLEADO (vendedor) / SUPERVISOR | `/sales/*` 🔴 (modelo de datos ya en DB) |
+| Panel de Ventas | EMPLEADO (vendedor) / SUPERVISOR | `/sales/*` ✅ |
 | Herramientas de dev | — (solo en dev) | `/dev/client-fixtures` ✅ |
 
 > Roles: ver `CONTEXTO_TECNICO.md` §5.3.1. `userType` (CLIENTE/EMPLEADO) define audiencia;
@@ -224,16 +224,28 @@ Detalle de un caso escalado, incluye la conversación completa.
 ### ✅ `POST /supervisor/escalations/:id/resolve` (JWT + SUPERVISOR)
 Responde el caso al usuario y opcionalmente enseña la respuesta al RAG.
 ```json
-// request
-{ "message": "Sí, la tenemos en 12 cuotas.", "teachAgent": true }
+// request (teachAgent: false u omitido)
+{ "message": "Sí, la tenemos en 12 cuotas." }
+
+// request (teachAgent: true — title y category son OBLIGATORIOS en este caso)
+{
+  "message": "Sí, la tenemos en 12 cuotas.",
+  "teachAgent": true,
+  "title": "Financiación de heladeras exhibidoras en cuotas",
+  "category": "productos",
+  "audience": "PUBLICO",   // opcional; ver default abajo
+  "agentType": "SALES"     // opcional; ver default abajo
+}
 // response: la Escalation con status "RESOLVED"
 ```
 - Envía `message` por el canal de la conversación (WhatsApp; el canal WEB aún
   no tiene sender — ver módulo Chat más abajo).
 - Vuelve `Conversation.status` a `ACTIVE` y saca el caso de la cola.
-- Si `teachAgent: true`, ingesta `message` al RAG (misma pipeline que
-  `POST /knowledge`), con `audience` PUBLICO/INTERNO según el `userType` de
-  la conversación y `agentType` según el agente que atendía.
+- Si `teachAgent: true`, `title` y `category` son obligatorios (400 si faltan)
+  e ingesta `message` al RAG (misma pipeline que `POST /knowledge`).
+  `audience` por defecto se infiere del `userType` de la conversación
+  (EMPLEADO→INTERNO, CLIENTE→PUBLICO); `agentType` por defecto es el agente
+  activo de la conversación. Ambos se pueden pisar a mano.
 
 ### ✅ `POST /supervisor/escalations/:id/delegate` (JWT + SUPERVISOR)
 Reasigna el caso a otro supervisor. `400` si el destino no es supervisor
@@ -241,6 +253,40 @@ activo; `409` si el caso ya estaba resuelto.
 ```json
 { "toEmployeeId": "uuid" }
 ```
+
+### ✅ `GET /supervisor/escalations/:id/suggestion` (JWT + SUPERVISOR) — Sprint 5A
+Redacta una propuesta con el conocimiento cargado. **No resuelve el caso**: sigue `PENDING`.
+```json
+{ "suggestion": "Para dar de baja un plan…", "hasContext": true,
+  "sources": [ { "documentId": "uuid", "title": "…", "score": 81.2 } ],
+  "audienceUsed": "PUBLICO" }
+```
+Con `hasContext: false` viene `suggestion: null` + `reason`: el supervisor redacta desde cero y el sistema le dice por qué. **No** ofrecer aplicar.
+
+> ⭐ **`audienceUsed` es el campo a mirar.** Sale del `userType` de la
+> conversación escalada, **no** del supervisor que consulta. Mostralo: es la
+> señal de que la propuesta se redactó con el conocimiento que le corresponde a
+> quien va a recibirla.
+
+El texto es **editable**: lo que se envía es siempre lo que el supervisor confirma en el body de `resolve`, nunca `suggestedResponse`.
+
+### ✅ `POST /supervisor/escalations/:id/save-unsent` (JWT + SUPERVISOR) — Sprint 5A
+`{ message, title, category, agentType? }` → **200** `{ id, status: "SAVED_UNSENT", knowledgeDocumentId }`.
+**No le envía nada al usuario**: incorpora la respuesta al RAG y devuelve la conversación al asistente. Para cuando la consulta ya se resolvió por otra vía pero la respuesta igual sirve para la próxima.
+
+`title` y `category` son obligatorios acá (a diferencia de `resolve`): la ingesta no es opcional, es la acción entera.
+
+### ✅ `POST /supervisor/escalations/:id/discard` (JWT + SUPERVISOR) — Sprint 5A
+`{ reason? }` → **200** `{ id, status: "DISCARDED" }`. Sin mensaje y **sin ingesta**.
+
+> **Los tres cierres son terminales**: sobre un caso que ya no está `PENDING`
+> devuelven **409** con el estado en el mensaje. Y ninguno devuelve a `ACTIVE`
+> una conversación en `HUMAN_HANDLING`: cerrar el caso y soltar el chat son
+> decisiones distintas.
+>
+> `GET /supervisor/escalations?status=` acepta ahora los **cuatro** estados
+> (`PENDING`, `RESOLVED`, `SAVED_UNSENT`, `DISCARDED`); el default sigue siendo
+> `PENDING`, así que la cola no cambia de comportamiento.
 
 ### ✅ `POST /supervisor/conversations/:conversationId/takeover` (JWT + SUPERVISOR)
 El supervisor toma control manual del chat (Sprint 3). Mientras dura, el
@@ -267,10 +313,15 @@ entre los `messages`. Se incluye como `internalNotes` en la respuesta de
 
 ---
 
-## Módulo Carga de documentos — `/knowledge`
+## Módulo Base de Conocimiento — `/knowledge` ✅ (Sprint 5A)
 
-### ✅ `POST /knowledge`  (header `x-n8n-secret`)
-Ingesta un documento al RAG. **Ya funciona** (hoy recibe texto; la subida de archivos es 🟡 pendiente).
+> ⚠️ **Cambió la autenticación.** Hasta el Sprint 4 estos endpoints iban con el
+> header `x-n8n-secret`. Desde el Sprint 5A **todo `/knowledge/*` exige
+> `Authorization: Bearer <jwt>` + rol `SUPERVISOR`**. Un secreto en un header no
+> identifica *quién* hizo el cambio, y la bitácora de ediciones lo necesita.
+
+### ✅ `POST /knowledge`  (JWT + SUPERVISOR)
+Ingesta un documento al RAG a partir de **texto**. Para subir un archivo, ver `POST /knowledge/upload`.
 ```json
 // request
 { "title": "Política de pagos", "content": "texto...", "category": "cobros",
@@ -281,7 +332,7 @@ Ingesta un documento al RAG. **Ya funciona** (hoy recibe texto; la subida de arc
 - `audience`: `PUBLICO` | `INTERNO`
 - `agentType`: `SALES|ADMIN|COLLECTIONS|LOGISTICS|DEPOSITS` (o omitir = general)
 
-### ✅ `POST /knowledge/search` (header `x-n8n-secret`)
+### ✅ `POST /knowledge/search` (JWT + SUPERVISOR)
 Buscar en el RAG (útil para previsualizar qué recupera un documento).
 ```json
 // request
@@ -289,6 +340,102 @@ Buscar en el RAG (útil para previsualizar qué recupera un documento).
 // response
 [ { "documentId": "uuid", "title": "...", "content": "...", "score": 0.75 } ]
 ```
+
+---
+
+### ✅ `GET /knowledge?agentType=&category=&isActive=&page=&limit=` (JWT + SUPERVISOR)
+Listado del panel. No trae el contenido entero: `summary` son los primeros 240 caracteres.
+```json
+{ "data": [ { "id": "uuid", "title": "…", "summary": "…", "category": "politica",
+    "agentType": "SALES", "audience": "PUBLICO", "isActive": true, "version": 3,
+    "syncStatus": "SYNCED",
+    "usage": { "retrievedCount": 128, "answeredCount": 97, "avgScore": 78.4, "hasData": true } } ],
+  "page": 1, "limit": 20, "total": 54, "hasMore": true }
+```
+- `syncStatus != "SYNCED"` ⇒ mostrar el indicador de desincronización. **El documento sigue respondiendo con su contenido anterior** hasta que el worker termine: no es que se haya perdido el cambio.
+- ⚠️ `usage.hasData: false` ⇒ **"sin datos todavía"**, NO `0`. `avgScore` viene `null`. Un documento recién cargado con `avgScore: 0` parece inútil y alguien lo da de baja.
+
+### ✅ `GET /knowledge/:id` (JWT + SUPERVISOR)
+Detalle: contenido completo, `usage`, `source` y la bitácora `changes[]` (autor, `origin` MANUAL/AI_ACCEPTED, `aiInstruction`).
+
+`source` viene en una de tres formas:
+```json
+"source": { "type": "DOCUMENTO", "file": { "id": "uuid", "filename": "manual.pdf",
+              "mimeType": "application/pdf", "downloadUrl": "/knowledge/files/uuid/download" } }
+"source": { "type": "ESCALADO", "escalation": { "id": "uuid", "reason": "…", "resolvedAt": "…" } }
+"source": { "type": "DOCUMENTO", "file": null }   // audio ya transcripto, o texto plano
+```
+
+### ✅ `PUT /knowledge/:id` (JWT + SUPERVISOR)
+`{ title?, content?, category?, audience?, agentType? }` → **200** `{ id, version, syncStatus }`.
+Cambiar `content`, `audience` o `agentType` dispara reindexación; solo el título o la categoría, no.
+
+### ✅ `PATCH /knowledge/:id/active` · `DELETE /knowledge/:id` · `POST /knowledge/:id/reindex`
+`{ isActive: boolean }` → desactiva sin borrar los vectores · **204** borra definitivo · **202** reintenta un `REINDEX_FAILED`.
+
+### ✅ `POST /knowledge/upload` (JWT + SUPERVISOR) — `multipart/form-data`
+Campo de archivo: `file`. Resto (`title?`, `category`, `audience?`, `agentType?`) como partes del formulario.
+
+**202** → `{ "fileId": "uuid", "status": "PROCESSING" }` — **no espera** a que se extraiga el texto.
+
+> 🔧 **Ojo en el cliente HTTP**: con `FormData` hay que **omitir** el header
+> `Content-Type`; lo pone el browser con el `boundary`. Forzar
+> `application/json` (como hace hoy `request()` en `src/api.js`) rompe la subida.
+
+| Código | Cuándo | Qué hacer |
+|---|---|---|
+| `413` `reason: "FILE_LIMIT"` (20 MB) | cualquier tipo | ofrecer partir el material |
+| `413` `reason: "MULTIMODAL_LIMIT"` (14 MB) | solo imagen y audio | ofrecer comprimir. **Un PDF de 18 MB se acepta**: se extrae local y nunca pasa por el modelo |
+| `415` | formato sin extractor (incluye `.doc` binario) | mostrar la lista de formatos |
+| `409` | mismo hash ya subido; trae `existing` | ofrecer reintentar con `?force=true`, **mostrando cuál era el previo** |
+
+### ✅ `GET /knowledge/files?status=&limit=` (JWT + SUPERVISOR)
+"Cargas recientes". Polling hasta que no queden `PROCESSING`.
+```json
+{ "data": [ { "id": "uuid", "filename": "escaneado.pdf", "status": "FAILED",
+    "documentId": null,
+    "failureReason": "El PDF no tiene texto seleccionable: parece un escaneo o una imagen. Subí el archivo original en Word, o sacale una foto y subila como imagen." } ] }
+```
+`failureReason` se muestra **tal cual**: viene redactado en castellano y sin jerga a propósito. No reemplazarlo por un "Error al procesar" genérico.
+
+### ✅ `GET /knowledge/files/:id/download` (JWT + SUPERVISOR)
+Descarga el original. **404** si el origen fue un audio (se elimina al transcribir) o si el archivo ya no está.
+
+### ✅ `POST /knowledge/:id/ai-edit/preview` (JWT + SUPERVISOR)
+`{ "instruction": "el anticipo mínimo pasó de 20% a 30%" }` → **200**:
+```json
+{ "baseVersion": 3, "proposedContent": "texto completo modificado…",
+  "summary": "Se actualizó el anticipo mínimo de 20% a 30%.",
+  "changedSections": [ { "before": "del 20%", "after": "del 30%" } ], "confident": true }
+```
+**No persiste nada**: el documento queda intacto. Con `confident: false` viene el contenido **original** sin tocar y `changedSections: []` — mostrar la advertencia y **no** habilitar aplicar.
+
+### ✅ `POST /knowledge/:id/ai-edit/apply` (JWT + SUPERVISOR)
+`{ baseVersion, content, instruction }`. Se guarda el `content` del body, que puede venir **editado a mano** después del preview.
+
+**409** si `baseVersion` quedó vieja: `{ reason: "VERSION_CONFLICT", currentVersion: 5, message }`. Usar `currentVersion` para ofrecer regenerar la propuesta sobre el texto vigente.
+
+---
+
+## Módulo Chat Web — `/messaging/web` ✅ (Sprint 5A)
+
+> Solo exige **JWT** — no `SUPERVISOR`: cualquier empleado autenticado puede
+> conversar con el asistente. El teléfono **no viaja en el body**: sale del
+> token. Mandarlo sería una vía para suplantar a otro usuario.
+
+### ✅ `POST /messaging/web` (JWT)
+`{ "message": "…" }` → **202** `{ "queued": true, "conversationId": "uuid" }`.
+Encola: nunca ejecuta IA dentro del request. **409** si el empleado no tiene teléfono cargado.
+
+Con la conversación en `WAITING_HUMAN` el mensaje **se guarda igual** y responde 202; lo que no ocurre es la respuesta automática. Conviene avisarlo en la UI o parece que se colgó.
+
+### ✅ `GET /messaging/web/:convId/messages?page=&limit=` (JWT)
+Historial en orden cronológico ascendente, más `conversation: { id, status, currentAgent, channel }`.
+**403** si la conversación no le pertenece a quien pregunta — un `SUPERVISOR` **tampoco** entra por acá.
+
+### ✅ `GET /supervisor/conversations/by-contact/:externalId/timeline` (JWT + SUPERVISOR)
+Los mensajes de **ambos canales** de un mismo contacto, en una línea de tiempo.
+Cada entrada trae su `channel` y su `conversationId`: sin esa marca, dos hilos con agentes distintos intercalados se leen como una conversación que nunca existió.
 
 ---
 
@@ -422,7 +569,10 @@ Le pide al cliente el comprobante de una cuota.
 
 ### ✅ `GET /collections/activity` (JWT)
 Registro de actividad transversal (no por cliente).
-Query: `collectorId`, `type`, `from`, `to`, `page`, `limit`.
+Query: `clientId`, `collectorId`, `eventType`, `after`, `before`, `page`, `limit`.
+- `eventType` (ej. `quota_reminder_sent`): si se manda, la respuesta trae
+  **solo** eventos de ese tipo (mensajes y notas no tienen este campo).
+- `after` / `before`: fechas ISO (`2026-07-01T00:00:00Z`).
 Un cobrador común solo ve los eventos de sus propios clientes y el
 `collectorId` que mande se **ignora**; el Controlador ve todos o filtra por uno.
 

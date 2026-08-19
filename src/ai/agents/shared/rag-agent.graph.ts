@@ -16,10 +16,7 @@ import {
 } from '../../orchestrator/orchestrator.state';
 import { SpecializedAgent } from '../agents.service';
 import { agentResponseSchema } from './rag-agent.schemas';
-import {
-  HANDOFF_INSTRUCTIONS,
-  STYLE_RULES,
-} from './rag-agent.instructions';
+import { HANDOFF_INSTRUCTIONS, STYLE_RULES } from './rag-agent.instructions';
 
 /** Dependencias de infraestructura comunes a todo agente RAG. */
 export interface AgentGraphDeps {
@@ -85,10 +82,22 @@ export function buildRagAgentGraph(
     const confidence = hits[0]?.score ?? 0;
     const context = hits.map((h) => `- ${h.content}`).join('\n');
 
+    // Sprint 5A (US7, FR-046): se registran TODOS los candidatos, no solo el
+    // que ganó. `confidence` sigue saliendo de hits[0] exactamente igual que
+    // antes — esto no cambia ninguna decisión de ruteo, solo agrega un dato
+    // que viaja al final del turno para saber qué documento sirvió y cuál
+    // apareció sin aportar.
+    const retrievedDocs = hits.map((h, idx) => ({
+      documentId: h.documentId,
+      // El hit trae 0-1; KnowledgeRetrieval.score está definido 0-100.
+      score: Number((h.score * 100).toFixed(2)),
+      rank: idx,
+    }));
+
     logger.log(
       `${tag} retrieve: ${hits.length} chunks, confianza=${confidence.toFixed(2)}`,
     );
-    return { context, confidence };
+    return { context, confidence, retrievedDocs };
   };
 
   // --- NODO: generate_response — Gemini responde con el contexto recuperado ---
@@ -184,7 +193,9 @@ export function buildRagAgentGraph(
   // --- NODO: escalate_to_human — confianza baja, deriva a un responsable ---
   const escalateToHuman = async (state: OrchestratorStateType) => {
     const confidence = state.confidence ?? 0;
-    logger.log(`${tag} confianza baja (${confidence.toFixed(2)}) → escalar a humano`);
+    logger.log(
+      `${tag} confianza baja (${confidence.toFixed(2)}) → escalar a humano`,
+    );
 
     // Antes de Sprint 3 esto solo devolvía el mensaje canned y no quedaba
     // ningún rastro consultable. Ahora crea el caso pendiente real que ve

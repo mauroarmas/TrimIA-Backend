@@ -39,6 +39,32 @@ import * as Joi from 'joi';
 
         RAG_CONFIDENCE_THRESHOLD: Joi.number().min(0).max(1).default(0.65),
 
+        // Carga de archivos a la base de conocimiento (Sprint 5A).
+        // Hay DOS techos, no uno, y la diferencia no es arbitraria:
+        //  - MAX_FILE: lo que se acepta subir, para cualquier formato.
+        //  - MULTIMODAL_MAX: tope menor para imagen y audio, que se procesan
+        //    con Gemini. La API limita la petición a 20 MB TOTALES y base64
+        //    infla el binario ~33%, así que un archivo de 20 MB genera un
+        //    request de ~27 MB y falla. PDF y Word se extraen localmente
+        //    (unpdf/mammoth) y no están sujetos a este segundo límite: son,
+        //    de hecho, los que más se acercan a los 20 MB (un escaneo largo).
+        KNOWLEDGE_MAX_FILE_MB: Joi.number().min(1).default(20),
+        KNOWLEDGE_MULTIMODAL_MAX_MB: Joi.number().min(1).default(14),
+        STORAGE_KNOWLEDGE_DIR: Joi.string().default('storage/knowledge'),
+
+        // Cada cuánto el stream de los chats del panel manda un keepalive
+        // (Sprint 5B, spec 004). No es cosmético: una conexión larga sin
+        // tráfico la puede cortar un intermediario por inactividad, y es
+        // además el reloj que revalida la autorización del stream abierto
+        // (RF-021) y el que detecta el token vencido (RF-022).
+        SSE_HEARTBEAT_MS: Joi.number().min(1000).default(15000),
+        // Tras cuánta inactividad se cierra la CONEXIÓN de un chat del panel —
+        // no la conversación. Una pestaña olvidada no debería retener una
+        // suscripción para siempre. Cerrarla no pierde nada: al volver, el panel
+        // reanuda desde el último mensaje que vio y sigue en el mismo hilo
+        // (spec 004, RF-023). Con un turno en curso no se cierra (CL-13).
+        SSE_IDLE_TIMEOUT_MS: Joi.number().min(10000).default(1800000),
+
         JWT_SECRET: Joi.string().min(32).required(),
       }),
       validationOptions: {

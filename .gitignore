@@ -64,3 +64,8 @@ report.[0-9]*.[0-9]*.[0-9]*.[0-9]*.json
 # Transcripciones de sesiones de Claude Code (nunca deben commitearse)
 docs/-home-*
 docs/*/*.jsonl
+
+# Audios de prueba grabados para el Sprint 5A (US1) — voz real, no se commitean.
+# Los guiones para volver a grabarlos viven en
+# specs/003-archivos-chat-conocimiento/audio-fixtures.md
+/audios/

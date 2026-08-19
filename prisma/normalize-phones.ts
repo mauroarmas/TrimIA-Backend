@@ -98,7 +98,13 @@ function findCollisions(
 async function main() {
   const employees = (
     await prisma.employee.findMany({
-      select: { id: true, phone: true, name: true, email: true, isActive: true },
+      select: {
+        id: true,
+        phone: true,
+        name: true,
+        email: true,
+        isActive: true,
+      },
     })
   ).map((e) => ({
     id: e.id,
@@ -107,7 +113,9 @@ async function main() {
   }));
 
   const clients = (
-    await prisma.client.findMany({ select: { id: true, phone: true, name: true } })
+    await prisma.client.findMany({
+      select: { id: true, phone: true, name: true },
+    })
   ).map((c) => ({ id: c.id, phone: c.phone, label: c.name }));
 
   const conversations = (
@@ -132,18 +140,24 @@ async function main() {
     ...findCollisions(changes, clients, 'Client'),
   ];
 
-  console.log(`\n${APPLY ? '⚙️  APLICANDO' : '🔍 DRY-RUN (no escribe nada)'}\n`);
+  console.log(
+    `\n${APPLY ? '⚙️  APLICANDO' : '🔍 DRY-RUN (no escribe nada)'}\n`,
+  );
 
   console.log(`── Cambios (${changes.length}) ──`);
   if (!changes.length) console.log('  (ninguno: todo ya está canónico)');
   for (const c of changes) {
-    console.log(`  ${c.table.padEnd(13)} ${c.from.padEnd(14)} → ${c.to}   ${c.label}`);
+    console.log(
+      `  ${c.table.padEnd(13)} ${c.from.padEnd(14)} → ${c.to}   ${c.label}`,
+    );
   }
 
   console.log(`\n── Sin tocar (${skipped.length}) ──`);
   if (!skipped.length) console.log('  (ninguno)');
   for (const s of skipped) {
-    console.log(`  ${s.table.padEnd(13)} ${s.value.padEnd(14)} ${s.label}\n${' '.repeat(16)}↳ ${s.reason}`);
+    console.log(
+      `  ${s.table.padEnd(13)} ${s.value.padEnd(14)} ${s.label}\n${' '.repeat(16)}↳ ${s.reason}`,
+    );
   }
 
   console.log(`\n── Colisiones con el índice UNIQUE (${collisions.length}) ──`);
@@ -151,7 +165,9 @@ async function main() {
   for (const c of collisions) console.log(`  ⚠️  ${c}`);
 
   if (!APPLY) {
-    console.log('\nPara aplicar: npx ts-node prisma/normalize-phones.ts --apply\n');
+    console.log(
+      '\nPara aplicar: npx ts-node prisma/normalize-phones.ts --apply\n',
+    );
     return;
   }
 

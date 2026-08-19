@@ -1,5 +1,6 @@
 import { Module } from '@nestjs/common';
 import { EscalationsService } from './escalations.service';
+import { EscalationSuggestionService } from './escalation-suggestion.service';
 import { ConversationsModule } from '../conversations/conversations.module';
 import { WhatsappSenderModule } from '../messaging/whatsapp-sender.module';
 import { OrchestrationLoggerModule } from '../ai/orchestrator/orchestration-logger.module';
@@ -14,7 +15,7 @@ import { EmployeesModule } from '../employees/employees.module';
     KnowledgeModule,
     EmployeesModule,
   ],
-  providers: [EscalationsService],
-  exports: [EscalationsService],
+  providers: [EscalationsService, EscalationSuggestionService],
+  exports: [EscalationsService, EscalationSuggestionService],
 })
 export class EscalationsModule {}

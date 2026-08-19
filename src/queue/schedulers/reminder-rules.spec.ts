@@ -1,4 +1,8 @@
-import { daysUntilDue, shouldSendReminder, hasBecomeOverdue } from './reminder-rules';
+import {
+  daysUntilDue,
+  shouldSendReminder,
+  hasBecomeOverdue,
+} from './reminder-rules';
 
 describe('reminder-rules', () => {
   const config = { daysBefore: [7, 3, 0], maxAttempts: 3 };
@@ -17,7 +21,11 @@ describe('reminder-rules', () => {
       for (const days of [7, 3, 0]) {
         const dueDate = new Date(now.getTime() + days * 86400000);
         expect(
-          shouldSendReminder({ status: 'PENDING', dueDate, reminderAttempts: 0 }, config, now),
+          shouldSendReminder(
+            { status: 'PENDING', dueDate, reminderAttempts: 0 },
+            config,
+            now,
+          ),
         ).toBe(true);
       }
     });
@@ -25,14 +33,22 @@ describe('reminder-rules', () => {
     it('NO envía en un día fuera de daysBefore (ej. faltan 5 días)', () => {
       const dueDate = new Date(now.getTime() + 5 * 86400000);
       expect(
-        shouldSendReminder({ status: 'PENDING', dueDate, reminderAttempts: 0 }, config, now),
+        shouldSendReminder(
+          { status: 'PENDING', dueDate, reminderAttempts: 0 },
+          config,
+          now,
+        ),
       ).toBe(false);
     });
 
     it('NO envía si ya alcanzó el máximo de intentos', () => {
       const dueDate = new Date(now.getTime());
       expect(
-        shouldSendReminder({ status: 'PENDING', dueDate, reminderAttempts: 3 }, config, now),
+        shouldSendReminder(
+          { status: 'PENDING', dueDate, reminderAttempts: 3 },
+          config,
+          now,
+        ),
       ).toBe(false);
     });
 
@@ -40,20 +56,49 @@ describe('reminder-rules', () => {
       const dueDate = new Date(now.getTime());
       for (const status of ['PAID', 'MANUAL', 'AWAITING_CONFIRMATION']) {
         expect(
-          shouldSendReminder({ status, dueDate, reminderAttempts: 0 }, config, now),
+          shouldSendReminder(
+            { status, dueDate, reminderAttempts: 0 },
+            config,
+            now,
+          ),
         ).toBe(false);
       }
     });
 
-    it('SÍ puede reintentar sobre una cuota ya OVERDUE (el cliente respondió tarde)', () => {
-      const dueDate = new Date(now.getTime() - 10 * 86400000);
+    it('el estado OVERDUE no bloquea el recordatorio, a diferencia de PAID/MANUAL', () => {
+      // Lo que se fija acá es el gate de ESTADO, no el de fecha: OVERDUE pasa
+      // igual que PENDING. La fecha tiene que caer dentro de `daysBefore` para
+      // aislar esa condición — una cuota vencida hace 10 días da `false` por
+      // `daysUntilDue(-10)`, que es otra regla y ya la cubren los tests de
+      // arriba.
       expect(
         shouldSendReminder(
-          { status: 'OVERDUE', dueDate: new Date(now.getTime() + 0), reminderAttempts: 0 },
+          {
+            status: 'OVERDUE',
+            dueDate: new Date(now.getTime()),
+            reminderAttempts: 0,
+          },
           config,
           now,
         ),
       ).toBe(true);
+    });
+
+    it('una cuota vencida hace rato ya NO recibe recordatorios', () => {
+      // Complemento del test anterior, que antes faltaba: los recordatorios
+      // son avisos PREVIOS al vencimiento (daysBefore: 7, 3, 0). Pasada esa
+      // ventana el caso es de un cobrador, no del scheduler.
+      expect(
+        shouldSendReminder(
+          {
+            status: 'OVERDUE',
+            dueDate: new Date(now.getTime() - 10 * 86400000),
+            reminderAttempts: 0,
+          },
+          config,
+          now,
+        ),
+      ).toBe(false);
     });
   });
 
@@ -61,21 +106,33 @@ describe('reminder-rules', () => {
     it('pasa a OVERDUE cuando ya venció y se agotaron los intentos', () => {
       const dueDate = new Date(now.getTime() - 86400000); // venció ayer
       expect(
-        hasBecomeOverdue({ status: 'PENDING', dueDate, reminderAttempts: 3 }, config, now),
+        hasBecomeOverdue(
+          { status: 'PENDING', dueDate, reminderAttempts: 3 },
+          config,
+          now,
+        ),
       ).toBe(true);
     });
 
     it('NO pasa a OVERDUE si todavía quedan intentos disponibles', () => {
       const dueDate = new Date(now.getTime() - 86400000);
       expect(
-        hasBecomeOverdue({ status: 'PENDING', dueDate, reminderAttempts: 1 }, config, now),
+        hasBecomeOverdue(
+          { status: 'PENDING', dueDate, reminderAttempts: 1 },
+          config,
+          now,
+        ),
       ).toBe(false);
     });
 
     it('NO pasa a OVERDUE si todavía no venció', () => {
       const dueDate = new Date(now.getTime() + 86400000);
       expect(
-        hasBecomeOverdue({ status: 'PENDING', dueDate, reminderAttempts: 3 }, config, now),
+        hasBecomeOverdue(
+          { status: 'PENDING', dueDate, reminderAttempts: 3 },
+          config,
+          now,
+        ),
       ).toBe(false);
     });
   });

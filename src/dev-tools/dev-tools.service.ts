@@ -47,9 +47,7 @@ export class DevToolsService {
     }
     await this.resetConversations(phone);
 
-    this.logger.log(
-      `Fixtures aplicados a ${phone}: ${fixtures.join(', ')}`,
-    );
+    this.logger.log(`Fixtures aplicados a ${phone}: ${fixtures.join(', ')}`);
     return { phone, clientId: client.id, fixtures };
   }
 

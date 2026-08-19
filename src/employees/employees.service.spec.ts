@@ -34,8 +34,12 @@ describe('EmployeesService', () => {
       employee: {
         findFirst: jest.fn().mockResolvedValue(null),
         findUnique: jest.fn().mockResolvedValue({ id: 'emp-1', name: 'Test' }),
-        create: jest.fn().mockResolvedValue({ id: 'emp-1', name: 'Test', password: 'h' }),
-        update: jest.fn().mockResolvedValue({ id: 'emp-1', name: 'Test', password: 'h' }),
+        create: jest
+          .fn()
+          .mockResolvedValue({ id: 'emp-1', name: 'Test', password: 'h' }),
+        update: jest
+          .fn()
+          .mockResolvedValue({ id: 'emp-1', name: 'Test', password: 'h' }),
       },
     };
     auth = { hashPassword: jest.fn().mockResolvedValue('hashed') };
@@ -111,7 +115,9 @@ describe('EmployeesService', () => {
       await service.update('emp-1', { password: 'nuevaClaveLarga' }, 'test');
 
       expect(auth.hashPassword).toHaveBeenCalledWith('nuevaClaveLarga');
-      expect(prisma.employee.update.mock.calls[0][0].data.password).toBe('hashed');
+      expect(prisma.employee.update.mock.calls[0][0].data.password).toBe(
+        'hashed',
+      );
     });
 
     it('permite reactivar un empleado dado de baja', async () => {

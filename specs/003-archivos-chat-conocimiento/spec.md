@@ -2,7 +2,7 @@
 
 **Feature Branch**: `sprint-5a-archivos-chat-conocimiento`
 
-**Created**: 2026-08-06
+**Created**: 2026-08-11
 
 **Status**: Draft
 
@@ -78,10 +78,10 @@ deja de usarlo; luego eliminarlo y verificar que desaparece de la lista.
 
 **Acceptance Scenarios**:
 
-1. **Given** un supervisor autenticado, **When** abre la Base de Conocimiento
-   de un área, **Then** ve la lista de documentos de esa área con su título,
-   tipo de contenido y resumen, sin ver los de áreas que no le corresponden en
-   esa vista.
+1. **Given** un supervisor autenticado, **When** abre la Base de Conocimiento y
+   selecciona un área, **Then** ve la lista de documentos de esa área con su
+   título, tipo de contenido y resumen; el área es un filtro de navegación, no
+   un permiso — cualquier supervisor puede consultar y gestionar cualquier área.
 2. **Given** un documento con un dato desactualizado, **When** el supervisor lo
    edita y guarda, **Then** una consulta posterior sobre ese tema se responde
    con el contenido nuevo y **nunca** con el anterior.
@@ -299,6 +299,9 @@ contador de recuperaciones y su score promedio suben en consecuencia.
 4. **Given** un documento recién cargado que nunca fue recuperado, **When** el
    supervisor abre su detalle, **Then** el indicador muestra explícitamente que
    todavía no hay datos de uso, en vez de un valor engañoso.
+5. **Given** un documento que aparece seguido como candidato pero nunca alcanza
+   la confianza necesaria para responder, **When** el supervisor abre su
+   detalle, **Then** puede distinguir ese caso de uno que no se recupera nunca.
 
 ---
 
@@ -356,6 +359,58 @@ contador de recuperaciones y su score promedio suben en consecuencia.
 - Q: ¿Qué escala y unidades tiene el "grado de coincidencia" (FR-027/028)? → A: Normalizar distancia de ChromaDB a 0-100 percentil (score = 100 * (1 - distance)). Mostrar como "%" en el panel. Reproducible, legible, soportado por el stack.
 - Q: ¿Qué pasa si el usuario escribe por web chat mientras un supervisor interviene manualmente? → A: Los mensajes se encolan (se guardan, no generan respuesta). Al liberar, vuelven a procesarse normalmente. El usuario no ve nada especial. Mantiene paridad con WhatsApp.
 
+### Session 2026-08-11
+
+> Los requisitos nuevos de esta sesión se numeran a partir de FR-044 y se ubican
+> dentro de la subsección temática que les corresponde. La numeración deja de ser
+> estrictamente ascendente a cambio de que cada identificador sea estable.
+
+- Q: ¿Se conservan los archivos originales tras extraer el texto? (re-confirmación
+  de la sesión anterior, ahora promovida a requisito verificable) → A: Sí para
+  PDF/Word/imagen, accesibles desde el detalle del documento; solo el audio se
+  elimina. → **FR-044**.
+- Q: ¿Un supervisor gestiona la base de conocimiento de todas las áreas o solo la
+  de su sector? → A: Todas. El área es filtro de navegación, no permiso; no se
+  agrega el sector como dimensión de autorización. → **FR-045** (y corrección del
+  escenario 1 de la Historia 2, que insinuaba lo contrario).
+- Q: ¿Qué recuperaciones se registran para el indicador de uso? → A: Todos los
+  documentos candidatos del top-k, cada uno con su score y con el desenlace del
+  turno (respuesta generada / escalamiento). Permite leer tanto "apareció" como
+  "sirvió". → **FR-046**, **FR-047**.
+- Q: ¿Qué se registra sobre las ediciones de un documento? → A: Autor y fecha de
+  la última edición, más una bitácora auditable de cada cambio que distinga
+  edición manual de propuesta de IA aceptada. Sin versiones recuperables ni
+  reversión. → **FR-048**, **FR-049**.
+- Q: ¿Qué límite de tamaño por archivo subido? → A: 20 MB, techo único para
+  todos los formatos. → **FR-007** (reemplaza el "límite conocido" sin
+  cuantificar).
+- Q (revisión, durante `/speckit-plan`): la investigación técnica reveló que el
+  proveedor de IA limita el tamaño **total de la petición** a 20 MB y que la
+  codificación en base64 infla el binario ~33%, así que un archivo de 20 MB no
+  entra. ¿Se baja el techo general a 10 MB? → A: **No.** Solo imagen y audio
+  pasan por el modelo multimodal; PDF y Word se procesan localmente y son
+  justamente los que más se acercan a los 20 MB (un escaneo de 30 páginas). Se
+  mantiene el techo de 20 MB y se agrega un umbral menor solo para los tipos
+  afectados. → **FR-050**.
+
+**Correcciones aplicadas tras `/speckit-analyze`** (2026-08-11):
+
+- **Terminología**: lo que la sesión del 2026-08-08 llamó "percentil" **no es un
+  percentil** — `100 * (1 - distancia_coseno)` es una similitud reescalada, y un
+  percentil exigiría una distribución de referencia. Se renombra a **"similitud
+  normalizada (0-100)"** en todo el documento. El registro de arriba se conserva
+  como quedó dicho en su momento.
+- **FR-027** se reescribió: hablaba de recuperaciones "para responder una
+  consulta", lo que contradecía a FR-046 (que exige registrar **todos** los
+  candidatos, respondan o no).
+- **Mensajes web durante intervención manual**: el supuesto afirmaba un
+  reprocesado al liberar que el sistema no hace. Corregido en Assumptions, con
+  la limitación declarada.
+
+*Glosario*: en la prosa de esta spec el indicador se llama **"grado de
+coincidencia"**; en `data-model.md` y en los contratos, el mismo valor es el
+campo `score`.
+
 ## Requirements *(mandatory)*
 
 ### Functional Requirements
@@ -378,8 +433,18 @@ contador de recuperaciones y su score promedio suben en consecuencia.
   supervisor: la carga se acusa de inmediato y el resultado del procesamiento
   se consulta después mediante un estado por archivo (en proceso / listo /
   error con motivo).
-- **FR-007**: El sistema DEBE imponer un límite de tamaño de archivo conocido y
-  rechazar de forma clara lo que lo exceda.
+- **FR-007**: El sistema DEBE rechazar de forma clara todo archivo que supere
+  **20 MB**, con un mensaje que indique el límite.
+- **FR-050**: Los tipos que dependen de un modelo multimodal para extraer su
+  texto (imagen y audio) DEBEN además rechazarse por encima de un umbral menor y
+  configurable (~14 MB), impuesto por el límite de tamaño de petición del
+  proveedor de IA. El mensaje de rechazo DEBE indicar qué hacer (comprimir la
+  imagen, grabar el audio en partes), no solo que falló. Los formatos que se
+  procesan localmente (PDF, Word) no están sujetos a este segundo umbral.
+- **FR-044**: El sistema DEBE conservar los archivos originales que **no** son
+  audio (PDF, Word, imágenes) y hacerlos accesibles desde el detalle del
+  documento de conocimiento que generaron, como respaldo verificable del texto
+  extraído. El audio es la única excepción: se elimina siempre (FR-004).
 
 #### Audio de WhatsApp (RF-14)
 
@@ -441,6 +506,17 @@ contador de recuperaciones y su score promedio suben en consecuencia.
   estado detectable y reintentable, nunca en una inconsistencia silenciosa.
 - **FR-025**: La gestión de la base de conocimiento (crear, editar, desactivar,
   eliminar) DEBE requerir un usuario con rol de supervisor autenticado.
+- **FR-048**: Cada documento DEBE mostrar quién lo editó por última vez y
+  cuándo.
+- **FR-049**: El sistema DEBE mantener una bitácora auditable de los cambios
+  sobre un documento (quién, cuándo, qué se modificó) que distinga los aplicados
+  manualmente de los provenientes de una propuesta de IA aceptada. No se
+  requiere conservar el contenido anterior ni poder revertir a una versión
+  previa.
+- **FR-045**: El rol de supervisor DEBE habilitar la gestión del conocimiento de
+  **todas** las áreas. El área es un criterio de organización y filtrado, no de
+  autorización: no se introduce el sector del empleado como una tercera
+  dimensión de permisos además de `CLIENTE`/`EMPLEADO` y `EMPLEADO`/`SUPERVISOR`.
 
 #### Trazabilidad y uso del conocimiento
 
@@ -448,8 +524,18 @@ contador de recuperaciones y su score promedio suben en consecuencia.
   de un archivo/carga manual, de una entrevista de capacitación o de la
   resolución de una consulta escalada, junto con la referencia al caso concreto
   que lo generó.
-- **FR-027**: El sistema DEBE registrar cada vez que un documento es recuperado
-  para responder una consulta, junto con su grado de coincidencia.
+- **FR-027**: El sistema DEBE registrar cada documento que la búsqueda devuelve
+  como candidato ante una consulta, junto con su grado de coincidencia. El
+  alcance de ese registro y el desenlace del turno los precisa FR-046.
+- **FR-046**: El registro de recuperación DEBE abarcar **todos** los documentos
+  candidatos devueltos por la búsqueda, no solo los que terminaron alimentando
+  una respuesta, y DEBE indicar por cada uno si el turno terminó en respuesta
+  generada o en escalamiento por confianza insuficiente. Así el panel puede
+  distinguir un documento que nunca se recupera de uno que se recupera seguido
+  pero nunca alcanza el umbral.
+- **FR-047**: El indicador por documento DEBE poder expresar las dos lecturas
+  derivadas de FR-046: cuántas veces apareció como candidato y cuántas veces
+  formó parte de una respuesta efectivamente generada.
 - **FR-028**: El sistema DEBE mostrar por documento cuántas veces fue
   recuperado y su grado de coincidencia promedio, y DEBE distinguir
   explícitamente el caso "todavía sin datos de uso" de un indicador bajo.
@@ -510,17 +596,23 @@ contador de recuperaciones y su score promedio suben en consecuencia.
 - **Documento de conocimiento**: Un tema que el asistente "sabe" sobre un área.
   Suma respecto de hoy: si está activo o desactivado, de dónde vino (origen y
   referencia al caso/archivo que lo generó), qué versión de contenido está
-  vigente, y un estado de sincronización (synced/pending_reindex/reindex_failed)
-  que permite detectar fallos a mitad de la reindexación en ChromaDB.
+  vigente, un estado de sincronización (synced/pending_reindex/reindex_failed)
+  que permite detectar fallos a mitad de la reindexación en ChromaDB, y quién lo
+  editó por última vez y cuándo.
+- **Cambio sobre un documento**: La bitácora auditable de una modificación:
+  quién la hizo, cuándo, qué se modificó y si vino de una edición manual o de
+  una propuesta de IA aceptada. No conserva el contenido anterior.
 - **Archivo cargado**: El archivo que sube el supervisor (PDF, Word, imagen,
   audio), con su estado de procesamiento (en proceso / listo / error con
   motivo). Los archivos de audio no se conservan una vez transcriptos; los
   demás se retienen y quedan visibles/descargables desde el panel para que el
   supervisor pueda reprocesar si falla la extracción o consultar el original.
-- **Recuperación de conocimiento**: El registro de que un documento fue usado
-  para responder una consulta, con su grado de coincidencia (0-100 percentil,
-  normalizado de la distancia de ChromaDB). Es la materia prima del indicador de
-  uso; hoy este dato se calcula al vuelo y se descarta.
+- **Recuperación de conocimiento**: El registro de que un documento salió como
+  candidato de una búsqueda, con su grado de coincidencia (similitud normalizada
+  a una escala 0-100,
+  normalizado de la distancia de ChromaDB) y el desenlace del turno (respuesta
+  generada o escalamiento por confianza insuficiente). Es la materia prima del
+  indicador de uso; hoy este dato se calcula al vuelo y se descarta.
 - **Caso pendiente (escalación)**: Suma respecto de hoy: la propuesta de
   respuesta generada, la respuesta guardada sin enviar y el estado "descartado"
   como cierre distinto de "resuelto".
@@ -605,11 +697,27 @@ contador de recuperaciones y su score promedio suben en consecuencia.
   división de responsabilidades que ya se usa para las imágenes de comprobantes
   (el token de la API de WhatsApp vive solo en la integración, no en el
   backend).
-- **Mensajes web durante intervención manual se encolan**: cuando un supervisor
-  toma una conversación web manualmente, los mensajes que envíe el usuario siguen
-  llegando al backend y se guardan, pero no generan respuesta automática. Al
-  liberar la intervención, vuelven a procesarse normalmente. Es el mismo
-  comportamiento que en WhatsApp.
+- **Mensajes web durante intervención manual: se guardan, no se responden.**
+  Cuando un supervisor tiene tomada una conversación web, los mensajes que envíe
+  el usuario siguen llegando al backend y quedan persistidos en el historial,
+  pero no generan respuesta automática. Es exactamente el mismo comportamiento
+  que ya rige en WhatsApp desde el Sprint 3
+  (`MessageProcessor` corta antes de invocar al orquestador cuando el estado no
+  es `ACTIVE`).
+
+  > **Corrección respecto de una versión anterior de este documento.** La
+  > clarificación del 2026-08-08 afirmaba que al liberar la intervención los
+  > mensajes acumulados "vuelven a procesarse normalmente". **Eso no es lo que
+  > hace el sistema**: el turno se descarta y liberar no dispara ningún
+  > reprocesado. La afirmación se coló sin verificarse contra el código.
+  >
+  > Reproducir esos mensajes es una capacidad que hoy **no existe para ningún
+  > canal** — es alcance del human-in-the-loop del Sprint 3, no de esta feature,
+  > y afecta por igual a WhatsApp. Además exige decisiones de producto que
+  > ninguna spec tomó: si se reprocesan todos los mensajes acumulados o solo el
+  > último, en qué orden, y qué pasa si el supervisor ya respondió eso mismo a
+  > mano mientras tenía el control. Queda como **limitación conocida y candidata
+  > a spec propia**, fuera del alcance del Sprint 5A.
 - **Extraer texto de una imagen es una lectura asistida, no una fuente de
   verdad**: el texto extraído de una foto de ficha queda a la vista del
   supervisor y es editable antes de que el conocimiento se dé por bueno, con el

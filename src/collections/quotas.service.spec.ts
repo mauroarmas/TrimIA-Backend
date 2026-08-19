@@ -136,7 +136,12 @@ describe('QuotasService', () => {
       id: 'q1',
       clientId: 'c1',
       amount: 22800,
-      client: { id: 'c1', name: 'Juan Pérez', phone: '5491100000000', assignedCollectorId: 'cobrador-1' },
+      client: {
+        id: 'c1',
+        name: 'Juan Pérez',
+        phone: '5491100000000',
+        assignedCollectorId: 'cobrador-1',
+      },
     };
 
     it('envía el WhatsApp y registra el evento, aunque no haya conversación abierta', async () => {

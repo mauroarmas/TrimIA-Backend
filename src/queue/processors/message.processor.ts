@@ -6,6 +6,7 @@ import { ConversationsService } from '../../conversations/conversations.service'
 import { WhatsappSenderService } from '../../messaging/whatsapp-sender.service';
 import { OrchestratorService } from '../../ai/orchestrator/orchestrator.service';
 import { EmployeesService } from '../../employees/employees.service';
+import { OrchestrationLogger } from '../../ai/orchestrator/orchestration-logger.service';
 
 interface MessageJob {
   conversationId: string;
@@ -48,6 +49,7 @@ export class MessageProcessor extends WorkerHost {
     private readonly sender: WhatsappSenderService,
     private readonly orchestrator: OrchestratorService,
     private readonly employees: EmployeesService,
+    private readonly orchestrationLogger: OrchestrationLogger,
   ) {
     super();
   }
@@ -101,7 +103,9 @@ export class MessageProcessor extends WorkerHost {
     const { conversationId, externalId, message, channel, messageId } =
       job.data;
 
-    this.logger.log(`Processing message [conv=${conversationId}]: "${message}"`);
+    this.logger.log(
+      `Processing message [conv=${conversationId}]: "${message}"`,
+    );
 
     try {
       // Sticky + historial: una sola query trae todo lo que necesita el orquestador.
@@ -120,7 +124,11 @@ export class MessageProcessor extends WorkerHost {
         // (HUMAN_HANDLING) está mirando la conversación y va a contestar él,
         // un aviso automático ahí sobra y confunde.
         if (conversation.status === 'WAITING_HUMAN') {
-          await this.acknowledgeWaitingHuman(conversationId, externalId, channel);
+          await this.acknowledgeWaitingHuman(
+            conversationId,
+            externalId,
+            channel,
+          );
         }
         return;
       }
@@ -184,6 +192,20 @@ export class MessageProcessor extends WorkerHost {
       );
       await this.sender.send(externalId, response, channel);
 
+      // Recién acá se sabe cómo terminó el turno, que es el dato que le da
+      // sentido a la lista de candidatos (FR-046): un documento que aparece
+      // siempre pero en turnos que igual escalan NO está sirviendo, y eso es
+      // invisible si solo se cuenta cuántas veces se recuperó.
+      //
+      // Va después del send() a propósito: es telemetría, y no tiene por qué
+      // meterse en el camino que el usuario está esperando (research §9).
+      await this.orchestrationLogger.trackRetrievals({
+        conversationId,
+        agentType: result.agentType,
+        outcome: result.escalated ? 'ESCALATED' : 'ANSWERED',
+        docs: result.retrievedDocs ?? [],
+      });
+
       this.logger.log(`Response sent to ${externalId}`);
     } catch (err) {
       // Cualquier fallo (Gemini, Chroma, DB) no debe dejar al usuario sin
@@ -196,6 +218,29 @@ export class MessageProcessor extends WorkerHost {
       );
       const maxAttempts = job.opts.attempts ?? 1;
       if (job.attemptsMade + 1 >= maxAttempts) {
+        // Se PERSISTE el aviso, y para todos los canales. Antes solo se enviaba
+        // con sender.send(), que para canales distintos de WHATSAPP es un no-op:
+        // por WhatsApp el usuario recibía la disculpa y por el panel no recibía
+        // absolutamente nada — el chat quedaba mudo (spec 004, RF-012).
+        //
+        // Persistirlo arregla las dos puntas. En el panel, el mensaje viaja por la
+        // misma entrega en tiempo real que todo lo demás. Y en WhatsApp arregla algo
+        // que también estaba mal: la disculpa se enviaba pero no quedaba registrada,
+        // así que el historial que lee un supervisor mentía sobre lo que se le dijo
+        // al cliente (OE-11). Es un cambio de contrato y está declarado como tal.
+        //
+        // Va primero el registro y después el envío: si el envío falla, el aviso
+        // igual existe. Y ninguno de los dos puede tapar el error original, que se
+        // relanza abajo para que BullMQ cuente el intento.
+        try {
+          await this.conversations.addMessage(
+            conversationId,
+            'ASSISTANT',
+            MessageProcessor.FALLBACK,
+          );
+        } catch (dbErr) {
+          this.logger.error(`No se pudo registrar el aviso de fallo: ${dbErr}`);
+        }
         await this.sender
           .send(externalId, MessageProcessor.FALLBACK, channel)
           .catch((sendErr) =>
