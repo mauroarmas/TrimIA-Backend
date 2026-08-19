@@ -121,8 +121,8 @@ casos **no crece** ([quickstart.md](./quickstart.md) escenario 2).
 **Independent Test**: un supervisor de Ventas encuentra que falta un dato de Cobranzas,
 lo deriva, y a la persona elegida le aparece un caso.
 
-- [ ] T029 [US4] Conectar la derivación desde el aviso de baja confianza con `escalations.delegate()` en `src/escalations/escalations.service.ts`, que **ya existe** con su `delegatedToId` — hay que cablearla, no construirla. El caso llega con el contexto de la consulta
-- [ ] T030 [US4] Extender `src/escalations/escalations.service.spec.ts`: al derivar, a la persona elegida le entra el caso · queda registrado quién derivó y quién resolvió · el **gerente no tiene a quién derivarle por encima** y en él el circuito termina, que es correcto (CL-3)
+- [X] T029 [US4] Conectar la derivación desde el aviso de baja confianza con `escalations.delegate()` en `src/escalations/escalations.service.ts`, que **ya existe** con su `delegatedToId` — hay que cablearla, no construirla. El caso llega con el contexto de la consulta
+- [X] T030 [US4] Extender `src/escalations/escalations.service.spec.ts`: al derivar, a la persona elegida le entra el caso · queda registrado quién derivó y quién resolvió · el **gerente no tiene a quién derivarle por encima** y en él el circuito termina, que es correcto (CL-3)
 
 ---
 

@@ -27,6 +27,8 @@ describe('EscalationsService', () => {
     findById: jest.Mock;
     addMessage: jest.Mock;
     setStatus: jest.Mock;
+    addAgentNote: jest.Mock;
+    getLastUserMessage: jest.Mock;
   };
   let sender: { send: jest.Mock };
   let logger: { logEvent: jest.Mock };
@@ -57,6 +59,8 @@ describe('EscalationsService', () => {
       findById: jest.fn().mockResolvedValue(conversation),
       addMessage: jest.fn(),
       setStatus: jest.fn(),
+      addAgentNote: jest.fn(),
+      getLastUserMessage: jest.fn(),
     };
     sender = { send: jest.fn() };
     logger = { logEvent: jest.fn() };
@@ -331,6 +335,200 @@ describe('EscalationsService', () => {
         service.delegate('esc-1', { toEmployeeId: 'emp-2' }, 'emp-1'),
       ).rejects.toThrow(ConflictException);
       expect(employees.findById).not.toHaveBeenCalled();
+    });
+  });
+  /**
+   * ⭐ US4 / FR-010 — derivar lo que no me corresponde.
+   *
+   * Es la contracara de US2: a un responsable la baja confianza no le crea ningún
+   * caso, así que cuando el tema es de otra área necesita poder pasárselo a quien
+   * sí lo sabe. El caso se crea recién en ese momento, y por decisión suya.
+   */
+  describe('delegateFromConversation (derivar desde el chat propio)', () => {
+    const consulta =
+      '¿cuál es el recargo por pagar una cuota fuera de término?';
+
+    beforeEach(() => {
+      conversations.getLastUserMessage.mockResolvedValue({ content: consulta });
+      // No hay ningún caso previo: es justamente lo que US2 garantiza.
+      prisma.escalation.findFirst.mockResolvedValue(null);
+      prisma.escalation.create.mockResolvedValue({
+        id: 'esc-nueva',
+        conversationId: 'conv-1',
+        status: 'PENDING',
+      });
+      prisma.escalation.findUnique.mockResolvedValue({
+        id: 'esc-nueva',
+        conversationId: 'conv-1',
+        status: 'PENDING',
+      });
+      employees.findById.mockResolvedValue({
+        id: 'emp-cobranzas',
+        role: 'SUPERVISOR',
+        isActive: true,
+      });
+      prisma.escalation.update.mockResolvedValue({
+        id: 'esc-nueva',
+        delegatedToId: 'emp-cobranzas',
+        delegatedById: 'emp-ventas',
+      });
+    });
+
+    it('a la persona elegida le entra el caso', async () => {
+      const result = await service.delegateFromConversation({
+        conversationId: 'conv-1',
+        toEmployeeId: 'emp-cobranzas',
+        delegatedById: 'emp-ventas',
+      });
+
+      expect(prisma.escalation.create).toHaveBeenCalled();
+      expect(result.delegatedToId).toBe('emp-cobranzas');
+    });
+
+    it('queda registrado quién derivó', async () => {
+      await service.delegateFromConversation({
+        conversationId: 'conv-1',
+        toEmployeeId: 'emp-cobranzas',
+        delegatedById: 'emp-ventas',
+      });
+
+      expect(prisma.escalation.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            delegatedToId: 'emp-cobranzas',
+            delegatedById: 'emp-ventas',
+          }),
+        }),
+      );
+    });
+
+    it('y quién lo resolvió, cuando quien lo recibe lo cierra', async () => {
+      await service.delegateFromConversation({
+        conversationId: 'conv-1',
+        toEmployeeId: 'emp-cobranzas',
+        delegatedById: 'emp-ventas',
+      });
+
+      await service.resolve(
+        'esc-nueva',
+        { message: 'El recargo es del 10% mensual.' },
+        'emp-cobranzas',
+      );
+
+      expect(prisma.escalation.update).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            status: 'RESOLVED',
+            resolvedById: 'emp-cobranzas',
+          }),
+        }),
+      );
+    });
+
+    /**
+     * El contexto sale de la conversación y no del cuerpo del request. Si viniera
+     * de ahí, el caso podría llegarle a otra persona con un texto distinto del que
+     * realmente se preguntó.
+     */
+    it('el caso llega con la consulta que de verdad se hizo', async () => {
+      await service.delegateFromConversation({
+        conversationId: 'conv-1',
+        toEmployeeId: 'emp-cobranzas',
+        delegatedById: 'emp-ventas',
+      });
+
+      expect(prisma.escalation.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            reason: expect.stringContaining('recargo por pagar una cuota'),
+          }),
+        }),
+      );
+      const [, , nota] = conversations.addAgentNote.mock.calls[0];
+      expect(nota).toContain(consulta);
+    });
+
+    // Derivarse el caso a sí mismo sería reproducir a mano el defecto que esta
+    // spec vino a arreglar.
+    it('rechaza derivarse la consulta a sí mismo (409)', async () => {
+      await expect(
+        service.delegateFromConversation({
+          conversationId: 'conv-1',
+          toEmployeeId: 'emp-ventas',
+          delegatedById: 'emp-ventas',
+        }),
+      ).rejects.toThrow(ConflictException);
+      expect(prisma.escalation.create).not.toHaveBeenCalled();
+    });
+
+    it('404 si la conversación no existe', async () => {
+      conversations.findById.mockResolvedValue(null);
+
+      await expect(
+        service.delegateFromConversation({
+          conversationId: 'conv-inexistente',
+          toEmployeeId: 'emp-cobranzas',
+          delegatedById: 'emp-ventas',
+        }),
+      ).rejects.toThrow(NotFoundException);
+    });
+
+    // Reusa create(), que ya no duplica: si por otra vía ya había un caso abierto,
+    // se delega ESE en vez de abrir un segundo.
+    it('no abre un segundo caso si ya había uno pendiente', async () => {
+      prisma.escalation.findFirst.mockResolvedValue({
+        id: 'esc-previa',
+        conversationId: 'conv-1',
+        status: 'PENDING',
+      });
+      prisma.escalation.findUnique.mockResolvedValue({
+        id: 'esc-previa',
+        conversationId: 'conv-1',
+        status: 'PENDING',
+      });
+
+      await service.delegateFromConversation({
+        conversationId: 'conv-1',
+        toEmployeeId: 'emp-cobranzas',
+        delegatedById: 'emp-ventas',
+      });
+
+      expect(prisma.escalation.create).not.toHaveBeenCalled();
+      expect(prisma.escalation.update).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { id: 'esc-previa' } }),
+      );
+    });
+
+    /**
+     * CL-3 — en el gerente el circuito termina, y eso es correcto.
+     *
+     * Es responsable de todas las áreas: no hay nadie "por encima" a quien pasarle
+     * el tema. Lo que se comprueba es que eso no sea un agujero: derivar hacia él
+     * deja el caso EN él y no genera ninguna derivación adicional automática. Puede
+     * pasárselo a un supervisor, pero nunca se le crea un caso a él solo.
+     */
+    it('el circuito termina en el gerente: derivarle un caso no genera otro', async () => {
+      employees.findById.mockResolvedValue({
+        id: 'emp-gerente',
+        role: 'SUPERVISOR',
+        isActive: true,
+      });
+      prisma.escalation.update.mockResolvedValue({
+        id: 'esc-nueva',
+        delegatedToId: 'emp-gerente',
+        delegatedById: 'emp-ventas',
+      });
+
+      const result = await service.delegateFromConversation({
+        conversationId: 'conv-1',
+        toEmployeeId: 'emp-gerente',
+        delegatedById: 'emp-ventas',
+      });
+
+      expect(result.delegatedToId).toBe('emp-gerente');
+      // Un solo caso, un solo delegate: nada se propaga hacia arriba.
+      expect(prisma.escalation.create).toHaveBeenCalledTimes(1);
+      expect(prisma.escalation.update).toHaveBeenCalledTimes(1);
     });
   });
 });
