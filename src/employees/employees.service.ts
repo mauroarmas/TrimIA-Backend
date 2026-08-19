@@ -76,7 +76,14 @@ export class EmployeesService {
   async findById(id: string) {
     const employee = await this.prisma.employee.findUnique({
       where: { id },
-      include: { sector: true },
+      include: {
+        sector: true,
+        // spec 005 — las consume el panel (para mostrar de qué es responsable
+        // cada uno) y la regla de escritura de conocimiento.
+        areasSupervisadas: {
+          select: { id: true, name: true, agentType: true },
+        },
+      },
     });
 
     if (!employee) {
@@ -114,6 +121,14 @@ export class EmployeesService {
         isActive: true,
         sectorId: true,
         sector: { select: { name: true } },
+        // De qué áreas es responsable (spec 005). Va en el MISMO select porque
+        // esta consulta ya se hace en cada mensaje para decidir el userType: es un
+        // campo más, no un viaje nuevo. Se traen `id` y `agentType` porque son lo
+        // que necesita la regla de escritura de conocimiento, y `name` para que el
+        // asistente pueda nombrar las áreas.
+        areasSupervisadas: {
+          select: { id: true, name: true, agentType: true },
+        },
       },
     });
   }

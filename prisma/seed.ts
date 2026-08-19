@@ -97,19 +97,55 @@ async function main() {
       email: 'diego.bazan@credimision.com',
       name: 'Diego Bazán',
       role: EmployeeRole.SUPERVISOR,
-      sectorId: ventas.id, // supervisor puede acceder a todos los módulos
+      sectorId: ventas.id, // dónde trabaja
+      // Dueño de la empresa: responsable de TODAS las áreas (spec 005). No hay
+      // un rol "gerente": serlo es la consecuencia de tener todas, y de acá sale
+      // que el asistente lo trate como tal.
+      areasSupervisadas: [
+        ventas.id,
+        cobranzas.id,
+        admin.id,
+        logistica.id,
+        deposito.id,
+      ],
+    },
+    {
+      // Supervisora de UNA sola área. Existe para poder contrastar contra el
+      // gerente: sin alguien así no se puede probar que la escritura de
+      // conocimiento queda acotada al área ni que "gerente" se deriva de tener
+      // todas (spec 005, quickstart escenarios 5 y 7-9).
+      phone: '5491100008888',
+      email: 'silvia.rios@credimision.com',
+      name: 'Silvia Ríos',
+      role: EmployeeRole.SUPERVISOR,
+      sectorId: cobranzas.id,
+      areasSupervisadas: [cobranzas.id],
     },
   ];
 
   for (const emp of employees) {
+    const { areasSupervisadas, ...datos } = emp as typeof emp & {
+      areasSupervisadas?: string[];
+    };
+    const areas = areasSupervisadas ?? [];
+
     await prisma.employee.upsert({
       where: { email: emp.email },
       // El teléfono SÍ se actualiza: si no, cambiar DEV_COLLECTOR_PHONE no
       // tendría efecto una vez que el empleado ya existe.
-      update: { phone: emp.phone },
+      //
+      // Las áreas van con `set` y no con `connect`: así el seed es idempotente
+      // y además CORRIGE una base que ya existía sin ellas — que es el caso de
+      // cualquier entorno de desarrollo anterior a la spec 005. Con `connect`
+      // se irían acumulando y quitar un área a mano no sobreviviría al reseed.
+      update: {
+        phone: emp.phone,
+        areasSupervisadas: { set: areas.map((id) => ({ id })) },
+      },
       create: {
-        ...emp,
+        ...datos,
         password: defaultPassword,
+        areasSupervisadas: { connect: areas.map((id) => ({ id })) },
       },
     });
   }

@@ -20,6 +20,7 @@ describe('buildRagAgentGraph', () => {
     currentAgent: 'SALES',
     userType: 'CLIENTE',
     history: [],
+    caller: null,
     agentType: null,
     response: null,
     context: null,
@@ -50,6 +51,7 @@ describe('buildRagAgentGraph', () => {
       handoffReason?: string;
       internalNote?: string;
     } = { response: 'Sí, la tenemos en 12 cuotas.', needsHuman: false },
+    agentType: 'SALES' | 'COLLECTIONS' = 'SALES',
   ) {
     const knowledge = {
       search: jest.fn().mockResolvedValue([{ content: 'contexto', score }]),
@@ -70,7 +72,7 @@ describe('buildRagAgentGraph', () => {
     };
 
     const graph = buildRagAgentGraph(
-      { agentType: 'SALES', prompt: 'sos el agente de ventas' },
+      { agentType, prompt: `sos el agente de ${agentType}` },
       {
         llm: llm as any,
         knowledge: knowledge as any,
@@ -79,8 +81,83 @@ describe('buildRagAgentGraph', () => {
         escalations: escalations as any,
       },
     );
-    return { graph, escalations, structuredInvoke };
+    return { graph, escalations, structuredInvoke, knowledge };
   }
+
+  /**
+   * ⭐ FR-015 / SC-008 / CL-9 — la lectura NO se restringe por área.
+   *
+   * Restringir la recuperación al área de quien pregunta se evaluó y **se descartó**:
+   * para eso está la orquestación de agentes, y hacerlo chocaría de frente con la
+   * capacitación del Sprint 5B, que consiste en enseñarle a alguien lo que NO hace
+   * todos los días.
+   *
+   * El objeto `caller` que la spec 005 acaba de meter en el estado trae las áreas y
+   * hace muy fácil implementar lo contrario sin querer. Este test es la guardia: una
+   * revisión de código no sobrevive al próximo refactor.
+   */
+  describe('⭐ la recuperación NO se filtra por el área de quien pregunta', () => {
+    /** Empleada de Depósito preguntando algo de cobranzas. */
+    const empleadaDeDeposito: OrchestratorStateType = {
+      ...baseState,
+      message: '¿cómo se registra un pago de cuota?',
+      currentAgent: 'COLLECTIONS',
+      userType: 'EMPLEADO',
+      caller: {
+        userType: 'EMPLEADO',
+        role: 'EMPLEADO',
+        areas: [],
+        esGerente: false,
+      },
+    };
+
+    it('busca en el corpus del agente que responde, no en el del área de quien pregunta', async () => {
+      const { graph, knowledge } = buildGraph(0.9, undefined, 'COLLECTIONS');
+
+      await graph.invoke(empleadaDeDeposito);
+
+      expect(knowledge.search).toHaveBeenCalledWith(
+        empleadaDeDeposito.message,
+        expect.objectContaining({
+          agentType: 'COLLECTIONS',
+          audience: 'INTERNO',
+        }),
+      );
+    });
+
+    it('el filtro de búsqueda NO incluye nada derivado de las áreas del caller', async () => {
+      const { graph, knowledge } = buildGraph(0.9, undefined, 'COLLECTIONS');
+      const supervisorDeVentas: OrchestratorStateType = {
+        ...empleadaDeDeposito,
+        caller: {
+          userType: 'EMPLEADO',
+          role: 'SUPERVISOR',
+          areas: [{ id: 's1', name: 'Ventas', agentType: 'SALES' }],
+          esGerente: false,
+        },
+      };
+
+      await graph.invoke(supervisorDeVentas);
+
+      // Si alguien filtrara por área, acá aparecería 'SALES' o una lista de áreas.
+      const [, opts] = knowledge.search.mock.calls[0];
+      expect(opts.agentType).toBe('COLLECTIONS');
+      expect(JSON.stringify(opts)).not.toContain('Ventas');
+    });
+
+    it('y responde normalmente: no se lo bloquea por ser de otra área', async () => {
+      const { graph } = buildGraph(
+        0.9,
+        { response: 'Se registra con el comprobante.', needsHuman: false },
+        'COLLECTIONS',
+      );
+
+      const result = await graph.invoke(empleadaDeDeposito);
+
+      expect(result.response).toBe('Se registra con el comprobante.');
+      expect(result.escalated).toBeFalsy();
+    });
+  });
 
   describe('escalate_to_human (baja confianza del RAG)', () => {
     it('crea un caso pendiente cuando la confianza cae bajo el umbral', async () => {

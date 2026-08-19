@@ -34,9 +34,9 @@ relativas a **ese** repo (Fase 9).
 **Purpose**: la relación N:M. Bloquea todo lo demás porque de ella sale "de qué áreas
 es responsable esta persona", que consumen el trato, el ruteo y la escritura.
 
-- [ ] T001 Agregar la relación **N:M** entre `Employee` y `Sector` en `prisma/schema.prisma`, con **nombre explícito de relación** en los dos lados. El nombre **no es opcional**: ya existe otra relación entre estos dos modelos (`Employee.sector`, dónde trabaja), y sin nombrarlas Prisma no puede inferir cuál es cuál y el `db push` falla. Ver [data-model.md §1](./data-model.md)
-- [ ] T002 Aplicar con `docker compose exec nestjs npx prisma db push` (el proyecto no usa `migrate`) y confirmar que la tabla de unión quedó creada
-- [ ] T003 Asignarle a Diego Bazán las **cinco** áreas en `prisma/seed.ts`. Sin esto queda como un supervisor común y **la mitad de la feature no se puede probar** — no habría ningún gerente en el sistema. Al resto de los supervisores, su propia área
+- [X] T001 Agregar la relación **N:M** entre `Employee` y `Sector` en `prisma/schema.prisma`, con **nombre explícito de relación** en los dos lados. El nombre **no es opcional**: ya existe otra relación entre estos dos modelos (`Employee.sector`, dónde trabaja), y sin nombrarlas Prisma no puede inferir cuál es cuál y el `db push` falla. Ver [data-model.md §1](./data-model.md)
+- [X] T002 Aplicar con `docker compose exec nestjs npx prisma db push` (el proyecto no usa `migrate`) y confirmar que la tabla de unión quedó creada
+- [X] T003 Asignarle a Diego Bazán las **cinco** áreas en `prisma/seed.ts`. Sin esto queda como un supervisor común y **la mitad de la feature no se puede probar** — no habría ningún gerente en el sistema. Al resto de los supervisores, su propia área
 
 ---
 
@@ -45,16 +45,16 @@ es responsable esta persona", que consumen el trato, el ruteo y la escritura.
 **Purpose**: hoy el orquestador recibe **solo** `userType`. Esta fase lleva hasta él
 quién habla. **Bloquea US1, US2 y US5.**
 
-- [ ] T004 [P] Crear `src/ai/caller/caller.types.ts` con el tipo `Caller` (`userType`, `role`, `areas`, `esGerente`) según [data-model.md §2](./data-model.md). Es el objeto que transporta la identidad; **no decide accesos**
-- [ ] T005 Crear `src/ai/caller/caller.resolver.ts` que arma el `Caller` a partir del empleado ya resuelto por teléfono. **`esGerente` se deriva** de ser responsable de todas las áreas, no se lee de ningún campo — y el cálculo vive **solo acá** (research §3)
-- [ ] T006 Crear `src/ai/caller/caller.resolver.spec.ts`: con las 5 áreas es gerente · con 4 **no** · un `CLIENTE` sale sin rol y sin áreas · un supervisor **sin** áreas es un estado válido y detectable, no un permiso (CL-10) · si mañana hay 6 áreas, quien tenga 5 deja de ser gerente
-- [ ] T007 Extender el `select` de `findByPhone` y `findById` en `src/employees/employees.service.ts` para traer las áreas supervisadas. Ya devuelven `role` y `sector`: es un campo más en una consulta indexada que **ya se hace**, no un viaje nuevo
-- [ ] T008 Agregar `caller` al estado en `src/ai/orchestrator/orchestrator.state.ts`, y sumarle `title` a `RetrievedDoc`. El título hace falta para el aviso de US2 —"documento a3f2b8c1" no le sirve a nadie— y el dato ya existe en `SearchHit`; hoy se descarta al mapear
-- [ ] T009 Cambiar `OrchestratorService.invoke()` en `src/ai/orchestrator/orchestrator.service.ts` para recibir el `Caller`. **Un objeto y no tres parámetros más**: la firma ya toma cinco posicionales
-- [ ] T010 Resolver el `Caller` en `src/queue/processors/message.processor.ts`, donde ya se resuelve el `userType` en cada mensaje, y pasarlo al orquestador. **Se resuelve por teléfono, no desde el token**: es lo que hace que valga igual por WhatsApp (FR-017)
-- [ ] T011 Extender `src/queue/processors/message.processor.spec.ts`: el `Caller` llega armado al orquestador · un empleado dado de baja **sigue degradándose a `CLIENTE`** en el mismo turno, como hoy · un teléfono fuera de la whitelist produce un `Caller` de cliente
+- [X] T004 [P] Crear `src/ai/caller/caller.types.ts` con el tipo `Caller` (`userType`, `role`, `areas`, `esGerente`) según [data-model.md §2](./data-model.md). Es el objeto que transporta la identidad; **no decide accesos**
+- [X] T005 Crear `src/ai/caller/caller.resolver.ts` que arma el `Caller` a partir del empleado ya resuelto por teléfono. **`esGerente` se deriva** de ser responsable de todas las áreas, no se lee de ningún campo — y el cálculo vive **solo acá** (research §3)
+- [X] T006 Crear `src/ai/caller/caller.resolver.spec.ts`: con las 5 áreas es gerente · con 4 **no** · un `CLIENTE` sale sin rol y sin áreas · un supervisor **sin** áreas es un estado válido y detectable, no un permiso (CL-10) · si mañana hay 6 áreas, quien tenga 5 deja de ser gerente
+- [X] T007 Extender el `select` de `findByPhone` y `findById` en `src/employees/employees.service.ts` para traer las áreas supervisadas. Ya devuelven `role` y `sector`: es un campo más en una consulta indexada que **ya se hace**, no un viaje nuevo
+- [X] T008 Agregar `caller` al estado en `src/ai/orchestrator/orchestrator.state.ts`, y sumarle `title` a `RetrievedDoc`. El título hace falta para el aviso de US2 —"documento a3f2b8c1" no le sirve a nadie— y el dato ya existe en `SearchHit`; hoy se descarta al mapear
+- [X] T009 Cambiar `OrchestratorService.invoke()` en `src/ai/orchestrator/orchestrator.service.ts` para recibir el `Caller`. **Un objeto y no tres parámetros más**: la firma ya toma cinco posicionales
+- [X] T010 Resolver el `Caller` en `src/queue/processors/message.processor.ts`, donde ya se resuelve el `userType` en cada mensaje, y pasarlo al orquestador. **Se resuelve por teléfono, no desde el token**: es lo que hace que valga igual por WhatsApp (FR-017)
+- [X] T011 Extender `src/queue/processors/message.processor.spec.ts`: el `Caller` llega armado al orquestador · un empleado dado de baja **sigue degradándose a `CLIENTE`** en el mismo turno, como hoy · un teléfono fuera de la whitelist produce un `Caller` de cliente
 
-- [ ] T012 ⭐ Test de no-regresión en `src/ai/agents/shared/rag-agent.graph.spec.ts`: un empleado de un área **sigue recibiendo respuesta de agentes de otras áreas** (FR-015, SC-008, CL-9). **Es la guardia de la decisión más deliberada de esta spec**: restringir la lectura por área se evaluó y se descartó, y el objeto `Caller` que acaba de entrar hace muy fácil implementarlo sin querer. Una revisión manual (T043) no sobrevive al próximo refactor; este test sí
+- [X] T012 ⭐ Test de no-regresión en `src/ai/agents/shared/rag-agent.graph.spec.ts`: un empleado de un área **sigue recibiendo respuesta de agentes de otras áreas** (FR-015, SC-008, CL-9). **Es la guardia de la decisión más deliberada de esta spec**: restringir la lectura por área se evaluó y se descartó, y el objeto `Caller` que acaba de entrar hace muy fácil implementarlo sin querer. Una revisión manual (T043) no sobrevive al próximo refactor; este test sí
 
 **Checkpoint**: el asistente ya sabe con quién habla. Las historias pueden empezar.
 
