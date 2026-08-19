@@ -3,8 +3,13 @@
 **Hallazgos**: 2026-08-18, probando el panel a mano después de cerrar la spec 004.
 **Decisiones**: 2026-08-19, conversadas con Mauro.
 
-Esto **no es una spec**: es el insumo para escribirla, con las causas verificadas
-contra el código y las decisiones ya tomadas. Nada está implementado.
+> **La spec ya se escribió**: [specs/005-roles-y-areas/spec.md](../specs/005-roles-y-areas/spec.md).
+> Este documento queda como el registro de **por qué** cada decisión se tomó así,
+> incluidas las que se revirtieron — la spec dice qué hay que construir, esto dice
+> qué se descartó y con qué argumento.
+
+Esto **no es una spec**: es el insumo con el que se escribió, con las causas
+verificadas contra el código y las decisiones ya tomadas.
 
 Sobre la 004 en sí, la evaluación de la prueba fue que funciona bien y que el chat
 del panel resulta **más rápido que WhatsApp**.
