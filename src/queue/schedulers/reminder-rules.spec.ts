@@ -65,19 +65,40 @@ describe('reminder-rules', () => {
       }
     });
 
-    it('SÍ puede reintentar sobre una cuota ya OVERDUE (el cliente respondió tarde)', () => {
-      const dueDate = new Date(now.getTime() - 10 * 86400000);
+    it('el estado OVERDUE no bloquea el recordatorio, a diferencia de PAID/MANUAL', () => {
+      // Lo que se fija acá es el gate de ESTADO, no el de fecha: OVERDUE pasa
+      // igual que PENDING. La fecha tiene que caer dentro de `daysBefore` para
+      // aislar esa condición — una cuota vencida hace 10 días da `false` por
+      // `daysUntilDue(-10)`, que es otra regla y ya la cubren los tests de
+      // arriba.
       expect(
         shouldSendReminder(
           {
             status: 'OVERDUE',
-            dueDate: new Date(now.getTime() + 0),
+            dueDate: new Date(now.getTime()),
             reminderAttempts: 0,
           },
           config,
           now,
         ),
       ).toBe(true);
+    });
+
+    it('una cuota vencida hace rato ya NO recibe recordatorios', () => {
+      // Complemento del test anterior, que antes faltaba: los recordatorios
+      // son avisos PREVIOS al vencimiento (daysBefore: 7, 3, 0). Pasada esa
+      // ventana el caso es de un cobrador, no del scheduler.
+      expect(
+        shouldSendReminder(
+          {
+            status: 'OVERDUE',
+            dueDate: new Date(now.getTime() - 10 * 86400000),
+            reminderAttempts: 0,
+          },
+          config,
+          now,
+        ),
+      ).toBe(false);
     });
   });
 

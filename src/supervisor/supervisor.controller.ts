@@ -7,8 +7,11 @@ import {
   Post,
   Query,
   Req,
+  Sse,
   UseGuards,
 } from '@nestjs/common';
+import { Observable } from 'rxjs';
+import { normalizePhone } from '../common/phone';
 import { ApiOperation, ApiQuery, ApiTags } from '@nestjs/swagger';
 import {
   AgentType,
@@ -23,12 +26,22 @@ import { SupervisorService } from './supervisor.service';
 import { EscalationsService } from '../escalations/escalations.service';
 import { EscalationSuggestionService } from '../escalations/escalation-suggestion.service';
 import { ConversationsService } from '../conversations/conversations.service';
+import { EmployeesService } from '../employees/employees.service';
 import { ResolveEscalationDto } from '../escalations/dto/resolve-escalation.dto';
 import { DelegateEscalationDto } from '../escalations/dto/delegate-escalation.dto';
 import { SaveUnsentDto } from '../escalations/dto/save-unsent.dto';
 import { DiscardEscalationDto } from '../escalations/dto/discard-escalation.dto';
 import { ManualReplyDto } from '../conversations/dto/manual-reply.dto';
 import { CreateInternalNoteDto } from '../conversations/dto/create-internal-note.dto';
+import { RealtimeService } from '../realtime/realtime.service';
+
+/**
+ * Lo que JwtStrategy deja en `req.user`. El resto de este controller usa `any`;
+ * acá hace falta tipado porque el stream necesita `exp` (spec 004, RF-022).
+ */
+interface AuthenticatedRequest {
+  user: { id: string; exp?: number };
+}
 
 /**
  * Panel del Supervisor (módulo de gobernanza — entregable E4).
@@ -50,6 +63,8 @@ export class SupervisorController {
     private readonly escalations: EscalationsService,
     private readonly suggestions: EscalationSuggestionService,
     private readonly conversations: ConversationsService,
+    private readonly employees: EmployeesService,
+    private readonly realtime: RealtimeService,
   ) {}
 
   /**
@@ -101,6 +116,82 @@ export class SupervisorController {
   }
 
   /**
+   * GET /supervisor/conversations/:id/stream
+   *
+   * Entrega en tiempo real de **cualquier** conversación (spec 004, US4). La usa el
+   * Simulador de Chat para ver en vivo cómo el sistema le responde a un teléfono
+   * fuera de la whitelist, y sirve para cualquier vista del panel sobre una
+   * conversación ajena.
+   *
+   * Es un endpoint **separado** del stream del chat propio a propósito. Un endpoint
+   * único que resolviera "si es supervisor puede cualquiera, si no solo la propia"
+   * concentraría dos reglas de autorización distintas en un handler, que es la
+   * duplicación que el Principio I prohíbe. Separados, cada uno hereda la regla que
+   * ya rige el `GET` de al lado y no hay que escribir ninguna nueva.
+   *
+   * Como efecto, RN-2 se cumple por construcción: un supervisor NO entra al chat
+   * propio de un empleado por `/messaging/web/...`, porque ese endpoint mira
+   * pertenencia y no roles.
+   */
+  @Sse('conversations/:id/stream')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('SUPERVISOR')
+  @ApiOperation({
+    summary: 'Entrega en tiempo real de cualquier conversación (RF-019)',
+    description:
+      'El permiso se revalida mientras el stream vive: un supervisor degradado ' +
+      'o dado de baja deja de recibir (RF-021). La entrega tampoco sobrevive al ' +
+      'token que la abrió (RF-022).',
+  })
+  async streamConversation(
+    @Param('id') id: string,
+    @Req() req: AuthenticatedRequest,
+    @Query('after') after?: string,
+  ): Promise<Observable<unknown>> {
+    // El rechazo va ANTES de abrir el stream (RF-014): un 200 que después nunca
+    // emite no le permite al cliente distinguir "no existe" de "todavía nada".
+    const conversation = await this.conversations.findById(id);
+    if (!conversation) {
+      throw new NotFoundException('Conversación no encontrada');
+    }
+    // Mismo motivo que en el chat propio: un cursor inválido tiene que dar 404
+    // antes de que se escriban los headers del stream.
+    if (after) {
+      await this.conversations.messagesSince(id, after);
+    }
+
+    return this.realtime.sseStreamFor(id, {
+      replay: after
+        ? () => this.conversations.messagesSince(id, after)
+        : undefined,
+      revalidate: () => this.stillSupervisor(req.user.id, id),
+      expiresAt: req.user.exp,
+    });
+  }
+
+  /**
+   * Revalidación del stream del supervisor (RF-021, CL-9).
+   *
+   * El rol viaja en el token y el token no cambia, así que sin esto un supervisor
+   * **degradado o dado de baja** seguiría recibiendo por una conexión ya abierta
+   * hasta que su sesión venciera — el mismo agujero que en el chat propio, con otra
+   * causa. Se lee del empleado, no del token.
+   */
+  private async stillSupervisor(
+    employeeId: string,
+    conversationId: string,
+  ): Promise<boolean> {
+    try {
+      const employee = await this.employees.findById(employeeId);
+      if (!employee.isActive || employee.role !== 'SUPERVISOR') return false;
+      return (await this.conversations.findById(conversationId)) !== null;
+    } catch {
+      // Empleado borrado, o cualquier otro motivo: fail-closed.
+      return false;
+    }
+  }
+
+  /**
    * GET /supervisor/events
    * Lista eventos de orquestación (auditoría / timeline).
    * Query params: conversationId, eventType, agentType, after, page, limit
@@ -136,6 +227,38 @@ export class SupervisorController {
       page: page ? parseInt(page, 10) : undefined,
       limit: limit ? parseInt(limit, 10) : undefined,
     });
+  }
+
+  /**
+   * GET /supervisor/conversations/by-contact/:externalId/timeline
+   *
+   * Vista unificada de lectura (US4, FR-018): los mensajes de ambos canales
+   * de un mismo contacto en una sola línea de tiempo. Va bajo `/supervisor`,
+   * no bajo `/messaging/web`, porque es herramienta de gobernanza, no del
+   * chat — no fusiona los hilos ni le da memoria compartida al asistente.
+   */
+  @Get('conversations/by-contact/:externalId/timeline')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('SUPERVISOR')
+  @ApiOperation({
+    summary: 'Mensajes de WhatsApp y web de un mismo contacto (FR-018)',
+  })
+  async getContactTimeline(@Param('externalId') externalId: string) {
+    const normalized = normalizePhone(externalId);
+    const result = await this.conversations.getUnifiedTimeline(normalized);
+    if (!result) {
+      throw new NotFoundException('No hay conversaciones para ese contacto');
+    }
+
+    const employee = await this.employees.findByPhone(normalized);
+    return {
+      contact: {
+        externalId: normalized,
+        employee: employee ? { id: employee.id, name: employee.name } : null,
+      },
+      conversations: result.conversations,
+      timeline: result.timeline,
+    };
   }
 
   // ---------------------------------------------------------------------

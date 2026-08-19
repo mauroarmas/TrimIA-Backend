@@ -172,17 +172,17 @@ Proyecto backend único: `src/` en la raíz del repositorio. Los tests viven
 
 ### Implementación
 
-- [ ] T051 [US4] Implementar `enqueueWeb(employee, message)` en `src/messaging/messaging.service.ts`: usa el **teléfono normalizado del empleado** como `externalId` y `Channel.WEB`, reusando `prepareConversation()` (research §8)
-- [ ] T052 [US4] Rechazar con 409 si el empleado autenticado no tiene teléfono cargado, en `src/messaging/messaging.service.ts` (research §8)
-- [ ] T053 [US4] Crear `src/messaging/messaging-web.controller.ts` con `POST /messaging/web` (responde **202**, encola — Principio IV) y `GET /messaging/web/:convId/messages`
-- [ ] T054 [US4] Implementar la comprobación de pertenencia del historial (`conversation.externalId === normalizePhone(employee.phone)`) → 403 si no coincide, en `src/messaging/messaging-web.controller.ts` (FR-015)
-- [ ] T055 [P] [US4] Implementar `getUnifiedTimeline(externalId)` en `src/conversations/conversations.service.ts`: mensajes de ambos canales por `externalId`, cada uno con su `channel` y `conversationId` (FR-018)
-- [ ] T056 [US4] Agregar `GET /supervisor/conversations/by-contact/:externalId/timeline` en `src/supervisor/supervisor.controller.ts` (SUPERVISOR-only, contracts)
+- [X] T051 [US4] Implementar `enqueueWeb(employee, message)` en `src/messaging/messaging.service.ts`: usa el **teléfono normalizado del empleado** como `externalId` y `Channel.WEB`, reusando `prepareConversation()` (research §8)
+- [X] T052 [US4] Rechazar con 409 si el empleado autenticado no tiene teléfono cargado, en `src/messaging/messaging.service.ts` (research §8)
+- [X] T053 [US4] Crear `src/messaging/messaging-web.controller.ts` con `POST /messaging/web` (responde **202**, encola — Principio IV) y `GET /messaging/web/:convId/messages`
+- [X] T054 [US4] Implementar la comprobación de pertenencia del historial (`conversation.externalId === normalizePhone(employee.phone)`) → 403 si no coincide, en `src/messaging/messaging-web.controller.ts` (FR-015)
+- [X] T055 [P] [US4] Implementar `getUnifiedTimeline(externalId)` en `src/conversations/conversations.service.ts`: mensajes de ambos canales por `externalId`, cada uno con su `channel` y `conversationId` (FR-018)
+- [X] T056 [US4] Agregar `GET /supervisor/conversations/by-contact/:externalId/timeline` en `src/supervisor/supervisor.controller.ts` (SUPERVISOR-only, contracts)
 
 ### Tests
 
-- [ ] T057 ⭐ [P] [US4] Test en `src/messaging/messaging-web.controller.spec.ts`: 401 sin JWT y 403 al pedir el historial de una conversación ajena (FR-015)
-- [ ] T058 [P] [US4] Test en `src/messaging/messaging.service.spec.ts`: escribir por web y por WhatsApp con el mismo teléfono genera **dos** conversaciones distintas, y el `currentAgent` de una no afecta al de la otra (FR-017)
+- [X] T057 ⭐ [P] [US4] Test en `src/messaging/messaging-web.controller.spec.ts`: 401 sin JWT y 403 al pedir el historial de una conversación ajena (FR-015)
+- [X] T058 [P] [US4] Test en `src/messaging/messaging.service.spec.ts`: escribir por web y por WhatsApp con el mismo teléfono genera **dos** conversaciones distintas, y el `currentAgent` de una no afecta al de la otra (FR-017)
 
 **Checkpoint**: RF-07 cubierto; la vista unificada funciona sin haber tocado el motor.
 
@@ -199,13 +199,13 @@ Proyecto backend único: `src/` en la raíz del repositorio. Los tests viven
 
 ### Implementación
 
-- [ ] T059 [US5] Crear el Workflow 7 en `n8n/workflows/`: audio de WhatsApp → transcripción → `POST /messaging/webhook` con el texto, siguiendo el patrón de los workflows existentes. **El workflow NO debe persistir el binario del audio** en ningún nodo ni almacenamiento intermedio (FR-011)
-- [ ] T060 [US5] Definir el marcador acordado que n8n envía cuando no puede transcribir, y documentarlo en `n8n/workflows/README.md` o equivalente
-- [ ] T061 [US5] Manejar ese marcador en `src/ai/orchestrator/utils/trivial-filter.ts`: responder pidiendo reformulación **sin** llamar al LLM ni crear escalación (FR-009)
+- [X] T059 [US5] Crear el Workflow 7 en `n8n/workflows/` — **implementado como rama de `RecepcionMensaje-A.json`**, no como archivo aparte: Meta manda todos los mensajes al mismo webhook, así que un workflow separado no podría recibirlos: audio de WhatsApp → transcripción → `POST /messaging/webhook` con el texto, siguiendo el patrón de los workflows existentes. **El workflow NO debe persistir el binario del audio** en ningún nodo ni almacenamiento intermedio (FR-011)
+- [X] T060 [US5] Definir el marcador acordado que n8n envía cuando no puede transcribir, y documentarlo en `n8n/workflows/README.md` o equivalente
+- [X] T061 [US5] Manejar ese marcador en `src/ai/orchestrator/utils/trivial-filter.ts`: responder pidiendo reformulación **sin** llamar al LLM ni crear escalación (FR-009)
 
 ### Tests
 
-- [ ] T062 [P] [US5] Test en `src/ai/orchestrator/utils/trivial-filter.spec.ts`: el marcador de transcripción fallida produce el pedido de reformulación y **cero** llamadas al LLM (FR-009)
+- [X] T062 [P] [US5] Test en `src/ai/orchestrator/utils/trivial-filter.spec.ts`: el marcador de transcripción fallida produce el pedido de reformulación y **cero** llamadas al LLM (FR-009)
 
 **Checkpoint**: RF-14 cubierto por texto y por voz, con degradación explícita.
 
@@ -219,16 +219,16 @@ Proyecto backend único: `src/` en la raíz del repositorio. Los tests viven
 
 ### Implementación
 
-- [ ] T063 [US7] Agregar `retrievedDocs` (documentId, score, rank) a `src/ai/orchestrator/orchestrator.state.ts`
-- [ ] T064 [US7] Propagar los hits del RAG al estado desde `retrieve_context` en `src/ai/agents/shared/rag-agent.graph.ts`, sin cambiar el comportamiento de `evaluate_confidence`
-- [ ] T065 [US7] Persistir las recuperaciones con `createMany` **después** de terminado el turno, con el `outcome` (`ANSWERED`/`ESCALATED`), en `src/queue/processors/message.processor.ts` (FR-046, research §9)
-- [ ] T066 [P] [US7] Crear `KnowledgeUsageService` en `src/ai/knowledge/knowledge-usage.service.ts`: `retrievedCount`, `answeredCount`, `avgScore` y `hasData` por documento (FR-047)
-- [ ] T067 [US7] Incluir `usage` y `source` (archivo o escalación) en las respuestas de `GET /knowledge` y `GET /knowledge/:id` en `src/ai/knowledge/knowledge.controller.ts` (FR-026, contracts)
+- [X] T063 [US7] Agregar `retrievedDocs` (documentId, score, rank) a `src/ai/orchestrator/orchestrator.state.ts`
+- [X] T064 [US7] Propagar los hits del RAG al estado desde `retrieve_context` en `src/ai/agents/shared/rag-agent.graph.ts`, sin cambiar el comportamiento de `evaluate_confidence`
+- [X] T065 [US7] Persistir las recuperaciones con `createMany` **después** de terminado el turno, con el `outcome` (`ANSWERED`/`ESCALATED`), en `src/queue/processors/message.processor.ts` (FR-046, research §9)
+- [X] T066 [P] [US7] Crear `KnowledgeUsageService` en `src/ai/knowledge/knowledge-usage.service.ts`: `retrievedCount`, `answeredCount`, `avgScore` y `hasData` por documento (FR-047)
+- [X] T067 [US7] Incluir `usage` y `source` (archivo o escalación) en las respuestas de `GET /knowledge` y `GET /knowledge/:id` en `src/ai/knowledge/knowledge.controller.ts` (FR-026, contracts)
 
 ### Tests
 
-- [ ] T068 [P] [US7] Test en `src/ai/knowledge/knowledge-usage.service.spec.ts`: un documento sin recuperaciones devuelve `hasData: false` y **no** `avgScore: 0` (FR-028)
-- [ ] T069 [P] [US7] Test en `src/queue/processors/message.processor.spec.ts`: un turno que escala registra las recuperaciones con `outcome: ESCALATED`, de modo que `answeredCount < retrievedCount` (FR-046)
+- [X] T068 [P] [US7] Test en `src/ai/knowledge/knowledge-usage.service.spec.ts`: un documento sin recuperaciones devuelve `hasData: false` y **no** `avgScore: 0` (FR-028)
+- [X] T069 [P] [US7] Test en `src/queue/processors/message.processor.spec.ts`: un turno que escala registra las recuperaciones con `outcome: ESCALATED`, de modo que `answeredCount < retrievedCount` (FR-046)
 
 **Checkpoint**: el indicador de recuperación reemplaza a la "confianza de la IA" del prototipo con datos reales.
 
@@ -242,16 +242,16 @@ Proyecto backend único: `src/` en la raíz del repositorio. Los tests viven
 
 ### Implementación
 
-- [ ] T070 [US6] Crear `KnowledgeAiEditService` en `src/ai/knowledge/knowledge-ai-edit.service.ts`: genera contenido propuesto, resumen y `changedSections` con salida estructurada (FR-030, FR-031)
-- [ ] T071 [US6] Devolver `confident: false` cuando el modelo no pueda resolver el pedido con claridad, sin alterar contenido arbitrariamente, en `src/ai/knowledge/knowledge-ai-edit.service.ts` (FR-033)
-- [ ] T072 [US6] Agregar `POST /knowledge/:id/ai-edit/preview` (**no persiste nada**) y `POST /knowledge/:id/ai-edit/apply` en `src/ai/knowledge/knowledge.controller.ts` (contracts)
-- [ ] T073 [US6] Implementar el control de `baseVersion` en `apply` dentro de `src/ai/knowledge/knowledge.controller.ts`: 409 con `currentVersion` si otro supervisor editó mientras tanto (FR-033)
-- [ ] T074 [US6] Registrar el `KnowledgeChange` con `origin: AI_ACCEPTED` y la `aiInstruction` al aplicar, en `src/ai/knowledge/knowledge-ai-edit.service.ts` (FR-049)
+- [X] T070 [US6] Crear `KnowledgeAiEditService` en `src/ai/knowledge/knowledge-ai-edit.service.ts`: genera contenido propuesto, resumen y `changedSections` con salida estructurada (FR-030, FR-031)
+- [X] T071 [US6] Devolver `confident: false` cuando el modelo no pueda resolver el pedido con claridad, sin alterar contenido arbitrariamente, en `src/ai/knowledge/knowledge-ai-edit.service.ts` (FR-033)
+- [X] T072 [US6] Agregar `POST /knowledge/:id/ai-edit/preview` (**no persiste nada**) y `POST /knowledge/:id/ai-edit/apply` en `src/ai/knowledge/knowledge.controller.ts` (contracts)
+- [X] T073 [US6] Implementar el control de `baseVersion` en `apply` **implementado en `knowledge.service.ts` (`expectedVersion`)**, no en el controller: la convención del proyecto es que los controladores solo orquesten, y así el chequeo vale sin importar quién llame: 409 con `currentVersion` si otro supervisor editó mientras tanto (FR-033)
+- [X] T074 [US6] Registrar el `KnowledgeChange` con `origin: AI_ACCEPTED` y la `aiInstruction` al aplicar, en `src/ai/knowledge/knowledge-ai-edit.service.ts` (FR-049)
 
 ### Tests
 
-- [ ] T075 [P] [US6] Test en `src/ai/knowledge/knowledge-ai-edit.service.spec.ts`: tras un `preview`, el documento en base **no cambió** (FR-032)
-- [ ] T076 [P] [US6] Test en `src/ai/knowledge/knowledge.controller.spec.ts`: `apply` con una `baseVersion` desactualizada devuelve 409 y no pisa el cambio ajeno (FR-033)
+- [X] T075 [P] [US6] Test en `src/ai/knowledge/knowledge-ai-edit.service.spec.ts`: tras un `preview`, el documento en base **no cambió** (FR-032)
+- [X] T076 [P] [US6] Test en `src/ai/knowledge/knowledge-crud.spec.ts` (donde vive la lógica): `apply` con una `baseVersion` desactualizada devuelve 409 y no pisa el cambio ajeno (FR-033)
 
 **Checkpoint**: todas las historias completas.
 
@@ -259,11 +259,11 @@ Proyecto backend único: `src/` en la raíz del repositorio. Los tests viven
 
 ## Phase 10: Polish & Cross-Cutting Concerns
 
-- [ ] T077 [P] Actualizar `docs/CONTEXTO_TECNICO.md`: módulo `ai/knowledge/` ampliado, modelos nuevos, canal WEB y los tres cierres de escalación (regla de documentación viva de la constitución)
-- [ ] T078 [P] Actualizar `docs/CONTRATO_API_Frontend.md` con los endpoints nuevos de los tres contratos
-- [ ] T079 [P] Actualizar `docs/plan_de_trabajo.md`: marcar el Sprint 5A y anotar los dos desvíos (`unpdf` en vez de `pdf-parse`; Gemini en vez de Google Cloud STT)
-- [ ] T080 Correr los 7 escenarios de [quickstart.md](./quickstart.md) end-to-end contra los servicios reales
-- [ ] T081 Correr `docker compose exec nestjs npx jest --no-coverage` y dejar la suite en verde (obligatorio por constitución)
+- [X] T077 [P] Actualizar `docs/CONTEXTO_TECNICO.md`: módulo `ai/knowledge/` ampliado, modelos nuevos, canal WEB y los tres cierres de escalación (regla de documentación viva de la constitución)
+- [X] T078 [P] Actualizar `docs/CONTRATO_API_Frontend.md` con los endpoints nuevos de los tres contratos
+- [X] T079 [P] Actualizar `docs/plan_de_trabajo.md`: marcar el Sprint 5A y anotar los dos desvíos (`unpdf` en vez de `pdf-parse`; Gemini en vez de Google Cloud STT)
+- [X] T080 Correr los 7 escenarios de [quickstart.md](./quickstart.md) end-to-end contra los servicios reales
+- [X] T081 Correr `docker compose exec nestjs npx jest --no-coverage` y dejar la suite en verde (obligatorio por constitución)
 
 ---
 
@@ -355,3 +355,94 @@ directo para la tesis (reemplaza un indicador que el prototipo describía mal).
 - Los tests van **junto al código** como `*.spec.ts`, no en `tests/`.
 - Commits en español con Conventional Commits (`feat(knowledge): ...`).
 - Correr `jest` antes de dar cualquier tarea por terminada.
+
+---
+
+## Phase 11: Panel web — consumir el Sprint 5A desde el frontend (Priority: P2)
+
+**Goal**: que todo lo construido en las fases 1-9 tenga pantalla. Hoy el
+backend expone 17 endpoints nuevos que ningún componente llama.
+
+**Independent Test**: entrar como `SUPERVISOR`, subir un archivo y verlo pasar
+a `READY`, editar un documento con la IA, y cerrar un caso escalado con las
+tres salidas.
+
+> ### ⚠️ Esto vive en OTRO repositorio
+>
+> El frontend es un repo hermano: `/home/mauro/Proyectos/trimIA-frontend`, con
+> su propio git (hoy un solo commit, `9480d97`). Las rutas de esta fase son
+> **relativas a ese repo**, no a `trimIA/`. Los commits van allá.
+>
+> **Stack real** (verificado, no asumido): Vite 8 + React 19, **JSX plano sin
+> TypeScript**, sin router y sin librería de estado — la navegación son tabs
+> con `useState` en `App.jsx`, gateadas por `role`/`sectorName`. Lint con
+> `oxlint`. **No hay framework de tests instalado** (ver la nota al final).
+>
+> Lo que ya existe y hay que extender, no reescribir: `src/api.js` (un único
+> helper `request()`), `KnowledgeIngest.jsx` (164 líneas: alta por texto y
+> búsqueda), `EscalationsQueue.jsx` (320 líneas: resolver y delegar),
+> `ChatSimulator.jsx` (manda por el webhook de n8n).
+
+### Base — el cliente HTTP
+
+- [X] T082 Agregar al cliente `src/api.js` las 17 funciones que faltan del Sprint 5A, siguiendo el estilo del archivo (una función por endpoint, `token` como primer parámetro): gestión (`listKnowledge`, `getKnowledgeDoc`, `updateKnowledgeDoc`, `setKnowledgeActive`, `deleteKnowledgeDoc`, `reindexKnowledgeDoc`), archivos (`uploadKnowledgeFile`, `listKnowledgeFiles`, `downloadKnowledgeFile`), IA (`previewAiEdit`, `applyAiEdit`), escalaciones (`getEscalationSuggestion`, `saveEscalationUnsent`, `discardEscalation`), chat web (`sendWebMessage`, `getWebMessages`) y `getContactTimeline`
+- [X] T083 **Arreglar `request()` para multipart** en `src/api.js`: hoy fuerza `Content-Type: application/json` y hace `JSON.stringify` del body **siempre**, así que `POST /knowledge/upload` es imposible tal como está. Cuando el body sea un `FormData` hay que **omitir** el header — el browser lo pone solo, con el `boundary` que el server necesita para parsear
+- [X] T084 [P] Manejar en `request()` los cuerpos de error estructurados que el Sprint 5A devuelve (`{ reason, limitMb, currentVersion, existing }`): hoy se aplasta todo a `data.message` y se pierde lo que distingue un `FILE_LIMIT` de un `MULTIMODAL_LIMIT`, o el `currentVersion` de un 409 de edición
+
+### US2 — Gestión de la base de conocimiento
+
+- [X] T085 [US2] Convertir `src/components/KnowledgeIngest.jsx` en la pantalla de gestión (Fig 15): listado paginado con filtros por área, categoría y estado, sin perder el alta por texto ni la búsqueda que ya tiene
+- [X] T086 [US2] Pantalla de detalle (Fig 16) en `src/components/KnowledgeDetail.jsx`: contenido completo, edición de los campos, y la bitácora de cambios con autor, origen (`MANUAL`/`AI_ACCEPTED`) e `aiInstruction`
+- [X] T087 [US2] Interruptor de activo/inactivo y borrado definitivo con confirmación, en `src/components/KnowledgeDetail.jsx`
+- [X] T088 [US2] Mostrar el indicador de desincronización cuando `syncStatus != "SYNCED"`, con el botón de reintentar sobre `REINDEX_FAILED`. **Aclarar en la UI que el documento sigue respondiendo con su contenido anterior** hasta que el worker termine — si no, un `PENDING_REINDEX` se lee como "se perdió el cambio"
+
+### US1 — Cargar conocimiento desde un archivo
+
+- [X] T089 [US1] Componente de subida en `src/components/KnowledgeUpload.jsx`: `multipart/form-data` con los campos del contrato, respondiendo al **202** con el archivo en estado `PROCESSING` (no esperar a que termine)
+- [X] T090 [US1] Columna "Cargas recientes" con polling sobre `GET /knowledge/files`, hasta que no queden `PROCESSING`. Reusar el patrón de polling que ya está en `ChatSimulator.jsx` (`POLL_INTERVAL_MS` + tope de intentos), no inventar otro
+- [X] T091 [US1] Mostrar `failureReason` **tal cual** en los archivos `FAILED`: viene redactado en castellano y sin jerga a propósito (FR-005), así que no hay que reemplazarlo por un "Error al procesar" genérico
+- [X] T092 [US1] Diferenciar los dos rechazos por tamaño usando el `reason` del 413 (`FILE_LIMIT` vs `MULTIMODAL_LIMIT`): la acción que le toca al supervisor es distinta —partir el material o comprimirlo— y un mensaje único no se la dice
+- [X] T093 [US1] Ofrecer reintentar con `?force=true` ante el 409 de duplicado, mostrando **cuál** era el archivo previo (viene en `existing`): "ya existe" a secas no alcanza para decidir si insistir
+- [X] T094 [US1] Link de descarga del original solo cuando `source.file` no sea `null` — en los documentos que salieron de un audio no hay nada que bajar (FR-004)
+
+### US3 — Responder una consulta escalada
+
+- [X] T095 [US3] Botón "Proponer respuesta" en `src/components/EscalationsQueue.jsx`: llama a `GET .../suggestion` y precarga el texto en el editor, dejándolo **editable** — lo que se envía es siempre lo que el supervisor confirma (FR-036)
+- [X] T096 [US3] Mostrar las `sources` con su score, para que el supervisor pueda verificar de dónde salió cada afirmación antes de mandarla
+- [X] T097 [US3] Mostrar `audienceUsed` de forma visible: es la señal de que la propuesta se redactó con el conocimiento que corresponde a **quien va a recibirla**, no al supervisor que la pide (Principio I)
+- [X] T098 [US3] Con `hasContext: false`, mostrar el `reason` y **no** ofrecer aplicar: el supervisor redacta desde cero y el sistema le dice por qué (FR-035)
+- [X] T099 [US3] Agregar los otros dos cierres junto a "Responder": "Guardar sin enviar" y "Descartar", con la diferencia explicada en la propia UI — hoy la pantalla solo puede responder y enviar
+
+### US4 — Chat web
+
+- [X] T100 [US4] Nuevo `src/components/WebChat.jsx` contra `POST /messaging/web` + polling de `GET /messaging/web/:convId/messages`, disponible para **cualquier empleado autenticado** (no solo `SUPERVISOR`): agregar la tab correspondiente en `App.jsx`
+- [X] T101 [US4] 🔴 **Sacar el secreto hardcodeado de `src/components/ChatSimulator.jsx`.** Hoy tiene el valor real de `N8N_WEBHOOK_SECRET` escrito en el código y commiteado. El chat web lo vuelve innecesario: usa JWT y no comparte ningún secreto. Migrar el simulador a `/messaging/web` (o dejar el secreto como campo que el usuario escribe, nunca como default en el fuente)
+- [X] T102 [US4] Mostrar el mensaje de "esperando a una persona" cuando la conversación esté en `WAITING_HUMAN`: el mensaje se guarda y responde 202 igual, pero el asistente no contesta y sin aviso parece que se colgó
+- [X] T103 [P] [US4] Vista de línea de tiempo unificada por contacto (`GET /supervisor/conversations/by-contact/:externalId/timeline`), mostrando el `channel` de **cada** mensaje: sin esa marca, dos hilos con agentes distintos intercalados se leen como una conversación que nunca existió
+
+### US7 — Origen y uso del conocimiento
+
+- [X] T104 [US7] Mostrar `usage` en el listado y el detalle. **`hasData: false` NO se dibuja como 0**: hay que decir "sin datos todavía", o un documento recién cargado parece inútil y alguien lo da de baja (FR-028)
+- [X] T105 [US7] Mostrar `source` en el detalle en sus tres formas: archivo con su link, escalación con el caso que lo originó, o nada cuando se cargó como texto plano
+
+### US6 — Editar con la IA
+
+- [X] T106 [US6] Editor asistido en `src/components/KnowledgeDetail.jsx`: campo de instrucción en lenguaje natural → `POST .../ai-edit/preview`, mostrando el `summary` y los `changedSections` como antes/después
+- [X] T107 [US6] El texto propuesto tiene que quedar **editable** antes de aplicar, y aplicar manda `baseVersion` + el texto final. Es la única forma de que el supervisor corrija la propuesta sin perderla
+- [X] T108 [US6] Con `confident: false`, mostrar la advertencia y **no** habilitar el botón de aplicar (FR-033)
+- [X] T109 [US6] Ante el 409 de `apply`, ofrecer regenerar la propuesta sobre el texto vigente usando el `currentVersion` que trae el error — no dejarlo en "falló"
+
+**Checkpoint**: todo el Sprint 5A es demostrable desde el navegador.
+
+### Nota sobre tests en el frontend
+
+El frontend **no tiene runner de tests** y esta fase no agrega uno. Es una
+decisión, no un olvido: `App.jsx` se titula "TrimIA — Frontend de pruebas" y
+existe como banco de pruebas del backend para la defensa, no como producto.
+
+La constitución exige tests sobre ruteo, autorización, audiencia y confianza
+RAG — y las cuatro cosas se deciden **en el backend**, que sí las tiene
+cubiertas. El frontend solo muestra lo que el backend ya resolvió: no aplica
+el filtro de audiencia, lo exhibe (`audienceUsed`). Si en algún momento el
+panel toma una decisión propia de autorización, ahí sí hace falta el runner
+y esta nota deja de valer.

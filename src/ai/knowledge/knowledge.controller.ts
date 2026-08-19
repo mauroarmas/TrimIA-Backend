@@ -27,10 +27,12 @@ import { JwtAuthGuard } from '../../auth/guards/jwt-auth.guard';
 import { Roles, RolesGuard } from '../../auth/guards/roles.guard';
 import { KnowledgeService } from './knowledge.service';
 import { KnowledgeIngestionService } from './knowledge-ingestion.service';
+import { KnowledgeAiEditService } from './knowledge-ai-edit.service';
 import { ListKnowledgeQueryDto } from './dto/list-knowledge.dto';
 import { SetActiveDto } from './dto/set-active.dto';
 import { UpdateKnowledgeDto } from './dto/update-knowledge.dto';
 import { UploadKnowledgeDto } from './dto/upload-knowledge.dto';
+import { AiEditApplyDto, AiEditPreviewDto } from './dto/ai-edit.dto';
 
 /**
  * El tope de multer va **por encima** del límite del negocio a propósito.
@@ -85,6 +87,7 @@ export class KnowledgeController {
   constructor(
     private readonly knowledge: KnowledgeService,
     private readonly ingestion: KnowledgeIngestionService,
+    private readonly aiEdit: KnowledgeAiEditService,
   ) {}
 
   /** Ingesta un documento. body: { title, content, category, audience?, agentType? } */
@@ -218,6 +221,44 @@ export class KnowledgeController {
   @ApiOperation({ summary: 'Elimina definitivamente (FR-023)' })
   remove(@Param('id', ParseUUIDPipe) id: string) {
     return this.knowledge.remove(id);
+  }
+
+  // === Editar con la IA (Sprint 5A, US6) ===
+  //
+  // Dos endpoints y no uno con un flag: que `preview` no persista nada es lo
+  // que hace estructuralmente imposible aplicar un cambio sin aprobación
+  // (FR-032, Principio III). Con un solo endpoint parametrizado, esa garantía
+  // dependería de que nadie mande el flag equivocado.
+
+  @Post(':id/ai-edit/preview')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Propone un cambio descrito en lenguaje natural (FR-030, FR-031)',
+    description:
+      'NO persiste nada: es idempotente y el documento queda intacto. ' +
+      'Devuelve `confident: false` cuando el pedido es ambiguo, en vez de ' +
+      'alterar el texto de una forma que nadie pidió (FR-033).',
+  })
+  previewAiEdit(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: AiEditPreviewDto,
+  ) {
+    return this.aiEdit.preview(id, dto.instruction);
+  }
+
+  @Post(':id/ai-edit/apply')
+  @ApiOperation({
+    summary: 'Aplica el texto aprobado por el supervisor (FR-032, FR-049)',
+    description:
+      'Guarda el `content` del body —que puede venir editado a mano—, nunca ' +
+      'uno regenerado. 409 si `baseVersion` quedó vieja.',
+  })
+  applyAiEdit(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: AiEditApplyDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.aiEdit.apply(id, dto, req.user.id);
   }
 
   @Post(':id/reindex')

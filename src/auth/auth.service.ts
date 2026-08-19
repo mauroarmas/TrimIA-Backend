@@ -10,6 +10,13 @@ export interface JwtPayload {
   sectorId: string;
   sectorName: string;
   isController: boolean; // Cobrador Controlador (Sprint 4)
+  /**
+   * Vencimiento (segundos epoch). No se firma acá: lo agrega jsonwebtoken a
+   * partir de `expiresIn`, y viene en el token que se verifica. Se declara
+   * porque los streams del panel lo necesitan — una entrega no puede sobrevivir
+   * a la sesión que la autorizó (spec 004, RF-022).
+   */
+  exp?: number;
 }
 
 @Injectable()

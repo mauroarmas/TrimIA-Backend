@@ -10,7 +10,9 @@ proyecto desde cero.
 
 - `workflows/RecepcionMensaje-A.json` — recibe el webhook entrante de Meta,
   responde la verificación (`hub.challenge`) y reenvía el mensaje al backend
-  NestJS con el header `x-n8n-secret`.
+  NestJS con el header `x-n8n-secret`. Maneja los tres tipos de mensaje que el
+  sistema acepta: texto, imagen (comprobantes de pago, Sprint 4) y **nota de
+  voz** (Sprint 5A — ver la sección de audio más abajo).
 - `workflows/EnvioMensaje-B.json` — envía un mensaje de texto libre vía
   `graph.facebook.com`.
 - `workflows/EnvioMensajePlantilla-B2.json` — envía una plantilla HSM
@@ -69,6 +71,118 @@ la UI (`http://localhost:5678` → Workflows → Import from File).
    `RecepcionMensaje-A` responde el `hub.challenge` **sin validar ningún
    verify token real** — hoy es un passthrough. Si se quiere endurecer esto,
    es trabajo pendiente, no algo ya resuelto por el workflow.
+
+## Notas de voz de WhatsApp (Sprint 5A, US5 / RF-14)
+
+La transcripción vive **en n8n**, no en el backend, por la misma razón que la
+descarga de comprobantes: el token de la Graph API de Meta existe solo acá
+(research 003 §6). El backend recibe **texto** por el webhook de siempre y no
+sabe que el mensaje era un audio.
+
+Meta manda todos los mensajes al **mismo** webhook, así que el audio **no
+puede** vivir en un workflow aparte: es una rama de `RecepcionMensaje-A`. El
+plan lo llamaba "Workflow 7"; en la práctica son 4 nodos nuevos dentro de A.
+
+Recorrido (comparte los dos nodos de descarga con la rama de imagen):
+
+```
+Code in JavaScript  →  Trae media?  →  Obtener info del media  →  Descargar media
+                            │                                          │
+                            └── (texto, sin media) ────────┐      Es audio?
+                                                           │       ├── sí → Preparar audio para Gemini
+                                                           │       │        → Transcribir audio (Gemini)
+                                                           │       │        → Armar payload de audio ──┐
+                                                           │       └── no → Armar payload final ───────┤
+                                                           └──────────────────────────────────────────→ HTTP Request (backend)
+```
+
+### El marcador de transcripción fallida — contrato con el backend
+
+Cuando Gemini no devuelve nada usable, `Armar payload de audio` manda este
+texto exacto como `message`:
+
+```
+__AUDIO_NO_TRANSCRIBIBLE__
+```
+
+El backend lo reconoce en
+[`trivial-filter.ts`](../src/ai/orchestrator/utils/trivial-filter.ts) y responde
+pidiendo reformulación **sin llamar al LLM y sin escalar a una persona**
+(FR-009). Un audio que no se entendió no puede ocuparle el tiempo a alguien.
+
+> **Los dos literales tienen que coincidir.** Están en repos distintos del
+> mismo proyecto y nada los sincroniza: si se cambia el de n8n sin cambiar
+> `UNTRANSCRIBABLE_AUDIO_MARKER`, el cliente recibe `__AUDIO_NO_TRANSCRIBIBLE__`
+> como si fuera la respuesta del asistente. El test de
+> `trivial-filter.spec.ts` fija el valor del lado del backend; del lado de n8n
+> no hay test posible, así que queda esta nota.
+
+Se dispara en tres casos, todos tratados igual: audio en silencio o inaudible,
+Gemini devolviendo `SIN_CONTENIDO`, y **error HTTP de Gemini** — el nodo va con
+`neverError: true` a propósito, para que una caída de la API termine en un
+pedido de reformulación y no en un usuario sin ninguna respuesta.
+
+### El binario no se guarda en ningún lado (FR-011)
+
+- El audio se baja, se pasa a base64 en memoria y se descarta: al backend viaja
+  **solo texto** (a diferencia de la rama de imagen, que sí manda `mediaBase64`
+  porque el comprobante hay que conservarlo).
+- **Los settings del workflow NO alcanzan.** En la prueba real del 2026-08-18,
+  con `saveDataSuccessExecution: none` puesto en el JSON, la nota de voz quedó
+  igual persistida **dos veces**:
+  - `n8n/data/storage/workflows/<id>/executions/<n>/binary_data/<uuid>` — el
+    `.ogg` crudo y reproducible, porque el modo de binarios era `filesystem`.
+  - Dentro de `execution_data` en `database.sqlite` — los 23 KB de base64 que
+    el nodo `Preparar audio para Gemini` devuelve en su salida.
+
+  Los settings del workflow son advisory: mandan los de la instancia. Por eso
+  la protección real vive en `docker-compose.yml`, no acá:
+
+  ```yaml
+  N8N_DEFAULT_BINARY_DATA_MODE: default   # memoria, no disco
+  EXECUTIONS_DATA_SAVE_ON_SUCCESS: none
+  EXECUTIONS_DATA_SAVE_ON_ERROR: none
+  ```
+
+  **Costo asumido**: se pierde el historial de ejecuciones de n8n para todos
+  los workflows, que es la herramienta principal para depurarlos. Se aceptó
+  igual: la voz de una persona pesa más que la comodidad de ver qué devolvió
+  cada nodo.
+
+- **Hay que recrear el contenedor** para que tome esas variables, y **purgar lo
+  ya guardado**: cambiar la config no borra las ejecuciones viejas.
+
+- Queda una mejora posible, más robusta que depender de la config: hacer la
+  descarga y la transcripción **dentro de un solo Code node**, de modo que el
+  binario nunca sea salida de ningún nodo y no haya nada que persistir. No se
+  hizo porque no está confirmado que `fetch` funcione en el sandbox del Task
+  Runner de n8n, y una config verificable es mejor que una arquitectura linda
+  sin probar.
+
+### Puntos que quedan pendientes de verificación real
+
+Nada de esta rama pudo probarse de punta a punta: hace falta la app de Meta,
+el túnel y un audio mandado desde un teléfono real. Lo que hay que mirar la
+primera vez:
+
+1. **`GOOGLE_API_KEY` en el contenedor de n8n.** El nodo la lee como
+   `{{ $env.GOOGLE_API_KEY }}`. `docker-compose.yml` ya se la pasa al servicio
+   `n8n` junto con `N8N_BLOCK_ENV_ACCESS_IN_NODE: "false"` (n8n bloquea el
+   acceso a variables de entorno desde expresiones por defecto). **Hay que
+   recrear el contenedor** para que tome el cambio — `docker compose up -d n8n`
+   no alcanza si ya estaba corriendo con el entorno viejo. Si la variable no
+   llega, Gemini responde 401 y —por `neverError`— todos los audios caen en el
+   pedido de reformulación, sin ningún error visible.
+2. **El modelo está hardcodeado** (`gemini-3.5-flash-lite`) en la URL del nodo.
+   Contradice la regla del proyecto de pinear el modelo por variable de entorno,
+   pero n8n no lee el `.env` del backend. Es un segundo lugar donde el modelo
+   puede quedar desactualizado: si cambia `GEMINI_MODEL`, hay que tocar acá
+   también.
+3. **El `mime_type` del audio** va como lo manda Meta (`audio/ogg` para las
+   notas de voz). Ojo con la diferencia entre las dos APIs: el bloque REST de
+   Gemini usa `inline_data.mime_type` en **snake_case**, mientras que
+   `@langchain/google-genai` en JS exige `mimeType` en camelCase (spike T004,
+   research §4.1). Acá va snake_case porque es la API REST directa.
 
 ## Gotcha: el secreto compartido con el backend
 

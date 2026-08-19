@@ -52,6 +52,19 @@ import * as Joi from 'joi';
         KNOWLEDGE_MULTIMODAL_MAX_MB: Joi.number().min(1).default(14),
         STORAGE_KNOWLEDGE_DIR: Joi.string().default('storage/knowledge'),
 
+        // Cada cuánto el stream de los chats del panel manda un keepalive
+        // (Sprint 5B, spec 004). No es cosmético: una conexión larga sin
+        // tráfico la puede cortar un intermediario por inactividad, y es
+        // además el reloj que revalida la autorización del stream abierto
+        // (RF-021) y el que detecta el token vencido (RF-022).
+        SSE_HEARTBEAT_MS: Joi.number().min(1000).default(15000),
+        // Tras cuánta inactividad se cierra la CONEXIÓN de un chat del panel —
+        // no la conversación. Una pestaña olvidada no debería retener una
+        // suscripción para siempre. Cerrarla no pierde nada: al volver, el panel
+        // reanuda desde el último mensaje que vio y sigue en el mismo hilo
+        // (spec 004, RF-023). Con un turno en curso no se cierra (CL-13).
+        SSE_IDLE_TIMEOUT_MS: Joi.number().min(10000).default(1800000),
+
         JWT_SECRET: Joi.string().min(32).required(),
       }),
       validationOptions: {

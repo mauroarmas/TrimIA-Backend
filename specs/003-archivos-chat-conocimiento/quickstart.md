@@ -282,3 +282,32 @@ ruteo, autorización, audiencia o confianza RAG:
 5. Los tres cierres de escalación son terminales (segundo intento → 409).
 6. Editar el contenido deja `syncStatus: PENDING_REINDEX` y lo devuelve a
    `SYNCED` tras el worker.
+
+---
+
+## Resultado de la corrida completa (T080 — 2026-08-18)
+
+Los 7 escenarios ejecutados de punta a punta contra los servicios reales
+(Postgres, Redis, ChromaDB y la API de Gemini; nada mockeado):
+**28 verificaciones, 28 en verde.**
+
+| Escenario | Qué quedó comprobado |
+|---|---|
+| 1 — Archivos | `202` sin esperar la extracción, `READY` tras el worker, descarga del original, `415` sin extractor, `409` por duplicado |
+| 2 — Editar y reindexar | Editar solo el título **no** versiona; editar contenido sí, pasa por `PENDING_REINDEX` y el worker lo deja `SYNCED`. El RAG devuelve la versión nueva |
+| 3 — Desactivar y confidencialidad | Desactivar saca el documento de la búsqueda sin borrar vectores, reactivar lo devuelve. ⭐ Un `PUBLICO` no recupera el documento `INTERNO` |
+| 4 — Chat web | `202` encolado, respuesta del agente, `403` sobre conversación ajena, `401` sin token, timeline unificado |
+| 5 — Responder Consulta | La consulta escala, ⭐ `audienceUsed` sale del `userType` de la conversación, y el segundo cierre da `409` |
+| 6 — Editar con la IA | ⭐ El `preview` **no toca el documento**; instrucción ambigua → `confident: false`; `apply` versiona; reintento con `baseVersion` vieja → `409`; bitácora con `AI_ACCEPTED` |
+| 7 — Indicador de uso | 21 documentos con uso y 36 sin datos; **ninguno sin datos reporta `avgScore`**; 12 con `answeredCount < retrievedCount` |
+
+En la primera corrida dieron 2 fallos en el Escenario 1 que resultaron ser del
+script de prueba, no del producto: se le pasaban **dos URLs al mismo `curl`**,
+así que hacía dos requests y concatenaba las respuestas, rompiendo el parseo
+del `fileId`. El `404` de descarga era cascada de eso. Vale anotarlo porque es
+el modo de fallo típico de un script de verificación: **un test mal escrito se
+lee igual que un bug del sistema**, y confundirlos en cualquiera de las dos
+direcciones cuesta caro.
+
+Suite unitaria en la misma corrida: **402 tests / 39 suites**, más `tsc
+--noEmit` y `eslint` en cero.

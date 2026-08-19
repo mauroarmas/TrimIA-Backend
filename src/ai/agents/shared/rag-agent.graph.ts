@@ -82,10 +82,22 @@ export function buildRagAgentGraph(
     const confidence = hits[0]?.score ?? 0;
     const context = hits.map((h) => `- ${h.content}`).join('\n');
 
+    // Sprint 5A (US7, FR-046): se registran TODOS los candidatos, no solo el
+    // que ganó. `confidence` sigue saliendo de hits[0] exactamente igual que
+    // antes — esto no cambia ninguna decisión de ruteo, solo agrega un dato
+    // que viaja al final del turno para saber qué documento sirvió y cuál
+    // apareció sin aportar.
+    const retrievedDocs = hits.map((h, idx) => ({
+      documentId: h.documentId,
+      // El hit trae 0-1; KnowledgeRetrieval.score está definido 0-100.
+      score: Number((h.score * 100).toFixed(2)),
+      rank: idx,
+    }));
+
     logger.log(
       `${tag} retrieve: ${hits.length} chunks, confianza=${confidence.toFixed(2)}`,
     );
-    return { context, confidence };
+    return { context, confidence, retrievedDocs };
   };
 
   // --- NODO: generate_response — Gemini responde con el contexto recuperado ---
