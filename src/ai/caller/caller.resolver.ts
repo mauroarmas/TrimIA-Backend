@@ -2,6 +2,7 @@ import { Injectable } from '@nestjs/common';
 import { EmployeeRole } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
 import { Caller, CallerArea } from './caller.types';
+import { esResponsableDeTodasLasAreas } from '../../employees/area-responsibility';
 
 /** Lo que necesita el resolver del empleado ya buscado por teléfono. */
 export interface EmpleadoParaCaller {
@@ -39,10 +40,10 @@ export class CallerResolver {
 
     const areas = empleado.areasSupervisadas ?? [];
 
-    // Gerente = responsable de TODAS las áreas que existen. Se cuenta en vez de
-    // comparar contra un número fijo para que el día que exista un área nueva,
-    // quien tenga las anteriores deje de ser gerente solo — que es lo correcto: ya
-    // no es responsable de todo.
+    // Gerente = responsable de TODAS las áreas que existen. La cuenta vive en
+    // `esResponsableDeTodasLasAreas` porque la escritura de conocimiento necesita
+    // exactamente la misma para los documentos transversales; si estuviera escrita
+    // dos veces, un día el gerente sería gerente para el trato y no para escribir.
     //
     // Es un `count` sobre una tabla de cinco filas que además nunca cambia en
     // runtime (los sectores solo salen del seed), así que no se cachea: la
@@ -53,9 +54,7 @@ export class CallerResolver {
       userType: 'EMPLEADO',
       role: empleado.role,
       areas,
-      // `totalAreas > 0` no es paranoia: sin esa guarda, una base sin sectores
-      // haría que 0 === 0 y **todos** serían gerentes.
-      esGerente: totalAreas > 0 && areas.length === totalAreas,
+      esGerente: esResponsableDeTodasLasAreas(areas.length, totalAreas),
     };
   }
 }

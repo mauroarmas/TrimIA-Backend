@@ -1,4 +1,8 @@
-import { ConflictException, NotFoundException } from '@nestjs/common';
+import {
+  ConflictException,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { EscalationsService } from './escalations.service';
 import { PrismaService } from '../database/prisma.service';
 import { ConversationsService } from '../conversations/conversations.service';
@@ -32,7 +36,7 @@ describe('EscalationsService', () => {
   };
   let sender: { send: jest.Mock };
   let logger: { logEvent: jest.Mock };
-  let knowledge: { ingest: jest.Mock };
+  let knowledge: { ingest: jest.Mock; assertPuedeEscribir: jest.Mock };
   let employees: { findById: jest.Mock };
 
   const conversation = {
@@ -64,7 +68,9 @@ describe('EscalationsService', () => {
     };
     sender = { send: jest.fn() };
     logger = { logEvent: jest.fn() };
-    knowledge = { ingest: jest.fn() };
+    // Por defecto el área deja escribir: los tests de alcance por área están en
+    // knowledge-write-scope.spec.ts. Acá se prueba el cierre del caso.
+    knowledge = { ingest: jest.fn(), assertPuedeEscribir: jest.fn() };
     employees = { findById: jest.fn() };
 
     service = new EscalationsService(
@@ -529,6 +535,182 @@ describe('EscalationsService', () => {
       // Un solo caso, un solo delegate: nada se propaga hacia arriba.
       expect(prisma.escalation.create).toHaveBeenCalledTimes(1);
       expect(prisma.escalation.update).toHaveBeenCalledTimes(1);
+    });
+  });
+  /**
+   * ⭐ US5 / FR-012 — LA PUERTA DE ATRÁS (spec 005).
+   *
+   * La escritura de conocimiento no entra solo por la pantalla de gestión: entra
+   * también por acá, y son los dos caminos que se olvidan. Sin la regla en estos
+   * dos, un responsable de Ventas mete un documento en el corpus de Cobranzas
+   * resolviendo un caso, y nada lo delata: la pantalla puede estar perfectamente
+   * cerrada y el corpus ensuciarse igual.
+   */
+  describe('⭐ escribir conocimiento resolviendo un caso (US5)', () => {
+    const pending = {
+      id: 'esc-1',
+      conversationId: 'conv-1',
+      status: 'PENDING',
+    };
+
+    beforeEach(() => {
+      prisma.escalation.findUnique.mockResolvedValue(pending);
+      prisma.escalation.update.mockResolvedValue({
+        ...pending,
+        status: 'RESOLVED',
+      });
+    });
+
+    describe('resolve con teachAgent (FR-012)', () => {
+      it('pasa por la regla de área, con el área del documento', async () => {
+        await service.resolve(
+          'esc-1',
+          {
+            message: 'El recargo es del 10%.',
+            teachAgent: true,
+            title: 'Recargo por mora',
+            category: 'politica',
+            agentType: 'COLLECTIONS',
+          },
+          'sup-ventas',
+        );
+
+        expect(knowledge.assertPuedeEscribir).toHaveBeenCalledWith(
+          'sup-ventas',
+          'COLLECTIONS',
+        );
+      });
+
+      it('sin agentType explícito, el área es la del agente de la conversación', async () => {
+        await service.resolve(
+          'esc-1',
+          {
+            message: 'El recargo es del 10%.',
+            teachAgent: true,
+            title: 'Recargo por mora',
+            category: 'politica',
+          },
+          'sup-ventas',
+        );
+
+        // `conversation.currentAgent` es SALES en el fixture.
+        expect(knowledge.assertPuedeEscribir).toHaveBeenCalledWith(
+          'sup-ventas',
+          'SALES',
+        );
+      });
+
+      /**
+       * El rechazo tiene que dejar el caso EXACTAMENTE como estaba.
+       *
+       * Si el chequeo viviera junto al `ingest()` del final, un 403 llegaría con el
+       * mensaje ya enviado y el caso ya cerrado: el supervisor vería un error sin
+       * saber si respondió o no, y no habría forma de deshacerlo.
+       */
+      it('si el área no corresponde, no se envía el mensaje ni se cierra el caso', async () => {
+        knowledge.assertPuedeEscribir.mockRejectedValue(
+          new ForbiddenException('otra área'),
+        );
+
+        await expect(
+          service.resolve(
+            'esc-1',
+            {
+              message: 'El recargo es del 10%.',
+              teachAgent: true,
+              title: 'Recargo por mora',
+              category: 'politica',
+              agentType: 'COLLECTIONS',
+            },
+            'sup-ventas',
+          ),
+        ).rejects.toBeInstanceOf(ForbiddenException);
+
+        expect(knowledge.ingest).not.toHaveBeenCalled();
+        expect(sender.send).not.toHaveBeenCalled();
+        expect(prisma.escalation.update).not.toHaveBeenCalled();
+      });
+
+      // Resolver SIN enseñarle al agente no escribe nada, así que el área no
+      // tiene por qué importar: cualquier responsable puede contestar un caso de
+      // cualquier área. Lo que se restringe es el corpus, no la atención.
+      it('resolver sin teachAgent no pasa por la regla', async () => {
+        await service.resolve(
+          'esc-1',
+          { message: 'Te confirmo por privado.' },
+          'sup-ventas',
+        );
+
+        expect(knowledge.assertPuedeEscribir).not.toHaveBeenCalled();
+        expect(sender.send).toHaveBeenCalled();
+      });
+    });
+
+    describe('saveUnsent — ingesta SIEMPRE (FR-012)', () => {
+      beforeEach(() => {
+        knowledge.ingest.mockResolvedValue({
+          documentId: 'doc-1',
+          chunks: 2,
+        });
+      });
+
+      it('pasa por la regla de área', async () => {
+        await service.saveUnsent(
+          'esc-1',
+          {
+            message: 'El recargo es del 10%.',
+            title: 'Recargo por mora',
+            category: 'politica',
+            agentType: 'COLLECTIONS',
+          },
+          'sup-ventas',
+        );
+
+        expect(knowledge.assertPuedeEscribir).toHaveBeenCalledWith(
+          'sup-ventas',
+          'COLLECTIONS',
+        );
+      });
+
+      // Es el camino más peligroso de los diez: ingestar es su ÚNICO efecto, así
+      // que acá no hay ninguna otra cosa que pueda delatar el problema.
+      it('si el área no corresponde, no ingesta nada ni cierra el caso', async () => {
+        knowledge.assertPuedeEscribir.mockRejectedValue(
+          new ForbiddenException('otra área'),
+        );
+
+        await expect(
+          service.saveUnsent(
+            'esc-1',
+            {
+              message: 'El recargo es del 10%.',
+              title: 'Recargo por mora',
+              category: 'politica',
+              agentType: 'COLLECTIONS',
+            },
+            'sup-ventas',
+          ),
+        ).rejects.toBeInstanceOf(ForbiddenException);
+
+        expect(knowledge.ingest).not.toHaveBeenCalled();
+        expect(prisma.escalation.update).not.toHaveBeenCalled();
+      });
+
+      it('el camino feliz sigue funcionando: de su área, ingesta', async () => {
+        const result = await service.saveUnsent(
+          'esc-1',
+          {
+            message: 'El anticipo mínimo es del 20%.',
+            title: 'Anticipo mínimo',
+            category: 'politica',
+            agentType: 'SALES',
+          },
+          'sup-ventas',
+        );
+
+        expect(knowledge.ingest).toHaveBeenCalled();
+        expect(result.knowledgeDocumentId).toBe('doc-1');
+      });
     });
   });
 });

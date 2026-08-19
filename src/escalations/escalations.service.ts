@@ -163,6 +163,21 @@ export class EscalationsService {
   ) {
     const { conversation } = await this.loadPending(id);
 
+    // ⚠️ Spec 005, US5 — la otra puerta de atrás: "enseñarle al agente" ingesta un
+    // documento, así que vale la misma regla de área que la pantalla de gestión.
+    //
+    // Se chequea ACÁ ARRIBA, antes de enviarle el mensaje al usuario. Si estuviera
+    // junto al `ingest()` del final, un rechazo dejaría el caso resuelto y el
+    // mensaje ya enviado, con un 403 que no se puede deshacer: el supervisor no
+    // sabría si respondió o no. Rechazar antes de tocar nada deja el caso intacto
+    // para que lo resuelva sin enseñar, o para que lo derive a quien sí puede.
+    if (input.teachAgent) {
+      await this.knowledge.assertPuedeEscribir(
+        resolvedById,
+        input.agentType ?? conversation.currentAgent,
+      );
+    }
+
     // Lo que se envía es SIEMPRE `input.message`, nunca
     // `escalation.suggestedResponse` (FR-036). Ahora que la propuesta se
     // persiste, mandar la sugerencia "porque ya está ahí" es una regresión
@@ -253,12 +268,22 @@ export class EscalationsService {
         ? Audience.INTERNO
         : Audience.PUBLICO;
 
+    // ⚠️ Spec 005, US5 — LA PUERTA DE ATRÁS. Esta acción ingesta **siempre**: es su
+    // único efecto. Sin este chequeo, un responsable de Ventas mete un documento en
+    // el corpus de Cobranzas guardando la respuesta de un caso, sin pasar por la
+    // pantalla de gestión y sin que nada lo delate.
+    //
+    // Va ANTES de ingestar y antes de liberar la conversación: un rechazo tiene que
+    // dejar el caso exactamente como estaba.
+    const areaDelDocumento = input.agentType ?? conversation.currentAgent;
+    await this.knowledge.assertPuedeEscribir(savedById, areaDelDocumento);
+
     const { documentId } = await this.knowledge.ingest({
       title: input.title,
       content: input.message,
       category: input.category,
       audience,
-      agentType: input.agentType ?? conversation.currentAgent,
+      agentType: areaDelDocumento,
       sourceType: KnowledgeSourceType.ESCALADO,
       sourceId: escalation.id,
     });

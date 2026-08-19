@@ -67,7 +67,16 @@ export class EmployeesService {
 
   async findAll() {
     const employees = await this.prisma.employee.findMany({
-      include: { sector: true },
+      include: {
+        sector: true,
+        // spec 005: el listado también las trae. La pantalla de empleados tiene
+        // que poder mostrar de qué es responsable cada uno sin pedir el detalle
+        // de a uno, y el desplegable de derivación se lee mejor sabiendo qué
+        // maneja cada persona.
+        areasSupervisadas: {
+          select: { id: true, name: true, agentType: true },
+        },
+      },
       orderBy: { name: 'asc' },
     });
 
