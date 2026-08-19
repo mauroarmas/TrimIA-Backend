@@ -1,162 +1,189 @@
-# Hallazgos de las pruebas del panel — insumo para la próxima spec
+# El asistente tiene que saber con quién habla — insumo para la próxima spec
 
-**Fecha**: 2026-08-18 · **Contexto**: pruebas manuales del panel después de cerrar
-la spec 004 (chats en tiempo real, 62/62).
+**Hallazgos**: 2026-08-18, probando el panel a mano después de cerrar la spec 004.
+**Decisiones**: 2026-08-19, conversadas con Mauro.
 
-Esto **no es una spec**: es el registro de lo que apareció probando, con su causa
-verificada donde la hay, para que quien escriba la spec no tenga que redescubrirlo.
-Nada de esto está implementado ni decidido.
+Esto **no es una spec**: es el insumo para escribirla, con las causas verificadas
+contra el código y las decisiones ya tomadas. Nada está implementado.
 
-Sobre la feature 004 en sí, la evaluación de la prueba fue que funciona bien y que
-el chat del panel resulta **más rápido que WhatsApp**.
+Sobre la 004 en sí, la evaluación de la prueba fue que funciona bien y que el chat
+del panel resulta **más rápido que WhatsApp**.
 
 ---
 
-## 1. El asistente le habla a un supervisor como si fuera un cliente
+## El problema, en una frase
 
-**Qué se vio.** Diego Bazán —dueño de la empresa, en el sistema `SUPERVISOR` del
-sector Ventas— preguntó *"en el proceso de venta, ¿qué datos se le pide a un
-cliente?"* y el agente le contestó:
+El sistema sabe qué rol tiene cada persona **para decidir a qué endpoints entra**,
+pero **no se lo cuenta al agente**. El orquestador recibe únicamente `userType`
+(`EMPLEADO` | `CLIENTE`) y nada más — ni rol ni sector
+([orchestrator.service.ts:38-44](../src/ai/orchestrator/orchestrator.service.ts#L38-L44)).
+
+Eso se manifestó de dos formas distintas en la misma conversación de prueba.
+
+---
+
+## 1. Tono: le habla al dueño como si fuera un cliente *(prioridad 1)*
+
+**Qué se vio.** Diego Bazán —dueño de la empresa— preguntó *"en el proceso de
+venta, ¿qué datos se le pide a un cliente?"* y el agente le contestó:
 
 > Para avanzar con una venta financiada te pedimos el DNI, una boleta de servicio y
 > los datos del producto que buscás. **Contame qué tenías en vista y lo vamos
 > viendo** 😊
 
-Le está vendiendo. Le habla como al comprador, no como a quien maneja el negocio.
+Le está vendiendo. Le habla al comprador, no a quien maneja el negocio.
 
-**Por qué pasa (verificado).** El orquestador recibe **solo `userType`**
-(`EMPLEADO` | `CLIENTE`) y nada más
-([orchestrator.service.ts:38-44](../src/ai/orchestrator/orchestrator.service.ts#L38-L44)).
-El rol `SUPERVISOR` existe en el modelo y gobierna el acceso a endpoints, pero
-**los agentes no lo conocen**: para el prompt, un supervisor es un empleado más. El
-sector tampoco viaja.
+**Decisión.** El agente debe reconocer **cuatro interlocutores**: cliente, empleado,
+supervisor y gerente, y hablarle a cada uno como corresponde.
 
-**Qué habría que decidir.** Que el agente sepa con quién habla — al menos rol, y
-probablemente sector. Eso cambia el tono y también qué es útil responder: a quien
-maneja Ventas no se le explica el proceso de venta como si fuera a comprar, se le
-responde lo que el proceso *dice*.
-
-**Pregunta abierta que dejó Mauro: ¿un empleado puede ser supervisor de varias
-áreas?** Hoy **no**: `Employee` tiene **un** `sectorId` (relación simple) y **un**
-`role` ([schema.prisma, modelo Employee](../prisma/schema.prisma)). Diego es
-supervisor de Ventas y nada más. Para tenerlo como supervisor de varias áreas hay
-dos caminos posibles, y elegir uno es parte de la spec:
-
-- Relación N:M entre empleado y sectores supervisados.
-- Un rol o flag por encima del sector —"dueño" / "supervisor general"— que valga
-  para todas las áreas.
-
-Vale recordar el contexto: **es una PyME chica**, no una organización con muchas
-sedes. La segunda opción probablemente alcance y es mucho más barata; la primera
-modela algo que quizá nunca haga falta. Hay precedente en el proyecto para el
-enfoque del flag: `isController` convive con `role=EMPLEADO` en vez de ser un valor
-nuevo del enum (Sprint 4).
+**Por qué va primero.** Es lo único de esta lista que no toca autorización ni
+recuperación: alcanza con que el rol viaje hasta el prompt. Es el cambio más
+visible con el menor riesgo, y permite ver si con eso solo ya alcanza antes de
+meterse con el resto.
 
 ---
 
-## 2. A un supervisor no habría que escalarle: hay que decirle que falta el dato
+## 2. Escalado: a un supervisor no hay que escalarle, hay que decirle qué falta
 
-**Qué se vio.** Esa misma consulta de Diego **escaló**: la conversación quedó en
-`WAITING_HUMAN` y el chat le avisó que su consulta pasó a un responsable.
+**Qué se vio.** Esa misma consulta **escaló**: quedó en `WAITING_HUMAN` y el chat le
+avisó que su consulta pasó a un responsable. El responsable **es él**. Se escaló a
+sí mismo.
 
-El responsable **es él**. Se escaló a sí mismo.
+**Decisión.** Para un **empleado común** el escalado sigue igual. Para un
+**supervisor o gerente**, en vez de escalar, el agente avisa que **no tiene
+confianza suficiente** y **muestra los documentos con los que se guió y no
+alcanzaron**, con su score. Desde ahí el supervisor puede atenderlo él (cargar o
+corregir el documento) o derivarlo a Diego, a quien le entra un caso escalado.
 
-**Comportamiento deseado (palabras de Mauro).** Para un **empleado común** el
-escalado sigue como está. Para un **supervisor, de cualquier área**, no debería
-escalar: debería decirle que *ese conocimiento no está en la base*, y ofrecerle
+**Por qué mostrar los documentos y no un "no está".** Baja confianza del RAG **no
+significa que el dato falte**: puede estar redactado con otras palabras, la pregunta
+puede haber sido ambigua, o el chunking puede haberlo partido mal. Decir "eso no
+está en la base" cuando sí está es *peor* que escalar — el supervisor escribe un
+documento duplicado, y los duplicados degradan el RAG porque dos chunks parecidos
+compiten y se bajan el score mutuamente. Ya hubo un episodio de esa familia cuando
+hubo que limpiar documentos inventados.
 
-1. cargarlo o modificarlo, o
-2. que se le consulte al dueño, Diego Bazán.
+Mostrar lo recuperado convierte un callejón sin salida en un diagnóstico, y se lo
+da a la única persona capaz de actuar sobre él. La información ya existe:
+`knowledge.search()` devuelve los hits **con su score**
+([knowledge.service.ts:263-291](../src/ai/knowledge/knowledge.service.ts#L263-L291)),
+y hoy se descartan.
 
-Y el fundamento es que **eso es lo que pasa en la vida real** en esta empresa.
+**Dos vías de escalado, y esto toca una sola.** En la fábrica común de agentes
+([rag-agent.graph.ts](../src/ai/agents/shared/rag-agent.graph.ts)):
 
-**Por qué es más que un cambio de tono.** El escalado por baja confianza está para
-que una persona cubra lo que el sistema no sabe. Cuando quien pregunta **es** esa
-persona, escalar es un bucle: crea una `Escalation` que va a caer en la cola de la
-que él mismo es dueño. Y además desaprovecha lo único que arregla la causa —
-cargar el conocimiento faltante—, que un supervisor sí puede hacer y un empleado
-común no.
-
-**Dónde vive hoy (verificado).** En la fábrica común de agentes
-([rag-agent.graph.ts](../src/ai/agents/shared/rag-agent.graph.ts)) hay **dos** vías
-de derivación, y conviene no confundirlas:
-
-| Vía | Cuándo | ¿Aplica este hallazgo? |
+| Vía | Cuándo | ¿La toca esta spec? |
 |---|---|---|
-| `escalate_to_human` | El RAG no encontró contexto confiable (score < `RAG_CONFIDENCE_THRESHOLD`) | **Sí** — es exactamente "esto no está en la base" |
-| `escalate_by_agent` | El RAG sí encontró contexto, pero el agente decide que hace falta una persona | **Probablemente no** — hay que mirarlo aparte |
+| `escalate_to_human` | El RAG no encontró contexto confiable (score < `RAG_CONFIDENCE_THRESHOLD`) | **Sí** |
+| `escalate_by_agent` | El RAG sí encontró contexto pero el agente pide una persona | **Hay que mirarlo aparte** |
 
-Ninguna de las dos mira el rol de quien pregunta.
-
-**Cuidado con el Principio III.** La constitución exige que ninguna decisión
-financiera o contractual se cierre sola: verificación de pagos, aprobación de
-crédito y cierre de venta financiada **siempre** pasan por un `SUPERVISOR`. Ese
-escalado es de otra naturaleza —no es "me falta el dato", es "esto lo tiene que
-aprobar una persona"— y no debería tocarse. **Pregunta abierta**: si el que
-pregunta ya es supervisor, ¿esa aprobación se auto-satisface o igual necesita a
-alguien más? Hay que responderlo explícitamente antes de tocar nada, porque es el
-principio no negociable del proyecto.
-
-**Otra pregunta abierta.** "Consultarle al dueño" implica que el sistema sepa quién
-es el dueño. Hoy no hay tal concepto: hay roles y sectores. ¿Se modela, o se
-resuelve como una escalación dirigida a una persona concreta?
+**Cuidado al mostrar los documentos.** Esta rama es solo para supervisor y gerente.
+Exponer títulos o fragmentos de documentos `INTERNO` a un `CLIENTE` sería una fuga
+del Principio I: la vista de "lo que consulté" **no puede** habilitarse para el
+camino del cliente.
 
 ---
 
-## 3. Al empezar una conversación nueva, el chat no arranca hasta cambiar de pantalla
+## 3. Diego supervisa todas las áreas: rol `GERENTE`
 
-**Qué se vio.** Con una conversación cerrada desde *Casos escalados*, se inició una
-nueva desde *Chat con el Asistente*: se ve el mensaje propio (*"Vos: hola"*) y el
-cartel *"El asistente está preparando la respuesta…"*, pero **la respuesta no
-aparece**. Recién se ve al cambiar de pantalla y volver — es decir, cuando el
-componente se vuelve a montar y recarga el historial.
+**Decisión.** Se agrega `GERENTE` a `EmployeeRole`. **Sin tabla intermedia**: si
+mañana se agrega un área, Diego ya la supervisa por ser gerente. Si alguna vez
+aparece alguien que supervise dos áreas de cinco, se revisa entonces.
 
-**Qué se descartó (verificado).**
+Es la razón por la que se prefirió esto a una relación N:M: cinco vínculos a cinco
+sectores harían que, al crear un sector nuevo, **Diego dejara de supervisarlo en
+silencio** hasta que alguien se acordara de agregar la fila. Se modela el concepto,
+no la enumeración.
 
-- **No es que el backend no emita.** Resolver una escalación pasa por
-  `setStatus(..., 'ACTIVE')`
-  ([escalations.service.ts:369](../src/escalations/escalations.service.ts#L369)),
-  que sí publica el cambio de estado.
-- **No es el transporte.** Se reprodujo la secuencia exacta —cerrar, enviar, cargar
-  historial, abrir stream con `after`— con un script en Node que usa el mismo
-  `api.js` del panel, tres veces: el mensaje del asistente llegó siempre, entre
-  **81 ms y 141 ms** después de abrir el stream.
+### ⚠️ La consecuencia que muerde en silencio
 
-**Lo que eso sugiere.** Que el problema está en el **ciclo de vida del componente**
-en React y no en la entrega. Candidatos a revisar, en orden:
+`RolesGuard` compara con **igualdad exacta**: `requiredRoles.includes(user.role)`
+([roles.guard.ts:43](../src/auth/guards/roles.guard.ts#L43)). Hay **23 decoradores
+`@Roles(...)`** en el código, repartidos así:
 
-1. **`StrictMode` en desarrollo monta dos veces**: el efecto corre, se limpia y
-   vuelve a correr. Si la limpieza del primero alcanza al stream del segundo, queda
-   un chat sin conexión y con la UI diciendo que espera.
-2. **El `convId` no cambió y el efecto no volvió a correr.** El efecto depende de
-   `[convId, token]`. Si el backend devuelve la **misma** conversación (porque no
-   estaba cerrada sino solo liberada a `ACTIVE`), no hay cambio de dependencia y no
-   se abre ningún stream nuevo — correcto si ya había uno abierto, pero deja el
-   chat mudo si el anterior se había cerrado al desmontar la pestaña.
-3. **Cambiar de pestaña desmonta el componente** y con él se cierra el stream (es
-   lo que hace la limpieza del `useEffect`). Volver lo remonta y recarga el
-   historial, que es justo lo que "arregla" el síntoma — y encaja con lo observado.
+| Archivo | Cantidad |
+|---|---|
+| `supervisor/supervisor.controller.ts` | 18 |
+| `collections/collections.controller.ts` | 2 |
+| `messaging/messaging-simulate.controller.ts` | 1 |
+| `employees/employees.controller.ts` | 1 |
+| `ai/knowledge/knowledge.controller.ts` | 1 |
 
-El candidato 2 combinado con el 3 explica el caso completo sin necesidad de un bug
-de transporte, y es lo primero que yo miraría.
+Agregar `GERENTE` al enum **sin tocar nada más deja a Diego afuera de todos**: el
+panel, la base de conocimiento, el simulador, las escalaciones. Quedaría con menos
+permisos que un supervisor — exactamente al revés de la intención, y sin ningún
+error que lo delate.
 
-**Hallazgo lateral, confirmado.** En una de las corridas el mismo mensaje llegó
-**dos veces**: una por la reanudación (`after`) y otra por el flujo en vivo, cuando
-el mensaje cae justo en la ventana entre leer el historial y suscribirse. Es el
-"empate por milisegundo" que la spec 004 anticipó
-([research.md §10](../specs/004-chat-tiempo-real/research.md)) y que el panel cubre
-**deduplicando por `data.id`**. No es un defecto: es la confirmación de que esa
-deduplicación no era opcional. En las otras dos corridas llegó una sola vez — es no
-determinista, así que no se puede confiar en "no pasa".
+Dos caminos:
+
+- **(a) Editar los 23 decoradores** a `@Roles('SUPERVISOR', 'GERENTE')`. Mecánico,
+  y cada endpoint nuevo que alguien escriba después vuelve a olvidarse.
+- **(b) Que `RolesGuard` entienda jerarquía** — `GERENTE` ⊇ `SUPERVISOR` ⊇
+  `EMPLEADO`. Un solo lugar, y lo que se escriba mañana lo hereda gratis.
+
+**Recomendación: (b)**, y es además lo coherente con el Principio I —un solo punto
+decide—. Cambia la semántica del guard para todo el proyecto, así que va con tests
+de que un `GERENTE` pasa una ruta `SUPERVISOR` y de que un `EMPLEADO` sigue sin
+pasar.
 
 ---
 
-## Cómo se relacionan
+## Descartado explícitamente
 
-Los hallazgos 1 y 2 son **el mismo problema visto dos veces**: el sistema sabe qué
-rol tiene cada persona para decidir a qué endpoints entra, pero **no se lo cuenta al
-agente**, así que la conversación trata igual a un empleado de mostrador y al dueño
-de la empresa. Uno se manifiesta en el tono y el otro en el escalado.
+- **Restringir la recuperación al área de quien pregunta.** Se evaluó y se
+  descartó: para eso está la orquestación de agentes. Hoy `allowedAgentsFor(EMPLEADO)`
+  devuelve **todos** los agentes, así que un vendedor pregunta por cobranzas y
+  COLLECTIONS le contesta con su corpus — que es lo que se quiere en una PyME donde
+  la gente se cubre entre sí. Restringirlo además chocaría de frente con el Sprint
+  5B: capacitar es enseñar lo que alguien *no* hace todos los días.
+- **Una audiencia nueva para documentos internos por área.** No hace falta hoy.
+- **Que un supervisor no pueda auto-aprobarse su propio crédito** y controles
+  internos por el estilo: **fuera del alcance de la tesis**.
 
-El hallazgo 3 es independiente y es de la spec 004: un arreglo de panel, chico y
-acotado.
+---
+
+## Lo que ya existe y hay que reusar, no construir
+
+| Necesidad | Ya está |
+|---|---|
+| Empleados sin acceso a gestión de la base | `/knowledge/*` ya es `@Roles('SUPERVISOR')` ([knowledge.controller.ts:83-85](../src/ai/knowledge/knowledge.controller.ts#L83-L85)) |
+| Supervisores gestionan la base | Mismo lugar |
+| Derivar un caso a Diego | `escalations.delegate()` con `delegatedToId` ([escalations.service.ts:373](../src/escalations/escalations.service.ts#L373)) |
+| Correspondencia área ↔ agente | `Sector.agentType` (Ventas→SALES, Cobranzas→COLLECTIONS…) |
+| Documentos recuperados con su score | `knowledge.search()` ya los devuelve; hoy se descartan |
+
+---
+
+## Dónde tiene que vivir (Principio I)
+
+Hoy hay exactamente **dos** puntos donde se decide qué ve cada quien:
+`allowedAgentsFor()` y `knowledge.search()`. Si entra el rol, se extienden **esos dos
+y ninguno nuevo** — la firma pasaría a algo como `allowedAgentsFor(userType, role)`.
+Si aparece un tercer lugar que decide acceso, se rompió el principio no negociable.
+
+---
+
+## Pendiente de decidir
+
+- **¿Aplica igual por WhatsApp?** Debería salir gratis —la identidad ya se resuelve
+  por teléfono, así que Diego escribiendo por WhatsApp recibiría el mismo trato—,
+  pero conviene decidirlo a propósito y no descubrirlo.
+- **`escalate_by_agent`**: si el agente pide una persona teniendo contexto
+  suficiente, ¿qué pasa cuando quien pregunta es supervisor o gerente?
+
+---
+
+## Nota al margen: un síntoma que no se pudo reproducir
+
+Probando, una conversación nueva no mostró la respuesta hasta cambiar de pantalla y
+volver. **Se descartó el transporte**: la secuencia exacta se reprodujo tres veces
+con un script en Node sobre el mismo `api.js` del panel y el mensaje llegó siempre,
+entre 81 y 141 ms. Que no se reproduzca fuera del navegador apunta al ciclo de vida
+del componente en React, no a la entrega. Se decidió ignorarlo salvo que vuelva a
+aparecer; queda anotado por si eso pasa.
+
+De paso quedó confirmado el empate replay/vivo que la 004 anticipó: en una de las
+corridas el mismo mensaje llegó dos veces —una por la reanudación y otra por el
+flujo en vivo— y el panel lo cubre deduplicando por `data.id`. No es un defecto; es
+la prueba de que esa deduplicación no era opcional. Es no determinista, así que "no
+pasa" no es evidencia de nada.
