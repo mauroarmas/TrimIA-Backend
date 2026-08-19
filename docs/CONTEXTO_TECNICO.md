@@ -814,6 +814,7 @@ docker compose exec nestjs npx jest --no-coverage
 | Documento | Para qué |
 |-----------|----------|
 | `specs/004-chat-tiempo-real/` | Spec, spike (SSE vs WebSocket) y contratos de la entrega en tiempo real (§5.9) |
+| `docs/hallazgos-para-proxima-spec.md` | Lo que apareció probando el panel y todavía no tiene spec: el agente no sabe si habla con un supervisor, y el escalado no distingue |
 | `README.md` | Setup del entorno paso a paso |
 | `setup-prompt.md` | Prompts listos para pegar en Antigravity (contexto + setup) |
 | `docs/ArquitecturaFLujoTrabajo.md` | Arquitectura conceptual ampliada (capas, frontend) |
