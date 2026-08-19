@@ -84,47 +84,79 @@ camino del cliente.
 
 ---
 
-## 3. Diego supervisa todas las áreas: rol `GERENTE`
+## 3. Diego supervisa todas las áreas: relación N:M, sin rol nuevo
 
-**Decisión.** Se agrega `GERENTE` a `EmployeeRole`. **Sin tabla intermedia**: si
-mañana se agrega un área, Diego ya la supervisa por ser gerente. Si alguna vez
-aparece alguien que supervise dos áreas de cinco, se revisa entonces.
+**Decisión.** Se agrega una **tabla intermedia** entre empleado y los sectores que
+supervisa. Diego queda como `SUPERVISOR` vinculado a las cinco áreas. **No se agrega
+el rol `GERENTE`.**
 
-Es la razón por la que se prefirió esto a una relación N:M: cinco vínculos a cinco
-sectores harían que, al crear un sector nuevo, **Diego dejara de supervisarlo en
-silencio** hasta que alguien se acordara de agregar la fila. Se modela el concepto,
-no la enumeración.
+**Por qué la tabla y no un rol.** Primero se había decidido un rol `GERENTE` sin
+tabla. Se revirtió por un argumento mejor: que un supervisor cubra **Depósitos y
+Logística** es común, y un rol no lo puede expresar — habría retrabajo apenas
+aparezca. La tabla lo expresa naturalmente y además cubre el caso de Diego, que es
+simplemente "todas".
 
-### ⚠️ La consecuencia que muerde en silencio
+**Y de paso elimina un problema en vez de resolverlo.** `RolesGuard` compara con
+igualdad exacta (`requiredRoles.includes(user.role)`,
+[roles.guard.ts:43](../src/auth/guards/roles.guard.ts#L43)) y hay **23 decoradores
+`@Roles(...)`** en el código —18 solo en el panel del supervisor—. Agregar `GERENTE`
+al enum sin tocar nada más habría dejado a Diego **afuera de todos**: panel, base de
+conocimiento, simulador, escalaciones. Con menos permisos que un supervisor, sin
+ningún error que lo delatara. Con la tabla, Diego **es** `SUPERVISOR`: los 23
+decoradores lo dejan pasar tal como están y no hay que inventar jerarquía de roles.
 
-`RolesGuard` compara con **igualdad exacta**: `requiredRoles.includes(user.role)`
-([roles.guard.ts:43](../src/auth/guards/roles.guard.ts#L43)). Hay **23 decoradores
-`@Roles(...)`** en el código, repartidos así:
+**¿Y la distinción de tono entre supervisor y gerente?** La cubre la misma tabla:
+*"supervisás las cinco áreas"* lleva al prompt la misma información que un rol
+`GERENTE`, sin tocar el guard. Si algún día aparece algo que **solo** el gerente
+pueda hacer, se agrega el rol ahí, con una razón concreta.
 
-| Archivo | Cantidad |
-|---|---|
-| `supervisor/supervisor.controller.ts` | 18 |
-| `collections/collections.controller.ts` | 2 |
-| `messaging/messaging-simulate.controller.ts` | 1 |
-| `employees/employees.controller.ts` | 1 |
-| `ai/knowledge/knowledge.controller.ts` | 1 |
+**Áreas nuevas.** El alcance de la tesis son estas cinco. Si el sistema se vendiera,
+la gestión de áreas nuevas es un problema de ese momento —y la crearía Diego, así que
+su propio endpoint podría dejarlo como supervisor de ella—. No se resuelve ahora.
 
-Agregar `GERENTE` al enum **sin tocar nada más deja a Diego afuera de todos**: el
-panel, la base de conocimiento, el simulador, las escalaciones. Quedaría con menos
-permisos que un supervisor — exactamente al revés de la intención, y sin ningún
-error que lo delate.
+---
 
-Dos caminos:
+## 4. Gestión de la base de conocimiento acotada al área *(propuesto)*
 
-- **(a) Editar los 23 decoradores** a `@Roles('SUPERVISOR', 'GERENTE')`. Mecánico,
-  y cada endpoint nuevo que alguien escriba después vuelve a olvidarse.
-- **(b) Que `RolesGuard` entienda jerarquía** — `GERENTE` ⊇ `SUPERVISOR` ⊇
-  `EMPLEADO`. Un solo lugar, y lo que se escriba mañana lo hereda gratis.
+**Propuesta.** Un supervisor solo puede **modificar** documentos de sus áreas. La
+**lectura** por vía de los agentes no se restringe: sigue alcanzando todo.
 
-**Recomendación: (b)**, y es además lo coherente con el Principio I —un solo punto
-decide—. Cambia la semántica del guard para todo el proyecto, así que va con tests
-de que un `GERENTE` pasa una ruta `SUPERVISOR` y de que un `EMPLEADO` sigue sin
-pasar.
+**Por qué la asimetría se sostiene.** No es lo mismo que se descartó arriba. Ahí se
+descartó restringir la **lectura**; esto restringe la **escritura**, que es donde el
+daño es permanente: una respuesta mal encaminada se corrige en el mensaje siguiente,
+pero un documento malo **queda y degrada el RAG para todos**. Y le da a la tabla un
+consumidor real desde el día uno, que era la salvedad pendiente.
+
+**El riesgo: la escritura entra por 10 puertas, no por 8.** `/knowledge` tiene ocho
+endpoints que escriben (crear, subir archivo, `PUT :id`, `PATCH :id/active`,
+`DELETE :id`, aplicar edición con IA, reindexar). **Y hay dos más, en otro módulo**:
+`resolve` con `teachAgent: true` y `save-unsent` —que ingesta *siempre*, es su único
+efecto—, ambos en `escalations.service.ts`. Blindar los ocho del controller y
+olvidarse de la escalación deja la puerta de atrás abierta: un supervisor de Ventas
+resuelve un caso de Cobranzas "enseñándole al agente" y mete un documento en un área
+ajena, sin que nadie lo note.
+
+→ La regla tiene que vivir **en `KnowledgeService`, en el método que escribe**, no en
+los decoradores del controller. Así los diez caminos la heredan.
+
+**Tres cosas que hay que decidir:**
+
+1. **¿Quién edita los `GENERAL`?** El RAG filtra `agentType ∈ [agente, 'GENERAL']`:
+   esos documentos contestan para todos los agentes. Con "solo tu área" quedan
+   **huérfanos**. Lo natural es que los edite quien supervisa todas las áreas.
+2. **Ver el listado NO debería restringirse.** Un supervisor necesita ver qué existe
+   en otras áreas para no duplicarlo y para poder decir "esto lo arregla Cobranzas".
+   **Ver ≠ editar**, y es fácil que alguien filtre el listado "por consistencia" y
+   rompa justo eso.
+3. **Interacción con el punto 2 de este documento.** Si un supervisor de Ventas
+   pregunta algo que contestó COLLECTIONS y falta, **no va a poder cargarlo**: tiene
+   que derivarlo. Es lo correcto —el de Ventas no escribe el procedimiento de
+   Cobranzas— y encaja con el flujo de derivar a Diego, pero hay que decirlo, porque
+   si no alguien implementa el "cargalo vos" sin ver que a veces la respuesta correcta
+   es "esto no es tuyo".
+
+**Secuencia.** Es independiente del tono y no hace falta para arreglarlo. Son ~10
+caminos en 2 módulos con sus tests: fase posterior.
 
 ---
 
@@ -139,6 +171,8 @@ pasar.
 - **Una audiencia nueva para documentos internos por área.** No hace falta hoy.
 - **Que un supervisor no pueda auto-aprobarse su propio crédito** y controles
   internos por el estilo: **fuera del alcance de la tesis**.
+- **El rol `GERENTE`**: se decidió y se revirtió a favor de la tabla N:M (ver §3).
+  Se puede agregar más adelante si aparece algo que solo el gerente pueda hacer.
 
 ---
 
@@ -158,8 +192,13 @@ pasar.
 
 Hoy hay exactamente **dos** puntos donde se decide qué ve cada quien:
 `allowedAgentsFor()` y `knowledge.search()`. Si entra el rol, se extienden **esos dos
-y ninguno nuevo** — la firma pasaría a algo como `allowedAgentsFor(userType, role)`.
-Si aparece un tercer lugar que decide acceso, se rompió el principio no negociable.
+y ninguno nuevo**. Si aparece un tercer lugar que decide acceso, se rompió el
+principio no negociable.
+
+**Y hay algo que la constitución hoy no nombra**: sus dos puntos son de **lectura**.
+La autorización de **escritura** sobre el corpus (§4) es una preocupación nueva. Si
+no se la nombra queda como regla huérfana, así que probablemente haya que tocar el
+texto de la constitución y no solo el código.
 
 ---
 
