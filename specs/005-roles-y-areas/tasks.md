@@ -164,6 +164,12 @@ puertas y dos están en otro módulo. Ver [contracts/escritura-de-conocimiento.m
 > terminada con esta fase escrita; el panel se trabaja después, por separado
 > (constitución, *Cierre de una spec*).
 >
+> ✅ **Hechas el 2026-08-19**, en una sesión aparte de la del backend, sobre
+> `/home/mauro/Proyectos/trimIA-frontend` (sin commitear todavía). Se agregó además
+> `KnowledgeUpload.jsx`, que T050 no nombraba: subir un archivo es una de las diez
+> puertas de escritura, y sin el mismo bloqueo la pantalla dejaba llenar el
+> formulario para terminar en un 403.
+>
 > El frontend es el repo hermano `/home/mauro/Proyectos/trimIA-frontend` (Vite +
 > React, JSX sin TypeScript, `oxlint`, **sin runner de tests**), y las rutas son
 > relativas a **ese** repo. Es un banco de pruebas: el objetivo es **poder usar los
@@ -183,13 +189,13 @@ puertas y dos están en otro módulo. Ver [contracts/escritura-de-conocimiento.m
 > **Y `GET /employees` ahora trae `areasSupervisadas` de cada persona**, así que
 > T047 no necesita pedir el detalle de a uno.
 
-- [ ] T044 Agregar a `src/api.js` la función para asignar áreas supervisadas a un empleado
-- [ ] T045 **Crear** `src/components/EmployeesPanel.jsx` y registrar su pestaña en `src/App.jsx`. ⚠️ **La pantalla de empleados no existe**: hoy `listEmployees()` se usa solo para el desplegable de delegación de `EscalationsQueue.jsx`, y no hay ninguna pestaña de empleados. Es una pantalla nueva, no un agregado a una existente
-- [ ] T046 En `src/components/EmployeesPanel.jsx`, la asignación de áreas: selección múltiple de sectores. **Sin casilla de "gerente"** — no existe tal campo; se es gerente al tener todas, y una casilla haría creer que hay otro camino
-- [ ] T047 En `src/components/EmployeesPanel.jsx`, mostrar de qué áreas es responsable cada persona y marcar a quien las tiene todas. Es lo que hace verificable a simple vista que Diego quedó bien cargado
-- [ ] T048 Renderizar en `src/components/WebChat.jsx` el aviso de baja confianza con **los documentos consultados y su score**, cuando el backend lo mande. **Distinción que la UI no puede aplastar**: esto **no es** un error ni una escalación — es información para decidir, y presentarlo como un cartel rojo de fallo haría que se lo ignore
-- [ ] T049 Ofrecer en ese aviso, en `src/components/WebChat.jsx`, las dos acciones que corresponden: **cargar/corregir** el documento si el tema es de un área propia, y **derivar** si es de otra. Habilitar cada una según corresponda, **con el motivo a la vista** cuando no se pueda — el backend va a rechazar la escritura fuera de área, y descubrirlo con un error es peor que verlo deshabilitado (CL-2)
-- [ ] T050 Deshabilitar en `src/components/KnowledgeIngest.jsx` y `src/components/KnowledgeDetail.jsx` las acciones de **edición** sobre documentos de áreas ajenas, **sin ocultar los documentos**: ver no es editar (FR-013). Ocultarlos rompería justo lo que evita duplicados
+- [X] T044 Agregar a `src/api.js` la función para asignar áreas supervisadas a un empleado
+- [X] T045 **Crear** `src/components/EmployeesPanel.jsx` y registrar su pestaña en `src/App.jsx`. ⚠️ **La pantalla de empleados no existe**: hoy `listEmployees()` se usa solo para el desplegable de delegación de `EscalationsQueue.jsx`, y no hay ninguna pestaña de empleados. Es una pantalla nueva, no un agregado a una existente
+- [X] T046 En `src/components/EmployeesPanel.jsx`, la asignación de áreas: selección múltiple de sectores. **Sin casilla de "gerente"** — no existe tal campo; se es gerente al tener todas, y una casilla haría creer que hay otro camino
+- [X] T047 En `src/components/EmployeesPanel.jsx`, mostrar de qué áreas es responsable cada persona y marcar a quien las tiene todas. Es lo que hace verificable a simple vista que Diego quedó bien cargado
+- [X] T048 Renderizar en `src/components/WebChat.jsx` el aviso de baja confianza con **los documentos consultados y su score**, cuando el backend lo mande. **Distinción que la UI no puede aplastar**: esto **no es** un error ni una escalación — es información para decidir, y presentarlo como un cartel rojo de fallo haría que se lo ignore
+- [X] T049 Ofrecer en ese aviso, en `src/components/WebChat.jsx`, las dos acciones que corresponden: **cargar/corregir** el documento si el tema es de un área propia, y **derivar** si es de otra. Habilitar cada una según corresponda, **con el motivo a la vista** cuando no se pueda — el backend va a rechazar la escritura fuera de área, y descubrirlo con un error es peor que verlo deshabilitado (CL-2)
+- [X] T050 Deshabilitar en `src/components/KnowledgeIngest.jsx` y `src/components/KnowledgeDetail.jsx` las acciones de **edición** sobre documentos de áreas ajenas, **sin ocultar los documentos**: ver no es editar (FR-013). Ocultarlos rompería justo lo que evita duplicados
 
 ### Nota sobre tests en el frontend
 
