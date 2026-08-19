@@ -16,7 +16,12 @@ import {
 } from '../../orchestrator/orchestrator.state';
 import { SpecializedAgent } from '../agents.service';
 import { agentResponseSchema } from './rag-agent.schemas';
-import { HANDOFF_INSTRUCTIONS, STYLE_RULES } from './rag-agent.instructions';
+import {
+  HANDOFF_INSTRUCTIONS,
+  STYLE_RULES,
+  interlocutorInstructions,
+} from './rag-agent.instructions';
+import { descriptorDe } from '../../caller/caller.types';
 
 /** Dependencias de infraestructura comunes a todo agente RAG. */
 export interface AgentGraphDeps {
@@ -128,9 +133,22 @@ export function buildRagAgentGraph(
     // canales de rol distintos (system vs. human), el mensaje del cliente
     // llega SIEMPRE como texto de usuario, nunca como una sección de
     // contexto adicional — ver también la regla en STYLE_RULES.
+    // Con quién habla (spec 005). Sin `caller` se cae al trato de cliente, que es
+    // el conservador: es preferible que a un empleado se le hable de más a que a un
+    // cliente se le hable como si trabajara acá.
+    const quienHabla = state.caller
+      ? descriptorDe(state.caller)
+      : descriptorDe({
+          userType: 'CLIENTE',
+          role: null,
+          areas: [],
+          esGerente: false,
+        });
+
     const result = await structured.invoke([
       new SystemMessage(
-        `${prompt}\n${STYLE_RULES}\n${HANDOFF_INSTRUCTIONS}\n\n` +
+        `${prompt}\n${STYLE_RULES}\n${HANDOFF_INSTRUCTIONS}\n` +
+          `${interlocutorInstructions(quienHabla)}\n` +
           `Información disponible:\n${state.context || '(no hay información sobre esto)'}`,
       ),
       ...historyMessages,

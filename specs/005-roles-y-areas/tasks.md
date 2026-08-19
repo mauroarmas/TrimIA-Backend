@@ -68,11 +68,11 @@ quién habla. **Bloquea US1, US2 y US5.**
 sistema lo reconoce como responsable de las dos, y que **no** queda como gerente
 ([quickstart.md](./quickstart.md) escenario 5).
 
-- [ ] T013 [P] [US3] Crear el DTO para asignar áreas supervisadas en `src/employees/dto/` (lista de ids de sector). **Sin campo de "gerente"**: no existe tal cosa que setear — ser gerente es la consecuencia de tener todas
-- [ ] T014 [US3] Agregar el método de asignación en `src/employees/employees.service.ts`, que **rechaza asignar áreas a alguien con `role = EMPLEADO`** (FR-018): responsable sin ser supervisor es un estado sin sentido ([contracts/identidad-conversacional.md](./contracts/identidad-conversacional.md))
-- [ ] T015 [US3] Exponer la asignación en `src/employees/employees.controller.ts`, detrás de los mismos guards que el resto de la gestión de empleados. **No se agrega ningún rol nuevo**
-- [ ] T016 [US3] Extender `src/employees/employees.service.spec.ts` (o crear el spec del controller): asignar dos áreas · quitar una · rechazar la asignación a un `EMPLEADO` · asignar las cinco hace que se lo reconozca como gerente **sin ningún campo extra**
-- [ ] T017 [US3] Test de no-regresión de permisos en `src/employees/employees.controller.spec.ts`: alguien con varias áreas asignadas **entra exactamente a los mismos endpoints** que un supervisor de una sola. Es la comprobación de que no perdimos acceso — el riesgo que tenía el diseño con un rol nuevo y que este evita por construcción (SC-005)
+- [X] T013 [P] [US3] Crear el DTO para asignar áreas supervisadas en `src/employees/dto/` (lista de ids de sector). **Sin campo de "gerente"**: no existe tal cosa que setear — ser gerente es la consecuencia de tener todas
+- [X] T014 [US3] Agregar el método de asignación en `src/employees/employees.service.ts`, que **rechaza asignar áreas a alguien con `role = EMPLEADO`** (FR-018): responsable sin ser supervisor es un estado sin sentido ([contracts/identidad-conversacional.md](./contracts/identidad-conversacional.md))
+- [X] T015 [US3] Exponer la asignación en `src/employees/employees.controller.ts`, detrás de los mismos guards que el resto de la gestión de empleados. **No se agrega ningún rol nuevo**
+- [X] T016 [US3] Extender `src/employees/employees.service.spec.ts` (o crear el spec del controller): asignar dos áreas · quitar una · rechazar la asignación a un `EMPLEADO` · asignar las cinco hace que se lo reconozca como gerente **sin ningún campo extra**
+- [X] T017 [US3] Test de no-regresión de permisos en `src/employees/employees.controller.spec.ts`: alguien con varias áreas asignadas **entra exactamente a los mismos endpoints** que un supervisor de una sola. Es la comprobación de que no perdimos acceso — el riesgo que tenía el diseño con un rol nuevo y que este evita por construcción (SC-005)
 
 **Checkpoint**: hay un gerente en el sistema y responsables de varias áreas. US1 y US2 pueden apoyarse en eso.
 
@@ -86,10 +86,10 @@ sistema lo reconoce como responsable de las dos, y que **no** queda como gerente
 whitelist da respuestas con registro distinto ([quickstart.md](./quickstart.md)
 escenario 1).
 
-- [ ] T018 [US1] Agregar el bloque de identidad a `src/ai/agents/shared/rag-agent.instructions.ts`, junto a `STYLE_RULES` y `HANDOFF_INSTRUCTIONS`. **Va acá y no en los cinco `*.prompt.ts`** por el mismo motivo que ya dice ese archivo: son reglas del mecanismo, no de la personalidad de cada agente, y duplicadas se desincronizan al primer ajuste
-- [ ] T019 [US1] Hacer que el bloque de `src/ai/agents/shared/rag-agent.instructions.ts` describa a **los cuatro** interlocutores según el `Caller` (cliente, empleado, supervisor con sus áreas, gerente). A un empleado, supervisor o gerente **no** se lo trata como comprador potencial (FR-002)
-- [ ] T020 [US1] Extender `src/ai/agents/shared/rag-agent.graph.spec.ts`: el prompt que se le arma al modelo contiene el descriptor correcto para cada uno de los cuatro · un supervisor de dos áreas aparece como responsable de **las dos**
-- [ ] T021 [US1] Test de no-regresión en `src/ai/agents/shared/rag-agent.graph.spec.ts`: un `CLIENTE` sigue recibiendo exactamente el mismo trato que antes de esta feature, y **sigue alcanzando solo los agentes de ventas y cobranzas con audiencia pública** (FR-016). Esa parte ya está cubierta por `agent-domains.spec.ts`, pero se nombra acá porque es la mitad que protege lo que ya funcionaba
+- [X] T018 [US1] Agregar el bloque de identidad a `src/ai/agents/shared/rag-agent.instructions.ts`, junto a `STYLE_RULES` y `HANDOFF_INSTRUCTIONS`. **Va acá y no en los cinco `*.prompt.ts`** por el mismo motivo que ya dice ese archivo: son reglas del mecanismo, no de la personalidad de cada agente, y duplicadas se desincronizan al primer ajuste
+- [X] T019 [US1] Hacer que el bloque de `src/ai/agents/shared/rag-agent.instructions.ts` describa a **los cuatro** interlocutores según el `Caller` (cliente, empleado, supervisor con sus áreas, gerente). A un empleado, supervisor o gerente **no** se lo trata como comprador potencial (FR-002)
+- [X] T020 [US1] Extender `src/ai/agents/shared/rag-agent.graph.spec.ts`: el prompt que se le arma al modelo contiene el descriptor correcto para cada uno de los cuatro · un supervisor de dos áreas aparece como responsable de **las dos**
+- [X] T021 [US1] Test de no-regresión en `src/ai/agents/shared/rag-agent.graph.spec.ts`: un `CLIENTE` sigue recibiendo exactamente el mismo trato que antes de esta feature, y **sigue alcanzando solo los agentes de ventas y cobranzas con audiencia pública** (FR-016). Esa parte ya está cubierta por `agent-domains.spec.ts`, pero se nombra acá porque es la mitad que protege lo que ya funcionaba
 
 **Checkpoint**: es el MVP. Arregla lo más visible y no tocó ni autorización ni recuperación.
 

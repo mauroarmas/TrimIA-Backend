@@ -11,6 +11,7 @@ import {
 } from '@nestjs/common';
 import { EmployeesService } from './employees.service';
 import { CreateEmployeeDto, UpdateEmployeeDto } from './dto/employee.dto';
+import { SetSupervisedAreasDto } from './dto/supervised-areas.dto';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { RolesGuard, Roles } from '../auth/guards/roles.guard';
 
@@ -51,6 +52,27 @@ export class EmployeesController {
     @Req() req: any,
   ) {
     return this.employeesService.update(id, dto, req.user.email);
+  }
+
+  /**
+   * Define de qué áreas es responsable una persona (spec 005, US3).
+   *
+   * `PUT` y no `POST` porque la lista **reemplaza** a la anterior: sirve para asignar
+   * y para quitar, y es idempotente. Queda detrás de los mismos guards que el resto
+   * del ABM de empleados — **no se agrega ningún rol nuevo**, que es justo lo que
+   * deja intactos los 23 puntos de control de acceso del proyecto.
+   */
+  @Put(':id/supervised-areas')
+  setSupervisedAreas(
+    @Param('id') id: string,
+    @Body() dto: SetSupervisedAreasDto,
+    @Req() req: any,
+  ) {
+    return this.employeesService.setSupervisedAreas(
+      id,
+      dto.sectorIds,
+      req.user.email,
+    );
   }
 
   @Delete(':id')

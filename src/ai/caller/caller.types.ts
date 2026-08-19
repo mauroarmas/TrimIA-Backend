@@ -52,3 +52,26 @@ export function interlocutorDe(caller: Caller): Interlocutor {
   if (caller.role === 'SUPERVISOR') return 'SUPERVISOR';
   return 'EMPLEADO';
 }
+
+/**
+ * Cómo se le describe al modelo quién le está hablando (spec 005, US1).
+ *
+ * Se arma desde el `Caller` y en un solo lugar: si esta descripción se construyera
+ * en cada prompt, cada agente terminaría tratando distinto a la misma persona.
+ */
+export function descriptorDe(caller: Caller): string {
+  switch (interlocutorDe(caller)) {
+    case 'CLIENTE':
+      return 'un CLIENTE (o alguien que todavía no es cliente). No trabaja en la empresa.';
+    case 'GERENTE':
+      return 'el GERENTE: el dueño de la empresa, responsable de TODAS las áreas.';
+    case 'SUPERVISOR': {
+      const areas = caller.areas.map((a) => a.name).join(' y ');
+      return areas
+        ? `un SUPERVISOR de la empresa, responsable de ${areas}.`
+        : 'un SUPERVISOR de la empresa.';
+    }
+    default:
+      return 'un EMPLEADO de la empresa.';
+  }
+}

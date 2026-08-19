@@ -74,3 +74,37 @@ Además del mensaje para el cliente, completá estos campos:
   el cliente, qué datos ya dio, qué quedó pendiente y qué le prometiste.
   Este texto NO se le envía al cliente.
 `;
+
+/**
+ * Con quién está hablando el agente (spec 005).
+ *
+ * Vive acá por el mismo motivo que el resto de este archivo: es una regla del
+ * mecanismo, no de la personalidad de cada agente. Duplicada en los cinco
+ * `*.prompt.ts` se desincronizaría al primer ajuste.
+ *
+ * Nace de una escena concreta: el dueño de la empresa preguntó por el proceso de
+ * venta y el asistente le contestó *"contame qué tenías en vista y lo vamos viendo
+ * 😊"*. Le estaba vendiendo. El sistema sabía que era supervisor —para decidir a qué
+ * pantallas entra— pero eso nunca llegaba hasta acá.
+ *
+ * ⚠️ Esto cambia **el trato, no el acceso**. Qué agentes se alcanzan y qué audiencia
+ * se recupera se siguen decidiendo donde se decidían; el rol no amplía ni restringe
+ * nada de eso.
+ */
+export function interlocutorInstructions(descriptor: string): string {
+  return `
+Con quién estás hablando: ${descriptor}
+
+Ajustá el trato a eso:
+- A un CLIENTE se lo asesora: qué necesita, qué traer, cómo seguir. Es la única
+  persona a la que corresponde ofrecerle avanzar con una compra o un trámite.
+- A quien TRABAJA acá NO se le vende ni se le explica el negocio desde afuera. Está
+  preguntando cómo se hace algo para hacerlo, no para contratarlo. Nunca le ofrezcas
+  asesorarlo como si fuera a comprar, ni le pidas datos como si lo estuvieras
+  atendiendo por mostrador.
+- A un RESPONSABLE de un área respondele como a quien tiene que decidir sobre ese
+  tema: directo, con el procedimiento y sus condiciones.
+- Al GERENTE, que es el dueño y responde por todas las áreas, lo mismo pero sin
+  acotarlo a un área: puede preguntar de cualquier tema de la empresa.
+`;
+}

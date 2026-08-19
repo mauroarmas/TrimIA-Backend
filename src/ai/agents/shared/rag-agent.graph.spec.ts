@@ -96,6 +96,56 @@ describe('buildRagAgentGraph', () => {
    * hace muy fácil implementar lo contrario sin querer. Este test es la guardia: una
    * revisión de código no sobrevive al próximo refactor.
    */
+  /**
+   * ⭐ FR-016 — un cliente sigue igual que antes de esta feature.
+   *
+   * Los agentes permitidos y la audiencia ya están cubiertos por
+   * `agent-domains.spec.ts`; se comprueba acá la parte que esta spec sí toca —que el
+   * trato de cliente no cambió— porque es la mitad que protege lo que ya funcionaba.
+   */
+  describe('⭐ el cliente no cambia (FR-016)', () => {
+    it('a un CLIENTE se le recupera audiencia PUBLICO, como siempre', async () => {
+      const { graph, knowledge } = buildGraph(0.9);
+
+      await graph.invoke({
+        ...baseState,
+        userType: 'CLIENTE',
+        caller: {
+          userType: 'CLIENTE',
+          role: null,
+          areas: [],
+          esGerente: false,
+        },
+      });
+
+      expect(knowledge.search).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ audience: 'PUBLICO' }),
+      );
+    });
+
+    it('el rol NO altera la audiencia: un supervisor sigue recibiendo INTERNO', async () => {
+      const { graph, knowledge } = buildGraph(0.9);
+
+      await graph.invoke({
+        ...baseState,
+        userType: 'EMPLEADO',
+        caller: {
+          userType: 'EMPLEADO',
+          role: 'SUPERVISOR',
+          areas: [],
+          esGerente: true,
+        },
+      });
+
+      // Ser gerente no amplía nada: la audiencia la decide el userType y punto.
+      expect(knowledge.search).toHaveBeenCalledWith(
+        expect.anything(),
+        expect.objectContaining({ audience: 'INTERNO' }),
+      );
+    });
+  });
+
   describe('⭐ la recuperación NO se filtra por el área de quien pregunta', () => {
     /** Empleada de Depósito preguntando algo de cobranzas. */
     const empleadaDeDeposito: OrchestratorStateType = {
@@ -156,6 +206,93 @@ describe('buildRagAgentGraph', () => {
 
       expect(result.response).toBe('Se registra con el comprobante.');
       expect(result.escalated).toBeFalsy();
+    });
+  });
+
+  /**
+   * ⭐ US1 / FR-001 / FR-002 — el asistente sabe con quién habla.
+   *
+   * La escena que originó la spec: el dueño preguntó por el proceso de venta y el
+   * asistente le contestó "contame qué tenías en vista y lo vamos viendo 😊". Le
+   * estaba vendiendo.
+   */
+  describe('⭐ el prompt describe a quién le habla (US1)', () => {
+    /** El SystemMessage que efectivamente se le mandó al modelo. */
+    async function promptDe(caller: OrchestratorStateType['caller']) {
+      const { graph, structuredInvoke } = buildGraph(0.9);
+      await graph.invoke({ ...baseState, userType: 'EMPLEADO', caller });
+      const [mensajes] = structuredInvoke.mock.calls[0];
+      return String(mensajes[0].content);
+    }
+
+    it('a un CLIENTE lo nombra como cliente', async () => {
+      const prompt = await promptDe({
+        userType: 'CLIENTE',
+        role: null,
+        areas: [],
+        esGerente: false,
+      });
+
+      expect(prompt).toContain('un CLIENTE');
+      expect(prompt).toContain('No trabaja en la empresa');
+    });
+
+    it('a un EMPLEADO lo nombra como empleado', async () => {
+      const prompt = await promptDe({
+        userType: 'EMPLEADO',
+        role: 'EMPLEADO',
+        areas: [],
+        esGerente: false,
+      });
+
+      expect(prompt).toContain('un EMPLEADO de la empresa');
+    });
+
+    it('a un SUPERVISOR de DOS áreas lo nombra responsable de las dos', async () => {
+      const prompt = await promptDe({
+        userType: 'EMPLEADO',
+        role: 'SUPERVISOR',
+        areas: [
+          { id: 's1', name: 'Depósito', agentType: 'DEPOSITS' },
+          { id: 's2', name: 'Logística', agentType: 'LOGISTICS' },
+        ],
+        esGerente: false,
+      });
+
+      expect(prompt).toContain('un SUPERVISOR');
+      expect(prompt).toContain('Depósito y Logística');
+    });
+
+    it('al GERENTE lo nombra como dueño responsable de todas las áreas', async () => {
+      const prompt = await promptDe({
+        userType: 'EMPLEADO',
+        role: 'SUPERVISOR',
+        areas: [{ id: 's1', name: 'Ventas', agentType: 'SALES' }],
+        esGerente: true,
+      });
+
+      expect(prompt).toContain('el GERENTE');
+      expect(prompt).toContain('TODAS las áreas');
+    });
+
+    // La instrucción que arregla la escena concreta.
+    it('le dice explícitamente que a quien trabaja acá no se le vende', async () => {
+      const prompt = await promptDe({
+        userType: 'EMPLEADO',
+        role: 'SUPERVISOR',
+        areas: [],
+        esGerente: false,
+      });
+
+      expect(prompt).toMatch(/no se le vende/i);
+    });
+
+    // Conservador a propósito: es preferible hablarle de más a un empleado que
+    // tratar a un cliente como si trabajara acá.
+    it('sin caller cae al trato de cliente', async () => {
+      const prompt = await promptDe(null);
+
+      expect(prompt).toContain('un CLIENTE');
     });
   });
 
