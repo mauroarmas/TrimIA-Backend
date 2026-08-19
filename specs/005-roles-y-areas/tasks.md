@@ -54,6 +54,8 @@ quién habla. **Bloquea US1, US2 y US5.**
 - [ ] T010 Resolver el `Caller` en `src/queue/processors/message.processor.ts`, donde ya se resuelve el `userType` en cada mensaje, y pasarlo al orquestador. **Se resuelve por teléfono, no desde el token**: es lo que hace que valga igual por WhatsApp (FR-017)
 - [ ] T011 Extender `src/queue/processors/message.processor.spec.ts`: el `Caller` llega armado al orquestador · un empleado dado de baja **sigue degradándose a `CLIENTE`** en el mismo turno, como hoy · un teléfono fuera de la whitelist produce un `Caller` de cliente
 
+- [ ] T012 ⭐ Test de no-regresión en `src/ai/agents/shared/rag-agent.graph.spec.ts`: un empleado de un área **sigue recibiendo respuesta de agentes de otras áreas** (FR-015, SC-008, CL-9). **Es la guardia de la decisión más deliberada de esta spec**: restringir la lectura por área se evaluó y se descartó, y el objeto `Caller` que acaba de entrar hace muy fácil implementarlo sin querer. Una revisión manual (T043) no sobrevive al próximo refactor; este test sí
+
 **Checkpoint**: el asistente ya sabe con quién habla. Las historias pueden empezar.
 
 ---
@@ -66,11 +68,11 @@ quién habla. **Bloquea US1, US2 y US5.**
 sistema lo reconoce como responsable de las dos, y que **no** queda como gerente
 ([quickstart.md](./quickstart.md) escenario 5).
 
-- [ ] T012 [P] [US3] Crear el DTO para asignar áreas supervisadas en `src/employees/dto/` (lista de ids de sector). **Sin campo de "gerente"**: no existe tal cosa que setear — ser gerente es la consecuencia de tener todas
-- [ ] T013 [US3] Agregar el método de asignación en `src/employees/employees.service.ts`, que **rechaza asignar áreas a alguien con `role = EMPLEADO`**: responsable sin ser supervisor es un estado sin sentido ([contracts/identidad-conversacional.md](./contracts/identidad-conversacional.md))
-- [ ] T014 [US3] Exponer la asignación en `src/employees/employees.controller.ts`, detrás de los mismos guards que el resto de la gestión de empleados. **No se agrega ningún rol nuevo**
-- [ ] T015 [US3] Extender `src/employees/employees.service.spec.ts` (o crear el spec del controller): asignar dos áreas · quitar una · rechazar la asignación a un `EMPLEADO` · asignar las cinco hace que se lo reconozca como gerente **sin ningún campo extra**
-- [ ] T016 [US3] Test de no-regresión de permisos: alguien con varias áreas asignadas **entra exactamente a los mismos endpoints** que un supervisor de una sola. Es la comprobación de que no perdimos acceso — el riesgo que tenía el diseño con un rol nuevo y que este evita por construcción (SC-005)
+- [ ] T013 [P] [US3] Crear el DTO para asignar áreas supervisadas en `src/employees/dto/` (lista de ids de sector). **Sin campo de "gerente"**: no existe tal cosa que setear — ser gerente es la consecuencia de tener todas
+- [ ] T014 [US3] Agregar el método de asignación en `src/employees/employees.service.ts`, que **rechaza asignar áreas a alguien con `role = EMPLEADO`** (FR-018): responsable sin ser supervisor es un estado sin sentido ([contracts/identidad-conversacional.md](./contracts/identidad-conversacional.md))
+- [ ] T015 [US3] Exponer la asignación en `src/employees/employees.controller.ts`, detrás de los mismos guards que el resto de la gestión de empleados. **No se agrega ningún rol nuevo**
+- [ ] T016 [US3] Extender `src/employees/employees.service.spec.ts` (o crear el spec del controller): asignar dos áreas · quitar una · rechazar la asignación a un `EMPLEADO` · asignar las cinco hace que se lo reconozca como gerente **sin ningún campo extra**
+- [ ] T017 [US3] Test de no-regresión de permisos en `src/employees/employees.controller.spec.ts`: alguien con varias áreas asignadas **entra exactamente a los mismos endpoints** que un supervisor de una sola. Es la comprobación de que no perdimos acceso — el riesgo que tenía el diseño con un rol nuevo y que este evita por construcción (SC-005)
 
 **Checkpoint**: hay un gerente en el sistema y responsables de varias áreas. US1 y US2 pueden apoyarse en eso.
 
@@ -84,10 +86,10 @@ sistema lo reconoce como responsable de las dos, y que **no** queda como gerente
 whitelist da respuestas con registro distinto ([quickstart.md](./quickstart.md)
 escenario 1).
 
-- [ ] T017 [US1] Agregar el bloque de identidad a `src/ai/agents/shared/rag-agent.instructions.ts`, junto a `STYLE_RULES` y `HANDOFF_INSTRUCTIONS`. **Va acá y no en los cinco `*.prompt.ts`** por el mismo motivo que ya dice ese archivo: son reglas del mecanismo, no de la personalidad de cada agente, y duplicadas se desincronizan al primer ajuste
-- [ ] T018 [US1] Hacer que el bloque describa a **los cuatro** interlocutores según el `Caller` (cliente, empleado, supervisor con sus áreas, gerente). A un empleado, supervisor o gerente **no** se lo trata como comprador potencial (FR-002)
-- [ ] T019 [US1] Extender `src/ai/agents/shared/rag-agent.graph.spec.ts`: el prompt que se le arma al modelo contiene el descriptor correcto para cada uno de los cuatro · un supervisor de dos áreas aparece como responsable de **las dos**
-- [ ] T020 [US1] Test de no-regresión: un `CLIENTE` sigue recibiendo exactamente el mismo trato que antes de esta feature. Es la mitad que protege lo que ya funcionaba
+- [ ] T018 [US1] Agregar el bloque de identidad a `src/ai/agents/shared/rag-agent.instructions.ts`, junto a `STYLE_RULES` y `HANDOFF_INSTRUCTIONS`. **Va acá y no en los cinco `*.prompt.ts`** por el mismo motivo que ya dice ese archivo: son reglas del mecanismo, no de la personalidad de cada agente, y duplicadas se desincronizan al primer ajuste
+- [ ] T019 [US1] Hacer que el bloque de `src/ai/agents/shared/rag-agent.instructions.ts` describa a **los cuatro** interlocutores según el `Caller` (cliente, empleado, supervisor con sus áreas, gerente). A un empleado, supervisor o gerente **no** se lo trata como comprador potencial (FR-002)
+- [ ] T020 [US1] Extender `src/ai/agents/shared/rag-agent.graph.spec.ts`: el prompt que se le arma al modelo contiene el descriptor correcto para cada uno de los cuatro · un supervisor de dos áreas aparece como responsable de **las dos**
+- [ ] T021 [US1] Test de no-regresión en `src/ai/agents/shared/rag-agent.graph.spec.ts`: un `CLIENTE` sigue recibiendo exactamente el mismo trato que antes de esta feature, y **sigue alcanzando solo los agentes de ventas y cobranzas con audiencia pública** (FR-016). Esa parte ya está cubierta por `agent-domains.spec.ts`, pero se nombra acá porque es la mitad que protege lo que ya funcionaba
 
 **Checkpoint**: es el MVP. Arregla lo más visible y no tocó ni autorización ni recuperación.
 
@@ -100,13 +102,13 @@ escenario 1).
 **Independent Test**: un supervisor consulta algo que el sistema no sabe y la cola de
 casos **no crece** ([quickstart.md](./quickstart.md) escenario 2).
 
-- [ ] T021 [US2] Guardar el `title` de cada `SearchHit` al armar `RetrievedDoc` en `src/ai/agents/shared/rag-agent.graph.ts` (nodo `retrieve_context`). El dato ya viene de `knowledge.search()` y hoy se tira
-- [ ] T022 [US2] Crear `src/ai/agents/shared/low-confidence.node.ts`: informa la falta de confianza **con los documentos consultados y su score**, y **no crea `Escalation`**. Ver [contracts/baja-confianza.md](./contracts/baja-confianza.md)
-- [ ] T023 [US2] ⚠️ **El mensaje se arma sin pasar por el LLM**, como ya hace el nodo de escalado con su mensaje fijo. No es una optimización: `STYLE_RULES` **prohíbe explícitamente** que el agente diga "base de conocimiento" o "no lo tengo cargado" —jerga interna que no debe llegarle a un cliente—, y este aviso necesita exactamente ese vocabulario. Son dos audiencias distintas y por eso son dos caminos distintos
-- [ ] T024 [US2] Agregar la **tercera rama** al router de confianza en `src/ai/agents/shared/rag-agent.graph.ts`: confianza baja + responsable → el nodo nuevo; confianza baja + cualquier otro → `escalate_to_human`, **igual que hoy**. Una rama y no un `if` adentro del nodo de escalado: son dos resultados distintos y el grafo es donde eso se expresa
-- [ ] T025 [US2] Extender `src/ai/agents/shared/rag-agent.graph.spec.ts`: con un supervisor y confianza baja **no** se crea `Escalation` · con un empleado **sí**, como hoy · con un cliente **sí**, como hoy · el aviso incluye al menos el documento más cercano con su título y su score
-- [ ] T026 [US2] ⭐ Test constitucional: a un `CLIENTE` **nunca** se le muestran títulos ni contenido de los documentos consultados (FR-009). Sería una fuga de conocimiento interno por una puerta nueva
-- [ ] T027 [US2] Test de que el aviso **no afirma que el dato no existe**: dice qué encontró y con cuánta confianza. Afirmar "no está" cuando está lleva a escribir duplicados, y los duplicados degradan las respuestas para todos (CL-5, Principio II)
+- [ ] T022 [US2] Guardar el `title` de cada `SearchHit` al armar `RetrievedDoc` en `src/ai/agents/shared/rag-agent.graph.ts` (nodo `retrieve_context`). El dato ya viene de `knowledge.search()` y hoy se tira
+- [ ] T023 [US2] Crear `src/ai/agents/shared/low-confidence.node.ts`: informa la falta de confianza **con los documentos consultados y su score**, y **no crea `Escalation`**. Ver [contracts/baja-confianza.md](./contracts/baja-confianza.md)
+- [ ] T024 [US2] ⚠️ En `src/ai/agents/shared/low-confidence.node.ts`, **el mensaje se arma sin pasar por el LLM**, como ya hace el nodo de escalado con su mensaje fijo. No es una optimización: `STYLE_RULES` **prohíbe explícitamente** que el agente diga "base de conocimiento" o "no lo tengo cargado" —jerga interna que no debe llegarle a un cliente—, y este aviso necesita exactamente ese vocabulario. Son dos audiencias distintas y por eso son dos caminos distintos
+- [ ] T025 [US2] Agregar la **tercera rama** al router de confianza en `src/ai/agents/shared/rag-agent.graph.ts`: confianza baja + responsable → el nodo nuevo; confianza baja + cualquier otro → `escalate_to_human`, **igual que hoy**. Una rama y no un `if` adentro del nodo de escalado: son dos resultados distintos y el grafo es donde eso se expresa
+- [ ] T026 [US2] Extender `src/ai/agents/shared/rag-agent.graph.spec.ts`: con un supervisor y confianza baja **no** se crea `Escalation` · con un empleado **sí**, como hoy · con un cliente **sí**, como hoy · el aviso incluye al menos el documento más cercano con su título y su score
+- [ ] T027 [US2] ⭐ Test constitucional en `src/ai/agents/shared/rag-agent.graph.spec.ts`: a un `CLIENTE` **nunca** se le muestran títulos ni contenido de los documentos consultados (FR-009, CL-4). Sería una fuga de conocimiento interno por una puerta nueva
+- [ ] T028 [US2] Test en `src/ai/agents/shared/rag-agent.graph.spec.ts` de que el aviso **no afirma que el dato no existe**: dice qué encontró y con cuánta confianza. Afirmar "no está" cuando está lleva a escribir duplicados, y los duplicados degradan las respuestas para todos (CL-5, Principio II)
 
 **Checkpoint**: nadie se escala a sí mismo. US1 + US2 es el corazón de la feature.
 
@@ -119,8 +121,8 @@ casos **no crece** ([quickstart.md](./quickstart.md) escenario 2).
 **Independent Test**: un supervisor de Ventas encuentra que falta un dato de Cobranzas,
 lo deriva, y a la persona elegida le aparece un caso.
 
-- [ ] T028 [US4] Conectar la derivación desde el aviso de baja confianza con `escalations.delegate()`, que **ya existe** con su `delegatedToId` — hay que cablearla, no construirla. El caso llega con el contexto de la consulta
-- [ ] T029 [US4] Extender el spec de escalaciones: al derivar, a la persona elegida le entra el caso · queda registrado quién derivó y quién resolvió · el **gerente no tiene a quién derivarle por encima** y en él el circuito termina, que es correcto (CL-3)
+- [ ] T029 [US4] Conectar la derivación desde el aviso de baja confianza con `escalations.delegate()` en `src/escalations/escalations.service.ts`, que **ya existe** con su `delegatedToId` — hay que cablearla, no construirla. El caso llega con el contexto de la consulta
+- [ ] T030 [US4] Extender `src/escalations/escalations.service.spec.ts`: al derivar, a la persona elegida le entra el caso · queda registrado quién derivó y quién resolvió · el **gerente no tiene a quién derivarle por encima** y en él el circuito termina, que es correcto (CL-3)
 
 ---
 
@@ -135,24 +137,24 @@ otra, ni por la pantalla de gestión ni resolviendo un caso "enseñándole al ag
 **⚠️ El riesgo de esta fase es dónde se pone la regla.** La escritura entra por **diez**
 puertas y dos están en otro módulo. Ver [contracts/escritura-de-conocimiento.md](./contracts/escritura-de-conocimiento.md).
 
-- [ ] T030 [US5] Agregar a `src/ai/knowledge/knowledge.service.ts` el único método que decide si alguien puede escribir un documento, según [data-model.md §5](./data-model.md). Los **transversales** (`GENERAL`) necesitan su propia línea: responden para todos los agentes, así que con la regla general quedarían **sin nadie que pueda tocarlos** (CL-6)
-- [ ] T031 [US5] Aplicarlo en los **ocho** caminos de escritura de `/knowledge` (crear, subir archivo, editar, activar/desactivar, borrar, aplicar edición asistida, reindexar), llamando al método del servicio — **no** repitiendo la regla en cada controlador, que rompería el Principio V
-- [ ] T032 [US5] Aplicarlo en los **dos** caminos de `src/escalations/escalations.service.ts` que también escriben conocimiento: resolver un caso "enseñándole al agente", y guardar una respuesta sin enviar —que **ingesta siempre**, es su único efecto—. **Es la puerta de atrás**: sin esto, un responsable de Ventas mete un documento de Cobranzas resolviendo un caso, y nada lo delata
-- [ ] T033 [US5] ⭐ Test constitucional de los **diez** caminos: un responsable de un área no escribe en otra por **ninguno** de ellos. El de la escalación es el que más importa, porque es el que se olvida
-- [ ] T034 [US5] Test de que **ver no se restringe**: el listado y el detalle siguen mostrando **todo**, incluidos los documentos de otras áreas (FR-013). Es fácil filtrarlos "por consistencia" y sería un error: hace falta ver lo ajeno para no duplicarlo y para saber a quién derivar
-- [ ] T035 [US5] Tests de los casos límite: responsable **sin** áreas no escribe nada (CL-10) · un transversal solo lo toca quien es responsable de todas · quitarle un área a alguien le saca la edición de los documentos que él mismo creó — la autoría no da permiso permanente
-- [ ] T036 [US5] Actualizar `.specify/memory/constitution.md`: sus dos puntos de autorización son **ambos de lectura**, y esta fase agrega autorización de **escritura** sobre el corpus. Si no se la nombra ahí queda huérfana. **Se hace ahora y no antes**: recién acá la regla existe
+- [ ] T031 [US5] Agregar a `src/ai/knowledge/knowledge.service.ts` el único método que decide si alguien puede escribir un documento, según [data-model.md §5](./data-model.md). ⚠️ **El autor sale del empleado autenticado del token, NO del `Caller` conversacional**: los diez caminos de escritura son requests HTTP **sin teléfono**, así que armar un `Caller` ahí no tendría de dónde. Es el mismo concepto con dos resoluciones distintas y confundirlas es el error fácil de esta fase. Los **transversales** (`GENERAL`) necesitan su propia línea: responden para todos los agentes, así que con la regla general quedarían **sin nadie que pueda tocarlos** (CL-6)
+- [ ] T032 [US5] Aplicarlo en los **ocho** caminos de escritura de `src/ai/knowledge/knowledge.controller.ts` (crear, subir archivo, editar, activar/desactivar, borrar, aplicar edición asistida, reindexar), llamando al método del servicio — **no** repitiendo la regla en cada controlador, que rompería el Principio V
+- [ ] T033 [US5] Aplicarlo en los **dos** caminos de `src/escalations/escalations.service.ts` que también escriben conocimiento: resolver un caso "enseñándole al agente", y guardar una respuesta sin enviar —que **ingesta siempre**, es su único efecto—. **Es la puerta de atrás**: sin esto, un responsable de Ventas mete un documento de Cobranzas resolviendo un caso, y nada lo delata
+- [ ] T034 [US5] ⭐ Test constitucional de los **diez** caminos, en `src/ai/knowledge/knowledge.service.spec.ts` y `src/escalations/escalations.service.spec.ts`: un responsable de un área no escribe en otra por **ninguno** de ellos. El camino feliz también va (CL-1): de **su** área sí puede. El de la escalación es el que más importa, porque es el que se olvida
+- [ ] T035 [US5] Test en `src/ai/knowledge/knowledge.service.spec.ts` de que **ver no se restringe**: el listado y el detalle siguen mostrando **todo**, incluidos los documentos de otras áreas (FR-013). Es fácil filtrarlos "por consistencia" y sería un error: hace falta ver lo ajeno para no duplicarlo y para saber a quién derivar
+- [ ] T036 [US5] Tests de los casos límite en `src/ai/knowledge/knowledge.service.spec.ts`: responsable **sin** áreas no escribe nada (CL-10) · un transversal solo lo toca quien es responsable de todas · quitarle un área a alguien le saca la edición de los documentos que él mismo creó — la autoría no da permiso permanente (CL-7)
+- [ ] T037 [US5] Actualizar `.specify/memory/constitution.md`: sus dos puntos de autorización son **ambos de lectura**, y esta fase agrega autorización de **escritura** sobre el corpus. Si no se la nombra ahí queda huérfana. **Se hace ahora y no antes**: recién acá la regla existe
 
 ---
 
 ## Phase 8: Polish & Cross-Cutting Concerns
 
-- [ ] T037 [P] Actualizar `docs/CONTEXTO_TECNICO.md` con el `Caller`, la relación N:M, la tercera rama de confianza y la regla de escritura (constitución: documentación viva en el mismo trabajo)
-- [ ] T038 [P] Actualizar `docs/hallazgos-para-proxima-spec.md` marcando qué quedó implementado, para que no se lea como pendiente
-- [ ] T039 Correr `docker compose exec nestjs npm test` y `npm run lint` — puerta de calidad obligatoria
-- [ ] T040 Recorrer los 10 escenarios de [quickstart.md](./quickstart.md) a mano
-- [ ] T041 Verificar la **paridad por WhatsApp** (escenario 10): la misma persona con la misma pregunta recibe el mismo trato por los dos canales. Debería salir gratis porque la identidad se resuelve por teléfono, pero conviene comprobarlo y no suponerlo (SC-009)
-- [ ] T042 Revisar que **nadie haya usado `caller.areas` para filtrar la recuperación**. El objeto lo hace posible y FR-015 lo prohíbe: la lectura no se restringe por área. Es el riesgo de diseño que el plan deja anotado
+- [ ] T038 [P] Actualizar `docs/CONTEXTO_TECNICO.md` con el `Caller`, la relación N:M, la tercera rama de confianza y la regla de escritura (constitución: documentación viva en el mismo trabajo)
+- [ ] T039 [P] Actualizar `docs/hallazgos-para-proxima-spec.md` marcando qué quedó implementado, para que no se lea como pendiente
+- [ ] T040 Correr `docker compose exec nestjs npm test` y `npm run lint` — puerta de calidad obligatoria
+- [ ] T041 Recorrer los 10 escenarios de [quickstart.md](./quickstart.md) a mano
+- [ ] T042 Verificar la **paridad por WhatsApp** con el Simulador de Chat (escenario 10 del quickstart): la misma persona con la misma pregunta recibe el mismo trato por los dos canales. Debería salir gratis porque la identidad se resuelve por teléfono, pero conviene comprobarlo y no suponerlo (SC-009)
+- [ ] T043 Revisar en `src/ai/agents/shared/rag-agent.graph.ts` y `src/ai/knowledge/knowledge.service.ts` que **nadie haya usado `caller.areas` para filtrar la recuperación**. El objeto lo hace posible y FR-015 lo prohíbe: la lectura no se restringe por área. Es el riesgo de diseño que el plan deja anotado
 
 ---
 
@@ -171,12 +173,13 @@ puertas y dos están en otro módulo. Ver [contracts/escritura-de-conocimiento.m
 > `request()` y un `ApiError` que preserva el cuerpo del backend; `WebChat.jsx` ya
 > consume el stream de la spec 004 y ya distingue estados de conversación.
 
-- [ ] T043 Agregar a `src/api.js` la función para asignar áreas supervisadas a un empleado
-- [ ] T044 Agregar en la pantalla de empleados la asignación de áreas: selección múltiple de sectores. **Sin casilla de "gerente"** — no existe tal campo; se es gerente al tener todas, y mostrar una casilla haría creer que hay otro camino
-- [ ] T045 Mostrar en la pantalla de empleados de qué áreas es responsable cada uno, y marcar visualmente a quien las tiene todas. Es lo que hace verificable a simple vista que Diego quedó bien cargado
-- [ ] T046 Renderizar en `src/components/WebChat.jsx` el aviso de baja confianza con **los documentos consultados y su score**, cuando el backend lo mande. **Distinción que la UI no puede aplastar**: esto **no es** un error ni una escalación — es información para decidir, y presentarlo como un cartel rojo de fallo haría que se lo ignore
-- [ ] T047 Ofrecer en ese aviso las dos acciones que corresponden: **cargar/corregir** el documento si el tema es de un área propia, y **derivar** si es de otra. Habilitar cada una según corresponda, **con el motivo a la vista** cuando no se pueda — el backend va a rechazar la escritura fuera de área, y descubrirlo con un error es peor que verlo deshabilitado (CL-2)
-- [ ] T048 Deshabilitar en la pantalla de conocimiento las acciones de **edición** sobre documentos de áreas ajenas, **sin ocultar los documentos**: ver no es editar (FR-013). Ocultarlos rompería justo lo que evita duplicados
+- [ ] T044 Agregar a `src/api.js` la función para asignar áreas supervisadas a un empleado
+- [ ] T045 **Crear** `src/components/EmployeesPanel.jsx` y registrar su pestaña en `src/App.jsx`. ⚠️ **La pantalla de empleados no existe**: hoy `listEmployees()` se usa solo para el desplegable de delegación de `EscalationsQueue.jsx`, y no hay ninguna pestaña de empleados. Es una pantalla nueva, no un agregado a una existente
+- [ ] T046 En `src/components/EmployeesPanel.jsx`, la asignación de áreas: selección múltiple de sectores. **Sin casilla de "gerente"** — no existe tal campo; se es gerente al tener todas, y una casilla haría creer que hay otro camino
+- [ ] T047 En `src/components/EmployeesPanel.jsx`, mostrar de qué áreas es responsable cada persona y marcar a quien las tiene todas. Es lo que hace verificable a simple vista que Diego quedó bien cargado
+- [ ] T048 Renderizar en `src/components/WebChat.jsx` el aviso de baja confianza con **los documentos consultados y su score**, cuando el backend lo mande. **Distinción que la UI no puede aplastar**: esto **no es** un error ni una escalación — es información para decidir, y presentarlo como un cartel rojo de fallo haría que se lo ignore
+- [ ] T049 Ofrecer en ese aviso, en `src/components/WebChat.jsx`, las dos acciones que corresponden: **cargar/corregir** el documento si el tema es de un área propia, y **derivar** si es de otra. Habilitar cada una según corresponda, **con el motivo a la vista** cuando no se pueda — el backend va a rechazar la escritura fuera de área, y descubrirlo con un error es peor que verlo deshabilitado (CL-2)
+- [ ] T050 Deshabilitar en `src/components/KnowledgeIngest.jsx` y `src/components/KnowledgeDetail.jsx` las acciones de **edición** sobre documentos de áreas ajenas, **sin ocultar los documentos**: ver no es editar (FR-013). Ocultarlos rompería justo lo que evita duplicados
 
 ### Nota sobre tests en el frontend
 
@@ -209,23 +212,24 @@ Fase 1 (Setup: la relación N:M)
 | US1 (P1) | Fases 1-2 + US3 (para que exista un gerente que probar) | ✅ Sí — **es el MVP** |
 | US2 (P1) | Fases 1-2 + US3 | ✅ Sí |
 | US4 (P2) | US2 | ✅ Sí |
-| US5 (P3) | Fase 1 (las áreas). **No** necesita el `Caller` conversacional | ✅ Sí — independiente de las demás |
+| US5 (P3) | Fase 1 (las áreas). **No** necesita el `Caller` conversacional: su autor sale del **token**, no del teléfono (ver T031) | ✅ Sí — independiente de las demás |
 
 ### Parallel Opportunities
 
-- **T004 y T012** son archivos nuevos sin dependencias entre sí.
+- **T004 y T013** son archivos nuevos sin dependencias entre sí.
 - **US5 (Fase 7) corre en paralelo con US1, US2 y US4**: solo necesita la relación de
   la Fase 1 y toca `knowledge.service.ts` y `escalations.service.ts`, que las otras no
   tocan. Es la paralelización más aprovechable.
-- **T037 y T038** (documentación) en paralelo con todo lo demás.
+- **T038 y T039** (documentación) en paralelo con todo lo demás.
 
 ## Parallel Example: US1/US2 y US5 a la vez
 
 ```text
 Con las Fases 1-3 cerradas, dos frentes sin colisión de archivos:
 
-Frente A (conversacional): T017 → T020 → T021 → T027   (instructions, graph, state)
-Frente B (escritura):      T030 → T036                 (knowledge.service, escalations)
+Frente A (conversacional): T018 → T021  (US1: instructions)
+                           T022 → T028  (US2: graph, low-confidence.node)
+Frente B (escritura):      T031 → T037  (knowledge.service, escalations.service)
 ```
 
 ## Implementation Strategy

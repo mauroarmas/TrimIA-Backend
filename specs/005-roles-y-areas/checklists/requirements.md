@@ -95,3 +95,28 @@ chico.
 
 **Orden sugerido**: US3 primero por ser prerrequisito, después US1 (lo más visible y
 barato), US2, US4 y finalmente US5, que es la más cara y la que menos urge.
+
+## Hallazgos del análisis de consistencia (2026-08-19)
+
+Siete, ninguno crítico. Los dos que importaban:
+
+1. **Tres documentos implicaban tres respuestas** sobre de dónde sale el `caller` de la
+   regla de escritura. El `Caller` conversacional se resuelve **por teléfono**, y los
+   diez caminos de escritura son requests HTTP **sin teléfono**. Se renombró el
+   parámetro a **`autor`** y se documentó que son el mismo concepto con dos
+   resoluciones: el nombre tiene que impedir la confusión, no invitarla.
+2. **La decisión más deliberada de la spec no tenía test.** Que la lectura NO se
+   restrinja por área estaba cubierta solo por una revisión de código y una prueba
+   manual — y el objeto `Caller` hace fácil implementar lo contrario sin querer. Ahora
+   es T012, un test de no-regresión.
+
+Los otros cinco: CL-7 describía un enrutamiento de casos por área que esta spec **no
+construye** (reescrito, y dicho explícitamente que filtrar la cola es decisión de otra
+spec); 13 tareas de test no nombraban su archivo; FR-018 se agregó para respaldar una
+regla que solo vivía en el contrato; FR-016 quedó nombrado en su test; y los diez casos
+límite quedaron citados desde las tareas.
+
+**Y uno que apareció al aplicarlos**: las tareas de panel decían "agregar a la pantalla
+de empleados", y **esa pantalla no existe** — `listEmployees()` se usa solo para el
+desplegable de delegación de `EscalationsQueue.jsx`. Es una pantalla nueva, no un
+agregado, y ahora las tareas lo dicen.

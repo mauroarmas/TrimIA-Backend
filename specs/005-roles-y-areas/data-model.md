@@ -104,12 +104,29 @@ No es una entidad, pero es la regla que da sentido a la relación, y conviene qu
 escrita en un solo lado:
 
 ```text
-puedeEscribir(caller, documento):
-    si documento.agentType es GENERAL  →  caller.esGerente
-    si no                              →  documento.agentType ∈ agentes(caller.areas)
+puedeEscribir(autor, documento):
+    si documento.agentType es GENERAL  →  autor es responsable de todas las áreas
+    si no                              →  documento.agentType ∈ agentes(autor.areas)
 ```
 
 donde `agentes(areas)` sale de `Sector.agentType`, que **ya existe**.
+
+### ⚠️ El `autor` NO es el `Caller` conversacional
+
+Son **el mismo concepto con dos resoluciones distintas**, y confundirlos es el error
+más fácil de cometer acá:
+
+| | Se resuelve | Dónde se usa |
+|---|---|---|
+| **`Caller`** (§2) | Por **teléfono**, buscando en la whitelist | Conversación: trato del asistente y ruteo de baja confianza. Vale para el panel y para WhatsApp |
+| **`autor`** de esta regla | Del **empleado autenticado del token** | Escritura de conocimiento: son requests HTTP con sesión |
+
+Los diez caminos de escritura son requests HTTP **sin teléfono**: intentar armar ahí un
+`Caller` no tiene de dónde. Lo que la regla necesita es solo el conjunto de áreas del
+empleado autenticado, que sale de la misma relación N:M.
+
+Por eso el parámetro se llama `autor` y no `caller`: **el nombre tiene que impedir la
+confusión, no invitarla**.
 
 Los `GENERAL` necesitan su propia línea: responden para todos los agentes, así que con
 la regla general quedarían sin nadie que pueda tocarlos (CL-6).

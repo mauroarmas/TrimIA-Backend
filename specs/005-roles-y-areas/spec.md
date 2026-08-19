@@ -199,9 +199,15 @@ le muestra lo encontrado, no un veredicto.
 fuera solo "tu área", quedarían **sin nadie que pueda tocarlos**. Los modifica quien
 es responsable de todas.
 
-**CL-7 — Un supervisor deja de ser responsable de un área** y quedan casos abiertos
-de esa área asignados a él. Los casos ya asignados no se reasignan solos; lo que
-cambia es lo que le entra de ahí en adelante.
+**CL-7 — Un supervisor deja de ser responsable de un área.** Desde ese momento **no
+puede modificar** los documentos de esa área, ni siquiera los que él mismo escribió: la
+autoría no da permiso permanente.
+
+Lo que **no** cambia es a qué casos accede, y conviene decirlo para que no se
+sobreentienda: esta spec **no enruta ni filtra casos por área**. Hoy todos los
+responsables ven todos los casos, y eso sigue igual. Filtrar la cola por área sería un
+cambio de comportamiento para los responsables actuales —pasarían a ver menos— y por
+eso es una decisión de otra spec, no un efecto secundario de esta.
 
 **CL-8 — Se crea un área nueva y nadie la supervisa.** Fuera del alcance de esta
 spec: las áreas son cinco y no se crean desde el sistema. Si algún día se pudieran
@@ -236,6 +242,10 @@ implícito.
 - **FR-005**: Una persona responsable de varias áreas DEBE conservar **todas** las
   funciones del panel que tiene un responsable de una sola. Ampliar su
   responsabilidad no puede quitarle acceso.
+- **FR-018**: El sistema DEBE rechazar asignarle áreas de responsabilidad a quien **no
+  es supervisor**. Ser responsable de un área sin serlo es un estado sin sentido, y
+  aceptarlo dejaría a alguien con permisos de escritura sobre conocimiento sin haber
+  pasado por el control que los habilita.
 
 ### Cuando el sistema no sabe contestar
 

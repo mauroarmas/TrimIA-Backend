@@ -92,6 +92,12 @@ igual por WhatsApp (FR-017), donde no hay token. Resolver por teléfono es el ú
 camino que sirve para los dos canales, y ya es el que se usa. **La paridad de canales
 sale gratis.**
 
+**Lo que este objeto NO es.** El `Caller` sirve a la **conversación**. La regla de
+escritura de conocimiento (§5) necesita el mismo concepto pero resuelto de otra forma
+—del empleado autenticado del token, porque son requests HTTP sin teléfono— y por eso
+ahí el parámetro se llama **`autor`**. Reusar el `Caller` en esos caminos no tendría de
+dónde sacar el teléfono. Ver [data-model.md §5](./data-model.md).
+
 **Consecuencia a testear**: la misma persona con la misma pregunta recibe el mismo
 trato por el panel y por WhatsApp; a un empleado dado de baja se lo sigue degradando a
 `CLIENTE` en el mismo turno, como hoy.
