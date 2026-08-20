@@ -302,6 +302,47 @@ describe('buildRagAgentGraph', () => {
       expect(prompt).toMatch(/no se le vende/i);
     });
 
+    /**
+     * ⭐ El defecto que sobrevivió al MVP (2026-08-20).
+     *
+     * El bloque de interlocutor estaba, el `caller` llegaba bien, y el asistente le
+     * seguía vendiendo al dueño: *"¿Te consulto los modelos disponibles con un
+     * responsable?"*. El motivo no era el ruteo sino el prompt — `SALES_PROMPT`,
+     * `STYLE_RULES` y `HANDOFF_INSTRUCTIONS` decían "el cliente" quince veces para
+     * referirse a **quien está escribiendo**. Una línea nueva no le gana a quince
+     * que dan por sentado lo contrario.
+     *
+     * Este test fija la corrección: en el prompt, "cliente" puede aparecer como
+     * un tercero del que se habla, nunca como el interlocutor.
+     */
+    it('⭐ el prompt no da por sentado que quien escribe es un cliente', async () => {
+      const prompt = await promptDe({
+        userType: 'EMPLEADO',
+        role: 'SUPERVISOR',
+        areas: [],
+        esGerente: true,
+      });
+
+      // Las formas concretas que tenía el prompt de tratar al interlocutor como
+      // comprador. Cada una hacía que el modelo le ofreciera atenderlo.
+      expect(prompt).not.toMatch(/decile al cliente/i);
+      expect(prompt).not.toMatch(/tono del cliente/i);
+      expect(prompt).not.toMatch(/mensaje para el cliente/i);
+      expect(prompt).not.toMatch(/datos al\s+cliente/i);
+    });
+
+    // Y la contracara: la instrucción de no hacerle el mandado a quien trabaja acá.
+    it('le dice que a quien trabaja acá no le ofrezca consultar en su nombre', async () => {
+      const prompt = await promptDe({
+        userType: 'EMPLEADO',
+        role: 'SUPERVISOR',
+        areas: [],
+        esGerente: false,
+      });
+
+      expect(prompt).toMatch(/no le ofrezcas consultarlo vos en su nombre/i);
+    });
+
     // Conservador a propósito: es preferible hablarle de más a un empleado que
     // tratar a un cliente como si trabajara acá.
     it('sin caller cae al trato de cliente', async () => {
