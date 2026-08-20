@@ -5,6 +5,10 @@ import {
   UNTRANSCRIBABLE_AUDIO_MARKER,
   TRANSCRIPTION_FAILED_REPLY,
 } from './utils/trivial-filter';
+import {
+  buildClassifyPrompt,
+  buildScopePrompt,
+} from './utils/orchestrator.prompts';
 
 /**
  * Ruteo sticky vs. greeting (bug encontrado revisando el diagrama de
@@ -605,5 +609,43 @@ describe('buildOrchestratorGraph — trivial_response deja auditoría', () => {
       inputTokens: 0,
       outputTokens: 0,
     });
+  });
+});
+
+/**
+ * ⭐ Un saludo con una pregunta adentro NO es un saludo (2026-08-20).
+ *
+ * Encontrado probando el panel: *"hola! que sabes sobre la empresa?"* y *"Hola, soy
+ * nuevo en la empresa. Que es Credimision y que areas tiene?"* se clasificaron
+ * las dos como `greeting`, y la pregunta se perdió — el asistente contestó
+ * "¡Hola! 👋 ¿En qué puedo ayudarte hoy?" y hubo que repetirla.
+ *
+ * `scope_check` ya tenía la regla ("si hay una consulta real, isGreeting: false"),
+ * `classify_intent` no. Los dos casos eran **primeros mensajes** de la
+ * conversación, que es justo el camino que pasa por classify_intent.
+ *
+ * Se comprueba el prompt y no la decisión del modelo: la decisión la toma Gemini,
+ * así que un test unitario no puede fijarla. Lo que sí se puede fijar —y es lo que
+ * se rompió— es que la instrucción esté.
+ */
+describe('⭐ classify_intent — saludo + pregunta', () => {
+  const prompt = buildClassifyPrompt(['SALES', 'COLLECTIONS']);
+
+  it('le dice que un saludo no convierte al mensaje en greeting', () => {
+    expect(prompt).toMatch(/un saludo NO convierte al mensaje en greeting/i);
+  });
+
+  it('da ejemplos de las dos clases, no solo de una', () => {
+    // Con la definición sola ("saludo o cortesía y nada más") el modelo ya fallaba:
+    // los ejemplos del caso mixto son lo que agrega la corrección.
+    expect(prompt).toMatch(/Ejemplos que NO son greeting/i);
+    expect(prompt).toMatch(/¿qué venden\?/i);
+    expect(prompt).toMatch(/Es greeting: "hola"/i);
+  });
+
+  it('scope_check ya tenía la regla equivalente, y sigue estando', () => {
+    const scope = buildScopePrompt('COLLECTIONS', ['SALES', 'COLLECTIONS']);
+
+    expect(scope).toMatch(/Si\s+hay una consulta real.*isGreeting: false/is);
   });
 });

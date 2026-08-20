@@ -20,7 +20,14 @@ export function buildClassifyPrompt(allowed: SpecializedAgent[]): string {
   Leé el mensaje y decidí cuál de estas opciones debe atenderlo:
 
 ${opciones}
-  - greeting: SOLO si el mensaje es un saludo o cortesía sin una consulta concreta.
+  - greeting: SOLO si el mensaje es un saludo o cortesía **y nada más**.
+
+  Un saludo NO convierte al mensaje en greeting. Si además del saludo hay una
+  pregunta o un pedido, elegí el área que corresponda a esa pregunta e ignorá el
+  saludo: la gente arranca saludando y no por eso deja de estar preguntando algo.
+  Ejemplos que NO son greeting: "hola! ¿qué venden?", "buenas, soy nuevo acá,
+  ¿qué es la empresa?", "gracias, ¿y en cuotas cuánto sale?".
+  Es greeting: "hola", "buen día", "gracias!", "dale, saludos".
 
   Distinción clave: SALES asesora sobre QUÉ productos y planes existen y responde disponibilidad/stock; ADMIN (si está disponible) decide si un cliente concreto puede acceder a un crédito.
   Si la consulta no encaja claramente en ninguna, elegí SALES.

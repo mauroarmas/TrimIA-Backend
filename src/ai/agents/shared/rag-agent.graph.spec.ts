@@ -458,6 +458,46 @@ describe('buildRagAgentGraph', () => {
       expect(result.response).toContain('65.0%');
     });
 
+    /**
+     * Un documento largo ocupa varios lugares del top-k: `retrievedDocs` trae
+     * **chunks**, no documentos. Repetir el título con dos scores hace que quien
+     * lee concluya que hay duplicados cargados y salga a arreglar algo que no está
+     * roto — exactamente el error que este aviso viene a evitar. Se vio en el panel
+     * el 2026-08-20: «Glosario interno» apareció dos veces, 62.1% y 61.6%.
+     */
+    it('⭐ un documento aparece UNA vez, con su mejor score', async () => {
+      const conChunksRepetidos = [
+        {
+          documentId: 'doc-1',
+          title: 'Glosario interno',
+          content: 'a',
+          score: 0.62,
+        },
+        {
+          documentId: 'doc-1',
+          title: 'Glosario interno',
+          content: 'b',
+          score: 0.61,
+        },
+        { documentId: 'doc-2', title: 'Inducción', content: 'c', score: 0.6 },
+      ];
+      const { graph } = buildGraph(
+        0.62,
+        undefined,
+        'SALES',
+        conChunksRepetidos,
+      );
+
+      const result = await graph.invoke(supervisor);
+      const texto = result.response!;
+
+      expect(texto.match(/Glosario interno/g)).toHaveLength(1);
+      // Y el que queda es el mejor de los dos, no el último que pasó.
+      expect(texto).toContain('«Glosario interno» — 62.0%');
+      expect(texto).not.toContain('61.0%');
+      expect(texto).toContain('Inducción');
+    });
+
     it('lista los candidatos en orden de cercanía', async () => {
       const { graph } = graphConCandidatos();
 

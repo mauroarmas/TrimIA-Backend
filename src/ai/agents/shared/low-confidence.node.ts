@@ -30,6 +30,25 @@ import { SpecializedAgent } from '../agents.service';
 /** Cuántos documentos consultados se listan. Con `k = 4`, todos. */
 const MAX_DOCS_EN_INFORME = 4;
 
+/**
+ * Un documento por línea, con su mejor chunk.
+ *
+ * `retrievedDocs` trae **chunks**, no documentos, y un documento largo puede ocupar
+ * dos o tres lugares del top-k. Sin esto el informe repite el mismo título con
+ * scores distintos, y eso es peor que feo: quien lo lee concluye que hay documentos
+ * duplicados cargados y sale a "arreglar" algo que no está roto — justo el error que
+ * este aviso existe para evitar. Se conserva el mejor score de cada documento, que
+ * es el que dice cuán cerca estuvo de responder.
+ */
+function mejoresPorDocumento(docs: RetrievedDoc[]): RetrievedDoc[] {
+  const mejor = new Map<string, RetrievedDoc>();
+  for (const doc of docs) {
+    const previo = mejor.get(doc.documentId);
+    if (!previo || doc.rank < previo.rank) mejor.set(doc.documentId, doc);
+  }
+  return [...mejor.values()].sort((a, b) => a.rank - b.rank);
+}
+
 /** Las dos acciones que tiene a mano quien lee el informe (FR-010, CL-2). */
 const CIERRE =
   'Si el tema es de un área tuya podés cargarlo o corregirlo; si es de otra, ' +
@@ -84,8 +103,7 @@ export function buildLowConfidenceReport(
     );
   }
 
-  const lista = [...docs]
-    .sort((a, b) => a.rank - b.rank)
+  const lista = mejoresPorDocumento(docs)
     .slice(0, MAX_DOCS_EN_INFORME)
     .map((d, i) => `${i + 1}. «${d.title}» — ${pct(d.score)}`)
     .join('\n');
