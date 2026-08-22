@@ -3,10 +3,29 @@
 **Hallazgos**: 2026-08-18, probando el panel a mano después de cerrar la spec 004.
 **Decisiones**: 2026-08-19, conversadas con Mauro.
 
-> **La spec ya se escribió**: [specs/005-roles-y-areas/spec.md](../specs/005-roles-y-areas/spec.md).
+> **La spec ya se escribió y el backend ya está implementado**
+> ([specs/005-roles-y-areas/](../specs/005-roles-y-areas/), fases 1 a 8; el panel web
+> queda enumerado en la fase 9 y se trabaja aparte).
 > Este documento queda como el registro de **por qué** cada decisión se tomó así,
 > incluidas las que se revirtieron — la spec dice qué hay que construir, esto dice
 > qué se descartó y con qué argumento.
+>
+> **Qué quedó implementado**, para que no se lea como pendiente:
+>
+> | Hallazgo | Estado |
+> |---|---|
+> | 1. Tono: le habla al dueño como a un cliente | ✅ `Caller` + `interlocutorInstructions()` |
+> | 2. Escalado a un supervisor | ✅ `low-confidence.node.ts`, sin `Escalation` |
+> | 3. Responsable de varias áreas | ✅ N:M `Employee` ↔ `Sector`, sin rol nuevo |
+> | 4. Escritura de conocimiento por área | ✅ `KnowledgeService.assertPuedeEscribir()` |
+> | Nota al margen (el chat que no se mostró) | Sigue sin reproducirse; se ignoró |
+>
+> Los dos puntos que quedaban por decidir se decidieron: la **paridad por WhatsApp**
+> sale gratis porque el `Caller` se resuelve por teléfono (verificado, SC-009), y
+> `escalate_by_agent` —cuando el agente pide una persona **teniendo** contexto
+> suficiente— quedó **igual para todos**, incluidos supervisor y gerente. Es la
+> opción conservadora: no cambia comportamiento existente y se revisa si en la
+> práctica molesta.
 
 Esto **no es una spec**: es el insumo con el que se escribió, con las causas
 verificadas contra el código y las decisiones ya tomadas.
@@ -207,13 +226,17 @@ texto de la constitución y no solo el código.
 
 ---
 
-## Pendiente de decidir
+## Pendiente de decidir — ✅ los dos se decidieron
 
-- **¿Aplica igual por WhatsApp?** Debería salir gratis —la identidad ya se resuelve
-  por teléfono, así que Diego escribiendo por WhatsApp recibiría el mismo trato—,
-  pero conviene decidirlo a propósito y no descubrirlo.
-- **`escalate_by_agent`**: si el agente pide una persona teniendo contexto
-  suficiente, ¿qué pasa cuando quien pregunta es supervisor o gerente?
+- ~~**¿Aplica igual por WhatsApp?**~~ **Sí, y sin trabajo extra.** El `Caller` se
+  resuelve por teléfono, así que Diego escribiendo por WhatsApp recibe el mismo trato
+  que en el panel. Se verificó a propósito en vez de suponerlo (SC-009).
+- ~~**`escalate_by_agent`**~~ **queda igual para todos.** Si el agente pide una
+  persona teniendo contexto suficiente, sigue creando el caso, también para un
+  supervisor o el gerente. Son dos motivos distintos: la spec 005 cambia el escalado
+  por **falta de conocimiento**, no el que el agente pide por criterio propio. No
+  cambiar comportamiento existente es lo conservador; si en la práctica molesta, se
+  revisa.
 
 ---
 

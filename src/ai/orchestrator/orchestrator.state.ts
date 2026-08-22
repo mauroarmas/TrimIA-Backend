@@ -1,6 +1,7 @@
 import { Annotation } from '@langchain/langgraph';
 import { AgentType, UserType } from '@prisma/client';
 import { ConversationTurn } from '../../conversations/conversations.service';
+import { Caller } from '../caller/caller.types';
 
 /**
  * Un candidato que el RAG devolvió en el turno (Sprint 5A, US7).
@@ -15,6 +16,16 @@ export interface RetrievedDoc {
   score: number;
   /** Posición en el top-k; 0 es el mejor. */
   rank: number;
+  /**
+   * Título del documento (spec 005).
+   *
+   * Hace falta para que el aviso de baja confianza a un responsable pueda decir
+   * QUÉ se consultó: "documento a3f2b8c1" no le sirve a nadie. El dato ya venía en
+   * el `SearchHit` y hasta ahora se descartaba al mapear.
+   *
+   * Solo en memoria: `KnowledgeRetrieval` sigue guardando id, score y rank.
+   */
+  title: string;
 }
 
 /**
@@ -31,6 +42,13 @@ export const OrchestratorState = Annotation.Root({
   currentAgent: Annotation<AgentType | null>, // agente sticky de la conversación (entrada)
   userType: Annotation<UserType | null>, // CLIENTE/EMPLEADO → define la audiencia del RAG
   history: Annotation<ConversationTurn[]>, // turnos previos USER/ASSISTANT (memoria conversacional)
+  // Quién habla (spec 005): rol y áreas de las que es responsable. Lo consumen el
+  // prompt (para el trato) y el router de confianza (para no escalarle a quien es
+  // el destino del escalado).
+  //
+  // ⚠️ NO se usa para filtrar la recuperación. `userType` sigue siendo lo único que
+  // decide audiencia y agentes permitidos — Principio I, punto único.
+  caller: Annotation<Caller | null>,
 
   // --- Salidas (las van completando los nodos; arrancan en null) ---
   agentType: Annotation<AgentType | null>, // agente resuelto para este turno

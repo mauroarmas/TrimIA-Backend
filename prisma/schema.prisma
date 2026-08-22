@@ -156,7 +156,12 @@ model Sector {
   agentType AgentType? // agente principal asociado al sector (para queries)
   createdAt DateTime   @default(now())
 
-  employees Employee[]
+  // Quiénes TRABAJAN en este sector (1:N).
+  employees Employee[] @relation("EmpleadoDelSector")
+
+  // Quiénes son RESPONSABLES de este sector (N:M, spec 005). Son dos cosas
+  // distintas: alguien puede trabajar en Ventas y supervisar además Depósito.
+  supervisores Employee[] @relation("AreasSupervisadas")
 }
 
 // Empleado/supervisor autorizado. Determina userType al recibir un mensaje.
@@ -169,7 +174,19 @@ model Employee {
   role      EmployeeRole @default(EMPLEADO)
   isActive  Boolean      @default(true)
   sectorId  String
-  sector    Sector       @relation(fields: [sectorId], references: [id])
+  // Dónde trabaja (1:N). El nombre de la relación es OBLIGATORIO desde la spec
+  // 005: hay DOS relaciones entre Employee y Sector, y sin nombrarlas Prisma no
+  // puede inferir cuál es cuál (falla el `db push`).
+  sector    Sector       @relation("EmpleadoDelSector", fields: [sectorId], references: [id])
+
+  // De qué áreas es RESPONSABLE (N:M, spec 005). Vacío para un empleado común;
+  // una o más para un supervisor; todas para el gerente.
+  //
+  // No hay flag de "gerente": serlo se DERIVA de tener todas las áreas. Guardar
+  // el flag además de la lista crearía dos fuentes de verdad que pueden
+  // contradecirse, y el día que exista un sector nuevo quien tenga los cinco
+  // anteriores deja de ser gerente solo — que es lo correcto.
+  areasSupervisadas Sector[] @relation("AreasSupervisadas")
   // Permiso adicional de Cobrador Controlador (Sprint 4). No es un valor nuevo
   // de EmployeeRole: convive con role=EMPLEADO + sector=Cobranzas. Ver
   // specs/002-collections-payments/data-model.md.

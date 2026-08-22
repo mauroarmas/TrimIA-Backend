@@ -42,7 +42,29 @@ function buildService(current: Record<string, unknown> = {}) {
       update,
       delete: jest.fn().mockResolvedValue(doc),
     },
+    // Spec 005: la regla de escritura cuenta las áreas que existen para saber si
+    // alguien es responsable de todas (documentos transversales).
+    sector: { count: jest.fn().mockResolvedValue(5) },
     $transaction: jest.fn(async (cb: (t: typeof tx) => unknown) => cb(tx)),
+  };
+
+  // El autor es responsable de todas las áreas: acá se prueba el CRUD —qué dispara
+  // una reindexación—, no la autorización. El alcance por área tiene sus propios
+  // tests en knowledge-write-scope.spec.ts, y mezclarlos haría que un test de
+  // reindexación fallara por un motivo que no está mirando.
+  const employees = {
+    findById: jest.fn().mockResolvedValue({
+      id: AUTHOR,
+      role: 'SUPERVISOR',
+      isActive: true,
+      areasSupervisadas: [
+        { id: 's1', name: 'Ventas', agentType: 'SALES' },
+        { id: 's2', name: 'Cobranzas', agentType: 'COLLECTIONS' },
+        { id: 's3', name: 'Logística', agentType: 'LOGISTICS' },
+        { id: 's4', name: 'Depósito', agentType: 'DEPOSITS' },
+        { id: 's5', name: 'Administración', agentType: 'ADMIN' },
+      ],
+    }),
   };
 
   const queueAdd = jest.fn().mockResolvedValue({});
@@ -51,6 +73,7 @@ function buildService(current: Record<string, unknown> = {}) {
   const service = Object.create(KnowledgeService.prototype) as KnowledgeService;
   Object.assign(service, {
     prisma,
+    employees,
     reindexQueue: { add: queueAdd },
     collection: { delete: collectionDelete, get: jest.fn(), update: jest.fn() },
     logger: { log: jest.fn(), error: jest.fn(), warn: jest.fn() },
@@ -227,7 +250,7 @@ describe('KnowledgeService.remove — orden de borrado', () => {
       async () => void order.push('postgres'),
     );
 
-    await service.remove(DOC_ID);
+    await service.remove(DOC_ID, AUTHOR);
 
     expect(order).toEqual(['chroma', 'postgres']);
     expect(collectionDelete).toHaveBeenCalledWith({
@@ -240,7 +263,7 @@ describe('KnowledgeService.remove — orden de borrado', () => {
     // una operación explícita. Este test fija que el servicio NO lo borre.
     const { service, prisma } = buildService();
 
-    await service.remove(DOC_ID);
+    await service.remove(DOC_ID, AUTHOR);
 
     expect(
       (prisma as unknown as Record<string, unknown>).knowledgeFile,
@@ -254,7 +277,7 @@ describe('KnowledgeService.setActive — desactivar sin borrar', () => {
     const updateChunk = jest.fn().mockResolvedValue(undefined);
     Object.assign(service, { updateChunkMetadata: updateChunk });
 
-    await service.setActive(DOC_ID, false);
+    await service.setActive(DOC_ID, false, AUTHOR);
 
     expect(collectionDelete).not.toHaveBeenCalled();
     expect(updateChunk).toHaveBeenCalledWith(DOC_ID, { isActive: false });
@@ -263,7 +286,7 @@ describe('KnowledgeService.setActive — desactivar sin borrar', () => {
   it('si ya está en ese estado, no hace nada', async () => {
     const { service, prisma } = buildService({ isActive: true });
 
-    await service.setActive(DOC_ID, true);
+    await service.setActive(DOC_ID, true, AUTHOR);
 
     expect(prisma.knowledgeDocument.update).not.toHaveBeenCalled();
   });

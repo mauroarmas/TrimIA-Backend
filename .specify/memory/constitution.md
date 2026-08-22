@@ -84,6 +84,45 @@ Follow-up TODOs: ninguno. La regla ya se aplicó retroactivamente al Sprint 5A
   (specs/003-archivos-chat-conocimiento/tasks.md §Phase 11, T082-T109).
 -->
 
+<!--
+SYNC IMPACT REPORT
+==================
+Version change: 1.1.0 → 1.2.0
+Bump rationale: MINOR — guía materialmente ampliada (§I). El Principio I tenía dos
+  puntos de autorización y los dos eran de **lectura**: qué agentes se alcanzan y qué
+  audiencia se recupera. specs/005-roles-y-areas agrega autorización de **escritura**
+  sobre el corpus, que es una dimensión nueva: no responde "quién puede ver esto" sino
+  "quién puede cambiar esto".
+
+  Origen: la base de conocimiento se modifica por diez caminos distintos y dos de ellos
+  no pasan por la pantalla de gestión (resolver un caso "enseñándole al agente" y
+  guardar una respuesta sin enviar). Sin nombrar la regla acá quedaba huérfana: un
+  documento cargado en un área ajena degrada las respuestas de todos y nadie se
+  entera — es un fallo silencioso, que es la clase que esta constitución existe para
+  atajar.
+
+  Se agrega también la contracara, porque sin ella la regla se malinterpreta: **ver no
+  se restringe por área**. Hace falta ver lo de otras áreas para no duplicarlo y para
+  saber a quién derivar.
+
+Modified principles:
+  - I. Confidencialidad por Rol y Audiencia — dos puntos nuevos: escritura del corpus
+    por área (`KnowledgeService.assertPuedeEscribir()`) y "ver no es editar". Nada de
+    lo que ya decía cambia ni se debilita.
+Added sections: N/A
+
+Templates requiring updates:
+  - ✅ .specify/templates/plan-template.md — "Constitution Check" lee este archivo;
+       alineado.
+  - ✅ .specify/templates/spec-template.md — sin referencias a principios; alineado.
+  - ✅ .specify/templates/tasks-template.md — ya exige tests de autorización;
+       alineado.
+
+Follow-up TODOs: ninguno. La regla está implementada y cubierta por
+  src/ai/knowledge/knowledge-write-scope.spec.ts y por los tests de las dos puertas de
+  atrás en src/escalations/escalations.service.spec.ts.
+-->
+
 # TrimIA Constitution
 
 Backend NestJS de una plataforma de agentes de IA para **Credimisión S.R.L.** (empresa
@@ -112,10 +151,25 @@ RNF-02 y NUNCA puede debilitarse.
 - El acceso al Panel del Supervisor (gobernanza) es una dimensión distinta del `userType`
   conversacional: se gatea por `EmployeeRole` (`EMPLEADO`|`SUPERVISOR`), no por el enum
   `UserType`.
+- **Escritura del corpus por área** (spec 005): los dos puntos anteriores son de
+  **lectura**; éste es de **escritura**. Un responsable solo puede *modificar*
+  documentos de las áreas de las que es responsable, y los transversales solo quien es
+  responsable de todas. Se decide en `KnowledgeService.assertPuedeEscribir()` y en
+  ningún otro lado — la escritura entra por diez caminos y dos están en
+  `escalations.service.ts` (resolver un caso "enseñándole al agente" y guardar una
+  respuesta sin enviar), así que una regla puesta en la ruta o en la pantalla deja la
+  puerta de atrás abierta. Su autor sale del **empleado autenticado del token**, no del
+  `Caller` conversacional, que se resuelve por teléfono.
+- **Ver no es editar**: la lectura del corpus NO se restringe por área. Hace falta ver
+  lo de otras áreas para no duplicarlo y para saber a quién derivar; filtrar el listado
+  "por consistencia" degradaría el corpus, que es justo lo que la restricción de
+  escritura protege.
 
 **Rationale:** exponer datos internos o financieros a un cliente es la peor falla posible
 del producto; por eso la autorización vive en un único punto testeable y se verifica
-en cada cambio que la roce.
+en cada cambio que la roce. La escritura por área tiene el mismo tratamiento por un
+motivo distinto: un documento cargado en un área ajena degrada las respuestas de todos
+y nadie se entera.
 
 ### II. RAG Estricto — Cero Alucinación
 Los agentes responden ÚNICAMENTE con el contexto recuperado de la base de conocimiento.
@@ -241,4 +295,4 @@ el detalle técnico del código.
 - **Guía en tiempo de ejecución:** para desarrollo diario y convenciones, usar
   `docs/CONTEXTO_TECNICO.md` y `CLAUDE.md`.
 
-**Version**: 1.1.0 | **Ratified**: 2026-08-03 | **Last Amended**: 2026-08-18
+**Version**: 1.2.0 | **Ratified**: 2026-08-03 | **Last Amended**: 2026-08-19

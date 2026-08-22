@@ -11,6 +11,7 @@
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { GUARDS_METADATA } from '@nestjs/common/constants';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
+import { ROLES_KEY } from '../auth/guards/roles.guard';
 import { MessagingWebController } from './messaging-web.controller';
 import { MessagingService } from './messaging.service';
 import { ConversationsService } from '../conversations/conversations.service';
@@ -23,6 +24,7 @@ import { PrismaService } from '../database/prisma.service';
 import { WhatsappSenderService } from './whatsapp-sender.service';
 import { OrchestrationLogger } from '../ai/orchestrator/orchestration-logger.service';
 import { RedisService } from '../redis/redis.service';
+import { EscalationsService } from '../escalations/escalations.service';
 
 const CONV_ID = '77777777-7777-4777-8777-777777777777';
 
@@ -67,11 +69,18 @@ function buildController(
     sseStreamFor: jest.fn().mockReturnValue(EMPTY),
   };
 
+  const escalations = {
+    delegateFromConversation: jest
+      .fn()
+      .mockResolvedValue({ id: 'esc-1', delegatedToId: 'emp-2' }),
+  };
+
   const controller = new MessagingWebController(
     messaging as unknown as MessagingService,
     conversations as unknown as ConversationsService,
     employees as unknown as EmployeesService,
     realtime as unknown as RealtimeService,
+    escalations as unknown as EscalationsService,
   );
 
   /** Opciones con las que el controller abrió el stream (revalidate/expiresAt). */
@@ -84,6 +93,7 @@ function buildController(
     conversations,
     employees,
     realtime,
+    escalations,
     streamOptions,
   };
 }
@@ -96,6 +106,62 @@ describe('MessagingWebController — sesión válida (401)', () => {
     ) ?? []) as unknown[];
 
     expect(guards).toContain(JwtAuthGuard);
+  });
+});
+
+/**
+ * ⭐ US4 / FR-010 — derivar la consulta propia (spec 005).
+ *
+ * Dos barreras, no una: hay que ser SUPERVISOR **y** la conversación tiene que ser
+ * propia. La segunda es la que impide derivar la consulta de otra persona, y es el
+ * mismo método de pertenencia que usan el historial, el stream y el cierre — no una
+ * regla nueva.
+ */
+describe('⭐ MessagingWebController.delegate — quién puede derivar (US4)', () => {
+  it('exige rol SUPERVISOR', () => {
+    const roles = Reflect.getMetadata(
+      ROLES_KEY,
+      MessagingWebController.prototype.delegate,
+    ) as string[];
+
+    // El gerente entra por acá mismo: es un SUPERVISOR con todas las áreas. Es el
+    // beneficio de no haber agregado un rol nuevo.
+    expect(roles).toEqual(['SUPERVISOR']);
+  });
+
+  it('rechaza derivar desde una conversación de OTRO empleado', async () => {
+    const { controller, escalations } = buildController({
+      employeePhone: '5493865505362',
+      conversationExternalId: '5493800000000',
+    });
+
+    await expect(
+      controller.delegate(
+        CONV_ID,
+        { toEmployeeId: '11111111-1111-4111-8111-111111111111' },
+        { user: { id: 'emp-1' } },
+      ),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+    expect(escalations.delegateFromConversation).not.toHaveBeenCalled();
+  });
+
+  it('deriva la propia, con quién la deriva sacado del token', async () => {
+    const { controller, escalations } = buildController({
+      employeePhone: '5493865505362',
+      conversationExternalId: '5493865505362',
+    });
+
+    await controller.delegate(
+      CONV_ID,
+      { toEmployeeId: '11111111-1111-4111-8111-111111111111' },
+      { user: { id: 'emp-1' } },
+    );
+
+    expect(escalations.delegateFromConversation).toHaveBeenCalledWith({
+      conversationId: CONV_ID,
+      toEmployeeId: '11111111-1111-4111-8111-111111111111',
+      delegatedById: 'emp-1',
+    });
   });
 });
 
@@ -399,6 +465,7 @@ describe('⭐ US2 — la respuesta del supervisor llega al chat abierto (T022)',
         }),
       } as unknown as EmployeesService,
       realtime,
+      {} as unknown as EscalationsService,
     );
 
     return { controller, conversations, conversacion };

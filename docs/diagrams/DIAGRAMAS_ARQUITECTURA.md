@@ -1,97 +1,10 @@
 # Diagramas de Arquitectura — TrimIA
 
-## 0. Modelo de dominio
-
-```mermaid
-classDiagram
-    direction LR
-
-    class Cliente {
-        nombre
-        teléfono
-        DNI
-    }
-    class Empleado {
-        nombre
-        sector
-        rol
-        es cobrador controlador
-    }
-    class Conversacion {
-        canal — WhatsApp o web
-        estado
-        agente que la atiende
-    }
-    class Mensaje {
-        quién lo dijo
-        contenido
-    }
-    class NotaInterna {
-        contenido
-        nunca se le envía al cliente
-    }
-    class CasoEscalado {
-        motivo
-        estado del cierre
-    }
-    class DocumentoDeConocimiento {
-        título
-        contenido
-        área
-        audiencia — público o interno
-        vigente
-    }
-    class SolicitudDeCompra {
-        producto
-        monto
-        modalidad — contado o cuotas
-        estado
-    }
-    class EvaluacionCrediticia {
-        dictamen
-        motivo
-    }
-    class Financiacion {
-        monto total
-        cantidad de cuotas
-    }
-    class Cuota {
-        número
-        monto
-        vencimiento
-        estado
-    }
-    class ComprobanteDePago {
-        imagen
-        monto y fecha leídos
-        estado
-        impactó en la cuenta
-    }
-
-    Cliente "1" --> "*" Conversacion : mantiene
-    Conversacion "1" --> "*" Mensaje : contiene
-    Conversacion "1" --> "*" NotaInterna : se anota con
-    Conversacion "1" --> "*" CasoEscalado : deriva en
-    Empleado "1" --> "*" CasoEscalado : resuelve
-    Empleado "1" --> "*" NotaInterna : escribe
-    Empleado "1" --> "*" Cliente : tiene en su cartera
-
-    Cliente "1" --> "*" SolicitudDeCompra : origina
-    Conversacion "1" --> "*" SolicitudDeCompra : de dónde salió
-    SolicitudDeCompra "1" --> "*" EvaluacionCrediticia : motiva
-    SolicitudDeCompra "1" --> "0..1" Financiacion : deriva en
-    Financiacion "1" --> "*" Cuota : se divide en
-    Cliente "1" --> "*" Cuota : debe
-    Cuota "1" --> "*" ComprobanteDePago : recibe
-    Empleado "1" --> "*" ComprobanteDePago : acepta y verifica
-
-    DocumentoDeConocimiento "*" --> "*" Conversacion : alimenta las respuestas
-    Empleado "1" --> "*" DocumentoDeConocimiento : mantiene
-```
-
-## 1. Módulos del Sistema (20 total)
+## 1. Módulos del Sistema (22 de negocio)
 
 TrimIA está organizado en **4 capas de módulos** según responsabilidad, no por orden alfabético. Esto hace que la arquitectura sea clara de un vistazo.
+
+> Quedan fuera del inventario `AppModule` (el raíz), `HealthModule` (`/health`, para el healthcheck de Docker) y `DevToolsModule` (utilidades de desarrollo, no se despliega). En disco hay 25 archivos `*.module.ts`.
 
 ### 🔧 Infraestructura Global (@Global, sin import explícito en cada módulo)
 
@@ -111,6 +24,7 @@ TrimIA está organizado en **4 capas de módulos** según responsabilidad, no po
 | **AgentsModule** | `agents.module.ts` | Lógica de los 5 agentes especializados (SALES/ADMIN/COLLECTIONS/LOGISTICS/DEPOSITS) |
 | **OrchestratorModule** | `orchestrator.module.ts` | Orquesta flujo entre agentes, ruteo sticky, scope_check, classify_intent |
 | **OrchestrationLoggerModule** | `orchestration-logger.module.ts` | Auditoría (OE-11): persiste OrchestrationEvent + TokenUsage (separado para evitar import cíclico) |
+| **CallerModule** | `caller/caller.module.ts` | **Quién está hablando** (spec 005): resuelve por teléfono rol y áreas, y deriva si es gerente. Transporta identidad — **no** decide accesos, que los siguen decidiendo `allowedAgentsFor()` y `knowledge.search()` |
 
 ### 💼 Dominio de Negocio (Credimisión)
 
@@ -131,9 +45,11 @@ TrimIA está organizado en **4 capas de módulos** según responsabilidad, no po
 | **MessagingModule** | `messaging.module.ts` | **Dos** puertas de entrada: webhook de WhatsApp y chat web del panel (`messaging-web.controller.ts`, Sprint 5A). Un solo `prepareConversation()` para las dos |
 | **WhatsappSenderModule** | `whatsapp-sender.module.ts` | Envío de mensajes por WhatsApp (separado para evitar ciclo con MessagingModule) |
 | **WhatsappMediaModule** | `whatsapp-media.module.ts` | Descarga/persistencia de media (comprobantes, fotos). Separado por el mismo motivo |
+| **RealtimeModule** | `realtime.module.ts` | Entrega en vivo de los chats del panel por SSE (spec 004), con Redis pub/sub para que valga con más de una instancia |
 | **QueueModule** | `queue.module.ts` | Workers BullMQ: **5** procesadores — message-processing, receipt-extraction, reminders + **knowledge-ingestion** y **knowledge-reindex** (Sprint 5A) |
 
 ---
+
 
 
 
@@ -185,6 +101,8 @@ flowchart TD
 - **La identidad de una conversación web es el teléfono del empleado**, no su `id`, difiere `channel` pero la vista unificada del panel es un `findMany({ where: { externalId } })` sin ninguna tabla de correlación, y `MessageProcessor` resuelve el `userType` sin enterarse del origen del mensaje.
 - **Audio de WhatsApp:** la transcripción vive **en n8n**, no en el backend (nodos `Es audio?` → `Transcribir audio (Gemini)` de `RecepcionMensaje-A.json`; el plan lo llamaba "Workflow 7", la implementación quedó en el workflow Si falla, n8n manda `__AUDIO_NO_TRANSCRIBIBLE__` y `entryRouter` lo desvía a `trivial` **aun con agente sticky** 
 
+
+
 ## 3. Actores y capacidades — quién usa el sistema y por dónde entra
 
 > Los roles de este diagrama son los del proceso real de Credimisión; lo que no se puede deducir del dominio es **por qué puerta entra cada uno** y qué habilita esa puerta. Hay tres, con tres formas distintas de identificar a la persona: WhatsApp (sin cuenta, se reconoce por el número), chat web (sesión iniciada) y panel (sesión + permisos).
@@ -195,7 +113,8 @@ flowchart LR
     empleado(["Empleado<br/>número en la whitelist"])
     cobrador(["Cobrador<br/>empleado con cartera asignada"])
     controlador(["Cobrador Controlador<br/>empleado con isController"])
-    supervisor(["Supervisor<br/>rol SUPERVISOR"])
+    supervisor(["Supervisor<br/>rol SUPERVISOR<br/>responsable de 1..n áreas"])
+    gerente(["Gerente (el dueño)<br/>NO es un rol: es un SUPERVISOR<br/>responsable de TODAS las áreas"])
 
     subgraph wa["Por WhatsApp — se identifica por el número, sin login"]
         c1["Consultar a Ventas y a Cobranzas"]
@@ -210,9 +129,11 @@ flowchart LR
         k2["Verificar el impacto bancario<br/>Ver TODAS las carteras<br/>Asignar cobradores"]
         s1["Cola de casos escalados<br/>y sus tres cierres"]
         s2["Tomar el control de una conversación"]
-        s3["Base de conocimiento: cargar,<br/>corregir, desactivar, editar con IA"]
+        s3["Base de conocimiento: ver TODO,<br/>pero escribir solo en sus áreas"]
         s4["Métricas, eventos y auditoría"]
         s5["Alta de empleados y sectores"]
+        s6["Definir de qué áreas es<br/>responsable cada persona"]
+        g1["Escribir los documentos<br/>transversales, que no son<br/>de ningún área"]
     end
 
     cliente --> c1
@@ -228,18 +149,23 @@ flowchart LR
     supervisor --> s3
     supervisor --> s4
     supervisor --> s5
+    supervisor --> s6
+    gerente -.->|"hace además todo<br/>lo de un supervisor"| supervisor
+    gerente --> g1
 ```
 
-**Las cuatro cosas que este diagrama contesta y el dominio no:**
+**Las cinco cosas que este diagrama contesta y el dominio no:**
 
 1. **El cliente nunca se registra.** Se lo reconoce por el número de teléfono, y ese mismo número decide qué agentes puede consultar y qué conocimiento le llega. Si el número está en la whitelist de empleados, la conversación pasa a valer como interna —los 5 agentes y el conocimiento `INTERNO`—; si no, quedan Ventas y Cobranzas con conocimiento `PUBLICO`. Es **una sola** regla, en `allowedAgentsFor` + el filtro de audiencia, y se re-evalúa en cada mensaje: dar de baja a un empleado le corta el acceso interno en el mensaje siguiente, sin ningún paso manual.
 2. **"Cobrador Controlador" no es un rol del sistema.** Los roles son dos: `EMPLEADO` y `SUPERVISOR`. El controlador es un empleado de Cobranzas con un permiso adicional (`isController`) que hace dos cosas: le deja ver **todas** las carteras en vez de la propia, y lo habilita a la verificación de impacto bancario. Se modeló así, y no como un tercer rol, porque en la empresa es una atribución que se suma al puesto de cobrador, no un puesto distinto.
 3. **Un cobrador solo ve sus clientes.** El alcance no se declara en el endpoint: se resuelve por cliente, comparando el cobrador asignado contra quien pide. Sin `isController`, un comprobante de otra cartera da `403`.
-4. **El sector viaja en la sesión pero hoy no autoriza nada.** Aparece en el token y sirve para mostrar y para consultas, pero ningún endpoint decide por él: los tres controles efectivos son **rol**, **`isController`** y **cobrador asignado**. Vale saberlo antes de prometer en una demo que "cada sector ve lo suyo" — eso todavía es organizativo, no un permiso.
+4. **El sector donde alguien trabaja sigue sin autorizar nada; las áreas de las que es responsable, sí.** Son dos campos distintos y la diferencia es fácil de pasar por alto. `Employee.sectorId` —dónde trabaja— viaja en el token, sirve para mostrar y para consultas, y **ningún** endpoint decide por él. `Employee.areasSupervisadas` —de qué es responsable, N:M, spec 005— **sí** autoriza, pero **solo la escritura del corpus**: se puede *ver* cualquier documento y *modificar* únicamente los de las áreas propias. Con eso los controles efectivos pasan a ser cuatro: **rol**, **`isController`**, **cobrador asignado** y **área responsable (solo para escribir conocimiento)**. Sigue sin ser cierto que "cada sector ve lo suyo": ver no se restringe por área, y es a propósito — hace falta ver lo ajeno para no duplicarlo y para saber a quién derivar.
+5. **El gerente no es un rol.** Es quien resulta responsable de **todas** las áreas, y se deriva contando; no hay ningún `GERENTE` en el enum ni una casilla que marcar. Se modeló así porque un rol nuevo obligaba a revisar los 23 decoradores `@Roles(...)` —`RolesGuard` compara por igualdad exacta, sin jerarquía— y un olvido le **quitaba** acceso al dueño. Con la tabla N:M ese problema no se resuelve: desaparece. Donde sí cambia algo es en la conversación: el asistente lo trata como gerente, y ante baja confianza no le abre un caso a sí mismo.
 
 Un matiz que suele confundir: **un empleado tiene dos conversaciones distintas con el asistente**, la de WhatsApp y la del chat web, y son hilos separados a propósito. El panel las muestra juntas en una línea de tiempo unificada, pero cada una mantiene su propio contexto (§5).
 
 ---
+
 
 
 ## 4. El viaje de un mensaje — Secuencia Simplificada
@@ -359,7 +285,8 @@ sequenceDiagram
 1. **Síncrono (202 inmediato)**: webhook → validar → crear Conversation → encolar job → responder
 2. **Asíncrono (background)**: worker → orquestador → agente RAG → evaluate_confidence
    - Si score ≥ 0.65: genera respuesta con Gemini
-   - Si score < 0.65: escala a humano (`WAITING_HUMAN`) y responde el mensaje canned
+   - Si score < 0.65 y pregunta un cliente o un empleado: escala a humano (`WAITING_HUMAN`) y responde el mensaje canned
+   - Si score < 0.65 y pregunta un **responsable** (supervisor o gerente): **no** se crea ningún caso — se le informa qué documentos se consultaron y con cuánta confianza (spec 005)
 3. **Respuesta**: envía por WhatsApp → n8n → Meta
 
 **Por qué concurrency: 1:**
@@ -382,267 +309,12 @@ sequenceDiagram
 ---
 
 
-## 5. Grafo del orquestador
-
-```
-                              ┌─────────┐
-                              │  START  │
-                              └────┬────┘
-                                   │
-                          entryRouter()   (función pura: 0 LLM, 0 red)
-                                   │
-                                   ▼
-            ┌──────────────────────┬──────────────────┐
-            │  isUntranscribableAudio(message)        │
-            │ aviso de n8n: no hay texto del usuario  │
-            └───────┬─────────────────────────┬───────┘
-                SÍ  │                         │ NO
-                    │                         ▼
-                    │         ┌───────────────┬───────────────────────┐
-                    │         │ ¿hay currentAgent en la conversación? │
-                    │         └───────┬─────────────────────┬─────────┘
-                    │             NO  │                     │ SÍ
-                    │                 ▼                     ▼
-                    │    ┌────────────┬──────────┐  ┌───────┬─────────────────────┐
-                    │    │ ¿isTrivial(message)?  │  │ ¿el agente sigue permitido  │
-                    │    │ regex: hola/gracias/  │  │ para este userType?         │
-                    │    │ ok/dale/buen día…     │  │ (allowedAgentsFor)          │
-                    │    └───┬──────────────┬────┘  └───┬─────────────────────┬───┘
-                    │     SÍ │           NO │        SÍ │                  NO │
-                    │        │              │           │                     │
-              ┌─────┘        │              │           │                     │
-              ├──────────────┘              │           │                     │
-              │                             │           │                     │
-              │                    ┌────────┼───────────┘                     │
-              │                    │        └─────────────────┐               │
-              │                    │                          ┤───────────────┘
-              │ trivial            │ sticky                   │ orchestrate
-              │                    │                          │
-              ▼                    ▼                          │
-     ┌─────────────────┐   ┌─────────────────────┐            │
-     │ trivial_response│   │    scope_check      │            │
-     │  (canned, 0 LLM)│   │ (classifierChat:    │            │
-     └────────┬────────┘   │  ¿mismo/cambio? +   │            │
-              │            │  ¿greeting? +       │            │
-              │            │  greetingType? +    │            │
-              │            │  targetAgent?)      │            │
-              │            └──────────┬──────────┘            │
-              │                       │                       │ 
-              │                scopeRouter()                  │ 
-              │                       │                       │      
-              │        ┌──────────────┼───────────────┐       └─────────────────┐
-              │  mismo+│        mismo,│         cambio│                         │
-              │ greting│     no greeting              │                         │
-              │        │              │               │                         │
-              │        ▼              ▼               ▼                         │
-              │        │      (agente actual)   ┌───────────┐                   │
-              │        │              │         │handoff_log│                   │
-              │        │              │         │ (Prisma)  │─┐                 │
-              │        │              │         └───────────┘ │                 │     
-              │        │              │                       │                 │
-              │        │              │                       ▼                 │
-              │        │              │                  postHandoffRouter()    │
-              │        │              │                       │                 │
-              │        │              │            ┌──────────┴──────────┐      │
-              │        │              │ targetAgent│      sin targetAgent│      │
-              │        │              │  resuelto  │   (red de seguridad)│      │
-              │        │              │            │                     │      │
-              │        │              │            │                     ▼      ▼
-              │        │              │            │      ┌────────────────────────────┐
-              │        │              │            │      │     classify_intent        │
-              │        │              │            │      │ (classifierChat structured;│
-              │        │              │            │      │  solo agentes permitidos)  │
-              │        │              │            │      └─────────────┬──────────────┘
-              │        │              │            │                    │    
-              │        │              │            │         classifyRouter()
-              │        │              │            │                    │
-              │        │              │            │        ┌───────────┴──────────────┐
-              │        │              │            │greeting│                    agente│
-              │        │              │            │        ▼                          │
-              │        │              │            │   ┌───────────────────┐           │
-              │        └──────────────┼────────────┼──▶│ greeting_response │           │
-              │                       │            │   │ (usa greetingType:│           │
-              │                       │            │   │  apertura|cierre) │           │
-              │                       │            │   └────────┬──────────┘           │
-              │                       │            │            │                      │
-              │                ┌───────────────────┘ ┌──────────┘                      │
-              │                │      │              │                                 │       
-              │                │      ▼              ▼                                 ▼
-              │                │   ┌────────────────────────────────────────────────────┐
-              │                │   │   AGENTE RAG  (SALES│ADMIN│COLLECTIONS│LOGI│DEPO)  │
-              │                │   │   1. retrieve_context  (ChromaDB, audiencia/role)  │
-              │                │   │   2. evaluate_confidence  (score ≥ 0.65?)          │
-              │                │   │      ├─ NO → escalate_to_human (canned)            │
-              │                │   │      └─ SÍ → 3. generate_response                  │
-              │                │   │   3. generate_response (llm.chat 0.7+contexto+hist)│
-              │                │   │      → response + needsHuman? + internalNote?      │
-              │                │   │      └─ 4. evaluateHandoff → escalate_by_agent?    │
-              │                │   └────────────────────────┬───────────────────────────┘
-              │                │                            ▼
-              │                │                     ┌──────────────┐
-              │                │                     │  log_event   │  (OrchestrationEvent → Prisma)
-              │                │                     └──────┬───────┘
-              │                │                            │
-              │                │       ┌────────────────────┘
-              │                ▼       ▼
-              │               ┌──────────────┐
-              │               │ track_tokens │  (TokenUsage → Prisma)
-              │               └──────┬───────┘
-              │                      │
-              ▼                      ▼
-           ┌─────────────────────────────┐
-           │       END                   │
-           └─────────────────────────────┘
-
-Notas:
-1. entryRouter evalúa en cascada, en el orden del árbol de arriba (el primer SÍ corta):
-   a) isUntranscribableAudio → trivial SIEMPRE, aun con sticky: no hay mensaje que
-      rutear, hay un aviso de n8n de que la transcripción falló (US5).
-   b) sin agente + isTrivial (regex) → trivial. El atajo de 0 LLM solo es seguro acá:
-      con sticky fijado, un "dale"/"ok" corto puede ser la confirmación a una pregunta
-      que el bot hizo en el turno anterior — el regex no lo distingue, así que pasa
-      por scope_check (que sí tiene el historial).
-   c) agente fijado Y todavía permitido para el userType → sticky.
-   d) todo lo demás → orchestrate. Ojo con el caso menos obvio: si HAY agente pero ya
-      no está permitido (allowedAgentsFor cambió para ese userType), cae en orchestrate
-      y se reclasifica — así se auto-sanan conversaciones pegadas a un agente prohibido.
-2. trivial_response YA NO va directo a END: pasa por log_event (eventType=TRIVIAL_RESPONSE)
-   → track_tokens (0 tokens, pero registra latencia). Antes no dejaba ningún rastro en
-   OrchestrationEvent/TokenUsage — invisible para la auditoría (OE-11).
-3. postHandoffRouter: si scope_check ya resolvió targetAgent en la misma llamada que
-   decidió "cambio", salta directo al agente (se ahorra una llamada a classify_intent).
-   Si no lo resolvió (o es ambiguo), classify_intent actúa de red de seguridad, igual
-   que antes.
-4. greeting_response ya no adivina con regex: usa greetingType ("apertura"/"cierre"),
-   que sale de la MISMA llamada estructurada que decidió isGreeting (classify_intent o
-   scope_check) — sin costo extra de tokens.
-5. classify_intent y scope_check lanzan Error si Gemini no devuelve salida estructurada
-   válida (result.parsed vacío) — antes fallaba silenciosamente más adelante.
-6. Los routers (entryRouter, scopeRouter, postHandoffRouter, classifyRouter) son
-   funciones puras: deciden el camino SIN llamar a Gemini. Solo classify_intent,
-   scope_check y los agentes gastan tokens.
-
-```
-
-## 6. Grafo de los Agentes RAG — Patrón Común
-
-```
-Cada agente (SALES, ADMIN, COLLECTIONS, LOGISTICS, DEPOSITS) sigue
-el mismo patrón, definido en: src/ai/agents/shared/rag-agent.graph.ts
-
-┌────────────────────────────────────────────────────────────────────┐
-│  buildRagAgentGraph(config, deps)                                  │
-│  ├─ config: ConfigService (modelos, thresholds)                    │
-│  ├─ deps: { llm, knowledge, logger }                              │
-│  └─ return: AgentGraph (LangGraph)                                 │
-└────────┬───────────────────────────────────────────────────────────┘
-         │
-         ▼
-┌────────────────────────────────────────────────────────────────────┐
-│                      Nodos del Grafo                               │
-│                                                                    │
-│  [1] retrieve_context                                              │
-│      ├─ input: estado.input                                        │
-│      ├─ action: KnowledgeService.search(                           │
-│      │   query=estado.input,                                       │
-│      │   audience=PUBLICO|PUBLICO+INTERNO,                         │
-│      │   agentType=SALES|ADMIN|...                                 │
-│      │   k=4                                                       │
-│      │ )                                                           │
-│      │  where = audiencia AND isActive AND agente  ← 5A            │
-│      ├─ output: estado.context = [doc1, doc2, ...]                 │
-│      │          estado.retrievedDocs = [{ documentId,              │
-│      │            score 0-100, rank }]            ← 5A             │
-│      └─ costo: embedQuery (Gemini) + query (Chroma)                │
-│                                                                    │
-│  [2] evaluate_confidence                                           │
-│      ├─ input: estado.context[]                                    │
-│      ├─ logic: Si context.length > 0 && context[0].score >= 0.65   │
-│      │          → alta confianza → generate_response               │
-│      │          senó → escalate_to_human                           │
-│      ├─ umbral: RAG_CONFIDENCE_THRESHOLD = 0.65 (observable)       │
-│      └─ costo: 0 tokens (puro filtro)                              │
-│                                                                    │
-│  [3a] generate_response (si contexto confiable)                    │
-│      ├─ input: estado.context, estado.input, estado.history        │
-│      ├─ prompt: <agente>.prompt.ts                                 │
-│      │   (rol, personalidad, instrucciones de SALES/ADMIN/...)     │
-│      ├─ action: LlmService.generate(                               │
-│      │   messages=system+history+user,                             │
-│      │   model=gemini-3.1-flash-lite,                              │
-│      │   temperature=0.7,                                          │
-│      │   maxTokens=512,                                            │
-│      │   outputFormat=structured                                   │
-│      │ )                                                           │
-│      └─ output: {                                                  │
-│           response: string,                                        │
-│           needsHuman: boolean,  ← NEW                              │
-│           handoffReason?: string, ← NEW                            │
-│           internalNote?: string ← NEW (solo si needsHuman=true)    │
-│         }                                                          │
-│                                                                    │
-│  [3b] escalate_to_human (si contexto débil, score < 0.65)          │
-│      ├─ output: estado.response = "Un supervisor revisará pronto"  │
-│      ├─ acción: Conversation.status = WAITING_HUMAN                │
-│      └─ efecto: supervisor lo ve en Panel (razón: confianza baja)  │
-│                                                                    │
-│  [3c] escalate_by_agent (si generate_response.needsHuman = true)   │
-│      ├─ input: estado.response, estado.internalNote,               │
-│      │         estado.handoffReason                                │
-│      ├─ acción: Escalation.create({ reason, internalNote })        │
-│      ├─ acción: Conversation.status = WAITING_HUMAN                │ 
-│      └─ efecto: respuesta SÍ se envía al cliente + supervisor      │
-│                 ve una nota interna específica del agente          │
-│                                                                    │
-│  [4] track_tokens                                                  │
-│      ├─ input: tokens gastados en [3a] o [3b]                      │
-│      └─ action: TokenUsage.create({                                │
-│           agentType, inputTokens, outputTokens,                    │
-│           conversationId                                           │
-│        })                                                          │
-│                                                                    │
-└────────────────────────────────────────────────────────────────────┘
-
-Cada agente tiene variantes:
-
-  SALES / COLLECTIONS
-  ├─ Audiencia: CLIENTE (solo PUBLICO)
-  ├─ allowedFor: CLIENTE + EMPLEADO
-  └─ Escalada: SÍ (si score < umbral)
-
-  ADMIN
-  ├─ Audiencia: EMPLEADO (PUBLICO + INTERNO)
-  ├─ allowedFor: solo EMPLEADO
-  ├─ Acceso especial: Riesgo Online API
-  └─ Escalada: SÍ
-
-  LOGISTICS / DEPOSITS
-  ├─ Audiencia: EMPLEADO (PUBLICO + INTERNO)
-  ├─ allowedFor: solo EMPLEADO
-  └─ Escalada: NO (sin herramientas, solo RAG)
-
-**Qué cambió en este patrón con el Sprint 5A** — dos cosas, las dos dentro de `retrieve_context`:
-
-1. **El `where` de `search()` pasó de dos condiciones a tres**: audiencia, agente y ahora **`isActive`**. Desactivar un documento lo saca de las respuestas *sin borrar sus vectores*, así que reactivarlo no vuelve a pagar embeddings. Los tres criterios se resuelven en un único lugar (`knowledge.service.ts`), que es lo que impide que un llamador se olvide de uno (Principio I).
-2. **Los hits ya no se descartan**: además de `context` y `confidence`, el nodo devuelve `retrievedDocs` (documento, score normalizado a 0-100 y posición en el top-k). Ese arreglo viaja por el estado hasta `MessageProcessor`, que lo persiste recién cuando sabe cómo terminó el turno — ver §9.
-
-> ⚠️ **Trampa que dejó este cambio**: los chunks ingestados **antes** del Sprint 5A no tienen la clave `isActive` en su metadata, y en ChromaDB un `where` de igualdad **no** matchea contra una clave ausente. Sin correr `prisma/backfill-chunk-metadata.ts`, todo el corpus previo queda fuera de las búsquedas y los agentes escalan en cada consulta — sin lanzar un solo error. Es el tipo de falla que un test con corpus nuevo no detecta.
-
-**Dos caminos de escalada a humano (distintos motivos, mismo destino WAITING_HUMAN):**
-
-| Vía | Nodo | Razón | Respuesta al cliente | Nota al supervisor |
-|-----|------|-------|----------------------|--------------------|
-| **A: Confianza baja** | `escalate_to_human` | score RAG < 0.65 | Canned: "Un supervisor revisará pronto" | Razón: confianza insuficiente + score |
-| **B: Decisión de agente** | `escalate_by_agent` | needsHuman=true (agente lo decidió) | Respuesta ya generada por Gemini + contexto | internalNote con resumen del caso |
-
-Ejemplo de escenario B: cliente dice "quiero hablar con un supervisor"; el agente genera una respuesta útil pero marca needsHuman=true, y la internalNote acumula por qué ("usuario solicitó escalada manual"). El cliente recibe la respuesta inmediatamente y el supervisor ve el contexto completo en la nota interna, sin esperar a que el cliente escriba de nuevo.
-```
-
-## 7. Modelo de Datos — ER Diagram (Mermaid)
+## 5. Modelo de Datos — ER Diagram (Mermaid)
 
 ```mermaid
 erDiagram
     SECTOR ||--o{ EMPLOYEE : contiene
+    SECTOR }o--o{ EMPLOYEE : es_responsable_de
     EMPLOYEE ||--o{ CLIENT : asigna_como_cobrador
     EMPLOYEE ||--o{ ESCALATION : delega
     EMPLOYEE ||--o{ ESCALATION : resuelve
@@ -932,4 +604,327 @@ erDiagram
     }
 ```
 ---
+
+
+
+
+
+
+> **Ojo con las DOS relaciones entre `EMPLOYEE` y `SECTOR`** (spec 005). No son la
+> misma cosa y confundirlas lleva a conclusiones equivocadas:
+>
+> | Relación | Cardinalidad | Qué significa |
+> |---|---|---|
+> | `Employee.sectorId` → `Sector` | 1:N | **Dónde trabaja**. Existía desde la línea base |
+> | `Employee.areasSupervisadas` ↔ `Sector.supervisores` | **N:M** | **De qué es responsable**. Decide qué conocimiento puede escribir y si se lo trata como gerente |
+>
+> Por eso las dos relaciones van **nombradas** en Prisma (`EmpleadoDelSector` y
+> `AreasSupervisadas`): con dos relaciones entre los mismos modelos, sin nombre no hay
+> forma de inferir cuál es cuál y el `db push` falla.
+>
+> **No existe un campo `esGerente`.** Se es gerente al ser responsable de **todas** las
+> áreas que existen, y eso se deriva contando (`esResponsableDeTodasLasAreas`).
+> Persistir el flag además de la lista daría dos fuentes de verdad que pueden
+> contradecirse.
+
+## 6. Grafo del orquestador
+
+```
+                              ┌─────────┐
+                              │  START  │
+                              └────┬────┘
+                                   │
+                          entryRouter()   (función pura: 0 LLM, 0 red)
+                                   │
+                                   ▼
+            ┌──────────────────────┬──────────────────┐
+            │  isUntranscribableAudio(message)        │
+            │ aviso de n8n: no hay texto del usuario  │
+            └───────┬─────────────────────────┬───────┘
+                SÍ  │                         │ NO
+                    │                         ▼
+                    │         ┌───────────────┬───────────────────────┐
+                    │         │ ¿hay currentAgent en la conversación? │
+                    │         └───────┬─────────────────────┬─────────┘
+                    │             NO  │                     │ SÍ
+                    │                 ▼                     ▼
+                    │    ┌────────────┬──────────┐  ┌───────┬─────────────────────┐
+                    │    │ ¿isTrivial(message)?  │  │ ¿el agente sigue permitido  │
+                    │    │ regex: hola/gracias/  │  │ para este userType?         │
+                    │    │ ok/dale/buen día…     │  │ (allowedAgentsFor)          │
+                    │    └───┬──────────────┬────┘  └───┬─────────────────────┬───┘
+                    │     SÍ │           NO │        SÍ │                  NO │
+                    │        │              │           │                     │
+              ┌─────┘        │              │           │                     │
+              ├──────────────┘              │           │                     │
+              │                             │           │                     │
+              │                    ┌────────┼───────────┘                     │
+              │                    │        └─────────────────┐               │
+              │                    │                          ┤───────────────┘
+              │ trivial            │ sticky                   │ orchestrate
+              │                    │                          │
+              ▼                    ▼                          │
+     ┌─────────────────┐   ┌─────────────────────┐            │
+     │ trivial_response│   │    scope_check      │            │
+     │  (canned, 0 LLM)│   │ (classifierChat:    │            │
+     └────────┬────────┘   │  ¿mismo/cambio? +   │            │
+              │            │  ¿greeting? +       │            │
+              │            │  greetingType? +    │            │
+              │            │  targetAgent?)      │            │
+              │            └──────────┬──────────┘            │
+              │                       │                       │ 
+              │                scopeRouter()                  │ 
+              │                       │                       │      
+              │        ┌──────────────┼───────────────┐       └─────────────────┐
+              │  mismo+│        mismo,│         cambio│                         │
+              │ greting│     no greeting              │                         │
+              │        │              │               │                         │
+              │        ▼              ▼               ▼                         │
+              │        │      (agente actual)   ┌───────────┐                   │
+              │        │              │         │handoff_log│                   │
+              │        │              │         │ (Prisma)  │─┐                 │
+              │        │              │         └───────────┘ │                 │     
+              │        │              │                       │                 │
+              │        │              │                       ▼                 │
+              │        │              │                  postHandoffRouter()    │
+              │        │              │                       │                 │
+              │        │              │            ┌──────────┴──────────┐      │
+              │        │              │ targetAgent│      sin targetAgent│      │
+              │        │              │  resuelto  │   (red de seguridad)│      │
+              │        │              │            │                     │      │
+              │        │              │            │                     ▼      ▼
+              │        │              │            │      ┌────────────────────────────┐
+              │        │              │            │      │     classify_intent        │
+              │        │              │            │      │ (classifierChat structured;│
+              │        │              │            │      │  solo agentes permitidos)  │
+              │        │              │            │      └─────────────┬──────────────┘
+              │        │              │            │                    │    
+              │        │              │            │         classifyRouter()
+              │        │              │            │                    │
+              │        │              │            │        ┌───────────┴──────────────┐
+              │        │              │            │greeting│                    agente│
+              │        │              │            │        ▼                          │
+              │        │              │            │   ┌───────────────────┐           │
+              │        └──────────────┼────────────┼──▶│ greeting_response │           │
+              │                       │            │   │ (usa greetingType:│           │
+              │                       │            │   │  apertura|cierre) │           │
+              │                       │            │   └────────┬──────────┘           │
+              │                       │            │            │                      │
+              │                ┌───────────────────┘ ┌──────────┘                      │
+              │                │      │              │                                 │       
+              │                │      ▼              ▼                                 ▼
+              │                │   ┌────────────────────────────────────────────────────┐
+              │                │   │   AGENTE RAG  (SALES│ADMIN│COLLECTIONS│LOGI│DEPO)  │
+              │                │   │   1. retrieve_context  (ChromaDB, audiencia/role)  │
+              │                │   │   2. evaluate_confidence  (score ≥ 0.65?)          │
+              │                │   │      ├─ NO + responsable → report_low_confidence   │
+              │                │   │      ├─ NO → escalate_to_human (canned)            │
+              │                │   │      └─ SÍ → 3. generate_response                  │
+              │                │   │   3. generate_response (llm.chat 0.7+contexto+hist)│
+              │                │   │      → response + needsHuman? + internalNote?      │
+              │                │   │      └─ 4. evaluateHandoff → escalate_by_agent?    │
+              │                │   └────────────────────────┬───────────────────────────┘
+              │                │                            ▼
+              │                │                     ┌──────────────┐
+              │                │                     │  log_event   │  (OrchestrationEvent → Prisma)
+              │                │                     └──────┬───────┘
+              │                │                            │
+              │                │       ┌────────────────────┘
+              │                ▼       ▼
+              │               ┌──────────────┐
+              │               │ track_tokens │  (TokenUsage → Prisma)
+              │               └──────┬───────┘
+              │                      │
+              ▼                      ▼
+           ┌─────────────────────────────┐
+           │       END                   │
+           └─────────────────────────────┘
+
+Notas:
+1. entryRouter evalúa en cascada, en el orden del árbol de arriba (el primer SÍ corta):
+   a) isUntranscribableAudio → trivial SIEMPRE, aun con sticky: no hay mensaje que
+      rutear, hay un aviso de n8n de que la transcripción falló (US5).
+   b) sin agente + isTrivial (regex) → trivial. El atajo de 0 LLM solo es seguro acá:
+      con sticky fijado, un "dale"/"ok" corto puede ser la confirmación a una pregunta
+      que el bot hizo en el turno anterior — el regex no lo distingue, así que pasa
+      por scope_check (que sí tiene el historial).
+   c) agente fijado Y todavía permitido para el userType → sticky.
+   d) todo lo demás → orchestrate. Ojo con el caso menos obvio: si HAY agente pero ya
+      no está permitido (allowedAgentsFor cambió para ese userType), cae en orchestrate
+      y se reclasifica — así se auto-sanan conversaciones pegadas a un agente prohibido.
+2. trivial_response YA NO va directo a END: pasa por log_event (eventType=TRIVIAL_RESPONSE)
+   → track_tokens (0 tokens, pero registra latencia). Antes no dejaba ningún rastro en
+   OrchestrationEvent/TokenUsage — invisible para la auditoría (OE-11).
+3. postHandoffRouter: si scope_check ya resolvió targetAgent en la misma llamada que
+   decidió "cambio", salta directo al agente (se ahorra una llamada a classify_intent).
+   Si no lo resolvió (o es ambiguo), classify_intent actúa de red de seguridad, igual
+   que antes.
+4. greeting_response ya no adivina con regex: usa greetingType ("apertura"/"cierre"),
+   que sale de la MISMA llamada estructurada que decidió isGreeting (classify_intent o
+   scope_check) — sin costo extra de tokens.
+5. classify_intent y scope_check lanzan Error si Gemini no devuelve salida estructurada
+   válida (result.parsed vacío) — antes fallaba silenciosamente más adelante.
+6. Los routers (entryRouter, scopeRouter, postHandoffRouter, classifyRouter) son
+   funciones puras: deciden el camino SIN llamar a Gemini. Solo classify_intent,
+   scope_check y los agentes gastan tokens.
+
+```
+
+## 7. Grafo de los Agentes RAG — Patrón Común
+
+```
+Cada agente (SALES, ADMIN, COLLECTIONS, LOGISTICS, DEPOSITS) sigue
+el mismo patrón, definido en: src/ai/agents/shared/rag-agent.graph.ts
+
+┌────────────────────────────────────────────────────────────────────┐
+│  buildRagAgentGraph(config, deps)                                  │
+│  ├─ config: { agentType, prompt, escalationMessage? }              │
+│  ├─ deps: { llm, knowledge, confidenceThreshold, logger,           │
+│  │           escalations }                                         │
+│  └─ return: AgentGraph (LangGraph)                                 │
+└────────┬───────────────────────────────────────────────────────────┘
+         │
+         ▼
+┌────────────────────────────────────────────────────────────────────┐
+│                      Nodos del Grafo                               │
+│                                                                    │
+│  [1] retrieve_context                                              │
+│      ├─ input: estado.input                                        │
+│      ├─ action: KnowledgeService.search(                           │
+│      │   query=estado.input,                                       │
+│      │   audience=PUBLICO|PUBLICO+INTERNO,                         │
+│      │   agentType=SALES|ADMIN|...                                 │
+│      │   k=4                                                       │
+│      │ )                                                           │
+│      │  where = audiencia AND isActive AND agente  ← 5A            │
+│      ├─ output: estado.context = [doc1, doc2, ...]                 │
+│      │          estado.retrievedDocs = [{ documentId,              │
+│      │            score 0-100, rank,               ← 5A            │
+│      │            title }]                         ← 005           │
+│      │      (title solo en memoria: KnowledgeRetrieval no lo guarda│
+│      │       — lo necesita el informe de baja confianza [3d])      │
+│      └─ costo: embedQuery (Gemini) + query (Chroma)                │
+│                                                                    │
+│  [2] evaluate_confidence            TRES salidas, no dos ← 005     │
+│      ├─ input: estado.context[], estado.caller                     │
+│      ├─ logic: Si context[0].score >= 0.65                         │
+│      │          → alta confianza → generate_response          [3a] │
+│      │        senó, si quien pregunta es SUPERVISOR o GERENTE      │
+│      │          → report_low_confidence                       [3d] │
+│      │        senó (CLIENTE o EMPLEADO, como siempre)              │
+│      │          → escalate_to_human                           [3b] │
+│      ├─ umbral: RAG_CONFIDENCE_THRESHOLD = 0.65 (observable)       │
+│      └─ costo: 0 tokens (puro filtro)                              │
+│                                                                    │
+│      La rama vive ACÁ y no como un if adentro de [3b]: son dos     │
+│      resultados distintos —uno crea un caso y el otro no— y el     │
+│      grafo es donde eso tiene que poder leerse.                    │
+│                                                                    │
+│  [3a] generate_response (si contexto confiable)                    │
+│      ├─ input: estado.context, estado.input, estado.history,       │
+│      │         estado.caller                            ← 005      │
+│      ├─ prompt: <agente>.prompt.ts                                 │
+│      │   (rol, personalidad, instrucciones de SALES/ADMIN/...)     │
+│      │   + interlocutorInstructions(descriptorDe(caller))  ← 005   │
+│      │     "estás hablando con el GERENTE / un SUPERVISOR de       │
+│      │      Depósito y Logística / un EMPLEADO / un CLIENTE".      │
+│      │     Sin caller cae al trato de CLIENTE: es preferible       │
+│      │     hablarle de más a un empleado que tratar a un cliente   │
+│      │     como si trabajara acá.                                  │
+│      ├─ action: LlmService.generate(                               │
+│      │   messages=system+history+user,                             │
+│      │   model=$GEMINI_MODEL (hoy gemini-3.5-flash-lite),          │
+│      │   temperature=0.7,                                          │
+│      │   maxTokens=512,                                            │
+│      │   outputFormat=structured                                   │
+│      │ )                                                           │
+│      └─ output: {                                                  │
+│           response: string,                                        │
+│           needsHuman: boolean,  ← NEW                              │
+│           handoffReason?: string, ← NEW                            │
+│           internalNote?: string ← NEW (solo si needsHuman=true)    │
+│         }                                                          │
+│                                                                    │
+│  [3b] escalate_to_human (contexto débil + CLIENTE o EMPLEADO)      │
+│      ├─ output: estado.response = "Un supervisor revisará pronto"  │
+│      ├─ acción: Conversation.status = WAITING_HUMAN                │
+│      └─ efecto: supervisor lo ve en Panel (razón: confianza baja)  │
+│         Este camino NO cambió con la 005: es la mitad que          │
+│         protege contra regresiones.                                │
+│                                                                    │
+│  [3c] escalate_by_agent (si generate_response.needsHuman = true)   │
+│      ├─ input: estado.response, estado.internalNote,               │
+│      │         estado.handoffReason                                │
+│      ├─ acción: Escalation.create({ reason, internalNote })        │
+│      ├─ acción: Conversation.status = WAITING_HUMAN                │ 
+│      └─ efecto: respuesta SÍ se envía al cliente + supervisor      │
+│                 ve una nota interna específica del agente          │
+│                                                                    │
+│  [3d] report_low_confidence (contexto débil + responsable)  ← 005  │
+│      ├─ input: estado.retrievedDocs, estado.confidence             │
+│      ├─ acción: NINGUNA Escalation. El sistema le abría un caso    │
+│      │          a la persona que iba a tener que resolverlo.       │
+│      ├─ output: qué documentos consultó, con título y score, y     │
+│      │          contra qué umbral. NO afirma que el dato no        │
+│      │          exista: si estaba y quedó corto, corresponde       │
+│      │          corregirlo — decirle "no está" lleva a cargar un   │
+│      │          duplicado, y dos chunks parecidos se bajan el      │
+│      │          score mutuamente.                                  │
+│      ├─ costo: 0 tokens — el texto se ARMA, no se genera.          │
+│      │         No es ahorro: STYLE_RULES le prohíbe al agente      │
+│      │         decir "base de conocimiento", y este aviso          │
+│      │         necesita justo ese vocabulario. Dos audiencias,     │
+│      │         dos caminos.                                        │
+│      └─ después: el responsable corrige el documento (si es de un  │
+│                  área suya) o deriva —                             │
+│                  POST /messaging/web/:convId/delegate, que recién  │
+│                  ahí crea el caso y se lo deja a quien elija.      │
+│                                                                    │
+│  [4] track_tokens                                                  │
+│      ├─ input: tokens gastados en [3a] o [3b]                      │
+│      └─ action: TokenUsage.create({                                │
+│           agentType, inputTokens, outputTokens,                    │
+│           conversationId                                           │
+│        })                                                          │
+│                                                                    │
+└────────────────────────────────────────────────────────────────────┘
+
+Cada agente tiene variantes:
+
+  SALES / COLLECTIONS
+  ├─ Audiencia: CLIENTE (solo PUBLICO)
+  ├─ allowedFor: CLIENTE + EMPLEADO
+  └─ Escalada: SÍ (si score < umbral)
+
+  ADMIN
+  ├─ Audiencia: EMPLEADO (PUBLICO + INTERNO)
+  ├─ allowedFor: solo EMPLEADO
+  ├─ Acceso especial: Riesgo Online API
+  └─ Escalada: SÍ
+
+  LOGISTICS / DEPOSITS
+  ├─ Audiencia: EMPLEADO (PUBLICO + INTERNO)
+  ├─ allowedFor: solo EMPLEADO
+  └─ Escalada: NO (sin herramientas, solo RAG)
+
+**Qué cambió en este patrón con el Sprint 5A** — dos cosas, las dos dentro de `retrieve_context`:
+
+1. **El `where` de `search()` pasó de dos condiciones a tres**: audiencia, agente y ahora **`isActive`**. Desactivar un documento lo saca de las respuestas *sin borrar sus vectores*, así que reactivarlo no vuelve a pagar embeddings. Los tres criterios se resuelven en un único lugar (`knowledge.service.ts`), que es lo que impide que un llamador se olvide de uno (Principio I).
+2. **Los hits ya no se descartan**: además de `context` y `confidence`, el nodo devuelve `retrievedDocs` (documento, score normalizado a 0-100 y posición en el top-k). Ese arreglo viaja por el estado hasta `MessageProcessor`, que lo persiste recién cuando sabe cómo terminó el turno — ver §9.
+
+> ⚠️ **Trampa que dejó este cambio**: los chunks ingestados **antes** del Sprint 5A no tienen la clave `isActive` en su metadata, y en ChromaDB un `where` de igualdad **no** matchea contra una clave ausente. Sin correr `prisma/backfill-chunk-metadata.ts`, todo el corpus previo queda fuera de las búsquedas y los agentes escalan en cada consulta — sin lanzar un solo error. Es el tipo de falla que un test con corpus nuevo no detecta.
+
+**Tres desenlaces cuando hace falta algo más que la respuesta del agente** — dos escalan y uno no:
+
+| Vía | Nodo | Razón | Respuesta a quien preguntó | ¿Crea `Escalation`? |
+|-----|------|-------|----------------------|--------------------|
+| **A: Confianza baja, cliente o empleado** | `escalate_to_human` | score RAG < 0.65 | Canned: "Un supervisor revisará pronto" | **Sí** → `WAITING_HUMAN`, razón + score |
+| **B: Decisión de agente** | `escalate_by_agent` | needsHuman=true (el agente lo decidió) | Respuesta ya generada por Gemini + contexto | **Sí** → `WAITING_HUMAN`, internalNote con el resumen |
+| **C: Confianza baja, responsable** ← 005 | `report_low_confidence` | score RAG < 0.65 **y** quien pregunta es supervisor o gerente | Los documentos consultados, con título y score, contra el umbral | **No** — la conversación sigue activa |
+
+Ejemplo de escenario B: cliente dice "quiero hablar con un supervisor"; el agente genera una respuesta útil pero marca needsHuman=true, y la internalNote acumula por qué ("usuario solicitó escalada manual"). El cliente recibe la respuesta inmediatamente y el supervisor ve el contexto completo en la nota interna, sin esperar a que el cliente escriba de nuevo.
+
+La vía **C** existe porque la A le abría un caso a la persona que iba a tener que resolverlo: escalar hacia arriba cuando quien pregunta ya está arriba es un bucle. Ojo con el matiz: **la B no cambió para nadie**, ni siquiera para el gerente. Son motivos distintos — la 005 cambia el escalado por *falta de conocimiento*, no el que el agente pide por criterio propio.
+```
+
 

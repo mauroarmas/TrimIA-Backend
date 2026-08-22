@@ -2,6 +2,7 @@ import { Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
 import { ConversationsModule } from '../conversations/conversations.module';
 import { MessagingModule } from '../messaging/messaging.module';
+import { CallerModule } from '../ai/caller/caller.module';
 import { OrchestratorModule } from '../ai/orchestrator/orchestrator.module';
 import { EmployeesModule } from '../employees/employees.module';
 import { OrchestrationLoggerModule } from '../ai/orchestrator/orchestration-logger.module';
@@ -28,6 +29,7 @@ import { KnowledgeIngestionProcessor } from './processors/knowledge-ingestion.pr
     ConversationsModule,
     MessagingModule,
     OrchestratorModule,
+    CallerModule, // spec 005 — resuelve quién habla en cada turno
     EmployeesModule,
     OrchestrationLoggerModule,
     WhatsappMediaModule,

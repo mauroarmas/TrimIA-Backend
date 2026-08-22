@@ -21,8 +21,11 @@ import { MessagingService } from './messaging.service';
 import { ConversationsService } from '../conversations/conversations.service';
 import { EmployeesService } from '../employees/employees.service';
 import { SendWebMessageDto } from './dto/send-web-message.dto';
+import { DelegateFromChatDto } from './dto/delegate-from-chat.dto';
 import { normalizePhone } from '../common/phone';
 import { RealtimeService } from '../realtime/realtime.service';
+import { EscalationsService } from '../escalations/escalations.service';
+import { Roles, RolesGuard } from '../auth/guards/roles.guard';
 
 /** Mismo trap que en KnowledgeController: `req.user.id`, no `req.user.sub`. */
 interface AuthenticatedRequest {
@@ -46,6 +49,7 @@ export class MessagingWebController {
     private readonly conversations: ConversationsService,
     private readonly employees: EmployeesService,
     private readonly realtime: RealtimeService,
+    private readonly escalations: EscalationsService,
   ) {}
 
   @Post()
@@ -166,6 +170,46 @@ export class MessagingWebController {
     const conversation = await this.conversations.close(convId);
 
     return { closed: true, conversationId: conversation.id };
+  }
+
+  /**
+   * Derivar la consulta a quien sí la sabe (spec 005, US4, FR-010).
+   *
+   * Es la contracara del aviso de baja confianza: a un responsable no se le crea un
+   * caso, así que cuando el tema **no** es de sus áreas necesita poder pasarlo. El
+   * caso se crea recién acá, cuando él lo decide, y le llega a la persona elegida
+   * con la consulta como contexto.
+   *
+   * `@Roles('SUPERVISOR')` alcanza y el gerente entra por el mismo decorador, porque
+   * es un SUPERVISOR con todas las áreas. Es el beneficio concreto de no haber
+   * agregado un rol nuevo: un endpoint nuevo no necesita saber que el gerente
+   * existe. A un empleado común no le hace falta esta acción — su consulta ya se
+   * escala sola.
+   */
+  @Post(':convId/delegate')
+  @HttpCode(201)
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('SUPERVISOR')
+  @ApiOperation({
+    summary: 'Deriva la consulta propia a otra persona (FR-010)',
+    description:
+      'Crea el caso y lo deja en manos de quien se elija. La consulta que viaja ' +
+      'como contexto sale de la conversación, no del body.',
+  })
+  async delegate(
+    @Param('convId', ParseUUIDPipe) convId: string,
+    @Body() dto: DelegateFromChatDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    // La misma pertenencia que el resto: se deriva una consulta PROPIA, no la de
+    // otra persona.
+    await this.assertOwnership(convId, req.user.id);
+
+    return this.escalations.delegateFromConversation({
+      conversationId: convId,
+      toEmployeeId: dto.toEmployeeId,
+      delegatedById: req.user.id,
+    });
   }
 
   /**
