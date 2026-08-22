@@ -394,6 +394,31 @@ describe('buildRagAgentGraph', () => {
       expect(prompt).toMatch(/ya ofreciste consultar y te dicen que sí/i);
     });
 
+    /**
+     * Saludar de nuevo en el cuarto mensaje (2026-08-22).
+     *
+     * Visto en el panel: el agente arrancó con "¡Hola!" en el mensaje 4 de una
+     * conversación en curso. No es cosmético — se lee como que perdió el hilo, y la
+     * persona empieza a dudar de si el asistente la sigue.
+     *
+     * Vale aclarar por qué NO es por el tiempo que pasó entre mensajes, que fue la
+     * primera sospecha: el historial que recibe el agente trae `role` y `content` y
+     * nada más (`getRecentHistory`), así que el modelo no puede saber cuánto tardaron
+     * en contestarle. Lo único que distingue el principio de la mitad es si ya hay
+     * mensajes suyos arriba.
+     */
+    it('le dice que salude solo al principio', async () => {
+      const prompt = await promptDe({
+        userType: 'CLIENTE',
+        role: null,
+        areas: [],
+        esGerente: false,
+      });
+
+      expect(prompt).toMatch(/Saludá SOLO al principio/i);
+      expect(prompt).toMatch(/sin "hola" ni\s+presentarte de nuevo/i);
+    });
+
     // Conservador a propósito: es preferible hablarle de más a un empleado que
     // tratar a un cliente como si trabajara acá.
     it('sin caller cae al trato de cliente', async () => {
