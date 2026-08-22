@@ -163,6 +163,22 @@ export class ConversationsService {
     });
   }
 
+  /**
+   * Última consulta del usuario en la conversación (spec 005, US4).
+   *
+   * Es el contexto con el que viaja un caso derivado desde el chat: quien lo recibe
+   * necesita saber **qué se preguntó**, y ese dato sale de la conversación, no del
+   * cliente que llama al endpoint — así no se puede derivar un caso con un texto
+   * distinto del que realmente se consultó.
+   */
+  async getLastUserMessage(conversationId: string) {
+    return this.prisma.message.findFirst({
+      where: { conversationId, role: 'USER' },
+      orderBy: { createdAt: 'desc' },
+      select: { content: true },
+    });
+  }
+
   /** Fija el agente sticky de la conversación tras resolver un mensaje. */
   async setCurrentAgent(conversationId: string, agent: AgentType) {
     return this.prisma.conversation.update({

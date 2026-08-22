@@ -206,6 +206,11 @@ mensaje de escalado.
   abierta degrada a `CLIENTE` en el mensaje siguiente.
 - **Regla de oro:** un cliente NUNCA debe poder recuperar conocimiento `INTERNO` ni
   llegar a un agente no permitido. Cualquier cambio debe preservar esto.
+- **Tercera dimensión, agregada por la spec 005**: las dos anteriores son de **lectura**;
+  la escritura del corpus se acota por **área** en
+  `KnowledgeService.assertPuedeEscribir()`. Ver §5.10. Su autor sale del **token**, no
+  del `Caller` conversacional (que se resuelve por teléfono): son el mismo concepto con
+  dos resoluciones distintas y confundirlos es el error fácil.
 
 #### 5.3.1 Roles de negocio — SÍ se necesita SUPERVISOR (decisión 2026-06-07)
 El modelo de negocio tiene **tres roles**, en **dos dimensiones distintas**:
@@ -488,14 +493,86 @@ WhatsApp el usuario recibía la disculpa y por el panel no recibía nada. Persis
 arregla además que el historial de WhatsApp no registrara lo que sí se le dijo al
 cliente.
 
+### 5.10 El asistente sabe con quién habla (spec 005)
+
+Antes, el asistente le hablaba igual a todos. El dueño de la empresa preguntaba por el
+proceso de venta y el agente le contestaba *"contame qué tenías en vista y lo vamos
+viendo 😊"*: le estaba **vendiendo**.
+
+**Cuatro interlocutores, un solo lugar donde se deciden.** `Caller`
+(`src/ai/caller/caller.types.ts`) transporta quién habla y `interlocutorDe()` lo
+resuelve a `CLIENTE | EMPLEADO | SUPERVISOR | GERENTE`. `descriptorDe()` arma la frase
+que va al prompt; si esa descripción se construyera en cada agente, cada uno trataría
+distinto a la misma persona.
+
+- **Se resuelve por teléfono**, no por sesión (`CallerResolver`, desde el empleado que
+  `MessageProcessor` ya busca para el `userType`). Por eso la paridad con WhatsApp sale
+  gratis: la identidad no depende de haber entrado por el panel.
+- **Sin `caller` se cae al trato de cliente**, a propósito: es preferible hablarle de
+  más a un empleado que tratar a un cliente como si trabajara acá.
+- **`Caller` transporta identidad; NO decide accesos.** Los agentes alcanzables los
+  sigue decidiendo `allowedAgentsFor()` y la audiencia `knowledge.search()`. En
+  particular `caller.areas` **no** filtra la recuperación (FR-015): un empleado de un
+  área tiene que poder consultar temas de otra — de eso depende la capacitación.
+
+**La responsabilidad de áreas es N:M**, no un rol nuevo. `Employee.areasSupervisadas` ↔
+`Sector` (relaciones nombradas: ya existía `Employee.sector`, dónde trabaja). Un
+supervisor puede manejar Depósito y Logística, que es un caso común. **Gerente = tener
+todas las áreas que existen**, derivado y nunca persistido — guardar el flag además de
+la lista daría dos fuentes de verdad que pueden contradecirse
+(`esResponsableDeTodasLasAreas`, en `src/employees/area-responsibility.ts`).
+
+> **Por qué no un rol `GERENTE`**: habría que revisar 23 decoradores `@Roles(...)`
+> —`RolesGuard` usa igualdad exacta, no jerarquía— y un olvido le **quitaba** acceso al
+> dueño. Con la tabla el problema no se resuelve: **desaparece**. El guard no se toca, y
+> el gerente entra por `@Roles('SUPERVISOR')` como cualquier supervisor.
+
+**La confianza baja tiene dos desenlaces** (`low-confidence.node.ts`):
+
+| Quién pregunta | Qué recibe | ¿Se crea `Escalation`? |
+|---|---|---|
+| Cliente / empleado | Mensaje de derivación, **como siempre** | Sí |
+| Supervisor / gerente | Los documentos consultados con su score | **No** |
+
+Escalarle a quien ya está arriba es un bucle: le abría un caso a la persona que iba a
+tener que resolverlo. El aviso dice **qué encontró y con cuánta confianza**, nunca que
+el dato no exista — si el documento estaba y quedó apenas corto, lo correcto es
+corregirlo; decirle "no está" lo llevaría a cargar un duplicado, y dos chunks parecidos
+se bajan el score mutuamente, empeorando las respuestas **para todos**. El texto se arma
+**sin LLM**: `STYLE_RULES` le prohíbe al agente decir "base de conocimiento", y este
+aviso necesita justo ese vocabulario. La rama vive en el router del grafo, no en un `if`
+dentro del nodo de escalado.
+
+Desde ese aviso se puede **derivar**: `POST /messaging/web/:convId/delegate` crea el caso
+recién ahí y se lo deja a quien se elija, con la consulta sacada de la **conversación**
+(no del body, para que no llegue con un texto distinto del que se preguntó).
+
+**La escritura del corpus se acota por área.** `KnowledgeService.assertPuedeEscribir()`
+es el único lugar que lo decide: documento de un área → tiene que ser un área propia;
+transversal (`agentType: null`) → responsable de **todas**.
+
+> ⚠️ **Está en el servicio y no en la ruta porque la escritura entra por diez puertas**,
+> y dos no pasan por la pantalla de gestión: resolver un caso "enseñándole al agente" y
+> guardar una respuesta sin enviar (que **ingesta siempre**). Con la regla en la ruta,
+> un responsable de Ventas mete un documento de Cobranzas resolviendo un caso y nada lo
+> delata. En `escalations` el chequeo va **antes** de enviar el mensaje: un rechazo tarde
+> dejaría el caso cerrado y el mensaje ya enviado. Y `update()` valida también el
+> **destino** cuando el cambio mueve el documento de área — si no, se creaba en la propia
+> y se reasignaba a la ajena en dos pasos permitidos.
+
+**Ver no es editar**: la lectura del corpus **no** se restringe por área (FR-013). Hace
+falta ver lo de otras áreas para no duplicarlo y para saber a quién derivar. `ingest()`
+por su parte **no autoriza nada** y lo dice en su docblock: es la primitiva, y también la
+usa el worker de archivos, que corre sin nadie autenticado detrás.
+
 ---
 
 ## 6. Modelo de datos (Prisma — `prisma/schema.prisma`)
 
 | Modelo | Para qué | Campos clave |
 |--------|----------|--------------|
-| `Sector` | Sector de la empresa; gatea módulos del panel | `name`, `agentType` (el agente que capacita/da soporte al sector) |
-| `Employee` | Empleado o supervisor autorizado | `phone`, `email`, `password`, `role` (EMPLEADO/SUPERVISOR), `sectorId`, `isController` |
+| `Sector` | Sector de la empresa; gatea módulos del panel | `name`, `agentType` (el agente que capacita/da soporte al sector); `supervisores` (N:M, spec 005) |
+| `Employee` | Empleado o supervisor autorizado | `phone`, `email`, `password`, `role` (EMPLEADO/SUPERVISOR), `sectorId` (dónde trabaja), `areasSupervisadas` (N:M, de qué es **responsable** — spec 005), `isController` |
 | `Client` | Cliente externo | `name`, `phone` (UK), `dni`, `assignedCollectorId` (cartera del cobrador) |
 | `Conversation` | Hilo de chat por teléfono | `externalId`, `clientId` (FK al cliente), `currentAgent` (sticky), `userType`, `status`, `handledById`/`handledAt` (control manual, Sprint 3) |
 | `Message` | Cada mensaje | `role` (USER/ASSISTANT/...), `content`, `agentType` |

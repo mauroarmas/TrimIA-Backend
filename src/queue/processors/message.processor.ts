@@ -6,6 +6,7 @@ import { ConversationsService } from '../../conversations/conversations.service'
 import { WhatsappSenderService } from '../../messaging/whatsapp-sender.service';
 import { OrchestratorService } from '../../ai/orchestrator/orchestrator.service';
 import { EmployeesService } from '../../employees/employees.service';
+import { CallerResolver } from '../../ai/caller/caller.resolver';
 import { OrchestrationLogger } from '../../ai/orchestrator/orchestration-logger.service';
 
 interface MessageJob {
@@ -50,6 +51,7 @@ export class MessageProcessor extends WorkerHost {
     private readonly orchestrator: OrchestratorService,
     private readonly employees: EmployeesService,
     private readonly orchestrationLogger: OrchestrationLogger,
+    private readonly callerResolver: CallerResolver,
   ) {
     super();
   }
@@ -153,8 +155,16 @@ export class MessageProcessor extends WorkerHost {
       // (OE-10 / RNF-02). El costo es un findUnique indexado al lado de una
       // llamada al LLM que tarda segundos.
       const employee = await this.employees.findByPhone(externalId);
-      const userType: UserType =
-        employee && employee.isActive ? 'EMPLEADO' : 'CLIENTE';
+
+      // Quién habla (spec 005): rol y áreas de las que es responsable, además del
+      // userType. Se arma acá porque acá ya se busca el empleado por teléfono —y
+      // por teléfono y no desde el token, que es lo que hace que el trato sea el
+      // mismo escribiendo desde el panel o desde WhatsApp (FR-017).
+      const caller = await this.callerResolver.resolve(employee);
+
+      // El userType sale del caller y no se vuelve a derivar acá: la condición
+      // "está en la whitelist y activo" vive en un solo lugar.
+      const userType: UserType = caller.userType;
 
       // Solo se persiste cuando cambió, para no escribir en cada turno.
       if (userType !== conversation?.userType) {
@@ -172,6 +182,7 @@ export class MessageProcessor extends WorkerHost {
         currentAgent,
         userType,
         history,
+        caller,
       );
       const response = result.response ?? MessageProcessor.FALLBACK;
 

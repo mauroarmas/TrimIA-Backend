@@ -1,5 +1,6 @@
 import {
   ConflictException,
+  ForbiddenException,
   Injectable,
   Logger,
   NotFoundException,
@@ -19,6 +20,8 @@ import {
 } from '@prisma/client';
 import { createHash } from 'crypto';
 import { PrismaService } from '../../database/prisma.service';
+import { EmployeesService } from '../../employees/employees.service';
+import { esResponsableDeTodasLasAreas } from '../../employees/area-responsibility';
 import { KnowledgeUsageService } from './knowledge-usage.service';
 
 /** Nombre de la colección en ChromaDB donde viven todos los chunks. */
@@ -111,6 +114,7 @@ export class KnowledgeService implements OnModuleInit {
     @InjectQueue('knowledge-reindex')
     private readonly reindexQueue: Queue,
     private readonly usage: KnowledgeUsageService,
+    private readonly employees: EmployeesService,
   ) {
     this.client = new ChromaClient({
       path: this.config.get<string>('CHROMA_URL'),
@@ -201,7 +205,83 @@ export class KnowledgeService implements OnModuleInit {
   }
 
   /**
+   * Único lugar donde se decide si alguien puede **escribir** un documento
+   * (spec 005, US5, FR-011/FR-012).
+   *
+   * ```text
+   * documento transversal  →  el autor es responsable de TODAS las áreas
+   * si no                  →  el área del documento ∈ áreas del autor
+   * ```
+   *
+   * **Por qué acá y no en el controlador ni en un guard.** La escritura entra por
+   * diez caminos, y dos de ellos no están en la pantalla de gestión: resolver un
+   * caso "enseñándole al agente" y guardar una respuesta sin enviarla. Con la regla
+   * en la ruta, un responsable de Ventas mete un documento de Cobranzas resolviendo
+   * un caso y nada lo delata. Este método es la regla; cada camino lo llama.
+   *
+   * ⚠️ **El `autor` NO es el `Caller` conversacional.** Son el mismo concepto con
+   * dos resoluciones distintas: el `Caller` se resuelve por **teléfono** y sirve
+   * para el trato del asistente; el autor de acá sale del **empleado autenticado
+   * del token**, porque los diez caminos son requests HTTP sin teléfono. El
+   * parámetro se llama `autorId` para que el nombre impida la confusión en vez de
+   * invitarla.
+   *
+   * **Ver no se restringe** (FR-013): el listado y el detalle siguen mostrando
+   * todo. Hace falta ver lo de otras áreas para no duplicarlo y para saber a quién
+   * derivar; filtrar la lectura empeoraría justo lo que esto protege.
+   *
+   * @param agentType área del documento. `null` es **transversal**: responde para
+   *   todos los agentes, así que con la regla general no lo podría tocar nadie
+   *   (CL-6) y necesita su propia línea.
+   */
+  async assertPuedeEscribir(
+    autorId: string,
+    agentType: AgentType | null,
+  ): Promise<void> {
+    const autor = await this.employees.findById(autorId);
+    const areas = autor.areasSupervisadas ?? [];
+
+    if (agentType === null) {
+      const totalAreas = await this.prisma.sector.count();
+      if (!esResponsableDeTodasLasAreas(areas.length, totalAreas)) {
+        throw new ForbiddenException(
+          'Este documento no es de un área en particular: responde para todos ' +
+            'los agentes, así que solo lo puede modificar quien es responsable de ' +
+            'todas las áreas.',
+        );
+      }
+      return;
+    }
+
+    // Un área sin agente asignado no habilita ningún documento: `Sector.agentType`
+    // es lo que traduce "área" a "corpus", y sin él no hay nada que traducir.
+    const agentesPropios = areas
+      .map((area) => area.agentType)
+      .filter((tipo): tipo is AgentType => tipo !== null);
+
+    if (!agentesPropios.includes(agentType)) {
+      // El mensaje dice de qué áreas SÍ es responsable: sin eso, alguien recién
+      // asignado no tiene forma de saber si el problema es el documento o su
+      // propia asignación. Y un responsable sin áreas —que no puede escribir
+      // nada— es un estado detectable en vez de un permiso implícito (CL-10).
+      const propias = areas.map((area) => area.name).join(', ');
+      throw new ForbiddenException(
+        `Este documento es de otra área. ` +
+          (propias
+            ? `Sos responsable de: ${propias}.`
+            : `No tenés áreas asignadas, así que no podés modificar documentos.`),
+      );
+    }
+  }
+
+  /**
    * Ingesta un documento: lo guarda en Prisma y vuelca sus chunks a Chroma.
+   *
+   * ⚠️ **No autoriza nada**: es la primitiva de escritura, y también la usa el worker
+   * de ingestión de archivos, que corre sin nadie autenticado detrás. Quien decide
+   * si esta escritura corresponde es `assertPuedeEscribir`, y lo hace en la **puerta**
+   * —el endpoint o el caso que se resuelve—, donde todavía existe un autor. Si
+   * aparece una puerta nueva que llame acá, tiene que llamar antes a la regla.
    */
   async ingest(
     input: IngestInput,
@@ -446,6 +526,22 @@ export class KnowledgeService implements OnModuleInit {
     });
     if (!current) throw new NotFoundException('Documento no encontrado');
 
+    // Spec 005: se necesita permiso sobre el área DEL DOCUMENTO. Va adentro del
+    // servicio y no en la ruta porque acá pasan las dos puertas que editan —el
+    // `PUT` del panel y el "editar con la IA", que termina llamando a este mismo
+    // método—, así que una sola línea cubre las dos.
+    await this.assertPuedeEscribir(employeeId, current.agentType);
+
+    // Y si el cambio MUEVE el documento de área, también hace falta permiso sobre
+    // el destino: si no, alguien podría meter contenido en un área ajena en dos
+    // pasos —crear en la propia y reasignar— y la regla no serviría para nada.
+    if (
+      input.agentType !== undefined &&
+      input.agentType !== current.agentType
+    ) {
+      await this.assertPuedeEscribir(employeeId, input.agentType ?? null);
+    }
+
     // Bloqueo optimista (FR-033). Va acá y no en el controller para que valga
     // sin importar quién llame — el chequeo protege el documento, no la ruta.
     //
@@ -555,11 +651,12 @@ export class KnowledgeService implements OnModuleInit {
    * No borra los chunks: actualiza su metadata para que `search()` los excluya.
    * Así reactivar cuesta un update de metadata y no una tanda de embeddings.
    */
-  async setActive(id: string, isActive: boolean) {
+  async setActive(id: string, isActive: boolean, autorId: string) {
     const doc = await this.prisma.knowledgeDocument.findUnique({
       where: { id },
     });
     if (!doc) throw new NotFoundException('Documento no encontrado');
+    await this.assertPuedeEscribir(autorId, doc.agentType);
     if (doc.isActive === isActive) return doc;
 
     await this.updateChunkMetadata(id, { isActive });
@@ -583,11 +680,12 @@ export class KnowledgeService implements OnModuleInit {
    * (`onDelete: SetNull`): borrar el conocimiento no borra el rastro de quién
    * subió qué (OE-11).
    */
-  async remove(id: string) {
+  async remove(id: string, autorId: string) {
     const doc = await this.prisma.knowledgeDocument.findUnique({
       where: { id },
     });
     if (!doc) throw new NotFoundException('Documento no encontrado');
+    await this.assertPuedeEscribir(autorId, doc.agentType);
 
     await this.collection.delete({ where: { documentId: id } });
     await this.prisma.knowledgeDocument.delete({ where: { id } });
@@ -644,11 +742,12 @@ export class KnowledgeService implements OnModuleInit {
    * Reintento manual del botón "reintentar" del panel, para un documento que
    * quedó en `REINDEX_FAILED`.
    */
-  async requestReindex(id: string) {
+  async requestReindex(id: string, autorId: string) {
     const doc = await this.prisma.knowledgeDocument.findUnique({
       where: { id },
     });
     if (!doc) throw new NotFoundException('Documento no encontrado');
+    await this.assertPuedeEscribir(autorId, doc.agentType);
 
     await this.prisma.knowledgeDocument.update({
       where: { id },

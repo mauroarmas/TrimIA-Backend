@@ -163,6 +163,21 @@ export class EscalationsService {
   ) {
     const { conversation } = await this.loadPending(id);
 
+    // ⚠️ Spec 005, US5 — la otra puerta de atrás: "enseñarle al agente" ingesta un
+    // documento, así que vale la misma regla de área que la pantalla de gestión.
+    //
+    // Se chequea ACÁ ARRIBA, antes de enviarle el mensaje al usuario. Si estuviera
+    // junto al `ingest()` del final, un rechazo dejaría el caso resuelto y el
+    // mensaje ya enviado, con un 403 que no se puede deshacer: el supervisor no
+    // sabría si respondió o no. Rechazar antes de tocar nada deja el caso intacto
+    // para que lo resuelva sin enseñar, o para que lo derive a quien sí puede.
+    if (input.teachAgent) {
+      await this.knowledge.assertPuedeEscribir(
+        resolvedById,
+        input.agentType ?? conversation.currentAgent,
+      );
+    }
+
     // Lo que se envía es SIEMPRE `input.message`, nunca
     // `escalation.suggestedResponse` (FR-036). Ahora que la propuesta se
     // persiste, mandar la sugerencia "porque ya está ahí" es una regresión
@@ -253,12 +268,22 @@ export class EscalationsService {
         ? Audience.INTERNO
         : Audience.PUBLICO;
 
+    // ⚠️ Spec 005, US5 — LA PUERTA DE ATRÁS. Esta acción ingesta **siempre**: es su
+    // único efecto. Sin este chequeo, un responsable de Ventas mete un documento en
+    // el corpus de Cobranzas guardando la respuesta de un caso, sin pasar por la
+    // pantalla de gestión y sin que nada lo delate.
+    //
+    // Va ANTES de ingestar y antes de liberar la conversación: un rechazo tiene que
+    // dejar el caso exactamente como estaba.
+    const areaDelDocumento = input.agentType ?? conversation.currentAgent;
+    await this.knowledge.assertPuedeEscribir(savedById, areaDelDocumento);
+
     const { documentId } = await this.knowledge.ingest({
       title: input.title,
       content: input.message,
       category: input.category,
       audience,
-      agentType: input.agentType ?? conversation.currentAgent,
+      agentType: areaDelDocumento,
       sourceType: KnowledgeSourceType.ESCALADO,
       sourceId: escalation.id,
     });
@@ -367,6 +392,64 @@ export class EscalationsService {
   }): Promise<void> {
     if (conversation.status === ConvStatus.HUMAN_HANDLING) return;
     await this.conversations.setStatus(conversation.id, 'ACTIVE');
+  }
+
+  /**
+   * Derivar desde el chat de un responsable (spec 005, US4, FR-010).
+   *
+   * El caso todavía **no existe**: a un supervisor la baja confianza no le crea
+   * ninguno —de eso se trata US2—, así que acá se crea recién cuando él decide que
+   * el tema es de otra área y elige a quién pasárselo. Es `create()` + `delegate()`,
+   * las dos piezas que ya estaban: lo nuevo es el momento en que se disparan, no el
+   * mecanismo.
+   *
+   * La consulta que viaja como contexto sale de la **conversación**, no del cuerpo
+   * del request: así el caso no puede llegar con un texto distinto del que
+   * realmente se preguntó.
+   */
+  async delegateFromConversation(params: {
+    conversationId: string;
+    toEmployeeId: string;
+    delegatedById: string;
+  }) {
+    const conversation = await this.conversations.findById(
+      params.conversationId,
+    );
+    if (!conversation) {
+      throw new NotFoundException('Conversación no encontrada');
+    }
+
+    // Derivarse el caso a sí mismo sería reproducir a mano exactamente el defecto
+    // que esta spec vino a arreglar: un responsable con una consulta propia en su
+    // propia cola.
+    if (params.toEmployeeId === params.delegatedById) {
+      throw new ConflictException(
+        'No tiene sentido derivarte la consulta a vos mismo',
+      );
+    }
+
+    const ultima = await this.conversations.getLastUserMessage(
+      params.conversationId,
+    );
+    const consulta = ultima?.content ?? '(sin consulta registrada)';
+    const tag = conversation.currentAgent
+      ? `[${conversation.currentAgent}] `
+      : '';
+
+    const escalation = await this.create({
+      conversationId: params.conversationId,
+      reason: `${tag}Derivado por un responsable: «${consulta.slice(0, 100)}»`,
+      agentType: conversation.currentAgent ?? undefined,
+      internalNote:
+        `Un responsable derivó esta consulta porque el tema no es de sus áreas.\n` +
+        `Consulta: «${consulta}»`,
+    });
+
+    return this.delegate(
+      escalation.id,
+      { toEmployeeId: params.toEmployeeId },
+      params.delegatedById,
+    );
   }
 
   /** Reasigna el caso a otro supervisor (Historia 3). */

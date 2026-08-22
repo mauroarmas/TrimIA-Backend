@@ -11,6 +11,7 @@ import { PdfExtractor } from './extractors/pdf.extractor';
 import { DocxExtractor } from './extractors/docx.extractor';
 import { ImageExtractor } from './extractors/image.extractor';
 import { AudioExtractor } from './extractors/audio.extractor';
+import { EmployeesModule } from '../../employees/employees.module';
 
 /**
  * Módulo del motor RAG (Fase 4). Expone KnowledgeService para que los
@@ -30,6 +31,9 @@ import { AudioExtractor } from './extractors/audio.extractor';
       { name: 'knowledge-reindex' },
       { name: 'knowledge-ingestion' },
     ),
+    // Spec 005: la regla de escritura necesita las áreas del empleado autenticado.
+    // EmployeesModule solo depende de Prisma y Auth, así que no hay ciclo.
+    EmployeesModule,
   ],
   providers: [
     KnowledgeService,

@@ -6,6 +6,7 @@ import { OrchestrationLogger } from './orchestration-logger.service';
 import { buildOrchestratorGraph } from './orchestrator.graph';
 import { OrchestratorStateType } from './orchestrator.state';
 import { ConversationTurn } from '../../conversations/conversations.service';
+import { Caller } from '../caller/caller.types';
 
 @Injectable()
 export class OrchestratorService implements OnModuleInit {
@@ -34,6 +35,14 @@ export class OrchestratorService implements OnModuleInit {
   /**
    * Procesa un mensaje a través del grafo.
    * Devuelve el state final (con agentType y response).
+   *
+   * `caller` (spec 005) va como **objeto y no como tres parámetros más**: la firma
+   * ya tomaba cinco posicionales, y cuando aparezca otra faceta de identidad se
+   * agrega al objeto en vez de a la firma.
+   *
+   * Es opcional para no romper a quien llame sin él; el `userType` que viaja
+   * adentro es el que manda, y el posicional se mantiene porque es lo que consumen
+   * la audiencia del RAG y los agentes permitidos, que esta spec NO toca.
    */
   async invoke(
     message: string,
@@ -41,6 +50,7 @@ export class OrchestratorService implements OnModuleInit {
     currentAgent: AgentType | null = null,
     userType: UserType | null = null,
     history: ConversationTurn[] = [],
+    caller: Caller | null = null,
   ): Promise<OrchestratorStateType> {
     const state: OrchestratorStateType = {
       message,
@@ -48,6 +58,7 @@ export class OrchestratorService implements OnModuleInit {
       currentAgent,
       userType,
       history,
+      caller,
       agentType: null,
       response: null,
       context: null,

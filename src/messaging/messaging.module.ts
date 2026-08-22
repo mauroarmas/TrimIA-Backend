@@ -11,6 +11,7 @@ import { MessagingService } from './messaging.service';
 import { WhatsappSenderModule } from './whatsapp-sender.module';
 import { WhatsappMediaModule } from './whatsapp-media.module';
 import { RealtimeModule } from '../realtime/realtime.module';
+import { EscalationsModule } from '../escalations/escalations.module';
 
 @Module({
   imports: [
@@ -22,6 +23,9 @@ import { RealtimeModule } from '../realtime/realtime.module';
     CollectionsModule,
     EmployeesModule,
     RealtimeModule,
+    // Derivar desde el chat (spec 005, US4). EscalationsModule depende de
+    // WhatsappSenderModule, no de MessagingModule, así que no hay ciclo.
+    EscalationsModule,
   ],
   controllers: [
     MessagingController,

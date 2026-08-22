@@ -3,6 +3,8 @@ import { ConversationsService } from '../../conversations/conversations.service'
 import { WhatsappSenderService } from '../../messaging/whatsapp-sender.service';
 import { OrchestratorService } from '../../ai/orchestrator/orchestrator.service';
 import { EmployeesService } from '../../employees/employees.service';
+import { CallerResolver } from '../../ai/caller/caller.resolver';
+import { PrismaService } from '../../database/prisma.service';
 import { OrchestrationLogger } from '../../ai/orchestrator/orchestration-logger.service';
 
 /**
@@ -57,6 +59,7 @@ describe('MessageProcessor — pausa human-in-the-loop', () => {
       orchestrator as unknown as OrchestratorService,
       employees as unknown as EmployeesService,
       orchestrationLogger as unknown as OrchestrationLogger,
+      callerResolver(),
     );
   });
 
@@ -242,6 +245,7 @@ describe('MessageProcessor — revalidación del userType contra la whitelist', 
       orchestrator as unknown as OrchestratorService,
       employees as unknown as EmployeesService,
       orchestrationLogger as unknown as OrchestrationLogger,
+      callerResolver(),
     );
   });
 
@@ -401,6 +405,15 @@ describe('MessageProcessor — revalidación del userType contra la whitelist', 
       null,
       'CLIENTE',
       expect.anything(),
+      // spec 005: la degradación tiene que reflejarse TAMBIÉN en el caller. Si el
+      // userType dijera CLIENTE pero el caller siguiera diciendo SUPERVISOR, el
+      // asistente le hablaría como responsable a alguien dado de baja.
+      expect.objectContaining({
+        userType: 'CLIENTE',
+        role: null,
+        areas: [],
+        esGerente: false,
+      }),
     );
   });
 
@@ -426,6 +439,68 @@ describe('MessageProcessor — revalidación del userType contra la whitelist', 
       'conv-1',
       'EMPLEADO',
     );
+  });
+
+  // ── spec 005: quién habla llega armado al orquestador ──────────────────
+  //
+  // El caller se resuelve POR TELÉFONO, en el mismo lugar donde ya se resolvía el
+  // userType. Es lo que hace que el trato sea idéntico escribiendo desde el panel o
+  // desde WhatsApp (FR-017) — no hay token en el segundo caso.
+
+  it('le pasa al orquestador el rol y las áreas de un supervisor', async () => {
+    conversations.findById.mockResolvedValue(activeConversation('EMPLEADO'));
+    employees.findByPhone.mockResolvedValue({
+      isActive: true,
+      role: 'SUPERVISOR',
+      sector: { name: 'Cobranzas' },
+      areasSupervisadas: [
+        { id: 's1', name: 'Cobranzas', agentType: 'COLLECTIONS' },
+      ],
+    });
+
+    await processor.process(job);
+
+    const caller = orchestrator.invoke.mock.calls[0][5];
+    expect(caller).toEqual({
+      userType: 'EMPLEADO',
+      role: 'SUPERVISOR',
+      areas: [{ id: 's1', name: 'Cobranzas', agentType: 'COLLECTIONS' }],
+      esGerente: false,
+    });
+  });
+
+  it('reconoce como gerente a quien es responsable de las cinco áreas', async () => {
+    conversations.findById.mockResolvedValue(activeConversation('EMPLEADO'));
+    employees.findByPhone.mockResolvedValue({
+      isActive: true,
+      role: 'SUPERVISOR',
+      sector: { name: 'Ventas' },
+      areasSupervisadas: [
+        'Ventas',
+        'Cobranzas',
+        'Admin',
+        'Logística',
+        'Depósito',
+      ].map((name, i) => ({ id: `s${i}`, name, agentType: null })),
+    });
+
+    await processor.process(job);
+
+    expect(orchestrator.invoke.mock.calls[0][5].esGerente).toBe(true);
+  });
+
+  it('un teléfono fuera de la whitelist produce un caller de cliente', async () => {
+    conversations.findById.mockResolvedValue(activeConversation('CLIENTE'));
+    employees.findByPhone.mockResolvedValue(null);
+
+    await processor.process(job);
+
+    expect(orchestrator.invoke.mock.calls[0][5]).toEqual({
+      userType: 'CLIENTE',
+      role: null,
+      areas: [],
+      esGerente: false,
+    });
   });
 
   // No escribir en cada turno: sólo cuando el userType efectivamente cambió.
@@ -519,6 +594,7 @@ describe('MessageProcessor — runExclusive (serialización por conversación)',
       orchestrator as unknown as OrchestratorService,
       employees as unknown as EmployeesService,
       orchestrationLogger as unknown as OrchestrationLogger,
+      callerResolver(),
     );
 
     const p1 = processor.process(makeJob('conv-1', 'primero'));
@@ -559,6 +635,7 @@ describe('MessageProcessor — runExclusive (serialización por conversación)',
       orchestrator as unknown as OrchestratorService,
       employees as unknown as EmployeesService,
       orchestrationLogger as unknown as OrchestrationLogger,
+      callerResolver(),
     );
 
     const p1 = processor.process(makeJob('conv-A', 'primero'));
@@ -587,6 +664,7 @@ describe('MessageProcessor — runExclusive (serialización por conversación)',
       orchestrator as unknown as OrchestratorService,
       employees as unknown as EmployeesService,
       orchestrationLogger as unknown as OrchestrationLogger,
+      callerResolver(),
     );
 
     const failingJob = makeJob('conv-1', 'primero');
@@ -661,6 +739,7 @@ describe('⭐ MessageProcessor — el aviso de fallo se registra (RF-012)', () =
         findByPhone: jest.fn().mockResolvedValue(null),
       } as unknown as EmployeesService,
       { trackRetrievals: jest.fn() } as unknown as OrchestrationLogger,
+      callerResolver(),
     );
   });
 
@@ -759,3 +838,21 @@ describe('⭐ MessageProcessor — el aviso de fallo se registra (RF-012)', () =
     expect(sender.send).toHaveBeenCalled();
   });
 });
+
+/**
+ * `CallerResolver` REAL con un prisma de juguete (spec 005).
+ *
+ * A propósito no se mockea el resolver: el processor ahora toma el `userType` del
+ * `Caller`, así que un mock con valor fijo cortocircuitaría justamente los tests de
+ * revalidación contra la whitelist —que son los que protegen que a un empleado dado
+ * de baja se le deje de servir conocimiento interno—. Con el resolver real, esa
+ * derivación sigue saliendo de `employees.findByPhone` como antes.
+ *
+ * El `count` devuelve 5 porque son las cinco áreas del seed: con eso, un supervisor
+ * con las cinco queda como gerente y con menos, no.
+ */
+function callerResolver(): CallerResolver {
+  return new CallerResolver({
+    sector: { count: jest.fn().mockResolvedValue(5) },
+  } as unknown as PrismaService);
+}

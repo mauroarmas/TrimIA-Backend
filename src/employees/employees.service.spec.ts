@@ -152,3 +152,140 @@ describe('EmployeesService', () => {
     expect(result).not.toHaveProperty('password');
   });
 });
+
+/**
+ * ⭐ Áreas de responsabilidad — spec 005, US3.
+ *
+ * Lo que se prueba acá es sobre todo FR-018: que no se le puedan asignar áreas a
+ * quien no es supervisor. Aceptarlo dejaría a alguien con permiso de escritura sobre
+ * conocimiento sin haber pasado por el control que lo habilita.
+ */
+describe('EmployeesService.setSupervisedAreas (spec 005)', () => {
+  let service: EmployeesService;
+  let prisma: {
+    employee: { findUnique: jest.Mock; update: jest.Mock };
+    sector: { count: jest.Mock };
+  };
+
+  const areas = (...nombres: string[]) =>
+    nombres.map((name, i) => ({ id: `s${i}`, name, agentType: null }));
+
+  function conEmpleado(role: string) {
+    prisma = {
+      employee: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValue({ id: 'emp-1', name: 'Diego', role }),
+        update: jest.fn(),
+      },
+      sector: { count: jest.fn() },
+    };
+    service = new EmployeesService(
+      prisma as unknown as PrismaService,
+      { hashPassword: jest.fn() } as unknown as AuthService,
+    );
+  }
+
+  it('asigna dos áreas', async () => {
+    conEmpleado('SUPERVISOR');
+    prisma.sector.count.mockResolvedValue(2);
+    prisma.employee.update.mockResolvedValue({
+      id: 'emp-1',
+      name: 'Silvia',
+      password: 'h',
+      areasSupervisadas: areas('Depósito', 'Logística'),
+    });
+
+    const res = await service.setSupervisedAreas(
+      'emp-1',
+      ['s0', 's1'],
+      'admin@x.com',
+    );
+
+    // `set` y no `connect`: la lista reemplaza, así el mismo endpoint sirve para
+    // asignar y para quitar.
+    expect(prisma.employee.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: { areasSupervisadas: { set: [{ id: 's0' }, { id: 's1' }] } },
+      }),
+    );
+    expect(res).not.toHaveProperty('password');
+  });
+
+  it('con la lista vacía deja a la persona sin áreas', async () => {
+    conEmpleado('SUPERVISOR');
+    prisma.employee.update.mockResolvedValue({
+      id: 'emp-1',
+      name: 'Silvia',
+      password: 'h',
+      areasSupervisadas: [],
+    });
+
+    await service.setSupervisedAreas('emp-1', [], 'admin@x.com');
+
+    expect(prisma.employee.update).toHaveBeenCalledWith(
+      expect.objectContaining({ data: { areasSupervisadas: { set: [] } } }),
+    );
+    // Con la lista vacía no hace falta validar que existan sectores.
+    expect(prisma.sector.count).not.toHaveBeenCalled();
+  });
+
+  // ⭐ FR-018
+  it('rechaza asignarle áreas a un EMPLEADO', async () => {
+    conEmpleado('EMPLEADO');
+
+    await expect(
+      service.setSupervisedAreas('emp-1', ['s0'], 'admin@x.com'),
+    ).rejects.toThrow(ConflictException);
+    expect(prisma.employee.update).not.toHaveBeenCalled();
+  });
+
+  it('da 404 si el empleado no existe', async () => {
+    conEmpleado('SUPERVISOR');
+    prisma.employee.findUnique.mockResolvedValue(null);
+
+    await expect(
+      service.setSupervisedAreas('no-existe', ['s0'], 'admin@x.com'),
+    ).rejects.toThrow(NotFoundException);
+  });
+
+  // Un id inventado tiene que decir qué pasó, no fallar con un error opaco de Prisma.
+  it('da 404 si alguno de los sectores no existe', async () => {
+    conEmpleado('SUPERVISOR');
+    prisma.sector.count.mockResolvedValue(1); // se pidieron 2, existe 1
+
+    await expect(
+      service.setSupervisedAreas('emp-1', ['s0', 'inventado'], 'admin@x.com'),
+    ).rejects.toThrow(NotFoundException);
+    expect(prisma.employee.update).not.toHaveBeenCalled();
+  });
+
+  // Ser gerente NO se setea: es la consecuencia de tener todas las áreas. Este test
+  // fija que la asignación no escriba ningún campo extra.
+  it('asignar todas las áreas no escribe ningún campo de "gerente"', async () => {
+    conEmpleado('SUPERVISOR');
+    prisma.sector.count.mockResolvedValue(5);
+    prisma.employee.update.mockResolvedValue({
+      id: 'emp-1',
+      name: 'Diego',
+      password: 'h',
+      areasSupervisadas: areas(
+        'Ventas',
+        'Cobranzas',
+        'Admin',
+        'Logística',
+        'Depósito',
+      ),
+    });
+
+    await service.setSupervisedAreas(
+      'emp-1',
+      ['s0', 's1', 's2', 's3', 's4'],
+      'admin@x.com',
+    );
+
+    const [[args]] = prisma.employee.update.mock.calls;
+    expect(Object.keys(args.data)).toEqual(['areasSupervisadas']);
+    expect(JSON.stringify(args.data)).not.toMatch(/gerente/i);
+  });
+});

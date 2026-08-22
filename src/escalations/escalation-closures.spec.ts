@@ -56,6 +56,8 @@ function buildService(
   const logger = { logEvent: jest.fn() };
   const knowledge = {
     ingest: jest.fn().mockResolvedValue({ documentId: 'doc-nuevo', chunks: 2 }),
+    // Spec 005: el área permite escribir. El alcance por área se prueba aparte.
+    assertPuedeEscribir: jest.fn(),
   };
   const employees = { findById: jest.fn() };
 

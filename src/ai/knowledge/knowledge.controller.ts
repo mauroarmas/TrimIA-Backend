@@ -75,9 +75,12 @@ interface AuthenticatedRequest {
  * Sigue siendo material sensible: `/knowledge/search` permite pedir audiencia
  * INTERNO, así que exige `SUPERVISOR` y no un empleado cualquiera (OE-10).
  *
- * El **área** (`agentType`) es filtro de navegación, no permiso: cualquier
- * supervisor gestiona cualquier área (FR-045). No se introduce el sector como
- * tercera dimensión de autorización.
+ * **Cambio de la spec 005**: el área dejó de ser solo filtro de navegación *para
+ * escribir*. Un responsable **ve** todo —hace falta ver lo de otras áreas para no
+ * duplicarlo y para saber a quién derivar (FR-013)— pero **modifica** únicamente
+ * documentos de sus áreas. La regla no vive acá: vive en
+ * `KnowledgeService.assertPuedeEscribir`, porque la escritura también entra por
+ * `escalations` y una regla en la ruta dejaría esa puerta abierta.
  */
 @ApiTags('knowledge')
 @Controller('knowledge')
@@ -92,7 +95,7 @@ export class KnowledgeController {
 
   /** Ingesta un documento. body: { title, content, category, audience?, agentType? } */
   @Post()
-  ingest(
+  async ingest(
     @Body()
     body: {
       title: string;
@@ -101,7 +104,14 @@ export class KnowledgeController {
       audience?: Audience;
       agentType?: AgentType;
     },
+    @Req() req: AuthenticatedRequest,
   ) {
+    // Spec 005: se crea en un área propia, o en ninguna si el documento es
+    // transversal y quien lo carga es responsable de todas.
+    await this.knowledge.assertPuedeEscribir(
+      req.user.id,
+      body.agentType ?? null,
+    );
     return this.knowledge.ingest(body);
   }
 
@@ -147,7 +157,7 @@ export class KnowledgeController {
       'Responde 202 sin esperar la extracción: puede tardar segundos ' +
       '(Principio IV). El avance se sigue por GET /knowledge/files.',
   })
-  upload(
+  async upload(
     @UploadedFile() file: Express.Multer.File,
     @Body() dto: UploadKnowledgeDto,
     @Req() req: AuthenticatedRequest,
@@ -158,6 +168,13 @@ export class KnowledgeController {
         'Falta el archivo. Mandalo en el campo "file" del formulario.',
       );
     }
+    // Se chequea ACÁ y no en el worker que extrae el texto: el rechazo tiene que
+    // llegarle a quien sube el archivo, no quedar como un procesamiento fallido
+    // con un motivo raro un rato después.
+    await this.knowledge.assertPuedeEscribir(
+      req.user.id,
+      dto.agentType ?? null,
+    );
     return this.ingestion.upload(file, dto, req.user.id, force === 'true');
   }
 
@@ -212,15 +229,22 @@ export class KnowledgeController {
 
   @Patch(':id/active')
   @ApiOperation({ summary: 'Activa o desactiva sin borrar (FR-022)' })
-  setActive(@Param('id', ParseUUIDPipe) id: string, @Body() dto: SetActiveDto) {
-    return this.knowledge.setActive(id, dto.isActive);
+  setActive(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: SetActiveDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.knowledge.setActive(id, dto.isActive, req.user.id);
   }
 
   @Delete(':id')
   @HttpCode(204)
   @ApiOperation({ summary: 'Elimina definitivamente (FR-023)' })
-  remove(@Param('id', ParseUUIDPipe) id: string) {
-    return this.knowledge.remove(id);
+  remove(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.knowledge.remove(id, req.user.id);
   }
 
   // === Editar con la IA (Sprint 5A, US6) ===
@@ -266,7 +290,10 @@ export class KnowledgeController {
   @ApiOperation({
     summary: 'Reintenta la reindexación de un documento en REINDEX_FAILED',
   })
-  reindex(@Param('id', ParseUUIDPipe) id: string) {
-    return this.knowledge.requestReindex(id);
+  reindex(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.knowledge.requestReindex(id, req.user.id);
   }
 }
