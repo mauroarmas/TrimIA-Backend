@@ -283,6 +283,79 @@ export class KnowledgeService implements OnModuleInit {
    * —el endpoint o el caso que se resuelve—, donde todavía existe un autor. Si
    * aparece una puerta nueva que llame acá, tiene que llamar antes a la regla.
    */
+  /**
+   * El texto con el que se calcula el vector de un fragmento (spec 006, FR-005).
+   *
+   * **El título no se vectorizaba.** Viajaba solo en la metadata de Chroma, que
+   * no participa de la similitud, así que un documento «Sobre Nosotros» cuyo
+   * cuerpo no repite la palabra "empresa" perdía contra la consulta "qué sabés
+   * sobre la empresa" frente a documentos que no eran la respuesta.
+   *
+   * Medido sobre el corpus real: la señal sube entre 1.3 y 3.3 puntos y el piso
+   * de ruido **baja** 2.1 — o sea que separa mejor por los dos lados. En el
+   * caso que falló el 2026-08-20 el documento correcto pasa de la posición 3 a
+   * la 1.
+   *
+   * ⚠️ **Esto NO cambia lo que se guarda como `documents` en Chroma**, que es
+   * lo que `search()` devuelve y lo que termina leyendo el asistente (FR-006).
+   * El vector se calcula sobre un texto enriquecido; el contenido que se
+   * devuelve es el original. Que los dos dejen de coincidir es a propósito, y
+   * es lo que permite mejorar el recall sin cambiar lo que el agente responde.
+   *
+   * **Solo el título.** Categoría y agente quedaron afuera a conciencia: son
+   * etiquetas cortas y repetidas, y el riesgo de que acerquen entre sí a todos
+   * los documentos de una misma área es real y no se midió.
+   */
+  private textoAVectorizar(title: string, chunk: string): string {
+    return `${title}\n\n${chunk}`;
+  }
+
+  /**
+   * Vectoriza y **verifica que salió bien** (spec 006, FR-001..004).
+   *
+   * ⚠️ **`embedDocuments` no lanza cuando falla.** Su implementación en
+   * `@langchain/google-genai` usa `Promise.allSettled` y, para el lote
+   * rechazado, devuelve `Array(n).fill([])`:
+   *
+   *     .flatMap((res, idx) => res.status === "fulfilled"
+   *       ? res.value.embeddings.map((e) => e.values || [])
+   *       : Array(batchEmbedChunks[idx].length).fill([]))
+   *
+   * Sin esta guarda, esos vectores vacíos se escribían en ChromaDB y el
+   * documento quedaba `SYNCED` a continuación: el panel lo mostraba sano, el
+   * documento dejaba de ser recuperable, y nada lo delataba. Es el mismo modo
+   * de fallo que `KnowledgeSyncStatus` existe para evitar, entrando por una
+   * puerta que el diseño del Sprint 5A no contemplaba.
+   *
+   * No es teórico: midiendo el corpus real, una corrida devolvió **98 vectores
+   * vacíos** de golpe sin un solo error en consola.
+   *
+   * La invariante: `SYNCED` ⟹ hay un vector válido por cada fragmento.
+   *
+   * Vive acá, en un solo lugar, y la usan los dos caminos que vectorizan
+   * (`ingest` y `reindex`). Si aparece un tercero, tiene que pasar por acá.
+   */
+  private async vectorizar(textos: string[]): Promise<number[][]> {
+    const vectores = await this.embeddings.embedDocuments(textos);
+
+    if (vectores.length !== textos.length) {
+      throw new Error(
+        `El servicio de embeddings devolvió ${vectores.length} vectores para ` +
+          `${textos.length} fragmentos. No se escribe nada.`,
+      );
+    }
+    const vacios = vectores.filter((v) => !v || v.length === 0).length;
+    if (vacios > 0) {
+      throw new Error(
+        `El servicio de embeddings devolvió ${vacios} de ${textos.length} ` +
+          `vectores vacíos (probable fallo de cuota o de red en un lote). ` +
+          `No se escribe nada.`,
+      );
+    }
+
+    return vectores;
+  }
+
   async ingest(
     input: IngestInput,
   ): Promise<{ documentId: string; chunks: number }> {
@@ -304,9 +377,41 @@ export class KnowledgeService implements OnModuleInit {
     });
 
     const chunks = this.chunk(input.content);
+
     // Precomputamos los vectores con Gemini y los pasamos explícitos a Chroma,
     // para no depender de la función de embeddings interna de la colección.
-    const vectors = await this.embeddings.embedDocuments(chunks);
+    //
+    // Si la vectorización falla, el documento se CONSERVA en REINDEX_FAILED en
+    // vez de borrarse (spec 006, FR-002). Tres motivos:
+    //
+    //  1. En `POST /knowledge/upload` el texto ya costó una extracción cara
+    //     (unpdf, mammoth o Gemini Vision). Borrarlo obliga a reprocesar el
+    //     archivo entero por un 429.
+    //  2. En "responder y enseñar a la IA" la respuesta al cliente YA se envió;
+    //     la ingesta es un efecto posterior. Borrar perdería el conocimiento en
+    //     silencio — justo el modo de fallo que esta guarda vino a eliminar.
+    //  3. REINDEX_FAILED ya existe y el panel ya sabe mostrarlo, con su botón
+    //     de reintentar.
+    //
+    // La invariante que importa no es "el documento no existe", es **"no hay
+    // vectores inválidos en el índice"**. Un documento sin vectores se arregla
+    // con un clic; uno con vectores rotos marcado SYNCED no, porque nadie sabe
+    // que está roto.
+    let vectors: number[][];
+    try {
+      vectors = await this.vectorizar(
+        chunks.map((c) => this.textoAVectorizar(input.title, c)),
+      );
+    } catch (err) {
+      const motivo = err instanceof Error ? err.message : String(err);
+      await this.markReindexFailed(doc.id, motivo);
+      this.logger.error(
+        `Documento "${input.title}" quedó sin vectorizar (${motivo}). ` +
+          `Se conserva en REINDEX_FAILED para reintentar desde el panel.`,
+      );
+      throw err;
+    }
+
     await this.collection.add({
       ids: chunks.map((_, idx) => `${doc.id}:${idx}`),
       embeddings: vectors,
@@ -700,13 +805,26 @@ export class KnowledgeService implements OnModuleInit {
     });
     if (!doc) throw new NotFoundException('Documento no encontrado');
 
-    // Borrar ANTES de agregar: si se agregara primero, una falla intermedia
-    // dejaría las dos versiones conviviendo y el agente podría responder con
-    // la vieja aunque el panel muestre la nueva.
+    const chunks = this.chunk(doc.content);
+
+    // ORDEN DELIBERADO: vectorizar y validar ANTES de borrar (spec 006, FR-003).
+    //
+    // El borrado sigue yendo antes del alta —si se agregara primero, una falla
+    // intermedia dejaría las dos versiones conviviendo y el agente podría
+    // responder con la vieja aunque el panel muestre la nueva—, pero la
+    // vectorización se adelantó a las dos cosas.
+    //
+    // El motivo: si se vectorizara después del borrado, un fallo de embeddings
+    // dejaría al documento SIN fragmentos, invisible para la búsqueda hasta que
+    // alguien reintentara a mano. Validando primero, un fallo no cuesta nada:
+    // el documento sigue respondiendo con su versión anterior mientras BullMQ
+    // reintenta. El estado anterior es *viejo*, no *roto*.
+    const vectors = await this.vectorizar(
+      chunks.map((c) => this.textoAVectorizar(doc.title, c)),
+    );
+
     await this.collection.delete({ where: { documentId } });
 
-    const chunks = this.chunk(doc.content);
-    const vectors = await this.embeddings.embedDocuments(chunks);
     await this.collection.add({
       ids: chunks.map((_, idx) => `${doc.id}:${idx}`),
       embeddings: vectors,

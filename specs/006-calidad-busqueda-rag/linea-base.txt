@@ -1,0 +1,39 @@
+Línea de base — spec 006, ANTES de tocar knowledge.service.ts
+Fecha: 2026-08-22  ·  corpus: 78 documentos activos
+Comando: docker compose exec nestjs npx ts-node scripts/medir-umbral.ts
+
+
+Umbral configurado: 65.0%   ·   top-k: 4
+Consultas de control: 4
+
+── "arbol"
+   1. 54.3%  «Auditoría de decisiones en el Panel del Supervisor»
+   2. 54.1%  «Glosario interno de Credimisión»
+   3. 54.1%  «Inducción del empleado nuevo: qué mirar la primera semana»
+   piso de ruido = 54.3% — queda debajo
+
+── "qué es Credimisión"
+   1. 77.3%  «Qué es Credimisión: la empresa en una página»  ← correcto
+   2. 71.8%  «Medios de pago aceptados»
+   3. 71.0%  «Inducción del empleado nuevo: qué mirar la primera semana»
+   correcto en posición 1 con 77.3% — PASA
+
+── "que garantia tienen las heladeras?"
+   1. 77.6%  «Financiacion de heladeras»
+   2. 75.8%  «Garantia extendida en electrodomesticos»  ← correcto
+   3. 74.8%  «Devoluciones, cambios y garantía»  ← correcto
+   correcto en posición 2 con 75.8% — PASA
+
+── "qué sabes sobre la empresa?"
+   1. 61.6%  «Inducción del empleado nuevo: qué mirar la primera semana»
+   2. 61.2%  «Glosario interno de Credimisión»
+   3. 60.3%  «Beneficio buen pagador: descuento en la próxima cuota»
+   el documento correcto NO aparece en el top-4
+
+═══ Resumen ═══
+  piso de ruido : 54.3%
+  señal         : 75.8%
+  umbral        : 65.0%
+
+  ✅ El umbral separa los dos grupos.
+

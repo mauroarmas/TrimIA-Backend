@@ -1,0 +1,38 @@
+Medición POST-migración — spec 006
+Fecha: 2026-08-22  ·  corpus: 78 documentos activos, todos SYNCED
+Comando: docker compose exec nestjs npx ts-node scripts/medir-umbral.ts
+
+
+Umbral configurado: 65.0%   ·   top-k: 4
+Consultas de control: 4
+
+── "arbol"
+   1. 54.1%  «Glosario interno de Credimisión»
+   2. 53.6%  «Subido desde el cliente del panel»
+   3. 53.5%  «Envios»
+   piso de ruido = 54.1% — queda debajo
+
+── "qué es Credimisión"
+   1. 79.5%  «Qué es Credimisión: la empresa en una página»  ← correcto
+   2. 73.2%  «Cómo trabaja Credimisión por dentro: áreas y a quién se deriva cada consulta»
+   correcto en posición 1 con 79.5% — PASA
+
+── "que garantia tienen las heladeras?"
+   1. 78.4%  «Garantia extendida en electrodomesticos»  ← correcto
+   2. 77.6%  «Financiacion de heladeras»
+   3. 73.0%  «Devoluciones, cambios y garantía»  ← correcto
+   correcto en posición 1 con 78.4% — PASA
+
+── "qué sabes sobre la empresa?"
+   1. 62.1%  «Qué es Credimisión: la empresa en una página»  ← correcto
+   2. 62.1%  «Sistemas que usa la empresa: Paljet, Riesgo Online, CRM y Drive»
+   3. 61.2%  «Inducción del empleado nuevo: qué mirar la primera semana»
+   correcto en posición 1 con 62.1% — no llega
+
+═══ Resumen ═══
+  piso de ruido : 54.1%
+  señal         : 78.4% — la más floja, sin contar los límites conocidos
+  umbral        : 65.0%
+
+  ✅ El umbral separa los dos grupos.
+

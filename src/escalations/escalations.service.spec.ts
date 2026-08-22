@@ -264,6 +264,67 @@ describe('EscalationsService', () => {
       );
     });
 
+    /**
+     * Spec 006: `ingest()` ahora LANZA cuando la vectorización falla (antes se
+     * tragaba los vectores vacíos y devolvía como si nada).
+     *
+     * Acá el mensaje **ya se le envió al usuario**, la conversación ya se
+     * liberó y el caso ya quedó RESOLVED. Si el fallo de la ingesta tumbara el
+     * endpoint, el supervisor vería un error por una operación que en lo
+     * esencial salió bien — y si reintenta, **el usuario recibe el mensaje dos
+     * veces**.
+     *
+     * El conocimiento no se pierde: el documento queda en REINDEX_FAILED,
+     * visible en el panel y con su botón de reintentar.
+     */
+    it('si enseñar a la IA falla, el caso igual se resuelve (el mensaje YA se envió)', async () => {
+      prisma.escalation.findUnique.mockResolvedValue(pending);
+      prisma.escalation.update.mockResolvedValue({
+        ...pending,
+        status: 'RESOLVED',
+      });
+      knowledge.ingest.mockRejectedValueOnce(
+        new Error('El servicio de embeddings devolvió 3 vectores vacíos'),
+      );
+
+      await expect(
+        service.resolve(
+          'esc-1',
+          { message: 'Sí, la tenemos en 12 cuotas.', teachAgent: true },
+          'employee-1',
+        ),
+      ).resolves.toBeDefined();
+
+      // El mensaje se envió una sola vez y el caso quedó cerrado.
+      expect(sender.send).toHaveBeenCalledTimes(1);
+      expect(prisma.escalation.update).toHaveBeenCalled();
+    });
+
+    it('un fallo al enseñar a la IA queda registrado como evento, no en silencio', async () => {
+      prisma.escalation.findUnique.mockResolvedValue(pending);
+      prisma.escalation.update.mockResolvedValue({
+        ...pending,
+        status: 'RESOLVED',
+      });
+      knowledge.ingest.mockRejectedValueOnce(new Error('sin vectores'));
+
+      await service.resolve(
+        'esc-1',
+        { message: 'Sí, la tenemos en 12 cuotas.', teachAgent: true },
+        'employee-1',
+      );
+
+      // Sin esto, el evento `escalation_resolved` diría `teachAgent: true` y
+      // estaría mintiendo: el supervisor tiene que poder enterarse de que su
+      // enseñanza no llegó (OE-11).
+      expect(logger.logEvent).toHaveBeenCalledWith(
+        expect.objectContaining({
+          eventType: 'escalation_teach_failed',
+          payload: expect.objectContaining({ motivo: 'sin vectores' }),
+        }),
+      );
+    });
+
     it('sin teachAgent, no ingesta nada al RAG', async () => {
       prisma.escalation.findUnique.mockResolvedValue(pending);
       prisma.escalation.update.mockResolvedValue({

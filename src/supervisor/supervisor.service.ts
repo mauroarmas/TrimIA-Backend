@@ -317,10 +317,14 @@ export class SupervisorService {
    * La confianza sale del payload del evento, que el orquestador persiste por turno.
    */
   async getAgentsStatus(): Promise<AgentsStatusResponse> {
+    // Sin default en código, a propósito: el umbral se pinea por variable de
+    // entorno (CLAUDE.md, y Joi ya lo valida con su propio default en
+    // config.module.ts). Un segundo default acá era una segunda fuente de
+    // verdad: si alguien cambiaba el de Joi, el panel seguía pintando contra
+    // 0.65 y mostraba un umbral distinto del que el agente aplicaba.
     const confidenceThreshold = this.config.get<number>(
       'RAG_CONFIDENCE_THRESHOLD',
-      0.65,
-    );
+    )!;
 
     // Confianza promedio y escalados por agente, agregados en Postgres sobre el
     // JSON del payload (AVG ignora los null de eventos previos a la tarea 2.4).

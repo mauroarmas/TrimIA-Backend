@@ -1,8 +1,29 @@
 # Pre-spec 1 — Base de la búsqueda
 
 **Sprint** 5B · **Orden** 1 de 5 · **Tareas del plan** 5B.1–5B.3
-**Depende de** — · **Estado** sin spec · **Spec** —
+**Depende de** — · **Estado** ✅ **implementada** · **Spec** [006-calidad-busqueda-rag](../../specs/006-calidad-busqueda-rag/)
 **Origen** futura del 2026-08-22, probando "Probar búsqueda" en el panel
+
+> [!IMPORTANT]
+> **CONGELADA.** Ya tiene spec: manda [`specs/006-calidad-busqueda-rag/`](../../specs/006-calidad-busqueda-rag/),
+> no este archivo. Queda como registro de lo que se pensaba **antes** de investigar.
+>
+> **Y lo que se pensaba estaba mal.** La Fase 0 de la spec refutó la premisa central:
+> ningún modelo de embeddings disponible respeta `taskType` — el vector sale bit a bit
+> idéntico, también llamando a la API sin intermediarios. La documentación del proveedor
+> que citaba esta pre-spec estaba desactualizada, y el JSDoc de la propia librería lo
+> advertía ("currently only supported by `embedding-001`", un modelo que ya no existe).
+>
+> Lo que se hizo en su lugar, con el mismo objetivo:
+>
+> | En vez de | Se hizo | Medido |
+> |---|---|---|
+> | `taskType` en los embeddings | **Incorporar el título** al texto que se vectoriza (era solo metadata) | ruido −0.2 pp, señal +2.2/+2.6 pp; «qué sabés sobre la empresa» pasó de no entrar al top-4 a ser el primero |
+> | — | **Guarda contra vectores vacíos** (hallazgo nuevo, más grave que el problema original) | 98 vectores vacíos en una corrida real, escritos como `SYNCED` sin un solo error |
+> | Remedir el umbral porque el piso se movió | **Medirlo y confirmarlo**: 0.65 estaba bien | ruido 54.1% · umbral 65% · señal 78.4% |
+>
+> Vale como argumento a favor del propio método: verificar contra la API real costó
+> veinte minutos y ahorró implementar algo que no hacía nada.
 
 ## Qué se quiere
 

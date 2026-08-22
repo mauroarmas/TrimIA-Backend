@@ -220,17 +220,43 @@ export class EscalationsService {
       // que knowledge.ingest() (knowledge.service.ts). Publicarlo requiere
       // que el supervisor mande audience: PUBLICO explícito.
       const audience = input.audience ?? Audience.INTERNO;
-      await this.knowledge.ingest({
-        title: input.title!,
-        content: input.message,
-        category: input.category!,
-        audience,
-        agentType: input.agentType ?? conversation.currentAgent,
-        // Sprint 5A: el documento queda trazable hasta el caso que lo originó
-        // (FR-026), igual que el de saveUnsent().
-        sourceType: KnowledgeSourceType.ESCALADO,
-        sourceId: id,
-      });
+      // ⚠️ A esta altura el mensaje YA se le envió al usuario, la conversación
+      // ya se liberó y el caso ya quedó RESOLVED. Dejar que un fallo de la
+      // ingesta tumbe el endpoint le mostraría un error al supervisor por una
+      // operación que en lo esencial salió bien — y si reintenta, el usuario
+      // recibe el mensaje dos veces.
+      //
+      // Desde la spec 006 `ingest()` lanza cuando la vectorización falla (antes
+      // se tragaba los vectores vacíos y devolvía como si nada). El documento
+      // queda en REINDEX_FAILED, visible en el panel y con su botón de
+      // reintentar, así que el conocimiento no se pierde: solo llega tarde.
+      try {
+        await this.knowledge.ingest({
+          title: input.title!,
+          content: input.message,
+          category: input.category!,
+          audience,
+          agentType: input.agentType ?? conversation.currentAgent,
+          // Sprint 5A: el documento queda trazable hasta el caso que lo originó
+          // (FR-026), igual que el de saveUnsent().
+          sourceType: KnowledgeSourceType.ESCALADO,
+          sourceId: id,
+        });
+      } catch (err) {
+        // Queda como evento, no como línea de log: el `escalation_resolved` de
+        // más arriba dice `teachAgent: true` y sin esto estaría mintiendo. El
+        // supervisor tiene que poder enterarse de que su enseñanza no llegó
+        // (OE-11).
+        await this.logger.logEvent({
+          conversationId: conversation.id,
+          eventType: 'escalation_teach_failed',
+          payload: {
+            escalationId: id,
+            resolvedById,
+            motivo: err instanceof Error ? err.message : String(err),
+          },
+        });
+      }
     }
 
     return resolved;

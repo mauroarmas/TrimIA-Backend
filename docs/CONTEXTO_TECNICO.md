@@ -385,6 +385,27 @@ mintiendo.
 > un documento que pasa a `INTERNO` seguiría siendo recuperable por un cliente.
 > Es un agujero de confidencialidad, no una desprolijidad.
 
+**`SYNCED` garantiza que hay un vector válido por cada fragmento** (spec 006).
+No era así: `embedDocuments` de `@langchain/google-genai` **no lanza** cuando un
+lote falla — usa `Promise.allSettled` y devuelve `Array(n).fill([])`. Esos
+vectores vacíos se escribían en Chroma y el documento quedaba `SYNCED` a
+continuación: el panel lo mostraba sano, el documento dejaba de ser recuperable,
+y nada lo delataba. En una corrida sobre el corpus real aparecieron **98 vectores
+vacíos** sin un solo error en consola. Hoy `vectorizar()` valida antes de
+escribir, y en `reindex()` **la validación va antes del borrado**: un fallo deja
+al documento con su versión anterior, no sin fragmentos.
+
+**El título forma parte del texto que se vectoriza, no del que se devuelve**
+(spec 006). El vector se calcula sobre `` `${title}\n\n${chunk}` `` pero
+`SearchHit.content` sigue siendo el fragmento solo — es lo que lee el asistente
+y no cambió. Que los dos dejen de coincidir es deliberado: mejora el recall sin
+tocar lo que el agente responde.
+
+> ⚠️ **El nivel gratuito de Gemini limita a 100 RPM en embeddings.** El corpus
+> son ~101 fragmentos, así que cualquier reindexado masivo tiene que espaciarse
+> (`prisma/reindex-corpus.ts --intervalo`). No es una precaución teórica: es el
+> límite que se alcanzó midiendo, y el que produjo los 98 vectores vacíos.
+
 **Audio.** Se transcribe en n8n (el token de Meta vive solo ahí) y el backend
 recibe **texto**. El binario no se persiste en ningún lado (FR-011) — eso se
 garantiza con variables de instancia en `docker-compose.yml`, no con los

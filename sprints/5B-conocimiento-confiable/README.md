@@ -10,7 +10,7 @@ Plan: [`docs/plan_de_trabajo.md`](../../docs/plan_de_trabajo.md) §Sprint 5B (ta
 
 | # | Pre-spec | Tareas | Depende de | Estado |
 |---|---|---|---|---|
-| 1 | [Base de la búsqueda](1-base-de-la-busqueda.md) | 5B.1–5B.3 | — | sin spec |
+| 1 | [Base de la búsqueda](1-base-de-la-busqueda.md) | 5B.1–5B.3 | — | ✅ **spec [006](../../specs/006-calidad-busqueda-rag/), implementada** |
 | 2 | [Duplicados al escribir](2-duplicados-al-escribir.md) | 5B.4–5B.5 | 1 | sin spec |
 | 3 | [Higiene del corpus](3-higiene-del-corpus.md) | 5B.6–5B.8 | 1, 2 | sin spec |
 | 4 | [Qué falta para responder mejor](4-que-falta-para-responder-mejor.md) | 5B.9–5B.10 | 1 | sin spec |
@@ -46,7 +46,14 @@ graph LR
    Una propuesta de fusión que no se lee comparativamente se aprueba a ciegas, y ahí el
    Principio III pasa de garantía a trámite. Está desarrollado en la pre-spec; conviene
    decidirlo al especificar, no al final.
-2. **El cambio de embeddings de la pre-spec 1 se valida a mano.** El banco de escenarios
-   que lo detectaría es del [Sprint 5C](../5C-capacitacion-audio-medicion/) y todavía no
-   existe. Conviene registrar qué se probó y con qué resultado: es la línea de base que
-   el 5C va a usar.
+2. ~~**El cambio de embeddings de la pre-spec 1 se valida a mano.**~~ **Resuelto**: la
+   spec 006 dejó un arnés repetible (`scripts/medir-umbral.ts`) con consultas de control
+   sacadas de defectos reales, más la línea de base y la medición posterior en
+   `specs/006-calidad-busqueda-rag/`. Es el punto de partida que hereda el banco de
+   escenarios del [Sprint 5C](../5C-capacitacion-audio-medicion/).
+
+3. **El nivel gratuito de Gemini limita a 100 RPM en embeddings** (confirmado en la
+   consola de Google el 2026-08-22). El corpus son ~101 fragmentos: cualquier reindexado
+   masivo tiene que espaciarse o los revienta. La spec 006 lo resolvió con un
+   `--intervalo` en el script de migración; las pre-specs 3 y 4, que también comparan
+   documentos entre sí, van a chocar con lo mismo.
