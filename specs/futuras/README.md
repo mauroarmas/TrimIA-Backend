@@ -18,3 +18,5 @@ registro de por qué se decidió lo que se decidió.
 | Tema | Detectado | Origen |
 |---|---|---|
 | [Higiene de la base de conocimiento](higiene-base-de-conocimiento.md) — encontrar documentos que se compiten y fusionarlos | 2026-08-20 | Probando el panel tras la spec 005: dos documentos sobre la empresa se bajaban el score y ninguno alcanzaba el umbral |
+| [Calidad de la búsqueda RAG en el panel](calidad-busqueda-rag.md) — embeddings sin `taskType` y umbral no visible en "Probar búsqueda" | 2026-08-22 | Consulta sin relación ("arbol") devolvió resultados con score ~0.53 sin indicar que quedan bajo el umbral de 0.65 |
+| [Cuando el prompt no alcanza](cuando-el-prompt-no-alcanza.md) — no hay forma de saber si el asistente cumple lo que el prompt le pide | 2026-08-22 | Cuatro defectos en tres días por instrucciones ignoradas o ausentes; los cuatro los encontró una persona conversando |

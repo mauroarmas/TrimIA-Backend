@@ -102,6 +102,20 @@ tras turno, en consultas que terminan escalando**. Dos documentos que siempre sa
 juntos y nunca resuelven se están compitiendo — eso es evidencia medida, no una
 conjetura de coseno. Vale evaluar arrancar por ahí.
 
+> ⚠️ **Pero esa señal hoy está sesgada, y hay que arreglarlo antes de confiar en
+> ella.** `KnowledgeRetrieval.outcome` se deriva de `result.escalated`
+> ([message.processor.ts](../../src/queue/processors/message.processor.ts), en
+> `trackRetrievals`), y el informe de baja confianza a un responsable **no marca
+> `escalated`** —a propósito: si lo marcara, el Panel del Supervisor contaría
+> escalaciones que no existen en la cola—. Resultado: esos turnos quedan grabados
+> como `ANSWERED` aunque ningún documento haya alcanzado el umbral. Justo los turnos
+> donde los documentos se estaban compitiendo son los que la telemetría anota como
+> exitosos.
+>
+> Separarlo pide un valor nuevo en el enum `RetrievalOutcome`, o sea una migración,
+> que la spec 005 descartó por alcance. Es chico y conviene hacerlo **antes** de
+> construir la detección encima.
+
 **3. ¿Quién puede fusionar dos documentos de áreas distintas?**
 Fusionar es escribir en los dos. Con la regla de la spec 005, hace falta ser
 responsable de **ambas** áreas; si no, no se puede — y el resultado, ¿en qué área
