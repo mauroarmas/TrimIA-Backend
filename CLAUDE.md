@@ -58,4 +58,23 @@ en `src/api.js` (para extender y no duplicar) y qué distinciones del backend pu
 aplastar la UI sin querer — por ejemplo `hasData: false` no es `0`, y dos códigos de
 error iguales pueden pedir acciones distintas.
 
+## Antes de una spec: futuras y pre-specs
+
+Una spec no se escribe de la nada. Hay dos paradas antes:
+
+```
+specs/futuras/    lo que se me ocurre a mitad de otra cosa: se anota por encima y sigo
+      ↓           (bandeja de entrada; se llena sola, se vacía a propósito)
+sprints/NNN-.../  al ARRANCAR un sprint, lo que le toca se mueve acá como PRE-SPEC:
+      ↓           todas juntas, en orden, sin detalle. Es la entrada de specify
+specs/NNN-nombre/ /speckit-specify → plan → tasks → implement
+```
+
+**Cada paso mueve, no copia**: un tema vive en un solo lugar a la vez, y ese lugar dice
+en qué etapa está. La convención completa —qué lleva una pre-spec, el tope de una
+página, cuándo se congela— está en `sprints/README.md`.
+
+Lo primero al arrancar un sprint es escribir sus pre-specs. Recién después se especifica
+la primera.
+
 Las reglas de producto viven en `.specify/memory/constitution.md` y el estado del producto en `specs/README.md`.
