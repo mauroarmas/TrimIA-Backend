@@ -343,6 +343,57 @@ describe('buildRagAgentGraph', () => {
       expect(prompt).toMatch(/no le ofrezcas consultarlo vos en su nombre/i);
     });
 
+    /**
+     * ⭐ Ofrecer y derivar son caminos distintos (2026-08-22).
+     *
+     * Un cliente preguntó si una heladera aplicaba para compra con crédito. El
+     * agente contestó bien sobre la financiación… y de paso agregó "el stock exacto
+     * lo tengo que consultar con un responsable", derivando por algo que **nadie
+     * había preguntado**. La consulta estaba resuelta y quedó como caso pendiente.
+     *
+     * La corrección tiene dos mitades, y la segunda es estructural: ofrecer
+     * ("¿querés que lo consulte?") va con needsHuman **false**, así la conversación
+     * sigue abierta y la respuesta se puede recibir. Derivar va afirmado y con
+     * needsHuman true. Mezclarlos es lo que dejaba a la persona esperando.
+     */
+    it('⭐ el prompt distingue ofrecer de derivar, y los ata a needsHuman', async () => {
+      const prompt = await promptDe({
+        userType: 'CLIENTE',
+        role: null,
+        areas: [],
+        esGerente: false,
+      });
+
+      expect(prompt).toMatch(/OFRECER[\s\S]*needsHuman: FALSE/i);
+      expect(prompt).toMatch(/DERIVAR[\s\S]*needsHuman: TRUE/i);
+      expect(prompt).toMatch(/NUNCA los mezcles/i);
+    });
+
+    it('⭐ y le prohíbe derivar por algo que no le preguntaron', async () => {
+      const prompt = await promptDe({
+        userType: 'CLIENTE',
+        role: null,
+        areas: [],
+        esGerente: false,
+      });
+
+      expect(prompt).toMatch(/NO derives por algo que NO te preguntaron/i);
+      // El caso concreto que lo originó.
+      expect(prompt).toMatch(/de paso te confirmo el\s+stock/i);
+    });
+
+    // El seguimiento: si ofreció y le dijeron que sí, ahí tiene que derivar.
+    it('le dice que cumpla el ofrecimiento cuando le dicen que sí', async () => {
+      const prompt = await promptDe({
+        userType: 'CLIENTE',
+        role: null,
+        areas: [],
+        esGerente: false,
+      });
+
+      expect(prompt).toMatch(/ya ofreciste consultar y te dicen que sí/i);
+    });
+
     // Conservador a propósito: es preferible hablarle de más a un empleado que
     // tratar a un cliente como si trabajara acá.
     it('sin caller cae al trato de cliente', async () => {
