@@ -204,9 +204,9 @@ ninguna señal de que están **por debajo** del umbral. Se leen como "el RAG enc
 esto", cuando en producción esos mismos dispararían una escalación. Es justamente lo
 que hizo pensar que había un bug donde no lo había.
 
-- [ ] T043 En `src/components/KnowledgeIngest.jsx`, mostrar el `RAG_CONFIDENCE_THRESHOLD` vigente junto a los resultados de "Probar búsqueda". **No hace falta endpoint nuevo**: `getAgentsStatus()` ya lo devuelve como `confidenceThreshold` (`src/api.js:69`) y `SupervisorPanel.jsx:62` ya lo pinta. Reusar, no duplicar
-- [ ] T044 En `src/components/KnowledgeIngest.jsx`, marcar visualmente las filas cuyo score queda **bajo** el umbral. La distinción que la UI no puede aplastar: "esto se recuperó" ≠ "esto alcanza para responder". Un endpoint de preview sin filtro es correcto por diseño ([research.md §1](./research.md)) — lo que faltaba era decirlo en pantalla
-- [ ] T045 En `src/components/KnowledgeIngest.jsx`, agregar una línea que explique que este buscador **no aplica el umbral a propósito**, para que el supervisor vea lo crudo. Sin eso, marcar las filas en rojo se lee como "está roto"
+- [X] T043 En `src/components/KnowledgeIngest.jsx`, mostrar el `RAG_CONFIDENCE_THRESHOLD` vigente junto a los resultados de "Probar búsqueda". **No hace falta endpoint nuevo**: `getAgentsStatus()` ya lo devuelve como `confidenceThreshold` (`src/api.js:69`) y `SupervisorPanel.jsx:62` ya lo pinta. Reusar, no duplicar
+- [X] T044 En `src/components/KnowledgeIngest.jsx`, marcar visualmente las filas cuyo score queda **bajo** el umbral. La distinción que la UI no puede aplastar: "esto se recuperó" ≠ "esto alcanza para responder". Un endpoint de preview sin filtro es correcto por diseño ([research.md §1](./research.md)) — lo que faltaba era decirlo en pantalla
+- [X] T045 En `src/components/KnowledgeIngest.jsx`, agregar una línea que explique que este buscador **no aplica el umbral a propósito**, para que el supervisor vea lo crudo. Sin eso, marcar las filas en rojo se lee como "está roto"
 
 ---
 
