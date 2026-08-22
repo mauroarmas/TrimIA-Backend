@@ -76,6 +76,69 @@ Además del mensaje de respuesta, completá estos campos:
 `;
 
 /**
+ * Ajusta el mensaje cuando el agente deriva a una persona.
+ *
+ * **La regla: un mensaje que congela la conversación no puede terminar preguntando.**
+ * Con `needsHuman: true` la conversación queda en WAITING_HUMAN y el agente no
+ * vuelve a intervenir, así que cualquier pregunta que haga queda sin poder
+ * contestarse: quien la lea responde y recibe un acuse.
+ *
+ * `HANDOFF_INSTRUCTIONS` ya lo pide —"NUNCA preguntes «¿querés que lo consulte?»
+ * cuando vas a marcar needsHuman=true"— y `SALES_PROMPT` lo repite dos veces más
+ * ("afirmándolo, no preguntándolo"). Se incumplió igual, de dos formas distintas
+ * vistas en el panel el 2026-08-22:
+ *
+ * 1. Pidiendo permiso: *"¿Querés que lo consulte con un responsable para confirmar
+ *    el modelo exacto que viste y su stock?"* — la frase textual del ejemplo
+ *    prohibido.
+ * 2. Pidiendo datos: *"¿Qué modelo específico estabas viendo?"*, *"¿Me decís cuál
+ *    modelo te llamó la atención?"*. Ésta salió en **4 de 4** corridas del mismo
+ *    escenario, así que es la forma habitual, no la excepción.
+ *
+ * Las dos son la misma contradicción entre dos campos de la misma salida
+ * estructurada: `response` sigue conversando y `needsHuman` corta la conversación.
+ *
+ * **Por qué en código y no en el prompt.** Tres instrucciones explícitas ya fallaron;
+ * una cuarta no cambia nada. Una contradicción se detecta, no se pide por favor.
+ *
+ * Qué hace, en concreto:
+ * - **Saca la pregunta del final**, si la hay. Nada se pierde: lo que el agente
+ *   quería averiguar queda en la nota interna, y quien tome el caso ve la
+ *   conversación entera.
+ * - **Se asegura de anunciar la derivación.** Si el texto que queda no menciona a un
+ *   responsable, quien lee no sabría que alguien va a contestarle.
+ */
+const DERIVACION_AFIRMADA =
+  'Lo consulto con un responsable y te confirmo a la brevedad.';
+
+/** Corta la pregunta final, respetando el resto del mensaje. */
+function quitarPreguntaFinal(texto: string): string {
+  const t = texto.trim();
+  if (!t.endsWith('?')) return t;
+
+  // Con apertura `¿` el corte es exacto.
+  const apertura = t.lastIndexOf('¿');
+  if (apertura > 0) return t.slice(0, apertura).trim();
+  if (apertura === 0) return '';
+
+  // Sin `¿` —que se omite seguido al escribir rápido— se corta en el final de la
+  // oración anterior.
+  const cierre = Math.max(
+    t.lastIndexOf('.', t.length - 2),
+    t.lastIndexOf('!', t.length - 2),
+  );
+  return cierre > 0 ? t.slice(0, cierre + 1).trim() : '';
+}
+
+export function mensajeDeDerivacion(response: string): string {
+  const sinPregunta = quitarPreguntaFinal(response ?? '');
+  if (!sinPregunta) return DERIVACION_AFIRMADA;
+  // Ya avisa que sigue una persona: no hace falta agregar nada.
+  if (/responsable/i.test(sinPregunta)) return sinPregunta;
+  return `${sinPregunta} ${DERIVACION_AFIRMADA}`;
+}
+
+/**
  * Con quién está hablando el agente (spec 005).
  *
  * Vive acá por el mismo motivo que el resto de este archivo: es una regla del

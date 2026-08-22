@@ -19,6 +19,7 @@ import { agentResponseSchema } from './rag-agent.schemas';
 import {
   HANDOFF_INSTRUCTIONS,
   STYLE_RULES,
+  mensajeDeDerivacion,
   interlocutorInstructions,
 } from './rag-agent.instructions';
 import { descriptorDe } from '../../caller/caller.types';
@@ -204,8 +205,10 @@ export function buildRagAgentGraph(
   // derivo con un responsable" y no pasaba nada — ninguna Escalation, nada en
   // el panel del supervisor.
   //
-  // No pisa `response`: el texto que ya generó el agente es más contextual
-  // que el mensaje canned de la rama de baja confianza.
+  // No pisa `response`: el texto que ya generó el agente es más contextual que el
+  // mensaje canned de la rama de baja confianza. Lo único que se ajusta es la
+  // pregunta del final —ver mensajeDeDerivacion—, porque ahí el mensaje y la
+  // decisión se contradicen: uno sigue conversando y la otra corta la conversación.
   const escalateByAgent = async (state: OrchestratorStateType) => {
     const reason = state.handoffReason ?? 'el agente pidió intervención humana';
     logger.log(`${tag} derivación pedida por el agente: ${reason}`);
@@ -219,7 +222,17 @@ export function buildRagAgentGraph(
       });
     }
 
-    return { escalated: true };
+    // Un mensaje que congela la conversación no puede terminar preguntando: la
+    // respuesta a esa pregunta no la va a poder recibir nadie.
+    const response = mensajeDeDerivacion(state.response ?? '');
+    if (response !== state.response) {
+      logger.warn(
+        `${tag} el mensaje seguía conversando mientras derivaba: se le sacó la ` +
+          `pregunta final y se anunció la derivación`,
+      );
+    }
+
+    return { escalated: true, response };
   };
 
   // --- NODO: escalate_to_human — confianza baja, deriva a un responsable ---

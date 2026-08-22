@@ -668,6 +668,146 @@ describe('buildRagAgentGraph', () => {
       );
     });
 
+    /**
+     * ⭐ Pedir permiso para derivar cuando ya se está derivando (2026-08-22).
+     *
+     * Visto en el panel: *"¡Hola! Contamos con variedad de heladeras… ¿Querés que lo
+     * consulte con un responsable para confirmar el modelo exacto que viste y su
+     * stock?"* — con `needsHuman: true`. Es la frase textual que el prompt pone como
+     * ejemplo de lo que NUNCA hay que escribir, y pasó igual.
+     *
+     * Lo que la hace grave es lo que viene después, que el propio prompt anticipaba:
+     * la conversación queda en WAITING_HUMAN, así que quien lea eso contesta y
+     * recibe un acuse en vez de una respuesta. Se le preguntó algo que quedó sin
+     * poder contestarse.
+     */
+    describe('⭐ el mensaje no puede seguir preguntando si la conversación se congela', () => {
+      const conPregunta = {
+        response:
+          '¡Hola! Contamos con variedad de heladeras y tenés opciones de ' +
+          'financiación de hasta 12 cuotas. ¿Querés que lo consulte con un ' +
+          'responsable para confirmar el modelo exacto que viste y su stock?',
+        needsHuman: true,
+        handoffReason: 'confirmar stock del modelo',
+      };
+
+      it('la pregunta se reemplaza por la afirmación', async () => {
+        const { graph } = buildGraph(0.9, conPregunta);
+
+        const result = await graph.invoke(baseState);
+
+        expect(result.response).not.toMatch(/¿Querés que lo consulte/i);
+        expect(result.response).toContain(
+          'Lo consulto con un responsable y te confirmo a la brevedad',
+        );
+      });
+
+      it('conserva lo que el agente sí había respondido bien', async () => {
+        const { graph } = buildGraph(0.9, conPregunta);
+
+        const result = await graph.invoke(baseState);
+
+        // Solo se corrige la pregunta del final; el resto es contexto útil que
+        // el canned de baja confianza no tendría.
+        expect(result.response).toContain('variedad de heladeras');
+        expect(result.response).toContain('12 cuotas');
+      });
+
+      it('igual crea el caso: la derivación no se cancela, se anuncia bien', async () => {
+        const { graph, escalations } = buildGraph(0.9, conPregunta);
+
+        const result = await graph.invoke(baseState);
+
+        expect(escalations.create).toHaveBeenCalledTimes(1);
+        expect(result.escalated).toBe(true);
+      });
+
+      /**
+       * La forma habitual del defecto, no la excepción: en 4 de 4 corridas del
+       * mismo escenario el agente terminó pidiendo un dato —"¿Qué modelo estabas
+       * viendo?"— con la conversación ya congelada. Quien contesta recibe un acuse.
+       */
+      it('también saca una pregunta que pide datos, no solo permiso', async () => {
+        const { graph } = buildGraph(0.9, {
+          response:
+            'Los precios y el stock puntual los confirmo con un responsable y ' +
+            'te aviso a la brevedad. ¿Qué modelo específico estabas viendo?',
+          needsHuman: true,
+          handoffReason: 'confirmar stock',
+        });
+
+        const result = await graph.invoke(baseState);
+
+        expect(result.response).not.toContain('¿');
+        expect(result.response).toContain('los confirmo con un responsable');
+      });
+
+      // Lo que el agente quería averiguar no se pierde: sigue en la nota interna
+      // y en la conversación, que es lo que ve quien toma el caso.
+      it('la nota interna para el supervisor no se toca', async () => {
+        const { graph, escalations } = buildGraph(0.9, {
+          response: 'Te confirmo con un responsable. ¿Qué modelo viste?',
+          needsHuman: true,
+          handoffReason: 'confirmar stock',
+          internalNote:
+            'Falta saber qué modelo de heladera vio en el mostrador.',
+        });
+
+        await graph.invoke(baseState);
+
+        expect(escalations.create).toHaveBeenCalledWith(
+          expect.objectContaining({
+            internalNote: expect.stringContaining('qué modelo de heladera'),
+          }),
+        );
+      });
+
+      // Si al sacar la pregunta el mensaje ya no avisa que sigue una persona, se
+      // dice: quien lee tiene que saber que alguien le va a contestar.
+      it('si lo que queda no anuncia la derivación, se anuncia', async () => {
+        const { graph } = buildGraph(0.9, {
+          response: 'Tenemos planes de 6 y 12 cuotas. ¿Cuál te sirve más?',
+          needsHuman: true,
+          handoffReason: 'motivo',
+        });
+
+        const result = await graph.invoke(baseState);
+
+        expect(result.response).toContain('Tenemos planes de 6 y 12 cuotas.');
+        expect(result.response).toContain(
+          'Lo consulto con un responsable y te confirmo a la brevedad',
+        );
+      });
+
+      // Caso límite: si el mensaje entero era la pregunta, queda el anuncio solo.
+      it('si el mensaje entero era una pregunta, queda el anuncio', async () => {
+        const { graph } = buildGraph(0.9, {
+          response: '¿Querés que lo consulte con un responsable?',
+          needsHuman: true,
+          handoffReason: 'motivo',
+        });
+
+        const result = await graph.invoke(baseState);
+
+        expect(result.response).toBe(
+          'Lo consulto con un responsable y te confirmo a la brevedad.',
+        );
+      });
+
+      it('y sin derivación no se corrige nada, aunque pregunte', async () => {
+        const { graph } = buildGraph(0.9, {
+          response: '¿Querés que te muestre las opciones de financiación?',
+          needsHuman: false,
+        });
+
+        const result = await graph.invoke(baseState);
+
+        expect(result.response).toBe(
+          '¿Querés que te muestre las opciones de financiación?',
+        );
+      });
+    });
+
     it('no escala si el agente no lo pidió (camino feliz sin cambios)', async () => {
       const { graph, escalations } = buildGraph(0.9);
 
