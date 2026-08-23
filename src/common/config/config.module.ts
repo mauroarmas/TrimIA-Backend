@@ -69,6 +69,22 @@ import * as Joi from 'joi';
           .max(1)
           .default(0.75),
 
+        // Higiene del corpus (spec 008, FR-001b): a partir de qué solapamiento
+        // dos documentos se proponen para FUSIONAR. NO es el mismo umbral que
+        // KNOWLEDGE_SIMILARITY_THRESHOLD de arriba, aunque comparan documento
+        // contra documento igual que aquél — responden preguntas distintas:
+        //
+        //   KNOWLEDGE_SIMILARITY_THRESHOLD  un documento nuevo contra el
+        //                                   corpus, mostrando los 4 mejores.
+        //   KNOWLEDGE_MERGE_THRESHOLD       TODAS las parejas del corpus, sin
+        //                                   límite de cuántas se muestran.
+        //
+        // Medido (scripts/calibrar-fusion.ts, specs/008-higiene-corpus/
+        // calibracion-fusion.txt): con 0.75 (el de arriba) el barrido marca
+        // 141 de 343 parejas — inservible, se aprueba a ciegas. Con 0.85 marca
+        // 10, revisable de una sentada (SC-006).
+        KNOWLEDGE_MERGE_THRESHOLD: Joi.number().min(0).max(1).default(0.85),
+
         // Carga de archivos a la base de conocimiento (Sprint 5A).
         // Hay DOS techos, no uno, y la diferencia no es arbitraria:
         //  - MAX_FILE: lo que se acepta subir, para cualquier formato.

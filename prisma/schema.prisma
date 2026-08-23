@@ -213,6 +213,10 @@ model Employee {
   knowledgeChanges     KnowledgeChange[]   @relation("KnowledgeChangeAuthor")
   escalationsDiscarded Escalation[]        @relation("EscalationDiscardedBy")
 
+  // Spec 008 — higiene del corpus
+  hygieneScans  HygieneScan[]           @relation("HygieneScanStartedBy")
+  mergeDiscards KnowledgeMergeDiscard[] @relation("MergeDiscardBy")
+
   @@index([phone])
   @@index([email])
   @@index([sectorId])
@@ -630,6 +634,15 @@ model KnowledgeDocument {
   // vez de crear uno nuevo. Lado inverso de `Escalation.resolvedWithDocument`.
   resolvedEscalations Escalation[] @relation("EscalationResolvedWith")
 
+  // Spec 008 — higiene del corpus. Los cuatro lados inversos de las relaciones
+  // con nombre que Prisma exige (HygienePair, KnowledgeMergeDiscard), más el
+  // lado inverso de `KnowledgeChange.mergedFrom`.
+  hygienePairsAsA     HygienePair[]           @relation("HygienePairA")
+  hygienePairsAsB     HygienePair[]           @relation("HygienePairB")
+  mergeDiscardsAsA    KnowledgeMergeDiscard[] @relation("MergeDiscardA")
+  mergeDiscardsAsB    KnowledgeMergeDiscard[] @relation("MergeDiscardB")
+  absorbedIntoChanges KnowledgeChange[]       @relation("KnowledgeChangeMergedFrom")
+
   createdAt DateTime   @default(now())
   updatedAt DateTime   @updatedAt
 
@@ -703,9 +716,119 @@ model KnowledgeChange {
   escalationId String?
   escalation   Escalation? @relation(fields: [escalationId], references: [id])
 
+  // Spec 008 (FR-016): si esta edición fue una fusión, de qué documento se
+  // incorporó el contenido. No hace falta copiar la traza de origen del
+  // absorbido: ese documento SIGUE EXISTIENDO, desactivado, con su
+  // sourceType/sourceId intactos — alcanza con poder llegar a él.
+  mergedFromDocumentId String?
+  mergedFrom           KnowledgeDocument? @relation("KnowledgeChangeMergedFrom", fields: [mergedFromDocumentId], references: [id])
+
   createdAt     DateTime              @default(now())
 
   @@index([documentId, createdAt])
+}
+
+// ============================================================================
+// Spec 008 — Higiene del corpus
+// ============================================================================
+
+enum HygieneScanStatus {
+  RUNNING
+  READY
+  FAILED
+}
+
+/// Una corrida del barrido de higiene. Se persiste porque recalcular en cada
+/// apertura del panel costaría ~78 llamadas de embeddings y ~55 s.
+model HygieneScan {
+  id     String            @id @default(uuid())
+  status HygieneScanStatus @default(RUNNING)
+
+  // Qué umbral se usó, en escala 0-100 (igual que `similarity` de HygienePair).
+  // Se guarda con la corrida, no se lee del entorno al mostrarla: si alguien
+  // recalibra, las corridas viejas tienen que seguir explicándose con el valor
+  // que realmente usaron.
+  threshold Float
+
+  // Contexto para poder comparar dos corridas y decir si el corpus mejoró.
+  documentsScanned Int @default(0)
+  pairsFound       Int @default(0)
+
+  // En castellano y sin jerga: se le muestra al supervisor.
+  failureReason String?
+
+  startedById String
+  startedBy   Employee @relation("HygieneScanStartedBy", fields: [startedById], references: [id])
+
+  pairs HygienePair[]
+
+  createdAt  DateTime  @default(now())
+  finishedAt DateTime?
+
+  @@index([status, createdAt])
+}
+
+/// Una pareja de documentos que se solapan por encima del umbral, encontrada
+/// en una corrida. Orden canónico: A es siempre el de id menor.
+model HygienePair {
+  id     String      @id @default(uuid())
+  scanId String
+  scan   HygieneScan @relation(fields: [scanId], references: [id], onDelete: Cascade)
+
+  documentAId String
+  documentA   KnowledgeDocument @relation("HygienePairA", fields: [documentAId], references: [id], onDelete: Cascade)
+  documentBId String
+  documentB   KnowledgeDocument @relation("HygienePairB", fields: [documentBId], references: [id], onDelete: Cascade)
+
+  // Cuánto se solapan, 0-100 (el `score` 0-1 de `search()` × 100, convertido
+  // una sola vez al persistir). Es lo que los puso en la lista.
+  similarity Float
+
+  // Cuántos turnos escalados tuvieron a LOS DOS como candidatos. Es el
+  // criterio de prioridad (FR-005), no de detección: hoy vale 0 en casi todas
+  // las parejas porque la base tiene 2 turnos escalados en total. Cero es un
+  // valor normal, no "sin datos".
+  escalatedTurns Int @default(0)
+
+  // Las versiones que se compararon. Permite saber después si la pareja sigue
+  // siendo la misma que alguien descartó.
+  versionA Int
+  versionB Int
+
+  createdAt DateTime @default(now())
+
+  @@unique([scanId, documentAId, documentBId])
+  @@index([scanId, escalatedTurns, similarity])
+}
+
+/// "Son distintos a propósito": la decisión persistida de que una pareja NO
+/// debe fusionarse. Mismo orden canónico que HygienePair.
+model KnowledgeMergeDiscard {
+  id String @id @default(uuid())
+
+  documentAId String
+  documentA   KnowledgeDocument @relation("MergeDiscardA", fields: [documentAId], references: [id], onDelete: Cascade)
+  documentBId String
+  documentB   KnowledgeDocument @relation("MergeDiscardB", fields: [documentBId], references: [id], onDelete: Cascade)
+
+  // Las versiones que se vieron al descartar (FR-013/FR-014). El descarte no
+  // vence por tiempo: vence cuando alguno de los dos documentos cambia.
+  versionA Int
+  versionB Int
+
+  reason String?
+
+  discardedById String
+  discardedBy   Employee @relation("MergeDiscardBy", fields: [discardedById], references: [id])
+
+  createdAt DateTime @default(now())
+
+  // No es @@unique([documentAId, documentBId, versionA, versionB]): un segundo
+  // descarte de la misma pareja actualiza el registro con las versiones nuevas
+  // en vez de acumular filas.
+  @@unique([documentAId, documentBId])
+  @@index([documentAId])
+  @@index([documentBId])
 }
 
 // Registro de que un documento salió como candidato de una búsqueda

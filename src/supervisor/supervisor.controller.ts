@@ -381,6 +381,24 @@ export class SupervisorController {
   }
 
   /**
+   * GET /supervisor/escalations/:id/hygiene-warning — si los documentos
+   * consultados en este caso se compiten entre sí (spec 008, US3).
+   *
+   * No re-detecta nada: cruza contra la última corrida `READY` de la
+   * higiene del corpus. `pairs: []` si no compiten, o si nunca se corrió un
+   * barrido — en los dos casos es una respuesta normal, no un error.
+   */
+  @Get('escalations/:id/hygiene-warning')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('SUPERVISOR')
+  @ApiOperation({
+    summary: 'Si los documentos consultados en el caso compiten entre sí',
+  })
+  getHygieneWarning(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+    return this.escalations.hygieneWarning(id, req.user.id);
+  }
+
+  /**
    * POST /supervisor/escalations/:id/correction-preview — cómo quedaría un
    * documento si se le incorpora la respuesta (spec 007, US1).
    *

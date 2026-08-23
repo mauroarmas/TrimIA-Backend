@@ -1,0 +1,57 @@
+
+Corpus: 78 documentos activos
+Umbral de "parecido" (spec 007, otra pregunta): 75.0%
+
+Parejas posibles: 3003 sin prefiltro → 343 con prefiltro de área+audiencia (poda del 89%)
+
+Barriendo 78 documentos, 700 ms entre llamadas...
+
+Parejas encontradas por el barrido: 223
+
+═══ Tabla de umbrales (SC-006: revisable = ~10-20 parejas) ═══
+
+  0.75  →   141 parejas   (inservible — se aprueba a ciegas)
+  0.80  →    48 parejas   (inservible — se aprueba a ciegas)
+  0.85  →    10 parejas   (revisable)
+  0.88  →     7 parejas   (revisable)
+  0.90  →     2 parejas   (quizás demasiado estricto)
+
+═══ Pares de control ═══
+
+── ALTO: "sobre nosotros" ↔ "qué es credimisión"
+   «Sobre Nosotros»
+   «Qué es Credimisión: la empresa en una página»
+   similitud (mejor dirección) = 78.1%
+   EL DUPLICADO REAL del 2026-08-20. Medido en research.md §5: 78.1%, puesto 79 de 343 — QUEDA FUERA de esta feature a propósito (no hay umbral que lo separe de pares no-duplicados sin traer 135 parejas). Se mide igual acá para dejar constancia de dónde cae.
+
+── ALTO: "garantia extendida" ↔ "devoluciones, cambios y garantía"
+   «Garantia extendida en electrodomesticos»
+   «Devoluciones, cambios y garantía»
+   similitud (mejor dirección) = 78.4%
+   Se solapan de verdad: los dos hablan de garantía de electrodomésticos (research.md §4: 76.3%).
+
+── BAJO: "envios" ↔ "monto mínimo de compra"
+   «Envios»
+   «Monto mínimo de compra»
+   similitud (mejor dirección) = 74.2%
+   MISMO DOMINIO, TEMAS DISTINTOS (research.md §4: 73.1%) — el par que fija el techo: si da "alto", el umbral produce falsos positivos.
+
+── ALTO: "e2e verificacion" ↔ "subido desde el cliente del panel"
+   «E2E verificacion»
+   «Subido desde el cliente del panel»
+   similitud (mejor dirección) = 94.7%
+   Basura de prueba del E2E del Sprint 5A (research.md §6b) — sirve de caso de prueba verificable a ojo (SC-007).
+
+═══ Elegir el umbral ═══
+
+  Elegir de la tabla de arriba el valor cuyo conteo sea "revisable"
+  (del orden de 10 parejas, no más de 20 — SC-006), fijarlo como
+  KNOWLEDGE_MERGE_THRESHOLD (Joi default + .env), y guardar esta
+  salida en specs/008-higiene-corpus/calibracion-fusion.txt.
+
+
+═══ Decisión ═══
+
+Umbral elegido: 0.85 (10 parejas, "revisable" — SC-006).
+
+Corrida: 2026-08-23, contra el corpus real de desarrollo (78 documentos activos).

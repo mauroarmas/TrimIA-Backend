@@ -299,6 +299,70 @@ export class EscalationsService {
   }
 
   /**
+   * Aviso de higiene del corpus dentro de un caso escalado (spec 008, US3,
+   * FR-015). Dice si los documentos consultados en ESTE caso forman una
+   * pareja que ya se detectó como que compite en la última corrida `READY`.
+   *
+   * **No re-detecta nada**: cruza los documentos del caso contra las parejas
+   * de la última corrida. Si nunca se corrió un barrido, devuelve `pairs: []`
+   * sin disparar una detección al vuelo — es lo que mantiene a esta historia
+   * incremental sobre US1 y no una segunda implementación (FR-015).
+   */
+  async hygieneWarning(escalationId: string, employeeId: string) {
+    await this.findById(escalationId); // 404 si no existe
+
+    const ultimaLista = await this.prisma.hygieneScan.findFirst({
+      where: { status: 'READY' },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!ultimaLista) return { pairs: [] };
+
+    const retrievals = await this.prisma.knowledgeRetrieval.findMany({
+      where: { escalationId },
+      select: { documentId: true },
+      distinct: ['documentId'],
+    });
+    const documentosDelCaso = new Set(retrievals.map((r) => r.documentId));
+    if (documentosDelCaso.size === 0) return { pairs: [] };
+
+    const pares = await this.prisma.hygienePair.findMany({
+      where: {
+        scanId: ultimaLista.id,
+        AND: [
+          { documentAId: { in: [...documentosDelCaso] } },
+          { documentBId: { in: [...documentosDelCaso] } },
+        ],
+      },
+      include: { documentA: true, documentB: true },
+    });
+
+    return {
+      pairs: await Promise.all(
+        pares.map(async (par) => {
+          // Mismo cálculo que `pairsDeCorrida` de KnowledgeHygieneService:
+          // se consulta assertPuedeEscribir, no se replica la regla.
+          let fusionable = true;
+          try {
+            await this.knowledge.assertPuedeEscribir(
+              employeeId,
+              par.documentA.agentType,
+            );
+          } catch {
+            fusionable = false;
+          }
+          return {
+            pairId: par.id,
+            similarity: par.similarity,
+            titleA: par.documentA.title,
+            titleB: par.documentB.title,
+            fusionable,
+          };
+        }),
+      ),
+    };
+  }
+
+  /**
    * Responde el caso: envía el mensaje al usuario, vuelve la conversación a
    * ACTIVE y marca la Escalation RESOLVED. Si `teachAgent` es true, ingesta
    * la respuesta al RAG como `KnowledgeDocument` usando el título/categoría

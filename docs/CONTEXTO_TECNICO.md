@@ -430,6 +430,39 @@ persiste, `apply()`/`update()` guarda el texto aprobado) y queda enlazado por
 `KnowledgeChange.escalationId` — la bitácora del documento sabe de qué caso
 salió cada cambio, no solo el caso sabe qué documento tocó.
 
+**Higiene del corpus** (spec 008): un barrido bajo demanda (`POST
+/knowledge/hygiene/scan`, cola `hygiene-scan`) encuentra parejas de documentos
+activos que se solapan y ofrece fusionarlas con aprobación humana
+(`KnowledgeHygieneService` detecta y descarta, `KnowledgeMergeService` hace el
+`preview`/`apply`, mismo patrón de dos endpoints que "editar con la IA"). Son
+~78 llamadas de `search()` (una por documento) prefiltradas por
+`(agentType, audience)` — el mismo criterio de confidencialidad del Principio
+I, que de paso poda 3003 parejas candidatas a 343 — y corre en un worker, nunca
+dentro del request (100 RPM del nivel gratuito de Gemini).
+
+**Hay un TERCER umbral**, `KNOWLEDGE_MERGE_THRESHOLD`, que tampoco es
+intercambiable con los otros dos: `RAG_CONFIDENCE_THRESHOLD` mide una consulta
+corta contra un fragmento, `KNOWLEDGE_SIMILARITY_THRESHOLD` compara UN
+documento nuevo contra el corpus mostrando los 4 mejores, y éste barre TODAS
+las parejas del corpus sin límite de cuántas se muestran. Con el 0.75 de
+`KNOWLEDGE_SIMILARITY_THRESHOLD` el barrido marca 141 de 343 parejas —
+inservible, se aprueba a ciegas—; medido con `scripts/calibrar-fusion.ts`, 0.85
+lo deja en el orden de diez, revisable de una sentada
+(`specs/008-higiene-corpus/calibracion-fusion.txt`).
+
+**La fusión no tiene ruta de escritura propia**: `apply()` termina en
+`KnowledgeService.update()` (sube versión, escribe `KnowledgeChange` con
+`mergedFromDocumentId`) y `setActive(false)` sobre el absorbido — las dos ya
+aplican `assertPuedeEscribir`, sin una tercera puerta. ⚠️ **Una fusión SIEMPRE
+versiona y queda en la bitácora, aunque el documento absorbido sea
+byte-idéntico al que sobrevive** (el caso más común: duplicados exactos como
+los del E2E). Se descubrió en vivo contra el corpus real: `update()` tenía un
+atajo que devolvía sin escribir nada cuando ningún campo cambiaba de valor, y
+una fusión de contenido idéntico no cambia ningún valor — la aprobación
+desaparecía de la bitácora en silencio. `mergedFromDocumentId` en el input
+fuerza el camino de escritura aunque el texto coincida (`knowledge.service.ts`,
+`update()`).
+
 **Audio.** Se transcribe en n8n (el token de Meta vive solo ahí) y el backend
 recibe **texto**. El binario no se persiste en ningún lado (FR-011) — eso se
 garantiza con variables de instancia en `docker-compose.yml`, no con los

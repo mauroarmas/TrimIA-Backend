@@ -207,4 +207,14 @@ Si nunca se corrió un barrido, devuelve vacío — no dispara una detección al
 
 | Fecha | Qué se probó | Resultado |
 |---|---|---|
-| | | |
+| 2026-08-23 | Barrido completo contra el corpus real (Diego) | `documentsScanned: 78`, `pairsFound: 10`, `threshold: 85` — igual a lo calibrado en `calibracion-fusion.txt`. Un segundo `POST /scan` mientras corría dio **409 SCAN_ALREADY_RUNNING** |
+| 2026-08-23 | SC-007: duplicados conocidos en la banda alta | «E2E verificacion» ↔ «Subido desde el cliente del panel» en 94.7%, y «E2E reintegros (editado)» contra sí mismo en 88.3% — los dos primeros/entre los primeros de la lista |
+| 2026-08-23 | SC-002: cero cruces de área o audiencia | Script de `quickstart.md` sobre las 10 parejas reales: `0` cruces |
+| 2026-08-23 | Fusión de «E2E reintegros (editado)» (US1) | `merge-preview` dio `confident:false` (documentos idénticos, correcto); `merge-apply` con el mismo contenido → `newVersion` **no subió** la primera vez — bug real encontrado y corregido en `knowledge.service.ts` (`update()` no escribía `KnowledgeChange` cuando el contenido no cambiaba, aunque fuera una fusión). Cubierto con test de regresión en `knowledge-crud.spec.ts` |
+| 2026-08-23 | SC-005: conteo de documentos | 78 antes y después de la fusión — el absorbido queda `isActive:false`, ninguno se borra |
+| 2026-08-23 | SC-003 | Búsqueda "plazo de reintegro" antes de la fusión hubiera devuelto los dos; después devuelve «E2E reintegros (editado)» **una sola vez** |
+| 2026-08-23 | US2: descartar y volver a correr | Pareja «Promoción cuota 12» ↔ «Beneficio buen pagador» descartada; el barrido siguiente (77 docs tras la fusión) dio 8 parejas — ni la descartada ni la ya fusionada reaparecieron |
+| 2026-08-23 | FR-011 con Silvia (Ventas, no todas las áreas) | Parejas de otras áreas listadas con `fusionable:false` y motivo; `merge-preview` sobre una de ésas → **403 sin latencia de modelo** |
+| 2026-08-23 | Documento ya desactivado | `merge-preview` sobre la pareja ya fusionada → **404** |
+| 2026-08-23 | Conflicto de versión | `merge-apply` con `baseVersion` vieja → **409 VERSION_CONFLICT**, con la versión vigente en el mensaje |
+| 2026-08-23 | US3: aviso reactivo | `GET .../hygiene-warning` sobre las dos escalaciones reales de la base → `pairs: []` en las dos (sus documentos no forman parejas detectadas). El caso "SÍ hay pareja" se cubre con tests (no hay overlap real en el corpus de desarrollo) |

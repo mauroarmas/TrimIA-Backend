@@ -126,6 +126,11 @@ export interface UpdateInput {
    * varias veces obligaría a adivinar por fecha cuál cambio vino de cuál caso.
    */
   escalationId?: string;
+  /**
+   * Spec 008 (FR-016): de qué documento se incorporó el contenido, cuando
+   * esta edición es el resultado de aprobar una fusión.
+   */
+  mergedFromDocumentId?: string;
 }
 
 /**
@@ -830,6 +835,21 @@ export class KnowledgeService implements OnModuleInit {
       (field) => input[field] !== undefined && input[field] !== current[field],
     );
 
+    // Spec 008 (FR-009, FR-016): una fusión SIEMPRE es un cambio, aunque el
+    // documento absorbido resulte byte-a-byte idéntico al que sobrevive (el
+    // caso más común: duplicados exactos). Sin esto, `changedFields` daría
+    // vacío, el early-return de abajo devolvería `current` sin escribir el
+    // `KnowledgeChange`, y la fusión desaparecería de la bitácora — la
+    // "subida de versión, igual que cualquier edición" que pide FR-009 no es
+    // opcional para el caso que esta feature existe para atrapar.
+    const esFusion = input.mergedFromDocumentId !== undefined;
+    // Si el contenido es byte-idéntico, `changedFields` no lo va a listar por
+    // sí solo (el filtro de arriba compara valores) — se agrega a mano para
+    // que la bitácora diga la verdad: el documento SÍ cambió, absorbió otro.
+    if (esFusion && !changedFields.includes('content')) {
+      changedFields.push('content');
+    }
+
     if (changedFields.length === 0) return current;
 
     const contentChanged = changedFields.includes('content');
@@ -881,6 +901,9 @@ export class KnowledgeService implements OnModuleInit {
           aiInstruction: input.aiInstruction ?? null,
           // Spec 007: de qué caso escalado salió esta edición, si salió de uno.
           escalationId: input.escalationId ?? null,
+          // Spec 008 (FR-016): si esta edición fue una fusión, de qué
+          // documento se incorporó el contenido.
+          mergedFromDocumentId: input.mergedFromDocumentId ?? null,
         },
       });
 

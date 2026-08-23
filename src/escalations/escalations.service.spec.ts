@@ -30,6 +30,9 @@ describe('EscalationsService', () => {
     // spec 007: los documentos que quedaron cortos en un caso.
     knowledgeRetrieval: { findMany: jest.Mock };
     knowledgeDocument: { findUnique: jest.Mock };
+    // spec 008: el aviso de higiene dentro del caso (US3).
+    hygieneScan: { findFirst: jest.Mock };
+    hygienePair: { findMany: jest.Mock };
   };
   let conversations: {
     findById: jest.Mock;
@@ -70,6 +73,8 @@ describe('EscalationsService', () => {
       },
       knowledgeRetrieval: { findMany: jest.fn().mockResolvedValue([]) },
       knowledgeDocument: { findUnique: jest.fn() },
+      hygieneScan: { findFirst: jest.fn().mockResolvedValue(null) },
+      hygienePair: { findMany: jest.fn().mockResolvedValue([]) },
     };
     conversations = {
       findById: jest.fn().mockResolvedValue(conversation),
@@ -1332,6 +1337,101 @@ describe('EscalationsService', () => {
 
         expect(prisma.escalation.update).not.toHaveBeenCalled();
       });
+    });
+  });
+
+  /**
+   * hygieneWarning — spec 008, US3. El disparador reactivo: NO re-detecta
+   * nada, solo cruza contra la última corrida `READY` de higiene del corpus.
+   */
+  describe('hygieneWarning (spec 008)', () => {
+    const caso = { id: 'esc-1', conversationId: 'conv-1', status: 'PENDING' };
+
+    beforeEach(() => {
+      prisma.escalation.findUnique.mockResolvedValue(caso);
+    });
+
+    it('sin ninguna corrida READY: pairs vacío, y NO consulta retrievals ni parejas', async () => {
+      prisma.hygieneScan.findFirst.mockResolvedValue(null);
+
+      const res = await service.hygieneWarning('esc-1', 'employee-1');
+
+      expect(res).toEqual({ pairs: [] });
+      expect(prisma.knowledgeRetrieval.findMany).not.toHaveBeenCalled();
+      expect(prisma.hygienePair.findMany).not.toHaveBeenCalled();
+    });
+
+    it('caso cuyos documentos consultados NO compiten: pairs vacío', async () => {
+      prisma.hygieneScan.findFirst.mockResolvedValue({
+        id: 'scan-1',
+        status: 'READY',
+      });
+      prisma.knowledgeRetrieval.findMany.mockResolvedValue([
+        { documentId: 'doc-a' },
+      ]);
+      prisma.hygienePair.findMany.mockResolvedValue([]);
+
+      const res = await service.hygieneWarning('esc-1', 'employee-1');
+
+      expect(res).toEqual({ pairs: [] });
+    });
+
+    it('caso cuyos documentos consultados SÍ forman una pareja detectada: la trae', async () => {
+      prisma.hygieneScan.findFirst.mockResolvedValue({
+        id: 'scan-1',
+        status: 'READY',
+      });
+      prisma.knowledgeRetrieval.findMany.mockResolvedValue([
+        { documentId: 'doc-a' },
+        { documentId: 'doc-b' },
+      ]);
+      prisma.hygienePair.findMany.mockResolvedValue([
+        {
+          id: 'pair-1',
+          similarity: 91.2,
+          documentA: { title: 'Sobre Nosotros', agentType: null },
+          documentB: { title: 'Qué es Credimisión', agentType: null },
+        },
+      ]);
+      knowledge.assertPuedeEscribir.mockResolvedValue(undefined);
+
+      const res = await service.hygieneWarning('esc-1', 'employee-1');
+
+      expect(res.pairs).toHaveLength(1);
+      expect(res.pairs[0]).toMatchObject({
+        pairId: 'pair-1',
+        similarity: 91.2,
+        titleA: 'Sobre Nosotros',
+        titleB: 'Qué es Credimisión',
+        fusionable: true,
+      });
+    });
+
+    it('apunta a la misma fusión de US1: el pairId sirve tal cual para merge-preview', async () => {
+      prisma.hygieneScan.findFirst.mockResolvedValue({
+        id: 'scan-1',
+        status: 'READY',
+      });
+      prisma.knowledgeRetrieval.findMany.mockResolvedValue([
+        { documentId: 'doc-a' },
+        { documentId: 'doc-b' },
+      ]);
+      prisma.hygienePair.findMany.mockResolvedValue([
+        {
+          id: 'pair-mismo-id-que-usa-us1',
+          similarity: 88,
+          documentA: { title: 'A', agentType: 'COLLECTIONS' },
+          documentB: { title: 'B', agentType: 'COLLECTIONS' },
+        },
+      ]);
+      knowledge.assertPuedeEscribir.mockRejectedValue(
+        new ForbiddenException('no'),
+      );
+
+      const res = await service.hygieneWarning('esc-1', 'employee-1');
+
+      expect(res.pairs[0].pairId).toBe('pair-mismo-id-que-usa-us1');
+      expect(res.pairs[0].fusionable).toBe(false); // área ajena, no bloquea el aviso
     });
   });
 });

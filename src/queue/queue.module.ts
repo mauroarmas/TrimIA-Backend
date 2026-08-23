@@ -16,6 +16,7 @@ import { RemindersProcessor } from './processors/reminders.processor';
 import { RemindersScheduler } from './schedulers/reminders.scheduler';
 import { KnowledgeReindexProcessor } from './processors/knowledge-reindex.processor';
 import { KnowledgeIngestionProcessor } from './processors/knowledge-ingestion.processor';
+import { HygieneScanProcessor } from './processors/hygiene-scan.processor';
 
 @Module({
   imports: [
@@ -25,6 +26,7 @@ import { KnowledgeIngestionProcessor } from './processors/knowledge-ingestion.pr
       { name: 'reminders' },
       { name: 'knowledge-reindex' }, // Sprint 5A
       { name: 'knowledge-ingestion' }, // Sprint 5A
+      { name: 'hygiene-scan' }, // Spec 008
     ),
     ConversationsModule,
     MessagingModule,
@@ -44,6 +46,7 @@ import { KnowledgeIngestionProcessor } from './processors/knowledge-ingestion.pr
     RemindersScheduler,
     KnowledgeReindexProcessor,
     KnowledgeIngestionProcessor,
+    HygieneScanProcessor,
   ],
 })
 export class QueueModule {}

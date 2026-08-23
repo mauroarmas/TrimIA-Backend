@@ -147,6 +147,37 @@ describe('KnowledgeService.update — qué dispara reindexación', () => {
     expect(changeCreate).not.toHaveBeenCalled();
   });
 
+  /**
+   * ⭐ Spec 008 (FR-009, FR-016) — una fusión SIEMPRE versiona y queda en la
+   * bitácora, aunque el documento absorbido sea BYTE-IDÉNTICO al que
+   * sobrevive. Es el caso más común que la higiene del corpus atrapa (los
+   * duplicados exactos del E2E), y es justo el que el "mandar los mismos
+   * valores no hace nada" de arriba haría desaparecer sin este chequeo.
+   */
+  it('una fusión con contenido idéntico IGUAL versiona y escribe la bitácora', async () => {
+    const { service, update, queueAdd, changeCreate } = buildService();
+
+    await service.update(
+      DOC_ID,
+      {
+        content: 'El anticipo mínimo es del 20%.', // idéntico al actual
+        mergedFromDocumentId: '33333333-3333-4333-8333-333333333333',
+        origin: 'AI_ACCEPTED' as never,
+      },
+      AUTHOR,
+    );
+
+    const data = update.mock.calls[0][0].data;
+    expect(data.version).toEqual({ increment: 1 });
+    expect(queueAdd).toHaveBeenCalled();
+    expect(changeCreate).toHaveBeenCalledWith({
+      data: expect.objectContaining({
+        mergedFromDocumentId: '33333333-3333-4333-8333-333333333333',
+        changedFields: expect.arrayContaining(['content']),
+      }),
+    });
+  });
+
   it('registra la bitácora con autor y campos modificados (FR-049)', async () => {
     const { service, changeCreate } = buildService();
 
