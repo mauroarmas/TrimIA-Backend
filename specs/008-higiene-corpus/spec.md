@@ -17,39 +17,48 @@ del mismo tema redactados por separado, sin que ninguno sea copia del otro).
 
 ## Por qué esto no es la spec 007 otra vez
 
-La 007 avisa **al momento de cargar**. Esta spec mira el corpus **ya cargado** y
-encuentra parejas que se compiten sin que nadie las haya comparado nunca — la señal no
-es "se parecen los textos" sino "salen juntos, turno tras turno, en consultas que
-escalan". Dos documentos del mismo tema pueden competirse sin ser parecidos en el
-texto (uno cuenta la política de cambios, el otro la de garantías, y los dos son
-candidatos flojos para "qué pasa si el producto viene fallado").
+La 007 avisa **al momento de cargar**, sobre un documento a la vez. Esta spec mira el
+corpus **ya cargado** y busca parejas que nadie comparó nunca.
+
+> [!IMPORTANT]
+> **La Fase 0 corrigió la señal de esta spec.** La pre-spec proponía detectar por
+> comportamiento ("qué documentos salen juntos en consultas que escalan"). Medido
+> contra la base real, eso **no encuentra el caso que motivó la feature** y produce
+> falsos positivos: cuando dos documentos se pisan de verdad, uno suele copar el
+> top-k con sus propios chunks y el otro **no aparece**. El mecanismo que crea el
+> problema es el mismo que lo esconde.
+>
+> La detección pasa a ser por **solapamiento de contenido**, con un umbral propio y
+> alto; el comportamiento queda como **criterio de prioridad**, que hoy tiene pocos
+> datos y mejora con el uso. Todo medido en [research.md](./research.md).
 
 ## User Scenarios & Testing *(mandatory)*
 
 ### User Story 1 - Ver y fusionar documentos que se compiten (Priority: P1)
 
 Un supervisor abre la Base de Conocimiento y pide "limpiar base de conocimiento". El
-sistema le muestra una lista priorizada de parejas de documentos de su área que
-compiten entre sí — cuántos turnos escalados perdieron por esa pareja — con los dos
-documentos lado a lado. Elige una pareja, pide una propuesta de fusión, la revisa
-(y la edita si hace falta) y la aprueba. El corpus queda con un documento actualizado
-y el otro desactivado; ninguno se pierde.
+sistema le muestra una lista corta y priorizada de parejas de documentos que se
+solapan, con los dos documentos lado a lado y —cuando lo hay— cuántos turnos escalados
+los tuvieron juntos. Elige una pareja, pide una propuesta de fusión, la revisa (y la
+edita si hace falta) y la aprueba. El corpus queda con un documento actualizado y el
+otro desactivado; ninguno se pierde.
 
 **Why this priority**: Es el problema que motiva la spec entera. Sin esto, el resto
 son formas de decidir cuándo mostrarlo o cómo descartarlo, pero no hay nada que hacer
 con lo que se encuentra.
 
-**Independent Test**: Con dos documentos activos de la misma área y audiencia que
-aparecieron juntos en consultas escaladas, pedir la limpieza tiene que traer esa
+**Independent Test**: Con dos documentos activos de la misma área y audiencia cuyo
+contenido se solapa por encima del umbral, pedir la limpieza tiene que traer esa
 pareja; aprobar la fusión propuesta tiene que dejar un documento con el contenido
 fusionado y el otro desactivado, sin que ninguno se borre.
 
 **Acceptance Scenarios**:
 
-1. **Given** dos documentos activos, misma área y audiencia, que salieron juntos como
-   candidatos en al menos una consulta que terminó escalada, **When** el supervisor
-   pide "limpiar base de conocimiento", **Then** la pareja aparece en la lista, con los
-   dos documentos identificados y cuántos turnos escalados los involucraron.
+1. **Given** dos documentos activos, misma área y audiencia, cuyo contenido se solapa
+   por encima del umbral, **When** el supervisor pide "limpiar base de conocimiento",
+   **Then** la pareja aparece en la lista, con los dos documentos identificados,
+   cuánto se solapan y cuántos turnos escalados los involucraron (cero es un valor
+   válido y frecuente).
 2. **Given** una pareja en la lista, **When** el supervisor pide una propuesta de
    fusión, **Then** recibe un texto que redacta lo que aportan los dos documentos, sin
    que se guarde nada todavía.
@@ -58,7 +67,7 @@ fusionado y el otro desactivado, sin que ninguno se borre.
    regenerado — un documento sube de versión con ese contenido y el otro queda
    desactivado.
 4. **Given** dos documentos dirigidos a **públicos distintos** (uno para clientes,
-   otro solo para empleados) que salen juntos en las mismas consultas, **When** se
+   otro solo para empleados), por más que su contenido se solape mucho, **When** se
    corre la detección, **Then** esa pareja **no** se propone para fusionar — son
    legítimamente distintos (Principio I).
 5. **Given** dos documentos de **áreas distintas**, **When** se corre la detección,
@@ -133,18 +142,26 @@ directo a la misma fusión de la US1 (no una copia del mecanismo).
   puede competir con más de uno. Se listan todas las parejas que lo involucran; fusionar
   una no completa ni invalida las otras (salvo el caso de "documento ya desactivado"
   arriba, si la otra pareja se llega a fusionar primero).
-- **Volumen bajo**: con muy pocos turnos escalados en común, la pareja igual puede
-  aparecer — no hay un piso de muestra para esta spec (a diferencia de la pre-spec 4,
-  que sí lo necesita para no prometer una cifra de confianza). Acá el conteo se
-  muestra tal cual, como una señal más para priorizar, no como una métrica.
+- **Sin datos de comportamiento**: hoy es el caso normal (la base tiene 2 turnos
+  escalados en total), y la lista igual tiene que servir. El conteo de turnos se
+  muestra tal cual, como señal de prioridad, nunca como métrica de calidad ni como
+  requisito para proponer la pareja.
+- **Documentos de prueba en el corpus**: hay 4 documentos basura del E2E del Sprint 5A
+  que encabezan cualquier ranking de solapamiento (dos son el mismo título repetido).
+  Es el comportamiento correcto —son exactamente lo que la feature debe encontrar— y
+  sirven de caso de prueba verificable.
 
 ## Requirements *(mandatory)*
 
 ### Functional Requirements
 
-- **FR-001**: El sistema DEBE detectar parejas de documentos activos que compiten
-  entre sí, usando como señal que ambos aparecieron como candidatos en turnos que
-  terminaron escalados (no la similitud de texto entre sí).
+- **FR-001**: El sistema DEBE detectar parejas de documentos activos que se solapan
+  entre sí, comparando el contenido de cada documento contra el resto del corpus.
+- **FR-001b**: El umbral de solapamiento DEBE ser **propio de esta feature y estar
+  medido**, no heredado del que la spec 007 usa para avisar de parecidos al cargar.
+  Responden preguntas distintas: aquél mira un documento contra el corpus y muestra
+  los mejores cuatro; éste barre todas las parejas, y con el mismo valor marcaría el
+  41% del corpus (medido: 141 de 343 parejas elegibles).
 - **FR-002**: El sistema DEBE excluir de la detección cualquier pareja de documentos
   dirigidos a públicos distintos (uno para clientes, otro solo para empleados) — no
   son competidores, son legítimamente contenidos distintos para públicos distintos
@@ -154,8 +171,14 @@ directo a la misma fusión de la US1 (no una copia del mecanismo).
 - **FR-004**: El sistema DEBE poder correr la detección bajo demanda, disparada por el
   supervisor desde la pantalla de Base de Conocimiento ("limpiar base de
   conocimiento").
-- **FR-005**: El sistema DEBE mostrar la lista de parejas encontradas priorizada por
-  cuántos turnos escalados involucraron a esa pareja, de mayor a menor.
+- **FR-005**: El sistema DEBE priorizar la lista de parejas encontradas por cuántos
+  turnos escalados involucraron a ambos documentos, y —a igualdad de eso, que hoy es
+  el caso general— por cuánto se solapan. El orden por comportamiento es el que
+  importa cuando hay tráfico; el de solapamiento es el que hace la lista útil
+  mientras no lo haya.
+- **FR-005b**: La ausencia de datos de comportamiento NO DEBE vaciar la lista ni
+  impedir la detección: una pareja sin ningún turno escalado en común igual se
+  propone si se solapa por encima del umbral.
 - **FR-006**: El sistema DEBE mostrar, para cada pareja, los dos documentos completos
   de forma que se puedan comparar (qué aporta cada uno, qué se solapa) — una propuesta
   que no se puede leer comparativamente no cumple el Principio III.
@@ -193,10 +216,10 @@ directo a la misma fusión de la US1 (no una copia del mecanismo).
 
 ### Key Entities *(include if feature involves data)*
 
-- **Pareja candidata**: dos documentos activos, misma área y público, que
-  co-ocurrieron como candidatos en turnos escalados. Se calcula, no se guarda como
-  entidad — se deriva del historial de recuperaciones en cada corrida de la
-  detección.
+- **Pareja candidata**: dos documentos activos, misma área y público, cuyo contenido
+  se solapa por encima del umbral. Se calcula, no se guarda como entidad — se deriva
+  del corpus en cada corrida. Lleva además cuántos turnos escalados los tuvieron a
+  los dos como candidatos, que es lo que la ordena.
 - **Descarte**: la decisión persistida de que una pareja de documentos NO debe
   fusionarse. Vive atada a los dos documentos y sobrevive a nuevas corridas de la
   detección, hasta que alguno de los dos cambie.
@@ -214,14 +237,21 @@ directo a la misma fusión de la US1 (no una copia del mecanismo).
   que buscarlos a mano ni cruzar datos de otra pantalla.
 - **SC-002**: Ninguna pareja propuesta para fusionar cruza audiencia o área — cero
   excepciones, verificado con pares reales del corpus de ambos tipos.
-- **SC-003**: Después de fusionar una pareja, una consulta que antes competía entre
-  los dos documentos (y por eso escalaba) recupera un único documento con la
-  información combinada, sin que el score baje por el efecto de "dos candidatos para
-  lo mismo".
+- **SC-003**: Después de fusionar una pareja, una consulta que antes recuperaba a los
+  dos documentos recupera uno solo, con la información combinada y sin perder score
+  por el efecto de "dos candidatos para lo mismo".
 - **SC-004**: Una pareja descartada no vuelve a aparecer en corridas repetidas de la
   detección mientras el contenido de ambos documentos no cambie.
 - **SC-005**: Ningún documento se pierde: el conteo total de documentos antes y
   después de una fusión es el mismo (uno queda desactivado, ninguno se borra).
+- **SC-006**: **La lista es revisable de una sentada.** Sobre el corpus real, la
+  detección devuelve del orden de diez parejas, no más de veinte. Una lista más larga
+  no se lee, se aprueba a ciegas — que es peor que no tener la feature (es el riesgo
+  principal declarado de la pre-spec, y con el umbral heredado de la spec 007 se
+  materializa: 141 parejas).
+- **SC-007**: Entre las parejas de la banda alta aparecen los documentos de prueba
+  duplicados que hoy ensucian el corpus. Es la verificación más barata de que la
+  detección funciona: son duplicados conocidos, verificables a ojo.
 
 ## Assumptions
 
@@ -245,3 +275,10 @@ directo a la misma fusión de la US1 (no una copia del mecanismo).
 - **El disparador reactivo (US3) no agrega una segunda forma de fusionar**: apunta al
   mismo flujo de revisión y aprobación de la US1. Esto es lo que hace a la US3
   incremental y no una reimplementación.
+- **La feature no promete encontrar todas las parejas fusionables, solo las que se
+  solapan fuerte.** En particular **no** atrapa el duplicado que motivó la pre-spec
+  («Sobre Nosotros» ↔ «Qué es Credimisión»): medido, queda en el puesto 79 de 343, a 5
+  puntos de parejas que no son duplicados. Ningún umbral lo separa. Esa clase de caso
+  la resuelve la spec 007 por otro camino y mejor —corrigiendo el documento que quedó
+  corto cuando un caso real lo demuestra—, y de hecho **ya la resolvió**. Ver
+  [research.md §5](./research.md).
