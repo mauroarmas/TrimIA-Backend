@@ -61,6 +61,7 @@ Devuelve la última corrida con sus parejas ya calculadas. Es lo que abre el pan
       "documentA": {
         "id": "uuid",
         "title": "E2E reintegros (editado)",
+        "content": "El texto completo del documento.",
         "category": "pruebas",
         "audience": "INTERNO",
         "agentType": "ADMIN",
@@ -76,16 +77,35 @@ Devuelve la última corrida con sus parejas ya calculadas. Es lo que abre el pan
 }
 ```
 
+> **`content` completo en los dos documentos, no un resumen.** Es lo que hace FR-006
+> cumplible: sin el texto entero, "los dos documentos completos y comparables" queda en
+> el título nada más, y aprobar una fusión se vuelve un trámite en vez de una lectura
+> real. El panel no hace una segunda llamada a `GET /knowledge/:id` por cada documento
+> de cada pareja — el sobre ya trae lo que hace falta.
+
 **200 — nunca se corrió** (no es un error):
 ```json
 { "scanId": null, "status": "NEVER_RUN", "pairs": [] }
 ```
 
-**200 — corriendo / fallida**: mismo sobre con `status: "RUNNING"` (sin `pairs`) o
-`"FAILED"` con `failureReason` en castellano.
+**200 — corriendo**: `status: "RUNNING"`, **más las `pairs` de la última corrida
+`READY` anterior** (si existe), para que el panel no se quede con la pantalla vacía
+mientras el barrido nuevo corre ~55 s. Si nunca hubo una corrida `READY` antes, `pairs`
+va vacío.
+
+**200 — fallida**: `status: "FAILED"` con `failureReason` en castellano, y las mismas
+`pairs` de la última corrida `READY` anterior, por el mismo motivo.
 
 ### Reglas del payload
 
+- **`similarity` y `threshold` viajan en escala 0-100** (porcentaje), no 0-1. El cálculo
+  interno usa el `score` 0-1 de `search()` (`knowledge.service.ts:655`, el mismo que
+  `KNOWLEDGE_SIMILARITY_THRESHOLD`); la conversión `× 100` ocurre **una sola vez**, al
+  persistir `HygienePair.similarity` y `HygieneScan.threshold` en el paso 8 del barrido.
+  `KNOWLEDGE_MERGE_THRESHOLD` (la variable de entorno) se define en la **misma escala
+  0-1** que `KNOWLEDGE_SIMILARITY_THRESHOLD`, para comparar directo contra el `score` de
+  `search()` en el paso 5 — la conversión a 0-100 es solo para lo que se guarda y se
+  muestra, nunca para el filtro.
 - **`escalatedTurns: 0` es normal**, no "sin datos". Hoy lo van a tener casi todas
   (research.md §2). El panel **no** puede presentarlo como un problema ni esconder la
   pareja por eso.
@@ -134,9 +154,15 @@ mismo permiso que fusionar.
    - **700 ms entre llamadas** (100 RPM).
 4. Quedarse con los vecinos **del mismo grupo**, y el mejor score de cada pareja: la
    similitud no es simétrica, buscar A→B puede dar distinto que B→A.
-5. Filtrar por `>= KNOWLEDGE_MERGE_THRESHOLD`.
+5. Filtrar por `score >= KNOWLEDGE_MERGE_THRESHOLD` (comparación en **0-1**, la escala
+   nativa de `search()` — ver "Reglas del payload" más arriba sobre dónde se convierte
+   a 0-100).
 6. Descartar las parejas con un `KnowledgeMergeDiscard` vigente (las dos versiones
-   coinciden).
+   coinciden). Un documento puede sobrevivir en más de una pareja a la vez (un
+   documento largo o muy consultado puede competir con varios): fusionar una no
+   completa ni invalida las otras, salvo que la fusión desactive uno de sus documentos
+   (ver el 404 de "documento ya desactivado" en
+   [fusion-con-aprobacion.md](./fusion-con-aprobacion.md)).
 7. Contar los turnos escalados en común. **Deduplicando por documento dentro del
    turno**: `skipDuplicates` no deduplica el top-k (research.md §6a) y sin esto un
    documento largo co-ocurriría consigo mismo.

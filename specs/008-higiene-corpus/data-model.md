@@ -15,9 +15,12 @@ model HygieneScan {
   id     String            @id @default(uuid())
   status HygieneScanStatus @default(RUNNING)
 
-  // Qué umbral se usó. Se guarda con la corrida, no se lee del entorno al
-  // mostrarla: si alguien recalibra, las corridas viejas tienen que seguir
-  // explicándose con el valor que realmente usaron.
+  // Qué umbral se usó, en escala 0-100 (igual que `similarity` de HygienePair).
+  // Se guarda con la corrida, no se lee del entorno al mostrarla: si alguien
+  // recalibra, las corridas viejas tienen que seguir explicándose con el valor
+  // que realmente usaron. `KNOWLEDGE_MERGE_THRESHOLD` (la env var) vive en 0-1,
+  // la misma escala que el `score` de `search()`; acá se persiste × 100 — ver
+  // contracts/deteccion-de-parejas.md, "Reglas del payload".
   threshold Float
 
   // Contexto para poder comparar dos corridas y decir si el corpus mejoró.
@@ -69,7 +72,8 @@ model HygienePair {
   documentBId String
   documentB   KnowledgeDocument @relation("HygienePairB", fields: [documentBId], references: [id], onDelete: Cascade)
 
-  // Cuánto se solapan, 0-100. Es lo que los puso en la lista.
+  // Cuánto se solapan, 0-100 (el `score` 0-1 de `search()` × 100, convertido una
+  // sola vez al persistir). Es lo que los puso en la lista.
   similarity Float
 
   // Cuántos turnos escalados tuvieron a LOS DOS como candidatos.

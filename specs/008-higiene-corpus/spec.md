@@ -198,6 +198,9 @@ directo a la misma fusión de la US1 (no una copia del mecanismo).
   corpus.
 - **FR-012**: El sistema DEBE permitir descartar una pareja propuesta, registrando que
   fue una decisión explícita ("son distintos a propósito").
+- **FR-012b**: Solo puede descartar una pareja quien es responsable del área de esos
+  documentos — la misma regla del FR-011. Descartar es también una decisión sobre el
+  corpus (deja de proponerse una fusión posible), no una anotación neutra.
 - **FR-013**: Una pareja descartada NO DEBE volver a proponerse en corridas
   posteriores de la detección, mientras ninguno de los dos documentos cambie.
 - **FR-014**: Si cualquiera de los dos documentos de una pareja descartada se edita

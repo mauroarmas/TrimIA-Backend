@@ -68,6 +68,13 @@ Aplica lo que la persona confirmó.
 > volvería a meter contenido que nadie aprobó (FR-008). Es la misma advertencia que
 > lleva `ai-edit/apply`, y vale por el mismo motivo.
 
+`update()` recibe `origin: AI_ACCEPTED` y `aiInstruction: 'Fusión con «título del
+documento absorbido»'` — no porque el texto final sea necesariamente el que redactó el
+modelo (puede venir editado a mano, igual que `ai-edit/apply`), sino porque **el origen
+del cambio fue una propuesta generada**, que es lo que ese campo distingue de un `PUT`
+manual directo. `mergedFromDocumentId` es lo que deja constancia de que fue
+específicamente una fusión (FR-016), no una edición con IA cualquiera.
+
 **200**:
 ```json
 {

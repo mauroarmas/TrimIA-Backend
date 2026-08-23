@@ -91,20 +91,29 @@ prisma/
 └── schema.prisma                       # + KnowledgeMergeDiscard, + HygieneScan
 
 src/ai/knowledge/
-├── knowledge-hygiene.service.ts        # NUEVO — detección, descarte, fusión
+├── knowledge-hygiene.service.ts        # NUEVO — detección, descarte
 ├── knowledge-hygiene.service.spec.ts   # NUEVO
 ├── knowledge-hygiene.controller.ts     # NUEVO — rutas del panel
 ├── knowledge-merge.service.ts          # NUEVO — preview/apply de la fusión
 ├── knowledge-merge.service.spec.ts     # NUEVO
-├── knowledge.service.ts                # sin cambios de contrato; se reusa
+├── dto/
+│   ├── merge-preview.dto.ts            # NUEVO
+│   ├── merge-apply.dto.ts              # NUEVO
+│   └── discard-pair.dto.ts             # NUEVO
+├── knowledge.service.ts                # + mergedFromDocumentId en UpdateInput; se reusa
 ├── knowledge-ai-edit.service.ts        # se reusa el patrón, no se modifica
-└── knowledge.module.ts                 # + los providers nuevos
+└── knowledge.module.ts                 # + los providers y la cola nuevos
 
-src/queue/processors/
-└── hygiene-scan.processor.ts           # NUEVO — el barrido, fuera del request
+src/queue/
+├── queue.module.ts                     # + cola hygiene-scan + el processor
+└── processors/
+    └── hygiene-scan.processor.ts       # NUEVO — el barrido, fuera del request
 
 src/escalations/
 └── escalations.service.ts              # US3: el aviso dentro del caso
+
+src/supervisor/
+└── supervisor.controller.ts            # + GET .../hygiene-warning (US3)
 
 scripts/
 └── calibrar-fusion.ts                  # NUEVO — mide el umbral, no es npm test
