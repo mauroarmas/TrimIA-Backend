@@ -65,6 +65,7 @@ export class OrchestratorService implements OnModuleInit {
       confidence: null,
       retrievedDocs: null,
       escalated: null,
+      escalationId: null,
       needsHuman: null,
       handoffReason: null,
       internalNote: null,

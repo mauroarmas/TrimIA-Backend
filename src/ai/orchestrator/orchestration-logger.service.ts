@@ -69,6 +69,14 @@ export class OrchestrationLogger {
     agentType?: AgentType | null;
     outcome: RetrievalOutcome;
     docs: RetrievedDoc[];
+    /**
+     * Caso creado en este turno, si el turno escaló (spec 007).
+     *
+     * Enlaza estos documentos con el caso concreto en vez de dejar que haya que
+     * correlacionarlos por fecha después. Es lo que permite ofrecerle al
+     * supervisor los documentos que quedaron cortos al resolverlo.
+     */
+    escalationId?: string | null;
   }) {
     if (params.docs.length === 0) return;
 
@@ -80,6 +88,7 @@ export class OrchestrationLogger {
         data: params.docs.map((d) => ({
           documentId: d.documentId,
           conversationId: params.conversationId ?? null,
+          escalationId: params.escalationId ?? null,
           score: d.score,
           rank: d.rank,
           agentType: params.agentType ?? null,

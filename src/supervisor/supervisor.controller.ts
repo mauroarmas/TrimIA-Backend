@@ -31,6 +31,7 @@ import { ResolveEscalationDto } from '../escalations/dto/resolve-escalation.dto'
 import { DelegateEscalationDto } from '../escalations/dto/delegate-escalation.dto';
 import { SaveUnsentDto } from '../escalations/dto/save-unsent.dto';
 import { DiscardEscalationDto } from '../escalations/dto/discard-escalation.dto';
+import { CorrectionPreviewDto } from '../escalations/dto/correction-preview.dto';
 import { ManualReplyDto } from '../conversations/dto/manual-reply.dto';
 import { CreateInternalNoteDto } from '../conversations/dto/create-internal-note.dto';
 import { RealtimeService } from '../realtime/realtime.service';
@@ -353,6 +354,56 @@ export class SupervisorController {
   @ApiOperation({ summary: 'Detalle de un caso escalado' })
   getEscalation(@Param('id') id: string) {
     return this.escalations.findById(id);
+  }
+
+  /**
+   * GET /supervisor/escalations/:id/knowledge-candidates — qué documentos se
+   * consultaron en este caso y no alcanzaron (spec 007, US1).
+   *
+   * Lista **vacía es una respuesta normal**: el caso escaló sin recuperar nada,
+   * así que no hay nada que corregir y corresponde crear un documento nuevo.
+   *
+   * Los de otras áreas se listan igual, marcados como no corregibles y con el
+   * motivo: ver lo ajeno es justo lo que evita duplicarlo ("ver no es editar",
+   * spec 005). Lo que se bloquea es modificarlo.
+   */
+  @Get('escalations/:id/knowledge-candidates')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('SUPERVISOR')
+  @ApiOperation({
+    summary: 'Documentos que quedaron cortos en un caso, para corregir uno',
+  })
+  getKnowledgeCandidates(
+    @Param('id') id: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.escalations.knowledgeCandidates(id, req.user.id);
+  }
+
+  /**
+   * POST /supervisor/escalations/:id/correction-preview — cómo quedaría un
+   * documento si se le incorpora la respuesta (spec 007, US1).
+   *
+   * **No persiste nada.** Se aprueba después, mandando el texto en
+   * `correctKnowledge` al resolver el caso. Que sean dos pasos es lo que hace
+   * que "nunca se aplica sin aprobación" sea imposible de violar por descuido
+   * (Principio III), en vez de una regla que alguien tiene que recordar.
+   *
+   * POST y no GET aunque no escriba: lleva body, cuesta una llamada a Gemini y
+   * no es cacheable — igual que `POST /knowledge/:id/ai-edit/preview`.
+   */
+  @Post('escalations/:id/correction-preview')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('SUPERVISOR')
+  @ApiOperation({
+    summary: 'Propone el documento corregido con la respuesta (no guarda nada)',
+  })
+  previewCorrection(
+    @Param('id') id: string,
+    @Body() dto: CorrectionPreviewDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.escalations.correctionPreview(id, dto, req.user.id);
   }
 
   /** POST /supervisor/escalations/:id/resolve — responde el caso al usuario. */

@@ -48,6 +48,32 @@ export interface IngestInput {
    */
   sourceType?: KnowledgeSourceType;
   sourceId?: string | null;
+  /**
+   * Salta la detección de duplicado exacto (spec 007, FR-012).
+   *
+   * El 409 es detección, no prohibición — misma convención que ya rige para
+   * archivos repetidos (`assertNotDuplicate`, clarificación 2026-08-08).
+   */
+  force?: boolean;
+}
+
+/**
+ * Cuántos candidatos se traen del corpus antes de deduplicar por documento
+ * (spec 007). Más alto que MAX_PARECIDOS_INFORMADOS porque un documento largo
+ * ocupa varios lugares del top-k.
+ */
+const MAX_PARECIDOS_CANDIDATOS = 12;
+
+/** Cuántos documentos parecidos se informan al cargar (FR-018). */
+const MAX_PARECIDOS_INFORMADOS = 4;
+
+/** Un documento parecido al que se está cargando (spec 007, US3). */
+export interface SimilarDocument {
+  documentId: string;
+  title: string;
+  score: number;
+  /** true si además tiene otra audiencia: parecido no es duplicado (FR-020). */
+  audienciaDistinta: boolean;
 }
 
 export interface SearchOptions {
@@ -91,6 +117,15 @@ export interface UpdateInput {
    * Opcional: el `PUT` manual no lo usa.
    */
   expectedVersion?: number;
+  /**
+   * Caso escalado del que salió esta edición (spec 007, FR-009).
+   *
+   * Queda en el `KnowledgeChange` para que desde la bitácora de un documento se
+   * pueda saber de qué caso vino cada cambio. El enlace inverso
+   * (`Escalation.resolvedWithDocumentId`) no alcanza: un documento corregido
+   * varias veces obligaría a adivinar por fecha cuál cambio vino de cuál caso.
+   */
+  escalationId?: string;
 }
 
 /**
@@ -356,12 +391,120 @@ export class KnowledgeService implements OnModuleInit {
     return vectores;
   }
 
-  async ingest(
-    input: IngestInput,
-  ): Promise<{ documentId: string; chunks: number }> {
+  /**
+   * ¿Ya existe un documento con este contenido, EXACTO? (spec 007, US2 / FR-010).
+   *
+   * El `checksum` se calcula en cada `ingest()` desde el Sprint 5A y **nunca se
+   * leía**: no había índice, ni consulta, ni nadie preguntando. Es la
+   * comparación más barata que existe — no cuesta ni una llamada de
+   * embeddings — y estaba tirada.
+   */
+  private async buscarDuplicadoExacto(
+    checksum: string,
+  ): Promise<{ id: string; title: string } | null> {
+    return this.prisma.knowledgeDocument.findFirst({
+      where: { checksum },
+      select: { id: true, title: true },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  /**
+   * Documentos ya existentes que se parecen al contenido que se está por
+   * cargar (spec 007, US3 / FR-014..FR-020).
+   *
+   * **No bloquea nada** (FR-015): es información que acompaña al resultado de
+   * la carga, no una validación. Y si falla —el servicio de comparación no
+   * responde—, se traga el error y devuelve vacío: guardar el conocimiento es
+   * lo importante, opinar sobre parecidos es lo accesorio (FR-025).
+   */
+  private async buscarParecidos(
+    content: string,
+    audience: Audience,
+    excluirId: string,
+  ): Promise<SimilarDocument[]> {
+    try {
+      const umbral = this.config.get<number>('KNOWLEDGE_SIMILARITY_THRESHOLD')!;
+
+      // Se compara contra el corpus COMPLETO (INTERNO ve todo), no según la
+      // audiencia del documento que se carga: comparar documentos entre sí no
+      // es lo mismo que decidir qué puede leer un cliente. Ese filtro sigue
+      // viviendo solo en `search()` cuando la llama un agente conversando.
+      const hits = await this.search(content, {
+        audience: Audience.INTERNO,
+        k: MAX_PARECIDOS_CANDIDATOS,
+      });
+
+      // Un documento largo ocupa varios lugares del top-k: se queda el mejor
+      // de cada uno. Mismo criterio que `mejoresPorDocumento` en
+      // low-confidence.node.ts, y por el mismo motivo — repetir el título con
+      // scores distintos hace pensar que hay duplicados donde no los hay.
+      const mejorPorDocumento = new Map<string, SearchHit>();
+      for (const hit of hits) {
+        if (hit.documentId === excluirId) continue;
+        const previo = mejorPorDocumento.get(hit.documentId);
+        if (!previo || hit.score > previo.score) {
+          mejorPorDocumento.set(hit.documentId, hit);
+        }
+      }
+
+      const candidatos = [...mejorPorDocumento.values()]
+        .filter((h) => h.score >= umbral)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, MAX_PARECIDOS_INFORMADOS);
+
+      if (candidatos.length === 0) return [];
+
+      // `search()` no expone la audiencia de cada hit (no la necesita: el
+      // filtro de audiencia ya decidió qué puede volver). Acá sí hace falta,
+      // para FR-020 — se consulta aparte, sobre los pocos candidatos que
+      // sobrevivieron al umbral.
+      const documentos = await this.prisma.knowledgeDocument.findMany({
+        where: { id: { in: candidatos.map((c) => c.documentId) } },
+        select: { id: true, audience: true },
+      });
+      const audienciaPorId = new Map(documentos.map((d) => [d.id, d.audience]));
+
+      return candidatos.map((c) => ({
+        documentId: c.documentId,
+        title: c.title,
+        score: c.score,
+        audienciaDistinta: audienciaPorId.get(c.documentId) !== audience,
+      }));
+    } catch (err) {
+      this.logger.warn(
+        `No se pudo calcular parecidos al ingestar: ${
+          err instanceof Error ? err.message : err
+        }`,
+      );
+      return [];
+    }
+  }
+
+  async ingest(input: IngestInput): Promise<{
+    documentId: string;
+    chunks: number;
+    similarDocuments?: SimilarDocument[];
+  }> {
     const audience = input.audience ?? Audience.INTERNO;
     const agentTag = input.agentType ?? 'GENERAL';
     const checksum = createHash('sha256').update(input.content).digest('hex');
+
+    // Duplicado EXACTO primero: es gratis comparado con la vectorización, y
+    // corta antes de gastar un solo token si el contenido ya está (FR-013).
+    if (!input.force) {
+      const duplicado = await this.buscarDuplicadoExacto(checksum);
+      if (duplicado) {
+        throw new ConflictException({
+          statusCode: 409,
+          reason: 'DUPLICATE_DOCUMENT',
+          existing: duplicado,
+          message:
+            `Ya existe un documento con este contenido exacto: "${duplicado.title}". ` +
+            `Si querés cargarlo igual, reintentá con force=true.`,
+        });
+      }
+    }
 
     const doc = await this.prisma.knowledgeDocument.create({
       data: {
@@ -397,11 +540,19 @@ export class KnowledgeService implements OnModuleInit {
     // vectores inválidos en el índice"**. Un documento sin vectores se arregla
     // con un clic; uno con vectores rotos marcado SYNCED no, porque nadie sabe
     // que está roto.
+    // Spec 007: los parecidos se buscan EN PARALELO con vectorizar, no antes
+    // ni después — son dos llamadas independientes, y encadenarlas duplicaría
+    // la espera sin ganar nada. `buscarParecidos` nunca lanza (se traga sus
+    // propios errores), así que no interfiere con el `try` de abajo.
     let vectors: number[][];
+    let similarDocuments: SimilarDocument[];
     try {
-      vectors = await this.vectorizar(
-        chunks.map((c) => this.textoAVectorizar(input.title, c)),
-      );
+      [vectors, similarDocuments] = await Promise.all([
+        this.vectorizar(
+          chunks.map((c) => this.textoAVectorizar(input.title, c)),
+        ),
+        this.buscarParecidos(input.content, audience, doc.id),
+      ]);
     } catch (err) {
       const motivo = err instanceof Error ? err.message : String(err);
       await this.markReindexFailed(doc.id, motivo);
@@ -439,7 +590,11 @@ export class KnowledgeService implements OnModuleInit {
     this.logger.log(
       `Documento "${input.title}" ingestado (${chunks.length} chunks, audiencia=${audience})`,
     );
-    return { documentId: doc.id, chunks: chunks.length };
+    return {
+      documentId: doc.id,
+      chunks: chunks.length,
+      similarDocuments,
+    };
   }
 
   /**
@@ -724,6 +879,8 @@ export class KnowledgeService implements OnModuleInit {
           changedFields,
           origin: input.origin ?? KnowledgeChangeOrigin.MANUAL,
           aiInstruction: input.aiInstruction ?? null,
+          // Spec 007: de qué caso escalado salió esta edición, si salió de uno.
+          escalationId: input.escalationId ?? null,
         },
       });
 

@@ -93,7 +93,13 @@ export class KnowledgeController {
     private readonly aiEdit: KnowledgeAiEditService,
   ) {}
 
-  /** Ingesta un documento. body: { title, content, category, audience?, agentType? } */
+  /**
+   * Ingesta un documento. body: { title, content, category, audience?, agentType?, force? }
+   *
+   * Spec 007: si el contenido es idéntico a uno que ya existe, rechaza con 409
+   * indicando cuál — salvo `force: true`, que lo carga igual (detección, no
+   * prohibición).
+   */
   @Post()
   async ingest(
     @Body()
@@ -103,6 +109,7 @@ export class KnowledgeController {
       category: string;
       audience?: Audience;
       agentType?: AgentType;
+      force?: boolean;
     },
     @Req() req: AuthenticatedRequest,
   ) {

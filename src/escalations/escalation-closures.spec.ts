@@ -68,6 +68,8 @@ function buildService(
     logger as never,
     knowledge as never,
     employees as never,
+    // Spec 007: la propuesta de corrección. Estos tests no la ejercitan.
+    { preview: jest.fn() } as never,
   );
 
   return { service, prisma, conversations, sender, logger, knowledge };

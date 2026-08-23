@@ -1,10 +1,11 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
-import { Inject, Logger } from '@nestjs/common';
+import { ConflictException, Inject, Logger } from '@nestjs/common';
 import { AgentType, Audience, FileProcessingStatus } from '@prisma/client';
 import { Job, UnrecoverableError } from 'bullmq';
 import { PrismaService } from '../../database/prisma.service';
 import { KnowledgeService } from '../../ai/knowledge/knowledge.service';
 import { KnowledgeStorageService } from '../../ai/knowledge/knowledge-storage.service';
+import { OrchestrationLogger } from '../../ai/orchestrator/orchestration-logger.service';
 import {
   ExtractionFailedError,
   TEXT_EXTRACTORS,
@@ -38,6 +39,9 @@ export class KnowledgeIngestionProcessor extends WorkerHost {
     private readonly knowledge: KnowledgeService,
     private readonly storage: KnowledgeStorageService,
     @Inject(TEXT_EXTRACTORS) private readonly extractors: TextExtractor[],
+    // Spec 007, FR-022: nadie mira esta pantalla, así que los parecidos
+    // hallados acá quedan como evento consultable, no se pierden.
+    private readonly orchestrationLogger: OrchestrationLogger,
   ) {
     super();
   }
@@ -78,15 +82,16 @@ export class KnowledgeIngestionProcessor extends WorkerHost {
         this.storage.resolveAbsolutePath(storagePath),
       );
 
-      const { documentId, chunks } = await this.knowledge.ingest({
-        title: job.data.title,
-        content: text,
-        category: job.data.category,
-        audience: job.data.audience,
-        agentType: job.data.agentType ?? null,
-        sourceType: 'DOCUMENTO',
-        sourceId: fileId,
-      });
+      const { documentId, chunks, similarDocuments } =
+        await this.knowledge.ingest({
+          title: job.data.title,
+          content: text,
+          category: job.data.category,
+          audience: job.data.audience,
+          agentType: job.data.agentType ?? null,
+          sourceType: 'DOCUMENTO',
+          sourceId: fileId,
+        });
 
       await this.prisma.knowledgeFile.update({
         where: { id: fileId },
@@ -97,10 +102,64 @@ export class KnowledgeIngestionProcessor extends WorkerHost {
         },
       });
 
+      // Spec 007, FR-022: nadie está mirando esta pantalla. Si el documento
+      // recién creado se parece a algo que ya existía, queda como evento
+      // consultable (GET /supervisor/events) en vez de perderse — mismo
+      // criterio que `escalation_teach_failed` de la spec 006.
+      if (similarDocuments && similarDocuments.length > 0) {
+        // Es telemetría, corre DESPUÉS de que el archivo ya quedó READY: un
+        // fallo acá no puede tumbar un procesamiento que ya terminó bien
+        // (FR-024). Mismo criterio que `trackRetrievals` en la spec 006.
+        try {
+          await this.orchestrationLogger.logEvent({
+            eventType: 'knowledge_similar_on_ingest',
+            payload: {
+              documentId,
+              title: job.data.title,
+              similarDocuments: similarDocuments.map((d) => ({ ...d })),
+            },
+          });
+        } catch (err) {
+          this.logger.warn(
+            `No se registró el parecido de ${documentId}: ${
+              err instanceof Error ? err.message : err
+            }`,
+          );
+        }
+      }
+
       this.logger.log(
         `"${file.filename}" procesado con ${extractor.name}: ${chunks} chunks`,
       );
     } catch (err) {
+      // Spec 007, FR-021/FR-023: nadie está mirando esta pantalla, así que un
+      // duplicado exacto no puede terminar en FAILED — el texto ya se extrajo
+      // (le costó una extracción cara) y el conocimiento YA ESTÁ, solo que con
+      // otro id. `ingest()` ya lo detectó y lanzó antes de vectorizar (FR-013);
+      // acá solo se interpreta la excepción, no se reimplementa la detección.
+      if (
+        err instanceof ConflictException &&
+        (err.getResponse() as Record<string, unknown>).reason ===
+          'DUPLICATE_DOCUMENT'
+      ) {
+        const { existing } = err.getResponse() as {
+          existing: { id: string; title: string };
+        };
+        await this.prisma.knowledgeFile.update({
+          where: { id: fileId },
+          data: {
+            status: FileProcessingStatus.READY,
+            documentId: existing.id,
+            processedAt: new Date(),
+          },
+        });
+        this.logger.log(
+          `"${file.filename}" es idéntico a un documento existente ` +
+            `("${existing.title}"): no se creó uno nuevo.`,
+        );
+        return;
+      }
+
       if (err instanceof ExtractionFailedError) {
         // El archivo es el que es: reintentarlo daría el mismo resultado y solo
         // demoraría el aviso al supervisor.

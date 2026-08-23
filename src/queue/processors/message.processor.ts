@@ -215,6 +215,10 @@ export class MessageProcessor extends WorkerHost {
         agentType: result.agentType,
         outcome: result.escalated ? 'ESCALATED' : 'ANSWERED',
         docs: result.retrievedDocs ?? [],
+        // Spec 007: si el turno escaló, estos documentos quedan enlazados al
+        // caso. Son los que después se le ofrecen al supervisor para corregir
+        // en vez de crear uno nuevo que compita con ellos.
+        escalationId: result.escalationId,
       });
 
       this.logger.log(`Response sent to ${externalId}`);

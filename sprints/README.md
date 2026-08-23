@@ -86,5 +86,5 @@ verdad; la pre-spec queda como registro de lo que se pensaba antes de escribirla
 
 | Sprint | Carpeta | Estado |
 |---|---|---|
-| **5B** — Conocimiento Confiable | [`5B-conocimiento-confiable/`](5B-conocimiento-confiable/) | 5 pre-specs · la 1 ya es la spec [006](../specs/006-calidad-busqueda-rag/), implementada |
+| **5B** — Conocimiento Confiable | [`5B-conocimiento-confiable/`](5B-conocimiento-confiable/) | 6 pre-specs · 1→spec [006](../specs/006-calidad-busqueda-rag/) · 2→spec [007](../specs/007-duplicados-al-escribir/), ambas implementadas |
 | **5C** — Capacitación, Audio y Medición | [`5C-capacitacion-audio-medicion/`](5C-capacitacion-audio-medicion/) | incompleta: se termina al arrancar el sprint |

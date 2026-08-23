@@ -213,13 +213,18 @@ export function buildRagAgentGraph(
     const reason = state.handoffReason ?? 'el agente pidió intervención humana';
     logger.log(`${tag} derivación pedida por el agente: ${reason}`);
 
+    // Spec 007: el id del caso viaja por el estado para que los documentos que
+    // se consultaron en este turno queden enlazados a ÉL, y no haya que
+    // correlacionarlos por fecha después.
+    let escalationId: string | null = null;
     if (state.conversationId) {
-      await escalations.create({
+      const caso = await escalations.create({
         conversationId: state.conversationId,
         reason: `${tag} ${reason}`,
         agentType,
         internalNote: state.internalNote ?? undefined,
       });
+      escalationId = caso.id;
     }
 
     // Un mensaje que congela la conversación no puede terminar preguntando: la
@@ -232,7 +237,7 @@ export function buildRagAgentGraph(
       );
     }
 
-    return { escalated: true, response };
+    return { escalated: true, response, escalationId };
   };
 
   // --- NODO: escalate_to_human — confianza baja, deriva a un responsable ---
@@ -245,8 +250,13 @@ export function buildRagAgentGraph(
     // Antes de Sprint 3 esto solo devolvía el mensaje canned y no quedaba
     // ningún rastro consultable. Ahora crea el caso pendiente real que ve
     // el supervisor (WAITING_HUMAN + Escalation).
+    // Spec 007: el id viaja por el estado hasta trackRetrievals. Este camino es
+    // el que más importa de los dos — escaló porque el conocimiento quedó
+    // CORTO, así que los documentos consultados acá son justamente los
+    // candidatos a corregir.
+    let escalationId: string | null = null;
     if (state.conversationId) {
-      await escalations.create({
+      const caso = await escalations.create({
         conversationId: state.conversationId,
         reason: `${tag} confianza insuficiente (${confidence.toFixed(2)})`,
         agentType,
@@ -258,11 +268,13 @@ export function buildRagAgentGraph(
           `con confianza suficiente (${confidence.toFixed(2)}, umbral ${confidenceThreshold}).\n` +
           `Consulta del cliente: «${state.message}»`,
       });
+      escalationId = caso.id;
     }
 
     return {
       response: escalationMessage,
       escalated: true,
+      escalationId,
     };
   };
 

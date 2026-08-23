@@ -34,12 +34,13 @@ No hace falta que esté ordenado ni completo. Si está a medias, mejor eso que n
 
 ## Pendientes
 
-*(vacía)*
+_Vacía por ahora._
 
 ## Registro de lo que se fue
 
 | Tema | Detectado | Fue a | Cuándo |
 |---|---|---|---|
+| La cola de escalados no filtra por área | 2026-08-22 | [`sprints/5B-…/6-cola-de-escalados-por-area.md`](../../sprints/5B-conocimiento-confiable/6-cola-de-escalados-por-area.md) | 2026-08-23 |
 | Calidad de la búsqueda RAG — embeddings sin `taskType` y umbral no visible | 2026-08-22 | [`sprints/5B-…/1-base-de-la-busqueda.md`](../../sprints/5B-conocimiento-confiable/1-base-de-la-busqueda.md) | 2026-08-22 |
 | Higiene de la base de conocimiento — documentos que se compiten | 2026-08-20 | partida en dos: [`2-duplicados-al-escribir.md`](../../sprints/5B-conocimiento-confiable/2-duplicados-al-escribir.md) (la causa) y [`3-higiene-del-corpus.md`](../../sprints/5B-conocimiento-confiable/3-higiene-del-corpus.md) (el síntoma) | 2026-08-22 |
 | Cómo mejorar la confianza del agente — qué le falta cargar | 2026-08-22 | partida en dos: [`4-que-falta-para-responder-mejor.md`](../../sprints/5B-conocimiento-confiable/4-que-falta-para-responder-mejor.md) y [`5-entrevista-desde-el-trafico-real.md`](../../sprints/5B-conocimiento-confiable/5-entrevista-desde-el-trafico-real.md) | 2026-08-22 |

@@ -39,6 +39,36 @@ import * as Joi from 'joi';
 
         RAG_CONFIDENCE_THRESHOLD: Joi.number().min(0).max(1).default(0.65),
 
+        // Spec 007: a partir de qué parecido se avisa "ya hay un documento sobre
+        // esto" al cargar conocimiento.
+        //
+        // ⚠️ NO es el mismo umbral que RAG_CONFIDENCE_THRESHOLD y no se puede
+        // heredar de él. Aquél mide cuán bien una CONSULTA CORTA encuentra un
+        // fragmento (ruido 54%, señal 78%, medido en la spec 006). Éste compara
+        // DOS DOCUMENTOS ENTEROS, que es otra distribución y más alta: dos textos
+        // largos del mismo dominio se parecen entre sí bastante más de lo que una
+        // consulta se parece a cualquiera de ellos.
+        //
+        // Medido con scripts/calibrar-parecido.ts sobre el corpus real
+        // (specs/007-duplicados-al-escribir/calibracion-parecido.txt):
+        //
+        //   73.1%  «Envios» ↔ «Monto mínimo»          NO son duplicados
+        //   ────── 75.0% ← acá
+        //   76.3%  «Garantia» ↔ «Devoluciones»        sí se solapan
+        //   77.6%  «Sobre Nosotros» ↔ «Qué es Credimisión»  el duplicado real
+        //
+        // ⚠️ El margen es de 3.2 puntos. Comparar documentos enteros apenas
+        // distingue "duplicado" de "mismo dominio, tema distinto", así que va a
+        // haber falsos positivos cerca del borde. Es parte de por qué el aviso
+        // NO bloquea (FR-015): con este margen, bloquear sería insufrible.
+        //
+        // Si entra un dominio nuevo al corpus, recalibrar: el margen es
+        // demasiado angosto para asumir que se sostiene solo.
+        KNOWLEDGE_SIMILARITY_THRESHOLD: Joi.number()
+          .min(0)
+          .max(1)
+          .default(0.75),
+
         // Carga de archivos a la base de conocimiento (Sprint 5A).
         // Hay DOS techos, no uno, y la diferencia no es arbitraria:
         //  - MAX_FILE: lo que se acepta subir, para cualquier formato.

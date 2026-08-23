@@ -1,8 +1,30 @@
 # Pre-spec 2 — Duplicados al escribir
 
 **Sprint** 5B · **Orden** 2 de 5 · **Tareas del plan** 5B.4–5B.5
-**Depende de** pre-spec 1 (los scores cambian con los embeddings nuevos) · **Estado** sin spec · **Spec** —
+**Depende de** pre-spec 1 (los scores cambian con los embeddings nuevos) · **Estado** ✅ **implementada** · **Spec** [007-duplicados-al-escribir](../../specs/007-duplicados-al-escribir/)
 **Origen** futura del 2026-08-20 (`higiene-base-de-conocimiento.md`), sección "un arreglo chico"
+
+> [!IMPORTANT]
+> **CONGELADA.** Ya tiene spec: manda [`specs/007-duplicados-al-escribir/`](../../specs/007-duplicados-al-escribir/),
+> no este archivo. Queda como registro de lo que se pensaba **antes** de especificar.
+>
+> **La historia principal terminó siendo otra.** Esta pre-spec pedía solo *avisar*.
+> Al revisarla, apareció que el aviso de baja confianza **ya le dice al supervisor lo
+> que hay que hacer** —*"lo que conviene es corregir ese documento, no cargar
+> otro"*— y el único botón disponible creaba un documento nuevo. Cerrar esa
+> contradicción pasó a ser la historia principal (US1, P1), y avisar quedó como la red
+> para lo que la corrección no cubre.
+>
+> | En vez de | Se hizo |
+> |---|---|
+> | Avisar de parecidos al cargar | Eso también, **y además**: corregir el documento que causó un escalado, en vez de crear otro (US1) |
+> | — | Duplicado exacto: 409 con el previo identificado, `force` para insistir (US2) |
+> | — | Los **cuatro** caminos de escritura cubiertos, no tres (US4 — se sumó `saveUnsent`, el más fácil de olvidar) |
+>
+> El umbral de "parecido" se midió con `scripts/calibrar-parecido.ts` sobre el corpus
+> real: el margen entre "mismo dominio, tema distinto" (73.1%) y "duplicado real"
+> (76.3–77.6%) es de solo 3.2 puntos. Heredar el umbral del RAG (0.65) habría avisado
+> en todo; un valor a ojo (0.80) habría perdido los dos duplicados reales del corpus.
 
 ## Qué se quiere
 

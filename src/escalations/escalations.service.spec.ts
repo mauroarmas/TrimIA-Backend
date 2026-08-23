@@ -9,6 +9,7 @@ import { ConversationsService } from '../conversations/conversations.service';
 import { WhatsappSenderService } from '../messaging/whatsapp-sender.service';
 import { OrchestrationLogger } from '../ai/orchestrator/orchestration-logger.service';
 import { KnowledgeService } from '../ai/knowledge/knowledge.service';
+import { KnowledgeAiEditService } from '../ai/knowledge/knowledge-ai-edit.service';
 import { EmployeesService } from '../employees/employees.service';
 
 /**
@@ -26,6 +27,9 @@ describe('EscalationsService', () => {
       findMany: jest.Mock;
       count: jest.Mock;
     };
+    // spec 007: los documentos que quedaron cortos en un caso.
+    knowledgeRetrieval: { findMany: jest.Mock };
+    knowledgeDocument: { findUnique: jest.Mock };
   };
   let conversations: {
     findById: jest.Mock;
@@ -36,8 +40,14 @@ describe('EscalationsService', () => {
   };
   let sender: { send: jest.Mock };
   let logger: { logEvent: jest.Mock };
-  let knowledge: { ingest: jest.Mock; assertPuedeEscribir: jest.Mock };
+  let knowledge: {
+    ingest: jest.Mock;
+    assertPuedeEscribir: jest.Mock;
+    update: jest.Mock;
+  };
   let employees: { findById: jest.Mock };
+  // Spec 007: se reusa tal cual de "editar con la IA"; acá se mockea su preview.
+  let aiEdit: { preview: jest.Mock };
 
   const conversation = {
     id: 'conv-1',
@@ -58,6 +68,8 @@ describe('EscalationsService', () => {
         findMany: jest.fn(),
         count: jest.fn(),
       },
+      knowledgeRetrieval: { findMany: jest.fn().mockResolvedValue([]) },
+      knowledgeDocument: { findUnique: jest.fn() },
     };
     conversations = {
       findById: jest.fn().mockResolvedValue(conversation),
@@ -70,8 +82,13 @@ describe('EscalationsService', () => {
     logger = { logEvent: jest.fn() };
     // Por defecto el área deja escribir: los tests de alcance por área están en
     // knowledge-write-scope.spec.ts. Acá se prueba el cierre del caso.
-    knowledge = { ingest: jest.fn(), assertPuedeEscribir: jest.fn() };
+    knowledge = {
+      ingest: jest.fn(),
+      assertPuedeEscribir: jest.fn(),
+      update: jest.fn(),
+    };
     employees = { findById: jest.fn() };
+    aiEdit = { preview: jest.fn() };
 
     service = new EscalationsService(
       prisma as unknown as PrismaService,
@@ -80,6 +97,7 @@ describe('EscalationsService', () => {
       logger as unknown as OrchestrationLogger,
       knowledge as unknown as KnowledgeService,
       employees as unknown as EmployeesService,
+      aiEdit as unknown as KnowledgeAiEditService,
     );
   });
 
@@ -135,6 +153,217 @@ describe('EscalationsService', () => {
       expect(result.id).toBe('esc-existing');
       expect(prisma.escalation.create).not.toHaveBeenCalled();
       expect(conversations.setStatus).not.toHaveBeenCalled();
+    });
+  });
+
+  /**
+   * Spec 007, US1 — los documentos que quedaron cortos en un caso.
+   *
+   * De acá sale la oferta que cierra la contradicción del producto: el aviso de
+   * baja confianza le dice al supervisor que corrija el documento que quedó
+   * corto, y hasta ahora el único botón creaba uno nuevo que competía con él.
+   */
+  describe('knowledgeCandidates (spec 007)', () => {
+    const caso = { id: 'esc-1', conversationId: 'conv-1', status: 'PENDING' };
+
+    /** Un documento largo ocupa varios lugares del top-k: llegan varios rangos. */
+    const retrievals = [
+      {
+        score: 62.1,
+        rank: 0,
+        document: { id: 'doc-a', title: 'Sobre Nosotros', agentType: null },
+      },
+      {
+        score: 58.0,
+        rank: 2,
+        document: { id: 'doc-a', title: 'Sobre Nosotros', agentType: null },
+      },
+      {
+        score: 61.2,
+        rank: 1,
+        document: {
+          id: 'doc-b',
+          title: 'Glosario interno',
+          agentType: 'COLLECTIONS',
+        },
+      },
+    ];
+
+    beforeEach(() => {
+      prisma.escalation.findUnique.mockResolvedValue(caso);
+    });
+
+    it('devuelve un candidato por DOCUMENTO, con su mejor score', async () => {
+      prisma.knowledgeRetrieval.findMany.mockResolvedValue(retrievals);
+
+      const res = await service.knowledgeCandidates('esc-1', 'employee-1');
+
+      // doc-a aparece dos veces en los retrievals y una sola vez acá: repetir el
+      // título con scores distintos hace pensar que hay duplicados cargados y
+      // manda a "arreglar" algo que no está roto.
+      expect(res).toHaveLength(2);
+      const docA = res.find((c) => c.id === 'doc-a');
+      expect(docA?.score).toBe(62.1); // el mejor, no el último
+    });
+
+    it('los ordena por cuán cerca estuvieron, el mejor primero', async () => {
+      prisma.knowledgeRetrieval.findMany.mockResolvedValue(retrievals);
+
+      const res = await service.knowledgeCandidates('esc-1', 'employee-1');
+
+      expect(res.map((c) => c.id)).toEqual(['doc-a', 'doc-b']);
+    });
+
+    it('pide solo documentos ACTIVOS: ofrecer corregir uno desactivado confunde', async () => {
+      prisma.knowledgeRetrieval.findMany.mockResolvedValue([]);
+
+      await service.knowledgeCandidates('esc-1', 'employee-1');
+
+      expect(prisma.knowledgeRetrieval.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            escalationId: 'esc-1',
+            document: { isActive: true },
+          }),
+        }),
+      );
+    });
+
+    /**
+     * ⭐ FR-006 — "ver no es editar" (spec 005).
+     *
+     * El documento de otra área SE MUESTRA: saber que ya existe algo cercano es
+     * justo lo que evita cargar un duplicado. Lo que se bloquea es corregirlo, y
+     * el motivo viaja porque un botón deshabilitado sin explicación es un
+     * misterio.
+     */
+    it('marca como NO corregible el documento de un área ajena, con el motivo', async () => {
+      prisma.knowledgeRetrieval.findMany.mockResolvedValue(retrievals);
+      knowledge.assertPuedeEscribir.mockImplementation(
+        (_autor: string, agentType: string | null) => {
+          if (agentType === 'COLLECTIONS') {
+            throw new ForbiddenException('Solo sos responsable de: Ventas');
+          }
+          return Promise.resolve();
+        },
+      );
+
+      const res = await service.knowledgeCandidates('esc-1', 'employee-1');
+
+      const ajeno = res.find((c) => c.id === 'doc-b');
+      expect(ajeno).toBeDefined(); // se muestra igual
+      expect(ajeno?.corregible).toBe(false);
+      expect(ajeno?.motivoSiNo).toContain('Ventas');
+
+      const propio = res.find((c) => c.id === 'doc-a');
+      expect(propio?.corregible).toBe(true);
+    });
+
+    /**
+     * Escenario 5 de US1: el caso escaló sin recuperar NADA. La ausencia de
+     * filas es la señal — no hay nada que corregir y corresponde crear un
+     * documento nuevo, como siempre. No es un error.
+     */
+    it('un caso sin documentos consultados devuelve lista vacía, no un error', async () => {
+      prisma.knowledgeRetrieval.findMany.mockResolvedValue([]);
+
+      await expect(
+        service.knowledgeCandidates('esc-1', 'employee-1'),
+      ).resolves.toEqual([]);
+    });
+
+    it('404 si el caso no existe', async () => {
+      prisma.escalation.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.knowledgeCandidates('no-existe', 'employee-1'),
+      ).rejects.toThrow(NotFoundException);
+    });
+  });
+
+  /**
+   * Spec 007, US1 / FR-003 — la propuesta de corrección.
+   *
+   * Que `preview` y la aprobación vivan en pasos separados es lo que hace que
+   * "nunca se aplica sin aprobación" (Principio III) sea imposible de violar por
+   * descuido, en vez de una regla que alguien tiene que acordarse de respetar.
+   */
+  describe('correctionPreview (spec 007)', () => {
+    const caso = { id: 'esc-1', conversationId: 'conv-1', status: 'PENDING' };
+    const propuesta = {
+      baseVersion: 3,
+      proposedContent: 'Texto corregido.',
+      summary: 'Se agregó qué vende la empresa',
+      changedSections: [],
+      confident: true,
+    };
+
+    beforeEach(() => {
+      prisma.escalation.findUnique.mockResolvedValue(caso);
+      prisma.knowledgeDocument.findUnique.mockResolvedValue({
+        id: 'doc-a',
+        agentType: 'SALES',
+      });
+      aiEdit.preview.mockResolvedValue(propuesta);
+    });
+
+    it('devuelve la propuesta sin escribir nada', async () => {
+      const res = await service.correctionPreview(
+        'esc-1',
+        { documentId: 'doc-a', message: 'Vendemos electrodomésticos.' },
+        'employee-1',
+      );
+
+      expect(res).toEqual(propuesta);
+      // Ni el documento, ni el caso, ni el corpus: preview no persiste.
+      expect(prisma.escalation.update).not.toHaveBeenCalled();
+      expect(knowledge.ingest).not.toHaveBeenCalled();
+    });
+
+    it('la instrucción lleva la respuesta que escribió el supervisor', async () => {
+      await service.correctionPreview(
+        'esc-1',
+        { documentId: 'doc-a', message: 'Vendemos electrodomésticos.' },
+        'employee-1',
+      );
+
+      const [documentId, instruction] = aiEdit.preview.mock.calls[0];
+      expect(documentId).toBe('doc-a');
+      expect(instruction).toContain('Vendemos electrodomésticos.');
+    });
+
+    /**
+     * ⭐ FR-006 — la autorización va ANTES de llamar al modelo.
+     *
+     * Gastar una llamada a Gemini para proponer algo que después no se va a
+     * poder guardar es trabajo tirado y una promesa falsa al supervisor.
+     */
+    it('un documento de área ajena se rechaza SIN gastar la llamada al modelo', async () => {
+      knowledge.assertPuedeEscribir.mockRejectedValue(
+        new ForbiddenException('Solo sos responsable de: Ventas'),
+      );
+
+      await expect(
+        service.correctionPreview(
+          'esc-1',
+          { documentId: 'doc-a', message: 'algo' },
+          'employee-1',
+        ),
+      ).rejects.toThrow(ForbiddenException);
+
+      expect(aiEdit.preview).not.toHaveBeenCalled();
+    });
+
+    it('404 si el documento no existe', async () => {
+      prisma.knowledgeDocument.findUnique.mockResolvedValue(null);
+
+      await expect(
+        service.correctionPreview(
+          'esc-1',
+          { documentId: 'no-existe', message: 'algo' },
+          'employee-1',
+        ),
+      ).rejects.toThrow(NotFoundException);
     });
   });
 
@@ -323,6 +552,283 @@ describe('EscalationsService', () => {
           payload: expect.objectContaining({ motivo: 'sin vectores' }),
         }),
       );
+    });
+
+    /**
+     * ⭐ Spec 007, US1 — el corazón de la feature.
+     *
+     * Corregir el documento que quedó corto en vez de crear uno que compita con
+     * él. Sin esto, cada caso resuelto "enseñando" deja un documento más sobre
+     * el mismo tema, los dos se reparten la señal y la consulta vuelve a
+     * escalar la próxima vez.
+     */
+    describe('⭐ correctKnowledge — corregir en vez de duplicar', () => {
+      const correccion = {
+        documentId: 'doc-a',
+        baseVersion: 3,
+        content: 'Texto del documento ya corregido y aprobado.',
+      };
+
+      beforeEach(() => {
+        prisma.escalation.findUnique.mockResolvedValue(pending);
+        prisma.escalation.update.mockResolvedValue({
+          ...pending,
+          status: 'RESOLVED',
+        });
+        prisma.knowledgeDocument.findUnique.mockResolvedValue({
+          id: 'doc-a',
+          agentType: 'SALES',
+        });
+        knowledge.update = jest.fn().mockResolvedValue({ id: 'doc-a' });
+      });
+
+      it('actualiza el documento existente y NO crea uno nuevo', async () => {
+        await service.resolve(
+          'esc-1',
+          { message: 'Sí, la tenemos.', correctKnowledge: correccion },
+          'employee-1',
+        );
+
+        expect(knowledge.update).toHaveBeenCalled();
+        // Lo que la spec viene a evitar: el segundo documento sobre el tema.
+        expect(knowledge.ingest).not.toHaveBeenCalled();
+      });
+
+      /**
+       * FR-004: se guarda el texto del body, que puede venir editado a mano
+       * después de ver la propuesta. Regenerarlo acá metería contenido que
+       * nadie aprobó.
+       */
+      it('guarda EL TEXTO DEL BODY, no uno regenerado', async () => {
+        await service.resolve(
+          'esc-1',
+          { message: 'Sí, la tenemos.', correctKnowledge: correccion },
+          'employee-1',
+        );
+
+        const [documentId, data, autor] = (knowledge.update as jest.Mock).mock
+          .calls[0];
+        expect(documentId).toBe('doc-a');
+        expect(data.content).toBe(correccion.content);
+        expect(autor).toBe('employee-1');
+        // La propuesta NO se vuelve a pedir al modelo en este paso.
+        expect(aiEdit.preview).not.toHaveBeenCalled();
+      });
+
+      // FR-008: no pisar la edición de otro. `update()` ya lo resuelve con 409;
+      // acá solo se comprueba que la versión base llega hasta él.
+      it('manda la versión base para que un cambio ajeno no se pise en silencio', async () => {
+        await service.resolve(
+          'esc-1',
+          { message: 'Sí.', correctKnowledge: correccion },
+          'employee-1',
+        );
+
+        const [, data] = (knowledge.update as jest.Mock).mock.calls[0];
+        expect(data.expectedVersion).toBe(3);
+      });
+
+      // FR-009: desde la bitácora del documento se sabe de qué caso salió.
+      it('el cambio queda enlazado al caso que lo originó', async () => {
+        await service.resolve(
+          'esc-1',
+          { message: 'Sí.', correctKnowledge: correccion },
+          'employee-1',
+        );
+
+        const [, data] = (knowledge.update as jest.Mock).mock.calls[0];
+        expect(data.escalationId).toBe('esc-1');
+      });
+
+      it('el caso queda marcado como CORRECTED, apuntando al documento', async () => {
+        await service.resolve(
+          'esc-1',
+          { message: 'Sí.', correctKnowledge: correccion },
+          'employee-1',
+        );
+
+        expect(prisma.escalation.update).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({
+              status: 'RESOLVED',
+              resolvedWithAction: 'CORRECTED',
+              resolvedWithDocumentId: 'doc-a',
+            }),
+          }),
+        );
+      });
+
+      /**
+       * El área que manda es la DEL DOCUMENTO, no la de la conversación: un
+       * caso de Ventas puede haber recuperado un documento de Cobranzas.
+       *
+       * Y el rechazo va ANTES de enviar: si estuviera junto al update, el caso
+       * quedaría resuelto y el mensaje enviado, con un 403 que no se puede
+       * deshacer.
+       */
+      it('si el documento es de otra área, no se envía nada ni se cierra el caso', async () => {
+        prisma.knowledgeDocument.findUnique.mockResolvedValue({
+          id: 'doc-a',
+          agentType: 'COLLECTIONS',
+        });
+        knowledge.assertPuedeEscribir.mockRejectedValue(
+          new ForbiddenException('Solo sos responsable de: Ventas'),
+        );
+
+        await expect(
+          service.resolve(
+            'esc-1',
+            { message: 'Sí.', correctKnowledge: correccion },
+            'employee-1',
+          ),
+        ).rejects.toThrow(ForbiddenException);
+
+        expect(sender.send).not.toHaveBeenCalled();
+        expect(prisma.escalation.update).not.toHaveBeenCalled();
+        expect(knowledge.update).not.toHaveBeenCalled();
+      });
+
+      /**
+       * Mismo aprendizaje que dejó la spec 006 con `teachAgent`: a esta altura
+       * el mensaje YA se envió. Tumbar el endpoint le mostraría un error al
+       * supervisor por algo que en lo esencial salió bien, y si reintenta, el
+       * usuario recibe el mensaje dos veces.
+       */
+      it('si la corrección falla, el caso IGUAL se resuelve', async () => {
+        (knowledge.update as jest.Mock).mockRejectedValue(
+          new ConflictException('VERSION_CONFLICT'),
+        );
+
+        await expect(
+          service.resolve(
+            'esc-1',
+            { message: 'Sí.', correctKnowledge: correccion },
+            'employee-1',
+          ),
+        ).resolves.toBeDefined();
+
+        expect(sender.send).toHaveBeenCalledTimes(1);
+        expect(prisma.escalation.update).toHaveBeenCalled();
+      });
+
+      it('y el fallo queda como evento, no en silencio', async () => {
+        (knowledge.update as jest.Mock).mockRejectedValue(
+          new ConflictException('VERSION_CONFLICT'),
+        );
+
+        await service.resolve(
+          'esc-1',
+          { message: 'Sí.', correctKnowledge: correccion },
+          'employee-1',
+        );
+
+        expect(logger.logEvent).toHaveBeenCalledWith(
+          expect.objectContaining({
+            eventType: 'escalation_correction_failed',
+            payload: expect.objectContaining({ documentId: 'doc-a' }),
+          }),
+        );
+      });
+
+      // Si la corrección no entró, el caso no puede decir que corrigió algo.
+      it('si la corrección falla, el caso NO se marca como CORRECTED', async () => {
+        (knowledge.update as jest.Mock).mockRejectedValue(new Error('falló'));
+
+        await service.resolve(
+          'esc-1',
+          { message: 'Sí.', correctKnowledge: correccion },
+          'employee-1',
+        );
+
+        const data = prisma.escalation.update.mock.calls[0][0].data;
+        expect(data.resolvedWithAction).toBeUndefined();
+        expect(data.resolvedWithDocumentId).toBeUndefined();
+      });
+
+      it('pedir corregir Y crear a la vez se rechaza, sin enviar nada', async () => {
+        await expect(
+          service.resolve(
+            'esc-1',
+            {
+              message: 'Sí.',
+              teachAgent: true,
+              title: 't',
+              category: 'c',
+              correctKnowledge: correccion,
+            },
+            'employee-1',
+          ),
+        ).rejects.toThrow(ConflictException);
+
+        expect(sender.send).not.toHaveBeenCalled();
+      });
+    });
+
+    /**
+     * Spec 007, US4/FR-023 — el caso resuelto enseñándole a la IA, cuando el
+     * contenido resulta idéntico a uno que ya existía. Distinto del bloque
+     * anterior: acá el mensaje YA se envió, así que la operación no puede
+     * fallar — un duplicado se registra como REUSED y el caso se cierra igual.
+     */
+    describe('teachAgent con duplicado exacto (spec 007)', () => {
+      it('no crea un segundo documento: el caso queda REUSED apuntando al existente', async () => {
+        prisma.escalation.findUnique.mockResolvedValue(pending);
+        prisma.escalation.update.mockResolvedValue({
+          ...pending,
+          status: 'RESOLVED',
+        });
+        const existing = { id: 'doc-ya-existia', title: 'Ya cargado' };
+        knowledge.ingest.mockRejectedValue(
+          new ConflictException({ reason: 'DUPLICATE_DOCUMENT', existing }),
+        );
+
+        await service.resolve(
+          'esc-1',
+          {
+            message: 'Sí, la tenemos.',
+            teachAgent: true,
+            title: 'Ya cargado',
+            category: 'c',
+          },
+          'employee-1',
+        );
+
+        // El caso se resuelve igual: el mensaje ya se envió.
+        expect(sender.send).toHaveBeenCalledTimes(1);
+        // Una SEGUNDA actualización marca REUSED (la primera cierra RESOLVED).
+        expect(prisma.escalation.update).toHaveBeenLastCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({
+              resolvedWithAction: 'REUSED',
+              resolvedWithDocumentId: 'doc-ya-existia',
+            }),
+          }),
+        );
+      });
+
+      it('no se registra como escalation_teach_failed: un duplicado no es un fallo', async () => {
+        prisma.escalation.findUnique.mockResolvedValue(pending);
+        prisma.escalation.update.mockResolvedValue({
+          ...pending,
+          status: 'RESOLVED',
+        });
+        knowledge.ingest.mockRejectedValue(
+          new ConflictException({
+            reason: 'DUPLICATE_DOCUMENT',
+            existing: { id: 'doc-ya-existia', title: 'Ya cargado' },
+          }),
+        );
+
+        await service.resolve(
+          'esc-1',
+          { message: 'Sí.', teachAgent: true, title: 't', category: 'c' },
+          'employee-1',
+        );
+
+        expect(logger.logEvent).not.toHaveBeenCalledWith(
+          expect.objectContaining({ eventType: 'escalation_teach_failed' }),
+        );
+      });
     });
 
     it('sin teachAgent, no ingesta nada al RAG', async () => {
@@ -771,6 +1277,60 @@ describe('EscalationsService', () => {
 
         expect(knowledge.ingest).toHaveBeenCalled();
         expect(result.knowledgeDocumentId).toBe('doc-1');
+      });
+
+      /**
+       * Spec 007, US4/FR-021 — el cuarto camino de escritura, el que más
+       * fácil se olvida porque la ingesta es su ÚNICO efecto. Sin este test,
+       * nada distingue "se olvidó cubrir este camino" de "se cubrió a
+       * propósito".
+       */
+      it('con contenido idéntico a uno ya cargado, reusa el existente y NO crea otro', async () => {
+        const existing = { id: 'doc-ya-existia', title: 'Anticipo mínimo' };
+        knowledge.ingest.mockRejectedValue(
+          new ConflictException({ reason: 'DUPLICATE_DOCUMENT', existing }),
+        );
+
+        const result = await service.saveUnsent(
+          'esc-1',
+          {
+            message: 'El anticipo mínimo es del 20%.',
+            title: 'Anticipo mínimo',
+            category: 'politica',
+            agentType: 'SALES',
+          },
+          'sup-ventas',
+        );
+
+        expect(result.knowledgeDocumentId).toBe('doc-ya-existia');
+        expect(prisma.escalation.update).toHaveBeenCalledWith(
+          expect.objectContaining({
+            data: expect.objectContaining({
+              status: 'SAVED_UNSENT',
+              resolvedWithAction: 'REUSED',
+              resolvedWithDocumentId: 'doc-ya-existia',
+            }),
+          }),
+        );
+      });
+
+      it('un fallo REAL (no duplicado) sigue propagándose: acá nada se envió todavía', async () => {
+        knowledge.ingest.mockRejectedValue(new Error('Chroma caído'));
+
+        await expect(
+          service.saveUnsent(
+            'esc-1',
+            {
+              message: 'x',
+              title: 't',
+              category: 'c',
+              agentType: 'SALES',
+            },
+            'sup-ventas',
+          ),
+        ).rejects.toThrow('Chroma caído');
+
+        expect(prisma.escalation.update).not.toHaveBeenCalled();
       });
     });
   });

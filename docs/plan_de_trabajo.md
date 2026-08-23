@@ -227,7 +227,7 @@ mensajes al mismo webhook, así que un workflow separado nunca los recibiría.
 
 ### Sprint 5B — Conocimiento Confiable 🧠
 
-*Pre-specs:* [`sprints/5B-conocimiento-confiable/`](../sprints/5B-conocimiento-confiable/) — **5 specs, en orden**.
+*Pre-specs:* [`sprints/5B-conocimiento-confiable/`](../sprints/5B-conocimiento-confiable/) — **6 specs, en orden**.
 *Pantallas del prototipo: Entrevista de Capacitación (Fig 14), Base de Conocimiento (Fig 15), Detalle (Fig 16).*
 
 El 5A dejó el corpus **editable**; este sprint lo deja **confiable**: que lo que hay
@@ -240,9 +240,9 @@ el supervisor sepa qué le falta cargar en vez de mirar un porcentaje sin acció
 | 5B.1 | ~~`taskType` en los embeddings~~ **descartado** → **guarda de integridad de vectores** | `knowledge.service.ts` | **La premisa era falsa y la investigación la refutó.** Ningún modelo de embeddings disponible respeta `taskType`: el vector sale bit a bit idéntico, también llamando a la API sin intermediarios ([research.md §1](../specs/006-calidad-busqueda-rag/research.md)). En su lugar apareció un defecto activo más grave: `embedDocuments` devuelve vectores **vacíos** en vez de lanzar cuando falla un lote, y el código los escribía marcando el documento `SYNCED` — el panel lo mostraba sano y nada lo delataba. 98 vectores vacíos en una corrida real |
 | 5B.2 | **El título entra al texto que se vectoriza** + reindexado del corpus | `knowledge.service.ts`, `prisma/reindex-corpus.ts` | El título era **solo metadata** y no participaba de la similitud. Incorporarlo es lo que reemplaza a 5B.1: medido sobre los 78 documentos, ruido −0.2 pp y señal +2.2/+2.6 pp; «qué sabés sobre la empresa» pasó de **no entrar al top-4** a ser el **primer** resultado. Migración: 78/78 `SYNCED`, cero fallos |
 | 5B.3 | **Umbral medido, no cambiado** | `scripts/medir-umbral.ts` | Se midió y **0.65 resultó estar bien puesto**: ruido 54.1%, señal 78.4%. Lo que faltaba no era otro valor sino **poder volver a comprobarlo**, así que el entregable es un arnés repetible con consultas de control. ⚠️ Descubierto de paso: el nivel gratuito de Gemini limita a **100 RPM** en embeddings — el ritmo de cualquier reindexado masivo es parte del diseño |
-| **Evitar duplicados al escribir** — ataca la causa, no el síntoma |||
-| 5B.4 | Leer el `checksum` que ya se guarda | `knowledge.service.ts:291` | Se calcula, se persiste y **nunca se lee**. Corta duplicados exactos antes de gastar embeddings |
-| 5B.5 | Aviso "ya hay algo parecido" al ingestar | `knowledge.service.ts` | Corre `search()` con el contenido nuevo y lo muestra. Vale para los **tres** caminos de ingesta: documento, escalado resuelto y entrevista. No impide nada, lo pone a la vista |
+| **Evitar duplicados al escribir** — ✅ **spec [007](../specs/007-duplicados-al-escribir/), implementada el 2026-08-23** |||
+| 5B.4 | Leer el `checksum` que ya se guarda | `knowledge.service.ts` | Hecho: `buscarDuplicadoExacto` corta **antes** de vectorizar (FR-013). 409 con el previo identificado — detección, no prohibición — y `force` para insistir. Aplica a los **cuatro** caminos: alta manual, archivo subido, `resolve` con `teachAgent`, `saveUnsent` |
+| 5B.5 | Aviso "ya hay algo parecido" al ingestar | `knowledge.service.ts`, `scripts/calibrar-parecido.ts` | La historia principal terminó siendo **corregir**, no solo avisar: al resolver un caso escalado, el supervisor puede mejorar el documento que quedó corto en vez de crear uno que compita con él — el propio aviso de baja confianza ya se lo aconsejaba y no había forma de hacerlo. El aviso de "parecido" al cargar a mano también se implementó, con un umbral **medido, no heredado** del de confianza del RAG: margen de solo 3.2 puntos entre "mismo dominio" y "duplicado" |
 | **Higiene del corpus** |||
 | 5B.6 | Detección de documentos que se compiten | `KnowledgeRetrieval` | La señal fuerte no es la similitud: es **qué documentos salen juntos, turno tras turno, en consultas que escalan**. Parecido ≠ fusionable: dos audiencias o dos áreas distintas son legítimas (Principio I) |
 | 5B.7 | Propuesta de fusión con aprobación | reusa `knowledge-ai-edit.service.ts` | `preview`/`apply` ya resuelve el patrón: la IA redacta, se guarda el texto que la persona confirmó. **Nunca fusiona sola** |
@@ -255,6 +255,8 @@ el supervisor sepa qué le falta cargar en vez de mirar un porcentaje sin acció
 | 5B.12 | `POST /interviews/message` **alimentado por 5B.9** ⭐ | `src/interviews/` | **Acá está la sinergia con el 5C.** Las preguntas salen del tráfico real —"estas 6 consultas sobre plazos de entrega quedaron sin respuesta"— en vez de un cuestionario a ciegas por área. Opciones predefinidas + texto libre |
 | 5B.13 | Al finalizar → ingesta RAG | `knowledge.service.ts` | Supervisor revisa/edita/aprueba antes de publicar (RF11). Pasa por el aviso de 5B.5 como cualquier otra escritura |
 | 5B.14 | Tests | `*.spec.ts` | Fusión que respeta audiencia y área; el umbral remedido; agrupación de consultas |
+| **Cola de escalados por área** |||
+| 5B.15 | La cola de casos escalados tenga en cuenta el área del supervisor | `escalations.service.ts`, `supervisor.controller.ts` | Hoy `listPending` solo filtra por estado: cualquier `SUPERVISOR` ve los casos de las cinco áreas. La spec 005 ya resolvió la mitad de la regla en la escritura (`assertPuedeEscribir`); acá falta la lectura. Diego (gerente, todas las áreas) no puede perder visibilidad — probar con un supervisor de una sola área |
 
 > [!WARNING]
 > **La higiene del corpus (5B.6–5B.8) es la excepción a "el panel es un banco de pruebas".**

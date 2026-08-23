@@ -8,6 +8,8 @@ import {
   Audience,
   ConvStatus,
   EscalationStatus,
+  EscalationKnowledgeAction,
+  KnowledgeChangeOrigin,
   KnowledgeSourceType,
   UserType,
 } from '@prisma/client';
@@ -16,7 +18,18 @@ import { ConversationsService } from '../conversations/conversations.service';
 import { WhatsappSenderService } from '../messaging/whatsapp-sender.service';
 import { OrchestrationLogger } from '../ai/orchestrator/orchestration-logger.service';
 import { KnowledgeService } from '../ai/knowledge/knowledge.service';
+import { KnowledgeAiEditService } from '../ai/knowledge/knowledge-ai-edit.service';
 import { EmployeesService } from '../employees/employees.service';
+
+/**
+ * Cuántos documentos "que quedaron cortos" se le ofrecen al supervisor
+ * (spec 007, FR-018).
+ *
+ * Con `k = 4` en la recuperación, cuatro son todos. El tope está igual porque
+ * una lista larga es tan inútil como ninguna: si hay que elegir entre diez, ya
+ * no es una oferta, es tarea.
+ */
+const MAX_CANDIDATOS = 4;
 
 export interface ListEscalationsFilter {
   /** Los cuatro estados (Sprint 5A); el default sigue siendo PENDING. */
@@ -33,6 +46,15 @@ export interface ResolveEscalationInput {
   category?: string;
   audience?: Audience;
   agentType?: AgentType;
+  /**
+   * Spec 007 (US1): corregir un documento que quedó corto, en vez de crear uno
+   * nuevo con `teachAgent`. Excluyente con él.
+   */
+  correctKnowledge?: {
+    documentId: string;
+    baseVersion: number;
+    content: string;
+  };
 }
 
 /**
@@ -64,6 +86,9 @@ export class EscalationsService {
     private readonly logger: OrchestrationLogger,
     private readonly knowledge: KnowledgeService,
     private readonly employees: EmployeesService,
+    // Spec 007: la propuesta de corrección se reusa tal cual de "editar con la
+    // IA" — preview no persiste, apply guarda el texto que aprobó la persona.
+    private readonly aiEdit: KnowledgeAiEditService,
   ) {}
 
   /**
@@ -142,12 +167,135 @@ export class EscalationsService {
   async findById(id: string) {
     const escalation = await this.prisma.escalation.findUnique({
       where: { id },
-      include: { conversation: true },
+      include: {
+        conversation: true,
+        // Spec 007: para poder mostrar "se corrigió «título»" / "ya existía
+        // como «título»" sin que el panel tenga que pedir el documento aparte.
+        resolvedWithDocument: { select: { id: true, title: true } },
+      },
     });
     if (!escalation) {
       throw new NotFoundException('Caso pendiente no encontrado');
     }
     return escalation;
+  }
+
+  /**
+   * Propuesta de cómo quedaría un documento si se le incorpora la respuesta
+   * del supervisor (spec 007, US1 / FR-003, FR-004, FR-006).
+   *
+   * **No persiste absolutamente nada.** La aprobación ocurre después, en
+   * `resolve` con `correctKnowledge` — que es lo que hace que "nunca se aplica
+   * sin aprobación" (Principio III) sea imposible de violar por descuido en vez
+   * de una regla que alguien tiene que acordarse de respetar. Es el mismo
+   * diseño en dos pasos que ya usa "editar con la IA".
+   */
+  async correctionPreview(
+    escalationId: string,
+    input: { documentId: string; message: string },
+    employeeId: string,
+  ) {
+    await this.findById(escalationId); // 404 si el caso no existe
+
+    const doc = await this.prisma.knowledgeDocument.findUnique({
+      where: { id: input.documentId },
+      select: { id: true, agentType: true },
+    });
+    if (!doc) throw new NotFoundException('Documento no encontrado');
+
+    // La autorización va ANTES de llamar al modelo, a propósito: gastar una
+    // llamada a Gemini para proponer algo que después no se va a poder guardar
+    // es trabajo tirado y una promesa falsa al supervisor.
+    await this.knowledge.assertPuedeEscribir(employeeId, doc.agentType);
+
+    // La instrucción sale de la respuesta que el supervisor ya escribió. Se
+    // reusa `aiEdit.preview` tal cual: si hubiera que modificarlo para esto, la
+    // reutilización sería aparente y no real.
+    return this.aiEdit.preview(
+      input.documentId,
+      `Incorporá esta información al documento, que quedó incompleto y por eso ` +
+        `una consulta terminó derivándose a una persona:\n\n${input.message}`,
+    );
+  }
+
+  /**
+   * Los documentos que se consultaron en este caso y **no alcanzaron**
+   * (spec 007, US1 / FR-001, FR-002, FR-006).
+   *
+   * De acá sale la oferta que cierra la contradicción del producto: el aviso de
+   * baja confianza ya le dice al supervisor que *"lo que conviene es corregir
+   * ese documento, no cargar otro"* (`low-confidence.node.ts`), y hasta ahora el
+   * único botón disponible creaba uno nuevo que competía con él.
+   *
+   * **Una lista vacía es una respuesta legítima y frecuente**: el caso escaló
+   * sin recuperar nada. No es un error — es el escenario donde no hay nada que
+   * corregir y corresponde crear un documento nuevo, como siempre.
+   */
+  async knowledgeCandidates(escalationId: string, employeeId: string) {
+    await this.findById(escalationId); // 404 si no existe
+
+    const retrievals = await this.prisma.knowledgeRetrieval.findMany({
+      where: {
+        escalationId,
+        // Ofrecer corregir algo que ya no responde confunde más de lo que
+        // ayuda (FR-019).
+        document: { isActive: true },
+      },
+      select: {
+        score: true,
+        rank: true,
+        document: { select: { id: true, title: true, agentType: true } },
+      },
+      orderBy: { rank: 'asc' },
+    });
+
+    // `retrievals` trae FRAGMENTOS: un documento largo puede haber ocupado
+    // varios lugares del top-k. Se queda el mejor de cada uno — mismo criterio
+    // que `mejoresPorDocumento` en low-confidence.node.ts, y por el mismo
+    // motivo: repetir el título con scores distintos hace pensar que hay
+    // duplicados cargados y manda a "arreglar" algo que no está roto.
+    const mejorPorDocumento = new Map<string, (typeof retrievals)[number]>();
+    for (const r of retrievals) {
+      const previo = mejorPorDocumento.get(r.document.id);
+      if (!previo || r.rank < previo.rank) {
+        mejorPorDocumento.set(r.document.id, r);
+      }
+    }
+
+    const candidatos = [...mejorPorDocumento.values()]
+      .sort((a, b) => b.score - a.score)
+      .slice(0, MAX_CANDIDATOS);
+
+    // La autorización se consulta, no se replica: `assertPuedeEscribir` es el
+    // punto único de la spec 005. Acá se captura su excepción en vez de dejarla
+    // propagar porque **el documento igual se muestra**: ver lo ajeno es lo que
+    // evita duplicarlo ("ver no es editar"). Lo que se bloquea es corregirlo.
+    return Promise.all(
+      candidatos.map(async (c) => {
+        let corregible = true;
+        let motivoSiNo: string | undefined;
+        try {
+          await this.knowledge.assertPuedeEscribir(
+            employeeId,
+            c.document.agentType,
+          );
+        } catch (err) {
+          corregible = false;
+          // El motivo viaja: un botón deshabilitado sin explicación es un
+          // misterio, y el mensaje de assertPuedeEscribir ya dice de qué áreas
+          // sí es responsable.
+          motivoSiNo = err instanceof Error ? err.message : 'No autorizado';
+        }
+        return {
+          id: c.document.id,
+          title: c.document.title,
+          agentType: c.document.agentType,
+          score: c.score,
+          corregible,
+          motivoSiNo,
+        };
+      }),
+    );
   }
 
   /**
@@ -178,6 +326,28 @@ export class EscalationsService {
       );
     }
 
+    // Spec 007: corregir un documento existente es escribir igual que crear uno,
+    // así que pasa por la misma regla y por el mismo motivo — antes de enviar
+    // nada, para que un rechazo deje el caso intacto.
+    //
+    // Ojo: el área que manda es la DEL DOCUMENTO, no la de la conversación. Un
+    // caso de Ventas puede haber recuperado un documento de Cobranzas, y quien
+    // decide si se puede tocar es el área de lo que se está por modificar.
+    if (input.correctKnowledge) {
+      if (input.teachAgent) {
+        throw new ConflictException(
+          'No se puede crear un documento nuevo y corregir uno existente en la ' +
+            'misma resolución: o se mejora lo que hay, o se agrega algo nuevo.',
+        );
+      }
+      const doc = await this.prisma.knowledgeDocument.findUnique({
+        where: { id: input.correctKnowledge.documentId },
+        select: { agentType: true },
+      });
+      if (!doc) throw new NotFoundException('Documento no encontrado');
+      await this.knowledge.assertPuedeEscribir(resolvedById, doc.agentType);
+    }
+
     // Lo que se envía es SIEMPRE `input.message`, nunca
     // `escalation.suggestedResponse` (FR-036). Ahora que la propuesta se
     // persiste, mandar la sugerencia "porque ya está ahí" es una regresión
@@ -196,6 +366,46 @@ export class EscalationsService {
     );
     await this.releaseConversation(conversation);
 
+    // Spec 007: la corrección va ANTES de cerrar el caso para poder anotar en el
+    // mismo update con qué documento se resolvió. Si falla, el caso igual se
+    // cierra — el mensaje ya se envió y reintentar se lo mandaría dos veces al
+    // usuario (el mismo aprendizaje que dejó la spec 006 con `teachAgent`).
+    let corregido: string | null = null;
+    if (input.correctKnowledge) {
+      try {
+        await this.knowledge.update(
+          input.correctKnowledge.documentId,
+          {
+            content: input.correctKnowledge.content,
+            origin: KnowledgeChangeOrigin.AI_ACCEPTED,
+            // La versión base viaja para que un cambio ajeno hecho mientras
+            // tanto no se pise en silencio: `update()` ya devuelve 409.
+            expectedVersion: input.correctKnowledge.baseVersion,
+            // FR-009: de qué caso salió esta edición, para que se sepa leyendo
+            // la bitácora del documento y no haya que adivinar por fecha.
+            escalationId: id,
+          },
+          resolvedById,
+        );
+        corregido = input.correctKnowledge.documentId;
+      } catch (err) {
+        // Como evento y no como línea de log: el `escalation_resolved` de abajo
+        // dice cómo se cerró el caso, y sin esto estaría mintiendo. El
+        // supervisor tiene que poder enterarse de que su corrección no entró
+        // (OE-11).
+        await this.logger.logEvent({
+          conversationId: conversation.id,
+          eventType: 'escalation_correction_failed',
+          payload: {
+            escalationId: id,
+            documentId: input.correctKnowledge.documentId,
+            resolvedById,
+            motivo: err instanceof Error ? err.message : String(err),
+          },
+        });
+      }
+    }
+
     const resolved = await this.prisma.escalation.update({
       where: { id },
       data: {
@@ -203,13 +413,25 @@ export class EscalationsService {
         resolvedById,
         resolution: input.message,
         resolvedAt: new Date(),
+        // Solo si la corrección entró de verdad: marcarlo igual dejaría el caso
+        // diciendo que se corrigió un documento que quedó intacto.
+        ...(corregido
+          ? {
+              resolvedWithAction: EscalationKnowledgeAction.CORRECTED,
+              resolvedWithDocumentId: corregido,
+            }
+          : {}),
       },
     });
 
     await this.logger.logEvent({
       conversationId: conversation.id,
       eventType: 'escalation_resolved',
-      payload: { resolvedById, teachAgent: !!input.teachAgent },
+      payload: {
+        resolvedById,
+        teachAgent: !!input.teachAgent,
+        corregido: corregido ?? undefined,
+      },
     });
 
     if (input.teachAgent) {
@@ -243,19 +465,42 @@ export class EscalationsService {
           sourceId: id,
         });
       } catch (err) {
-        // Queda como evento, no como línea de log: el `escalation_resolved` de
-        // más arriba dice `teachAgent: true` y sin esto estaría mintiendo. El
-        // supervisor tiene que poder enterarse de que su enseñanza no llegó
-        // (OE-11).
-        await this.logger.logEvent({
-          conversationId: conversation.id,
-          eventType: 'escalation_teach_failed',
-          payload: {
-            escalationId: id,
-            resolvedById,
-            motivo: err instanceof Error ? err.message : String(err),
-          },
-        });
+        // Spec 007, FR-023: un duplicado EXACTO no es un fallo — es el caso que
+        // esta spec vino a resolver. `ingest()` ya lo detectó y no creó nada
+        // (FR-013): acá solo queda dejar constancia de CON QUÉ documento se
+        // resolvió, ya que ese dato se conoce recién ahora, después de que el
+        // caso quedó RESOLVED.
+        if (
+          err instanceof ConflictException &&
+          (err.getResponse() as Record<string, unknown>).reason ===
+            'DUPLICATE_DOCUMENT'
+        ) {
+          const { existing } = err.getResponse() as {
+            existing: { id: string; title: string };
+          };
+          await this.prisma.escalation.update({
+            where: { id },
+            data: {
+              resolvedWithAction: EscalationKnowledgeAction.REUSED,
+              resolvedWithDocumentId: existing.id,
+            },
+          });
+        } else {
+          // Cualquier OTRO fallo (Chroma caído, vectorización) queda como
+          // evento, no como línea de log: el `escalation_resolved` de más
+          // arriba dice `teachAgent: true` y sin esto estaría mintiendo. El
+          // supervisor tiene que poder enterarse de que su enseñanza no llegó
+          // (OE-11).
+          await this.logger.logEvent({
+            conversationId: conversation.id,
+            eventType: 'escalation_teach_failed',
+            payload: {
+              escalationId: id,
+              resolvedById,
+              motivo: err instanceof Error ? err.message : String(err),
+            },
+          });
+        }
       }
     }
 
@@ -304,15 +549,36 @@ export class EscalationsService {
     const areaDelDocumento = input.agentType ?? conversation.currentAgent;
     await this.knowledge.assertPuedeEscribir(savedById, areaDelDocumento);
 
-    const { documentId } = await this.knowledge.ingest({
-      title: input.title,
-      content: input.message,
-      category: input.category,
-      audience,
-      agentType: areaDelDocumento,
-      sourceType: KnowledgeSourceType.ESCALADO,
-      sourceId: escalation.id,
-    });
+    // Spec 007, FR-021/FR-023: acá la ingesta ES el efecto, todavía no se envió
+    // ni se liberó nada — a diferencia de `resolve`, un fallo REAL puede
+    // seguir propagándose sin problema. Lo único que cambia es que un
+    // duplicado EXACTO no es un fallo: se reusa el documento que ya existía en
+    // vez de crear otro, y la operación sigue su curso normal.
+    let documentId: string;
+    let reusedExisting = false;
+    try {
+      ({ documentId } = await this.knowledge.ingest({
+        title: input.title,
+        content: input.message,
+        category: input.category,
+        audience,
+        agentType: areaDelDocumento,
+        sourceType: KnowledgeSourceType.ESCALADO,
+        sourceId: escalation.id,
+      }));
+    } catch (err) {
+      if (
+        err instanceof ConflictException &&
+        (err.getResponse() as Record<string, unknown>).reason ===
+          'DUPLICATE_DOCUMENT'
+      ) {
+        documentId = (err.getResponse() as { existing: { id: string } })
+          .existing.id;
+        reusedExisting = true;
+      } else {
+        throw err;
+      }
+    }
 
     await this.releaseConversation(conversation);
 
@@ -323,6 +589,12 @@ export class EscalationsService {
         savedResponse: input.message,
         resolvedById: savedById,
         resolvedAt: new Date(),
+        ...(reusedExisting
+          ? {
+              resolvedWithAction: EscalationKnowledgeAction.REUSED,
+              resolvedWithDocumentId: documentId,
+            }
+          : {}),
       },
     });
 

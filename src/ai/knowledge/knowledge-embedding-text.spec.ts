@@ -50,6 +50,8 @@ function buildService() {
         create: jest.fn().mockResolvedValue(doc),
         update: jest.fn().mockResolvedValue(doc),
         findUnique: jest.fn().mockResolvedValue(doc),
+        // Spec 007: sin duplicado por defecto — estos tests prueban otra cosa.
+        findFirst: jest.fn().mockResolvedValue(null),
       },
     },
     embeddings: { embedDocuments },

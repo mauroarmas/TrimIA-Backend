@@ -47,7 +47,15 @@ function buildService(vectores: number[][]) {
 
   const service = Object.create(KnowledgeService.prototype) as KnowledgeService;
   Object.assign(service, {
-    prisma: { knowledgeDocument: { create, update, findUnique } },
+    prisma: {
+      knowledgeDocument: {
+        create,
+        update,
+        findUnique,
+        // Spec 007: sin duplicado por defecto — estos tests prueban otra cosa.
+        findFirst: jest.fn().mockResolvedValue(null),
+      },
+    },
     embeddings: { embedDocuments },
     collection: { add: collectionAdd, delete: collectionDelete },
     logger: { log: jest.fn(), error: jest.fn(), warn: jest.fn() },

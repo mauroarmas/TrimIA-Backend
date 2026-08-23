@@ -236,7 +236,18 @@ Responde el caso al usuario y opcionalmente enseña la respuesta al RAG.
   "audience": "PUBLICO",   // opcional; ver default abajo
   "agentType": "SALES"     // opcional; ver default abajo
 }
+
+// request (spec 007 — correctKnowledge: corregir un documento existente EN VEZ DE crear uno)
+{
+  "message": "Sí, la tenemos en 12 cuotas.",
+  "correctKnowledge": {
+    "documentId": "uuid",     // uno de los que devolvió knowledge-candidates
+    "baseVersion": 3,         // el que devolvió correction-preview
+    "content": "texto final del documento, tal como quedó aprobado"
+  }
+}
 // response: la Escalation con status "RESOLVED"
+//   (y, si aplica, resolvedWithAction: "CORRECTED"|"REUSED" + resolvedWithDocumentId)
 ```
 - Envía `message` por el canal de la conversación (WhatsApp; el canal WEB aún
   no tiene sender — ver módulo Chat más abajo).
@@ -246,6 +257,56 @@ Responde el caso al usuario y opcionalmente enseña la respuesta al RAG.
   `audience` por defecto se infiere del `userType` de la conversación
   (EMPLEADO→INTERNO, CLIENTE→PUBLICO); `agentType` por defecto es el agente
   activo de la conversación. Ambos se pueden pisar a mano.
+- **`correctKnowledge` es excluyente con `teachAgent`** (409 si vienen los dos):
+  o se mejora un documento que ya existe, o se crea uno nuevo. **404** si
+  `documentId` no existe; **403** si el área del documento no es la del
+  supervisor (la del documento, no la de la conversación — un caso de Ventas
+  puede haber recuperado un documento de Cobranzas); **409** si `baseVersion`
+  quedó desactualizada (alguien más lo editó mientras tanto). Los tres
+  rechazos ocurren **antes** de enviar nada.
+- Si la corrección falla por otro motivo (Chroma caído, etc.), **el caso se
+  resuelve igual** — el mensaje ya se envió y no se puede deshacer — y el
+  fallo queda como evento `escalation_correction_failed`, consultable en
+  `GET /supervisor/events`.
+- Con `teachAgent: true`, si el contenido resulta **idéntico** a un documento
+  que ya existía, no se crea uno nuevo: el caso queda con
+  `resolvedWithAction: "REUSED"` apuntando al existente.
+
+### ✅ `GET /supervisor/escalations/:id/knowledge-candidates` (JWT + SUPERVISOR) — spec 007
+Documentos que se consultaron en este caso y **no alcanzaron** — de acá sale
+la oferta de corregir en vez de crear otro.
+```json
+[
+  { "id": "uuid", "title": "Qué es Credimisión", "agentType": null,
+    "score": 62.1, "corregible": true },
+  { "id": "uuid", "title": "Glosario interno", "agentType": "COLLECTIONS",
+    "score": 58.7, "corregible": false,
+    "motivoSiNo": "Solo sos responsable de: Ventas" }
+]
+```
+- **Lista vacía es una respuesta normal**: el caso escaló sin recuperar nada
+  cercano — no hay nada que corregir, corresponde crear un documento nuevo.
+- Los de otras áreas **se listan igual**, con `corregible: false` y el motivo:
+  ver lo ajeno es lo que evita duplicarlo. No filtrar esta lista en el panel —
+  mostrarla deshabilitada con el motivo es el punto.
+
+### ✅ `POST /supervisor/escalations/:id/correction-preview` (JWT + SUPERVISOR) — spec 007
+Cómo quedaría un documento si se le incorpora la respuesta. **No guarda nada.**
+```json
+// request
+{ "documentId": "uuid", "message": "la respuesta que ya escribiste para el caso" }
+
+// response — misma forma que POST /knowledge/:id/ai-edit/preview
+{ "baseVersion": 3, "proposedContent": "…", "summary": "…",
+  "changedSections": [{ "before": "…", "after": "…" }], "confident": true }
+```
+- Con `confident: false` no hay propuesta que aprobar: `proposedContent` es el
+  contenido **original** sin tocar. Suele pasar cuando el documento ya dice lo
+  que se le pedía agregar — no ofrecer "aprobar" en ese caso, conviene crear
+  un documento nuevo.
+- 403 si el área del documento no es la del supervisor — **antes** de llamar
+  al modelo, para no gastar la llamada en algo que después no se va a poder
+  guardar.
 
 ### ✅ `POST /supervisor/escalations/:id/delegate` (JWT + SUPERVISOR)
 Reasigna el caso a otro supervisor. `400` si el destino no es supervisor
@@ -325,12 +386,27 @@ Ingesta un documento al RAG a partir de **texto**. Para subir un archivo, ver `P
 ```json
 // request
 { "title": "Política de pagos", "content": "texto...", "category": "cobros",
-  "audience": "PUBLICO", "agentType": "COLLECTIONS" }
+  "audience": "PUBLICO", "agentType": "COLLECTIONS", "force": false }
 // response
-{ "documentId": "uuid", "chunks": 1 }
+{ "documentId": "uuid", "chunks": 1,
+  "similarDocuments": [
+    { "documentId": "uuid", "title": "Política de pagos (vieja)", "score": 0.81,
+      "audienciaDistinta": false }
+  ] }
 ```
 - `audience`: `PUBLICO` | `INTERNO`
 - `agentType`: `SALES|ADMIN|COLLECTIONS|LOGISTICS|DEPOSITS` (o omitir = general)
+- **Spec 007 — duplicado exacto**: si el `content` es idéntico al de un
+  documento que ya existe, **409** con `reason: "DUPLICATE_DOCUMENT"` y
+  `existing: { id, title }`. Es detección, no prohibición: reintentar con
+  `force: true` lo carga igual.
+- **Spec 007 — parecidos**: `similarDocuments` viene **siempre** en la
+  respuesta (puede ser `[]`, que es lo normal). No bloquea nada: el documento
+  ya se creó cuando esto llega. Un `[]` frecuente es señal de que el umbral
+  está bien calibrado, no de que falta algo — no tratarlo como error ni
+  reintentar. `audienciaDistinta: true` marca que el parecido es de otra
+  audiencia (`PUBLICO` vs `INTERNO`): son documentos **legítimamente**
+  distintos, no ofrecer fusionarlos.
 
 ### ✅ `POST /knowledge/search` (JWT + SUPERVISOR)
 Buscar en el RAG (útil para previsualizar qué recupera un documento).

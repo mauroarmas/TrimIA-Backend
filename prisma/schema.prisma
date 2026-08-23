@@ -515,11 +515,37 @@ model Escalation {
   discardedBy   Employee? @relation("EscalationDiscardedBy", fields: [discardedById], references: [id])
   discardedAt   DateTime?
 
+  // --- Spec 007 ---
+  // Con qué documento se cerró el caso, cuando NO se creó uno nuevo.
+  //
+  // Va de este lado y no del documento porque un documento apunta a UN solo caso
+  // que lo originó (`sourceType`/`sourceId`), y muchos casos pueden resolverse
+  // con el mismo conocimiento. Además responde la pregunta donde alguien se la
+  // hace de verdad: mirando el caso, no el corpus.
+  resolvedWithDocumentId String?
+  resolvedWithDocument   KnowledgeDocument? @relation("EscalationResolvedWith", fields: [resolvedWithDocumentId], references: [id])
+  resolvedWithAction     EscalationKnowledgeAction?
+
+  // Lados inversos (spec 007): los documentos que se consultaron en este caso y
+  // no alcanzaron, y las ediciones del corpus que salieron de resolverlo.
+  retrievals       KnowledgeRetrieval[]
+  knowledgeChanges KnowledgeChange[]
+
   createdAt DateTime @default(now())
 
   @@index([conversationId])
   @@index([status])
   @@index([createdAt])
+}
+
+// Cómo se capitalizó el conocimiento al cerrar un caso (spec 007).
+//
+// `null` sigue significando lo de siempre —se creó un documento nuevo, que
+// apunta al caso por `sourceId`— así que los casos ya resueltos no cambian de
+// sentido y no hizo falta migrar nada.
+enum EscalationKnowledgeAction {
+  CORRECTED // se mejoró un documento que ya existía y había quedado corto (US1)
+  REUSED    // el contenido ya existía idéntico: no se creó nada (FR-023)
 }
 
 // Comentario interno sobre una conversación, visible solo para supervisores/
@@ -600,6 +626,10 @@ model KnowledgeDocument {
   changes      KnowledgeChange[]
   retrievals   KnowledgeRetrieval[]
 
+  // Spec 007: casos que se resolvieron reusando o corrigiendo ESTE documento en
+  // vez de crear uno nuevo. Lado inverso de `Escalation.resolvedWithDocument`.
+  resolvedEscalations Escalation[] @relation("EscalationResolvedWith")
+
   createdAt DateTime   @default(now())
   updatedAt DateTime   @updatedAt
 
@@ -609,6 +639,13 @@ model KnowledgeDocument {
   @@index([isActive])             // el listado del panel filtra por esto
   @@index([syncStatus])           // encontrar los desincronizados
   @@index([sourceType, sourceId]) // "¿de dónde salió esto?"
+  // Spec 007: el checksum se calculaba desde el Sprint 5A y NUNCA se leía. Con
+  // el índice pasa a ser la detección de duplicados más barata que hay — no
+  // cuesta ni una llamada de embeddings.
+  //
+  // A propósito NO es @unique: la detección avisa, no prohíbe (FR-012), y un
+  // unique haría imposible cargar un duplicado a sabiendas.
+  @@index([checksum])
 }
 
 // Archivo subido a la base de conocimiento y su resultado de procesamiento
@@ -656,6 +693,16 @@ model KnowledgeChange {
   changedFields String[] // ["content", "audience"]
   origin        KnowledgeChangeOrigin
   aiInstruction String? // qué le pidió el supervisor a la IA
+
+  // Spec 007 (FR-009): de qué caso escalado salió esta edición, si salió de uno.
+  //
+  // No alcanza con el enlace inverso (`Escalation.resolvedWithDocumentId`): ése
+  // va del caso al documento, pero desde la bitácora de un documento corregido
+  // varias veces habría que adivinar por fecha cuál cambio vino de cuál caso.
+  // Es la misma fragilidad que se descartó para enlazar los retrievals.
+  escalationId String?
+  escalation   Escalation? @relation(fields: [escalationId], references: [id])
+
   createdAt     DateTime              @default(now())
 
   @@index([documentId, createdAt])
@@ -676,6 +723,21 @@ model KnowledgeRetrieval {
   conversationId String?
   conversation   Conversation? @relation(fields: [conversationId], references: [id])
 
+  // Spec 007: el caso al que pertenece este turno, cuando el turno escaló.
+  //
+  // Es lo que permite preguntar "¿qué documentos quedaron cortos en ESTE caso?"
+  // sin correlacionar por fecha. El orden real lo hace posible: la Escalation se
+  // crea DENTRO del grafo y `create()` la devuelve, mientras que trackRetrievals
+  // corre después, en el processor.
+  //
+  // Nullable porque la enorme mayoría de los turnos responden bien y no tienen
+  // caso. Y `create()` devuelve la escalación EXISTENTE si ya había una
+  // pendiente, así que los turnos que siguieron estancados se enlazan todos al
+  // mismo caso: el supervisor ve todo lo que se consultó, no solo el último
+  // intento.
+  escalationId String?
+  escalation   Escalation? @relation(fields: [escalationId], references: [id])
+
   score     Float            // similitud normalizada 0-100 (100 * (1 - distancia))
   rank      Int              // posición en el top-k (0 = mejor)
   agentType AgentType?
@@ -686,6 +748,7 @@ model KnowledgeRetrieval {
   @@index([documentId, createdAt])
   @@index([documentId, outcome]) // "apareció" vs. "sirvió" en una sola query
   @@index([createdAt])           // deja lista una purga por antigüedad
+  @@index([escalationId])        // spec 007: los candidatos de un caso
 }
 
 model OrchestrationEvent {

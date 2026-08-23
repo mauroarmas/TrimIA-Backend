@@ -406,6 +406,30 @@ tocar lo que el agente responde.
 > (`prisma/reindex-corpus.ts --intervalo`). No es una precaución teórica: es el
 > límite que se alcanzó midiendo, y el que produjo los 98 vectores vacíos.
 
+**El `checksum` de cada documento se lee, por fin** (spec 007). Se calculaba desde
+el Sprint 5A y nunca se consultaba: `buscarDuplicadoExacto` lo usa para cortar
+contenido idéntico **antes** de vectorizar — 409 con el documento previo
+identificado, `force: true` para insistir. Es la misma convención que ya regía
+para archivos repetidos (`assertNotDuplicate`), no un mecanismo nuevo.
+
+**Hay un segundo umbral, distinto del de confianza del RAG** (spec 007,
+`KNOWLEDGE_SIMILARITY_THRESHOLD`). `RAG_CONFIDENCE_THRESHOLD` mide cuán bien una
+**consulta corta** encuentra un fragmento; éste compara **dos documentos
+enteros** entre sí, para avisar al cargar que ya existe algo parecido — sin
+bloquear nada. No son intercambiables: comparar documentos da valores mucho más
+altos (medido: piso de ruido ~54% para consultas, ~73% para documentos), y el
+margen entre "mismo dominio" y "duplicado real" resultó de solo 3.2 puntos
+(`scripts/calibrar-parecido.ts`, resultado en
+`specs/007-duplicados-al-escribir/calibracion-parecido.txt`).
+
+**Corregir un documento existente es una forma más de cerrar un caso escalado**
+(spec 007, `Escalation.resolvedWithAction`: `CORRECTED` | `REUSED`). Cuando el
+supervisor resuelve un caso eligiendo mejorar el documento que quedó corto en
+vez de crear uno nuevo, reusa `KnowledgeAiEditService` tal cual (`preview()` no
+persiste, `apply()`/`update()` guarda el texto aprobado) y queda enlazado por
+`KnowledgeChange.escalationId` — la bitácora del documento sabe de qué caso
+salió cada cambio, no solo el caso sabe qué documento tocó.
+
 **Audio.** Se transcribe en n8n (el token de Meta vive solo ahí) y el backend
 recibe **texto**. El binario no se persiste en ningún lado (FR-011) — eso se
 garantiza con variables de instancia en `docker-compose.yml`, no con los
