@@ -237,6 +237,18 @@ export function buildOrchestratorGraph(
         // agentes del Panel del Supervisor (GET /supervisor/agents/status).
         confidence: state.confidence ?? null,
         escalated: state.escalated ?? false,
+        // Candidatos del turno (spec 009, FR-019/FR-020): con qué se intentó
+        // contestar ESTA consulta puntual, no solo con qué confianza terminó.
+        // `null` = no hubo retrieval (trivial, audio no transcribible, o
+        // greeting); `[]` sería "se buscó y no vino nada" — son dos cosas
+        // distintas y el resumen de cobertura necesita poder diferenciarlas.
+        candidates: state.retrievedDocs
+          ? state.retrievedDocs.map((d) => ({
+              documentId: d.documentId,
+              score: d.score,
+              rank: d.rank,
+            }))
+          : null,
       },
     });
     return {};

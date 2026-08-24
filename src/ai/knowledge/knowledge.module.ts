@@ -9,6 +9,9 @@ import { KnowledgeAiEditService } from './knowledge-ai-edit.service';
 import { KnowledgeHygieneService } from './knowledge-hygiene.service';
 import { KnowledgeMergeService } from './knowledge-merge.service';
 import { KnowledgeHygieneController } from './knowledge-hygiene.controller';
+import { KnowledgeCoverageService } from './knowledge-coverage.service';
+import { KnowledgeCoverageGroupingService } from './knowledge-coverage-grouping';
+import { KnowledgeCoverageController } from './knowledge-coverage.controller';
 import { TEXT_EXTRACTORS } from './extractors/text-extractor.port';
 import { PdfExtractor } from './extractors/pdf.extractor';
 import { DocxExtractor } from './extractors/docx.extractor';
@@ -35,6 +38,7 @@ import { EmployeesModule } from '../../employees/employees.module';
       { name: 'knowledge-reindex' },
       { name: 'knowledge-ingestion' },
       { name: 'hygiene-scan' },
+      { name: 'coverage-scan' }, // Spec 009
     ),
     // Spec 005: la regla de escritura necesita las áreas del empleado autenticado.
     // EmployeesModule solo depende de Prisma y Auth, así que no hay ciclo.
@@ -48,6 +52,8 @@ import { EmployeesModule } from '../../employees/employees.module';
     KnowledgeAiEditService,
     KnowledgeHygieneService,
     KnowledgeMergeService,
+    KnowledgeCoverageService,
+    KnowledgeCoverageGroupingService,
     PdfExtractor,
     DocxExtractor,
     ImageExtractor,
@@ -58,7 +64,11 @@ import { EmployeesModule } from '../../employees/employees.module';
       inject: [PdfExtractor, DocxExtractor, ImageExtractor, AudioExtractor],
     },
   ],
-  controllers: [KnowledgeController, KnowledgeHygieneController],
+  controllers: [
+    KnowledgeController,
+    KnowledgeHygieneController,
+    KnowledgeCoverageController,
+  ],
   exports: [
     KnowledgeService,
     KnowledgeStorageService,
@@ -67,6 +77,8 @@ import { EmployeesModule } from '../../employees/employees.module';
     KnowledgeAiEditService,
     KnowledgeHygieneService,
     KnowledgeMergeService,
+    KnowledgeCoverageService,
+    KnowledgeCoverageGroupingService,
     TEXT_EXTRACTORS,
   ],
 })

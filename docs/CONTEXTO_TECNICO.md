@@ -471,6 +471,51 @@ transcripción falla, n8n manda `__AUDIO_NO_TRANSCRIBIBLE__` y el orquestador
 pide reformulación **sin llamar al LLM y sin escalar**; ese atajo corre
 **antes** del sticky, a diferencia del de saludos.
 
+**Qué falta para responder mejor** (spec 009): el resumen de cobertura del
+corpus, agrupado por tema. Cada turno `ROUTED_TO_AGENT` ahora lleva
+`candidates` en su payload —`documentId`/`score`/`rank` de `state.retrievedDocs`,
+`null` si no hubo retrieval (trivial/audio/greeting), `[]` si se buscó y no vino
+nada— porque `KnowledgeRetrieval` guarda `conversationId` y no un turno: sin
+esto, con más de un turno por conversación no hay forma de saber qué candidatos
+trajo *cuál* consulta.
+
+Un `POST /knowledge/coverage/scan` (cola `coverage-scan`, mismo patrón
+job-fuera-del-request que higiene) junta las consultas de la ventana que no
+alcanzaron el umbral o lo rozaron, las agrupa con **un solo pase de chat**
+(`KnowledgeCoverageGroupingService`, no embeddings + clustering: los vectores
+de las consultas no están persistidos, y igual haría falta el LLM para nombrar
+los grupos) y clasifica cada una en una de cuatro causas —función **pura**,
+`knowledge-coverage-causes.ts`, sin acceso a red— más una quinta,
+`INDETERMINADA`, para turnos históricos sin `candidates`.
+
+⚠️ **"Se compiten" no se deriva de la brecha del top-k.** Medido: en la base
+real esa brecha va de 0.2 a 4.6 puntos y es *más chica* en el turno mejor
+contestado — dispararía casi siempre. Se resuelve cruzando contra la última
+corrida `READY` de higiene (spec 008): si el documento que "quedó corto"
+integra una `HygienePair` abierta, la causa pasa a `SE_COMPITEN` y deriva a esa
+pantalla en vez de proponer corregir. Y estar bajo el piso de ruido tampoco es
+"falta cargar" por sí solo: el discriminador es si la consulta se sostiene sola
+como pregunta de conocimiento (lo dice el mismo pase de LLM que agrupa) — el
+caso real que lo probó fue un `"si por favor"` respondiendo al agente, no un
+hueco del corpus. La garantía dura del módulo: `action === 'CARGAR'` implica
+`documents.length === 0` siempre (ningún camino puede violarlo).
+
+**Atendido y reaparición** (`CoverageThemeMark`) se resuelve por **solape de
+`queryEventIds`**, nunca por nombre — el LLM no repite el mismo texto de tema
+entre corridas. Un tema marcado se oculta en la corrida siguiente mientras no
+tenga consultas posteriores a la marca; con tráfico nuevo reaparece señalado
+`recurring: true`, resuelto en `getLatest` contra marcas de *cualquier* corrida
+anterior (la marca queda en la fila vieja, que ya no se muestra — buscarla por
+overlap es lo único que conecta el tema nuevo con la marca).
+
+`GET /supervisor/agents/status` cambió de contrato: `avgConfidence` (promedio
+sin ventana ni mínimo, sobre toda la historia) desapareció. Ahora `coverage`
+(0-1) y `marginPoints` (`avg(confidence) − umbral`, en puntos y con signo)
+vienen `null` mientras `hasData` sea `false` — `COVERAGE_MIN_SAMPLE` por
+agente, distinto de `COVERAGE_SCAN_MIN_QUERIES` de la corrida (los cinco
+agentes juntos): arrancan en el mismo valor por coincidencia, no porque midan
+lo mismo. `sampleSize`/`minimumSample` viajan siempre, incluso sin datos.
+
 ---
 
 ### 5.9 Sprint 5B: los chats del panel en tiempo real (spec 004)

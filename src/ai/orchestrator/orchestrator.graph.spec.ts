@@ -618,6 +618,147 @@ describe('buildOrchestratorGraph — trivial_response deja auditoría', () => {
 });
 
 /**
+ * Spec 009 (FR-019/FR-020): con qué documentos se intentó contestar CADA
+ * turno, no solo con qué confianza terminó. Antes de esto, `KnowledgeRetrieval`
+ * guardaba `conversationId` pero no el turno, así que con más de un turno por
+ * conversación no había forma de decir qué candidatos trajo una consulta
+ * puntual. El payload de ROUTED_TO_AGENT ahora se basta a sí mismo.
+ */
+describe('buildOrchestratorGraph — candidatos del turno en el payload (spec 009)', () => {
+  function buildGraph(agentResult: Record<string, unknown>) {
+    const scopeInvoke = jest.fn().mockResolvedValue({
+      parsed: { decision: 'mismo', isGreeting: false },
+      raw: { usage_metadata: { input_tokens: 10, output_tokens: 2 } },
+    });
+    const llm = {
+      chat: {
+        withStructuredOutput: jest
+          .fn()
+          .mockReturnValue({ invoke: scopeInvoke }),
+      },
+      classifierChat: {
+        withStructuredOutput: jest
+          .fn()
+          .mockReturnValue({ invoke: scopeInvoke }),
+      },
+      model: 'gemini-3.5-flash-lite',
+    };
+    const salesNode = jest.fn().mockResolvedValue(agentResult);
+    const agents = {
+      getGraph: jest.fn((type: string) =>
+        type === 'SALES' ? salesNode : jest.fn().mockResolvedValue({}),
+      ),
+    };
+    const logEvent = jest.fn();
+    const orchestrationLogger = { logEvent, trackTokens: jest.fn() };
+    const graph = buildOrchestratorGraph(
+      llm as any,
+      agents as any,
+      orchestrationLogger as any,
+      new Logger('test'),
+    );
+    return { graph, logEvent };
+  }
+
+  const baseState: OrchestratorStateType = {
+    message: 'qué sabes sobre la empresa?',
+    conversationId: 'conv-1',
+    currentAgent: 'SALES',
+    userType: 'CLIENTE',
+    history: [],
+    caller: null,
+    agentType: null,
+    response: null,
+    context: null,
+    confidence: null,
+    retrievedDocs: null,
+    escalated: null,
+    escalationId: null,
+    needsHuman: null,
+    handoffReason: null,
+    internalNote: null,
+    scopeChanged: null,
+    isGreeting: null,
+    greetingType: null,
+    isTrivial: null,
+    startedAt: null,
+    inputTokens: null,
+    outputTokens: null,
+  };
+
+  it('persiste `candidates` con el mismo documentId/score que trae el estado, y el mejor score coincide con confidence × 100', async () => {
+    const { graph, logEvent } = buildGraph({
+      agentType: 'SALES',
+      response: 'te cuento sobre la empresa...',
+      confidence: 0.621,
+      escalated: true,
+      retrievedDocs: [
+        {
+          documentId: 'doc-sobre-nosotros',
+          score: 62.1,
+          rank: 0,
+          title: 'Sobre Nosotros',
+        },
+        {
+          documentId: 'doc-promocion',
+          score: 61.3,
+          rank: 1,
+          title: 'Promoción vigente',
+        },
+      ],
+    });
+
+    await graph.invoke(baseState);
+
+    expect(logEvent).toHaveBeenCalledTimes(1);
+    const { payload } = logEvent.mock.calls[0][0];
+    expect(payload.candidates).toEqual([
+      { documentId: 'doc-sobre-nosotros', score: 62.1, rank: 0 },
+      { documentId: 'doc-promocion', score: 61.3, rank: 1 },
+    ]);
+    expect(payload.candidates[0].score).toBeCloseTo(
+      payload.confidence * 100,
+      5,
+    );
+  });
+
+  it('`candidates: []` (se buscó y no vino nada) es distinto de `candidates: null` (no hubo retrieval)', async () => {
+    const { graph, logEvent } = buildGraph({
+      agentType: 'SALES',
+      response: 'no encontré nada sobre eso',
+      confidence: 0,
+      escalated: true,
+      retrievedDocs: [],
+    });
+
+    await graph.invoke(baseState);
+
+    expect(logEvent.mock.calls[0][0].payload.candidates).toEqual([]);
+  });
+
+  it('un turno sin retrieval (trivial) persiste `candidates: null`, no `[]`', async () => {
+    const llm = {
+      chat: { withStructuredOutput: jest.fn() },
+      classifierChat: { withStructuredOutput: jest.fn() },
+      model: 'gemini-3.5-flash-lite',
+    };
+    const agents = { getGraph: jest.fn(() => jest.fn().mockResolvedValue({})) };
+    const logEvent = jest.fn();
+    const orchestrationLogger = { logEvent, trackTokens: jest.fn() };
+    const graph = buildOrchestratorGraph(
+      llm as any,
+      agents as any,
+      orchestrationLogger as any,
+      new Logger('test'),
+    );
+
+    await graph.invoke({ ...baseState, message: 'hola', currentAgent: null });
+
+    expect(logEvent.mock.calls[0][0].payload.candidates).toBeNull();
+  });
+});
+
+/**
  * ⭐ Un saludo con una pregunta adentro NO es un saludo (2026-08-20).
  *
  * Encontrado probando el panel: *"hola! que sabes sobre la empresa?"* y *"Hola, soy

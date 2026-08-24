@@ -17,6 +17,7 @@ import {
   KnowledgeChangeOrigin,
   KnowledgeSourceType,
   KnowledgeSyncStatus,
+  Sector,
 } from '@prisma/client';
 import { createHash } from 'crypto';
 import { PrismaService } from '../../database/prisma.service';
@@ -274,23 +275,30 @@ export class KnowledgeService implements OnModuleInit {
    *   todos los agentes, así que con la regla general no lo podría tocar nadie
    *   (CL-6) y necesita su propia línea.
    */
-  async assertPuedeEscribir(
+  /**
+   * El criterio de "es responsable de esta área" en sí, sin decidir qué hacer
+   * si no lo es. `assertPuedeEscribir` lo usa para la escritura del corpus;
+   * `esResponsableDeAgente` (spec 009) lo reusa para marcar un tema de
+   * cobertura como atendido — que no es escritura del corpus, pero es la
+   * misma pregunta de área. Extraído para que haya **una** implementación del
+   * criterio con dos usos, no dos implementaciones que puedan divergir.
+   */
+  private async resolverResponsabilidad(
     autorId: string,
     agentType: AgentType | null,
-  ): Promise<void> {
+  ): Promise<{
+    permitido: boolean;
+    areas: Pick<Sector, 'id' | 'name' | 'agentType'>[];
+  }> {
     const autor = await this.employees.findById(autorId);
     const areas = autor.areasSupervisadas ?? [];
 
     if (agentType === null) {
       const totalAreas = await this.prisma.sector.count();
-      if (!esResponsableDeTodasLasAreas(areas.length, totalAreas)) {
-        throw new ForbiddenException(
-          'Este documento no es de un área en particular: responde para todos ' +
-            'los agentes, así que solo lo puede modificar quien es responsable de ' +
-            'todas las áreas.',
-        );
-      }
-      return;
+      return {
+        permitido: esResponsableDeTodasLasAreas(areas.length, totalAreas),
+        areas,
+      };
     }
 
     // Un área sin agente asignado no habilita ningún documento: `Sector.agentType`
@@ -299,19 +307,52 @@ export class KnowledgeService implements OnModuleInit {
       .map((area) => area.agentType)
       .filter((tipo): tipo is AgentType => tipo !== null);
 
-    if (!agentesPropios.includes(agentType)) {
-      // El mensaje dice de qué áreas SÍ es responsable: sin eso, alguien recién
-      // asignado no tiene forma de saber si el problema es el documento o su
-      // propia asignación. Y un responsable sin áreas —que no puede escribir
-      // nada— es un estado detectable en vez de un permiso implícito (CL-10).
-      const propias = areas.map((area) => area.name).join(', ');
+    return { permitido: agentesPropios.includes(agentType), areas };
+  }
+
+  async assertPuedeEscribir(
+    autorId: string,
+    agentType: AgentType | null,
+  ): Promise<void> {
+    const { permitido, areas } = await this.resolverResponsabilidad(
+      autorId,
+      agentType,
+    );
+    if (permitido) return;
+
+    if (agentType === null) {
       throw new ForbiddenException(
-        `Este documento es de otra área. ` +
-          (propias
-            ? `Sos responsable de: ${propias}.`
-            : `No tenés áreas asignadas, así que no podés modificar documentos.`),
+        'Este documento no es de un área en particular: responde para todos ' +
+          'los agentes, así que solo lo puede modificar quien es responsable de ' +
+          'todas las áreas.',
       );
     }
+
+    // El mensaje dice de qué áreas SÍ es responsable: sin eso, alguien recién
+    // asignado no tiene forma de saber si el problema es el documento o su
+    // propia asignación. Y un responsable sin áreas —que no puede escribir
+    // nada— es un estado detectable en vez de un permiso implícito (CL-10).
+    const propias = areas.map((area) => area.name).join(', ');
+    throw new ForbiddenException(
+      `Este documento es de otra área. ` +
+        (propias
+          ? `Sos responsable de: ${propias}.`
+          : `No tenés áreas asignadas, así que no podés modificar documentos.`),
+    );
+  }
+
+  /**
+   * Spec 009 (FR-029): ¿este empleado puede marcar como atendido un tema de
+   * cobertura del agente `agentType`? Mismo criterio que la escritura del
+   * corpus — `null` (transversal) exige ser responsable de todas las áreas —
+   * pero sin lanzar: quien pregunta puede ser un supervisor de otra área que
+   * solo necesita saber si puede o no, no un mensaje de error.
+   */
+  async esResponsableDeAgente(
+    autorId: string,
+    agentType: AgentType | null,
+  ): Promise<boolean> {
+    return (await this.resolverResponsabilidad(autorId, agentType)).permitido;
   }
 
   /**

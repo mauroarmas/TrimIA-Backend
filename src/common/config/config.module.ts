@@ -112,6 +112,35 @@ import * as Joi from 'joi';
         SSE_IDLE_TIMEOUT_MS: Joi.number().min(10000).default(1800000),
 
         JWT_SECRET: Joi.string().min(32).required(),
+
+        // Spec 009 — qué falta para responder mejor. Ninguno de los cortes
+        // es default en código: son medidos (research.md) o de partida
+        // deliberada, y hay que poder recalibrarlos sin tocar el código.
+        COVERAGE_WINDOW_DAYS: Joi.number().min(1).default(30),
+        // Turnos POR AGENTE para publicar cobertura en el panel (US2,
+        // FR-015). Distinto de COVERAGE_SCAN_MIN_QUERIES de abajo: cuentan
+        // poblaciones distintas (data-model.md#variables-de-entorno-nuevas).
+        COVERAGE_MIN_SAMPLE: Joi.number().min(1).default(10),
+        // Consultas de LOS CINCO AGENTES JUNTOS en la ventana para correr y
+        // mostrar temas (US1, FR-003a). Arranca en el mismo valor que
+        // COVERAGE_MIN_SAMPLE por coincidencia, no porque sea lo mismo.
+        COVERAGE_SCAN_MIN_QUERIES: Joi.number().min(1).default(10),
+        // Piso de ruido medido en la spec 006 (52.2-54.3%, research.md).
+        COVERAGE_NOISE_FLOOR: Joi.number().min(0).max(100).default(54.3),
+        // Puntos sobre RAG_CONFIDENCE_THRESHOLD que se consideran "contestada
+        // al límite" (US3, FR-022) — aviso temprano antes de que escale.
+        COVERAGE_MARGINAL_BAND: Joi.number().min(0).default(5),
+        // Mínimo de consultas para que un grupo se reporte como tema (FR-003).
+        COVERAGE_MIN_QUERIES_PER_THEME: Joi.number().min(1).default(2),
+        // Tope de consultas por corrida, las más recientes de la ventana
+        // (FR-024) — evita que el agrupador reciba un lote sin límite.
+        COVERAGE_MAX_QUERIES_PER_SCAN: Joi.number().min(1).default(300),
+        // Solape de queryEventIds para reconocer el mismo tema entre corridas
+        // (FR-028, D6): el nombre del tema puede cambiar, el conjunto de
+        // consultas que lo forman es lo estable.
+        COVERAGE_THEME_OVERLAP: Joi.number().min(0).max(1).default(0.5),
+        // Citas textuales por tema en el resumen (FR-008).
+        COVERAGE_MAX_QUOTES_PER_THEME: Joi.number().min(0).default(3),
       }),
       validationOptions: {
         allowUnknown: true,

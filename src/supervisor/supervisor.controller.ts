@@ -503,12 +503,22 @@ export class SupervisorController {
 
   /**
    * GET /supervisor/agents/status
-   * Estado de los 5 agentes: conversaciones, confianza RAG promedio y escalados.
+   * Estado de los 5 agentes: conversaciones, cobertura RAG y escalados, sobre
+   * una ventana temporal (spec 009, US2). `coverage`/`marginPoints` vienen
+   * `null` mientras `hasData` sea `false` — NO es lo mismo que `coverage: 0`.
    */
   @Get('agents/status')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('SUPERVISOR')
-  @ApiOperation({ summary: 'Estado y confianza promedio de cada agente' })
+  @ApiOperation({
+    summary:
+      'Estado, cobertura y margen de cada agente sobre la ventana vigente',
+    description:
+      '`coverage` (0-1) y `marginPoints` (puntos respecto del umbral, con ' +
+      'signo) vienen `null` cuando `hasData` es `false` — sampleSize y ' +
+      'minimumSample viajan siempre para poder decir "N de M" en vez de "sin ' +
+      'datos" a secas.',
+  })
   getAgentsStatus() {
     return this.supervisor.getAgentsStatus();
   }
