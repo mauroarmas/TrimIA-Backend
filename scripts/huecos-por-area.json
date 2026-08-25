@@ -1,0 +1,112 @@
+{
+  "$comentario": [
+    "Consultas diseñadas para CAER EN HUECOS del corpus, agrupadas por tema y",
+    "repartidas por área. Alimentan la demo de la corrida de cobertura (spec 009)",
+    "y de la entrevista (spec 010).",
+    "",
+    "Es un conjunto DISTINTO de `consultas-de-control.json`, que es el arnés de",
+    "medición del RAG (spec 006) y no se toca: aquellas son fixtures de medición",
+    "con score esperado; éstas existen para producir huecos demostrables.",
+    "",
+    "  `grupo`     consultas del mismo tema. El agrupador necesita AL MENOS 2",
+    "              parecidas para formar tema (COVERAGE_MIN_QUERIES_PER_THEME);",
+    "              consultas sueltas quedan contadas pero sin tema.",
+    "  `scorePublico` medido el 2026-08-25 con audiencia PUBLICO (la de un cliente)",
+    "              contra el área indicada. Umbral 65, piso de ruido 54.3.",
+    "  `matchea`   qué documento gana hoy. Cuando NO es la respuesta, el hueco es",
+    "              real: el corpus no tiene nada mejor que ofrecer.",
+    "",
+    "⚠️ El área es orientativa: el ruteo lo decide el orquestador por el contenido",
+    "del mensaje, no este archivo. Se anota para saber contra qué se midió."
+  ],
+  "grupos": [
+    {
+      "grupo": "Entregas que no llegaron",
+      "area": "LOGISTICS",
+      "consultas": [
+        {
+          "consulta": "el repartidor no vino, cuando reprograma la entrega",
+          "scorePublico": 55.9,
+          "matchea": "Recorrido semanal del cobrador físico"
+        },
+        {
+          "consulta": "no me entregaron el pedido en la fecha acordada",
+          "scorePublico": 63.4,
+          "matchea": "Procedimiento de entrega a domicilio"
+        },
+        {
+          "consulta": "cuantas veces reintentan la entrega si no estoy",
+          "scorePublico": 64.0,
+          "matchea": "Procedimiento de entrega a domicilio"
+        }
+      ],
+      "nota": "El documento de entregas existe pero no dice qué pasa cuando la entrega FALLA: ni reprogramación ni cantidad de reintentos. Caso de libro de 'quedó corto'."
+    },
+    {
+      "grupo": "Producto que llegó fallado",
+      "area": "DEPOSITS",
+      "consultas": [
+        {
+          "consulta": "el lavarropas llego con un golpe, lo puedo devolver",
+          "scorePublico": 59.5,
+          "matchea": "Gestión de reclamos a proveedores por mercadería dañada"
+        },
+        {
+          "consulta": "que hago si el producto viene fallado de fabrica",
+          "scorePublico": 60.0,
+          "matchea": "Gestión de reclamos a proveedores por mercadería dañada"
+        },
+        {
+          "consulta": "cuanto tarda el cambio de un producto con falla",
+          "scorePublico": 60.4,
+          "matchea": "Gestión de reclamos a proveedores por mercadería dañada"
+        }
+      ],
+      "nota": "El corpus cubre el reclamo AL PROVEEDOR, no qué se le dice AL CLIENTE cuyo producto llegó fallado. Es otro tema, y por eso ninguno cruza el umbral."
+    },
+    {
+      "grupo": "Facturación",
+      "area": "ADMIN",
+      "consultas": [
+        {
+          "consulta": "necesito la factura A de mi compra",
+          "scorePublico": 62.2,
+          "matchea": "Sobre Nosotros"
+        },
+        {
+          "consulta": "como pido factura a nombre de mi empresa",
+          "scorePublico": 59.3,
+          "matchea": "Comprobantes de pago"
+        },
+        {
+          "consulta": "me pueden reenviar la factura por mail",
+          "scorePublico": 62.5,
+          "matchea": "Comprobantes de pago"
+        }
+      ],
+      "nota": "El hueco más limpio del conjunto: NO hay documento de facturación. Que gane 'Sobre Nosotros' lo prueba — el corpus no tiene nada del tema y devuelve lo más cercano que encuentra."
+    },
+    {
+      "grupo": "Sucursales y horarios",
+      "area": "SALES",
+      "consultas": [
+        {
+          "consulta": "tienen sucursal en eldorado",
+          "scorePublico": 68.5,
+          "matchea": "Sobre Nosotros"
+        },
+        {
+          "consulta": "a que hora abren los sabados",
+          "scorePublico": 65.3,
+          "matchea": "Horarios de atención y contacto"
+        },
+        {
+          "consulta": "atienden los feriados",
+          "scorePublico": 62.4,
+          "matchea": "Horarios de atención y contacto"
+        }
+      ],
+      "nota": "Grupo MIXTO a propósito: dos caen en la banda 'al límite' (65-70) y una en 'quedó corto'. Sirve para ver el corte de banda — el mismo tema puede producir DOS filas con conteos separados (FR-023, spec 009)."
+    }
+  ]
+}

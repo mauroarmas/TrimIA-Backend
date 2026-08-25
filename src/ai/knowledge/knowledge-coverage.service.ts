@@ -857,7 +857,7 @@ export class KnowledgeCoverageService {
         : null,
       band: tema.band,
       cause: tema.cause,
-      action: this.deriveAction(tema.cause, tema.band),
+      action: this.deriveAction(tema.cause, tema.band, tema.documents.length),
       queryCount: tema.queryCount,
       bestScore: tema.bestScore,
       documents: tema.documents.map((d) => ({
@@ -869,6 +869,12 @@ export class KnowledgeCoverageService {
         changedSinceScan: d.document.version !== d.version,
       })),
       quotes,
+      // Spec 010: la entrevista necesita reconocer, entre sesiones, si un
+      // tema ya se preguntó — por solapamiento de sus consultas, la misma
+      // identidad que sostiene FR-028/D6 acá arriba. No es una regla nueva
+      // ni un dato más sensible que `quotes` (que ya deriva su texto de
+      // estos mismos ids); es la clave que faltaba exponer para reusarla.
+      queryEventIds: tema.queryEventIds,
       resolvedEscalations,
       handled: marcaEfectiva,
       canMarkHandled,
@@ -878,13 +884,22 @@ export class KnowledgeCoverageService {
   private deriveAction(
     cause: CoverageCause | null,
     band: CoverageBand,
+    documentCount: number,
   ):
     | 'CARGAR'
     | 'CORREGIR_DOCUMENTO'
     | 'REVISAR_HIGIENE'
     | 'NINGUNA'
     | 'DERIVAR' {
-    if (band === 'AL_LIMITE') return 'NINGUNA';
+    // AL_LIMITE con documento detrás: contestó, pero por pocos puntos. Se
+    // propone corregir ESE documento — es el mismo veredicto que
+    // `elegirForma` (spec 010, D1) sobre el mismo tema. Decía `NINGUNA`, y
+    // eso hacía que el panel y la entrevista se contradijeran: uno decía
+    // "no hagas nada" sobre lo que el otro mandaba a corregir.
+    // Sin documento no hay nada que corregir, así que ahí sí no hay acción.
+    if (band === 'AL_LIMITE') {
+      return documentCount > 0 ? 'CORREGIR_DOCUMENTO' : 'NINGUNA';
+    }
     switch (cause) {
       case 'NO_HAY_NADA':
         return 'CARGAR';

@@ -22,6 +22,7 @@ import { ClientsModule } from './clients/clients.module';
 import { CollectionsModule } from './collections/collections.module';
 import { SalesModule } from './sales/sales.module';
 import { DevToolsModule } from './dev-tools/dev-tools.module';
+import { InterviewsModule } from './interviews/interviews.module';
 import { ConfigService } from '@nestjs/config';
 
 @Module({
@@ -76,6 +77,7 @@ import { ConfigService } from '@nestjs/config';
     CollectionsModule,
     SalesModule,
     DevToolsModule,
+    InterviewsModule,
   ],
   providers: [
     {

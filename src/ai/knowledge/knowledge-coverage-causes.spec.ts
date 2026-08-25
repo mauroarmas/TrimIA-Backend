@@ -73,7 +73,11 @@ describe('classifyQuery — los 7 turnos reales de la base (Fase 0)', () => {
     );
     expect(r!.band).toBe('AL_LIMITE');
     expect(r!.cause).toBeNull();
-    expect(r!.action).toBe('NINGUNA');
+    // Contestó, pero por 2 puntos, y hay un documento detrás: la acción es
+    // corregir ESE documento. Decía `NINGUNA` — "no hagas nada" sobre lo que
+    // está por fallar — y contradecía a `elegirForma` de la entrevista
+    // (spec 010, D1), que sobre el mismo tema pregunta qué le falta.
+    expect(r!.action).toBe('CORREGIR_DOCUMENTO');
     expect(r!.documents).toEqual([cand('doc-garantia', 67)]);
   });
 

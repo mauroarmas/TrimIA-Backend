@@ -126,7 +126,13 @@ export function classifyQuery(
     return {
       band: 'AL_LIMITE',
       cause: null,
-      action: 'NINGUNA',
+      // Contestó, pero por pocos puntos, y HAY un documento detrás (llegar
+      // acá exige `bestScore >= threshold`, o sea un candidato). Decir
+      // "ninguna" acá era decir "no hagas nada" justo sobre lo que está por
+      // fallar — y contradecía a `elegirForma` de la entrevista (spec 010,
+      // D1), que sobre el mismo tema pregunta qué le falta al documento.
+      // La banda sigue siendo AL_LIMITE: no falló, es un aviso temprano.
+      action: 'CORREGIR_DOCUMENTO',
       bestScore,
       documents: mejor ? [mejor] : [],
     };

@@ -516,6 +516,78 @@ agente, distinto de `COVERAGE_SCAN_MIN_QUERIES` de la corrida (los cinco
 agentes juntos): arrancan en el mismo valor por coincidencia, no porque midan
 lo mismo. `sampleSize`/`minimumSample` viajan siempre, incluso sin datos.
 
+**Entrevista desde el tráfico real** (spec 010, RF11, módulo `src/interviews/`):
+las preguntas salen del resumen de cobertura de arriba, no de un cuestionario a
+ciegas por área — es el consumidor que spec 009 dejó anticipado. Dos jobs
+enmarcan un bucle sincrónico (colas `interview-open`/`interview-close`):
+**abrir** resuelve el material (Prisma, sin LLM — puede devolver `422` en el
+mismo request si no hay con qué) y redacta las N preguntas en **una sola**
+llamada de chat; **contestar/saltear** no llaman al modelo, las preguntas ya
+están escritas; **cerrar** redacta una ficha por respuesta útil, también en
+llamadas separadas. No es una `Conversation`: sus turnos meterían ruido en
+`ROUTED_TO_AGENT`, contaminando la misma medición de cobertura de la que salen
+sus preguntas.
+
+La defensa contra duplicados (el riesgo que la pre-spec marcó como principal)
+es una sola regla aplicada en tres lugares: si el material trae un documento,
+la pregunta pide corregirlo, nunca escribir uno nuevo al lado
+(`interviews-questions.ts`, `elegirForma`). Un tema `AL_LIMITE` no trae causa
+—banda y causa son ejes distintos en la spec 009— pero si tiene documento va
+igual por `CORREGIR`: la regla mira `documents.length`, no la causa, así que
+no necesita un caso especial para el único tipo de tema que hoy existe en la
+base real. Y `KnowledgeService.buscarParecidos()` (spec 007) pasó de privado a
+público con `excluirId` opcional, para poder avisar del parecido **antes** de
+escribir el candidato — avisar después de guardar informa el duplicado en vez
+de evitarlo.
+
+⚠️ **Ese mismo criterio corrigió a la spec 009 hacia atrás.** `deriveAction` y
+`classifyQuery` devolvían `NINGUNA` para toda la banda `AL_LIMITE` ("se
+contestó por encima del umbral"), así que el panel decía *no hagas nada* sobre
+el mismo tema que la entrevista mandaba a corregir — dos partes del sistema con
+veredictos opuestos, visible en pantalla. La de la 009 era la equivocada:
+contestar por 3 puntos con un documento detrás es la definición de frágil, y
+anticiparse a eso es el propósito del sprint. Hoy `AL_LIMITE` **con documento**
+da `CORREGIR_DOCUMENTO` en los dos lados; sin documento sigue en `NINGUNA`
+(no hay qué corregir). La banda no cambió: sigue siendo un aviso temprano, no
+un fallo.
+
+**El panel y la entrevista no se solapan, se encadenan.** El panel mide y
+deriva (`Entrevistar sobre esto` salta a la entrevista de esa área); la
+entrevista arregla. Lo que **solo** vive en el panel: los temas que la
+entrevista excluye a propósito (`SE_COMPITEN` → higiene, `NO_ES_DEL_CORPUS`),
+las áreas de las que uno **no** es responsable (ver no es editar, Principio I),
+la medición de la corrida (OE-11), el "marcar como atendido", y el botón que
+dispara el barrido — sin el cual la entrevista no tiene material.
+
+**Un tema no se vuelve a preguntar entre sesiones** (hallazgo del
+`/speckit-analyze`, no de la spec original): cada `InterviewQuestion` copia los
+`queryEventIds` de su tema, y `resolverMaterial` los compara contra los de
+sesiones previas no `FALLIDA` del área con el mismo `overlap()` de
+`knowledge-coverage-identity.ts` (spec 009) — la etiqueta no sirve porque el
+LLM la regenera distinta cada corrida. Un escalado se excluye por id.
+
+**El respaldo cuando no hay temas** (US3) tiene dos piernas — escalados
+`PENDING` (pregunta abierta, sin texto propuesto) y `RESOLVED` sin capitalizar
+(se muestra la resolución y se pide confirmar una versión general, nunca el
+texto tal cual: contiene nombre y datos del caso puntual) — y ninguna pareja
+de higiene: es el mismo caso que ya excluyen los temas que compiten, y
+proponerlo ahí agregaría un tercer documento al conflicto. "Sin capitalizar" se
+decide por tres señales, no una: `resolvedWithDocumentId` (corrección, spec
+007), un `KnowledgeDocument{sourceType: ESCALADO}` (enseñado, spec 005), o un
+`InterviewCandidate` ya aprobado sobre ese mismo caso — mirar solo la primera
+dejaba pasar como "sin capitalizar" un escalado que esta misma feature ya
+había cerrado. Aprobar un candidato de escalado pendiente cierra ese caso
+(`Escalation.status = RESOLVED`) sin mandarle nada al usuario original —
+aprobar una entrevista no es responderle al cliente.
+
+Dos bugs de integración, encontrados corriendo el flujo contra los servicios
+reales (ninguno lo veía un test con mocks): la heurística de "respuesta vacía"
+no reconocía `"no se"` — el patrón real más común — porque `"se"` no estaba en
+la lista de muletillas; y el documento creado al aprobar guardaba
+`sourceId = candidate.id` en vez de `sourceId = session.id` (contradice el
+comentario de `schema.prisma` sobre `KnowledgeSourceType.ENTREVISTA`, ahí desde
+el Sprint 5A). Los dos con test de regresión.
+
 ---
 
 ### 5.9 Sprint 5B: los chats del panel en tiempo real (spec 004)

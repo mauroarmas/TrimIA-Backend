@@ -456,18 +456,24 @@ export class KnowledgeService implements OnModuleInit {
   }
 
   /**
-   * Documentos ya existentes que se parecen al contenido que se está por
-   * cargar (spec 007, US3 / FR-014..FR-020).
+   * Documentos ya existentes que se parecen a un contenido — cargado, o
+   * todavía por cargar (spec 007, US3 / FR-014..FR-020; spec 010, D6).
    *
    * **No bloquea nada** (FR-015): es información que acompaña al resultado de
    * la carga, no una validación. Y si falla —el servicio de comparación no
    * responde—, se traga el error y devuelve vacío: guardar el conocimiento es
    * lo importante, opinar sobre parecidos es lo accesorio (FR-025).
+   *
+   * `excluirId` es **opcional** (spec 010, D6): al cargar, excluye el
+   * documento recién creado de sus propios resultados; al revisar un
+   * candidato de entrevista que todavía no existe en el corpus, no hay nada
+   * que excluir. Es extracción de la versión privada original, no
+   * duplicación — `ingest()` la sigue llamando igual, con el id que antes.
    */
-  private async buscarParecidos(
+  async buscarParecidos(
     content: string,
     audience: Audience,
-    excluirId: string,
+    excluirId?: string,
   ): Promise<SimilarDocument[]> {
     try {
       const umbral = this.config.get<number>('KNOWLEDGE_SIMILARITY_THRESHOLD')!;
@@ -487,7 +493,7 @@ export class KnowledgeService implements OnModuleInit {
       // scores distintos hace pensar que hay duplicados donde no los hay.
       const mejorPorDocumento = new Map<string, SearchHit>();
       for (const hit of hits) {
-        if (hit.documentId === excluirId) continue;
+        if (excluirId && hit.documentId === excluirId) continue;
         const previo = mejorPorDocumento.get(hit.documentId);
         if (!previo || hit.score > previo.score) {
           mejorPorDocumento.set(hit.documentId, hit);

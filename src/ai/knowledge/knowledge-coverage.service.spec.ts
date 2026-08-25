@@ -826,7 +826,10 @@ describe('KnowledgeCoverageService — banda AL_LIMITE, conteos separados (US3, 
     // separados, cada uno con SU conteo — no hay un "4" en ningún lado.
     expect(sinRespuesta.queryCount + alLimite.queryCount).toBe(4);
     expect(alLimite.cause).toBeNull();
-    expect(alLimite.action).toBe('NINGUNA');
+    // Banda y causa siguen siendo ejes distintos, pero la ACCIÓN ya no es
+    // "ninguna": hay un documento detrás y contestó raspando, así que se
+    // propone corregirlo — el mismo veredicto que la entrevista (spec 010).
+    expect(alLimite.action).toBe('CORREGIR_DOCUMENTO');
     expect(sinRespuesta.cause).not.toBeNull();
   });
 });

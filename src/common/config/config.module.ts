@@ -141,6 +141,14 @@ import * as Joi from 'joi';
         COVERAGE_THEME_OVERLAP: Joi.number().min(0).max(1).default(0.5),
         // Citas textuales por tema en el resumen (FR-008).
         COVERAGE_MAX_QUOTES_PER_THEME: Joi.number().min(0).default(3),
+
+        // Spec 010 — entrevista desde el tráfico real. KNOWLEDGE_SIMILARITY_THRESHOLD
+        // y COVERAGE_THEME_OVERLAP (arriba) se reusan tal cual: mismo juicio de
+        // parecido y de identidad de tema que ya existen, no un segundo criterio.
+        INTERVIEW_MAX_QUESTIONS: Joi.number().min(1).default(7),
+        INTERVIEW_MAX_QUOTES_PER_QUESTION: Joi.number().min(1).default(2),
+        INTERVIEW_ABANDON_DAYS: Joi.number().min(1).default(7),
+        INTERVIEW_MAX_ESCALATIONS_FALLBACK: Joi.number().min(1).default(10),
       }),
       validationOptions: {
         allowUnknown: true,
