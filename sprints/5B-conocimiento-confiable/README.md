@@ -12,10 +12,11 @@ Plan: [`docs/plan_de_trabajo.md`](../../docs/plan_de_trabajo.md) §Sprint 5B (ta
 |---|---|---|---|---|
 | 1 | [Base de la búsqueda](1-base-de-la-busqueda.md) | 5B.1–5B.3 | — | ✅ **spec [006](../../specs/006-calidad-busqueda-rag/), implementada** |
 | 2 | [Duplicados al escribir](2-duplicados-al-escribir.md) | 5B.4–5B.5 | 1 | ✅ **spec [007](../../specs/007-duplicados-al-escribir/), implementada** |
-| 3 | [Higiene del corpus](3-higiene-del-corpus.md) | 5B.6–5B.8 | 1, 2 | sin spec |
-| 4 | [Qué falta para responder mejor](4-que-falta-para-responder-mejor.md) | 5B.9–5B.10 | 1 | sin spec |
-| 5 | [Entrevista desde el tráfico real](5-entrevista-desde-el-trafico-real.md) | 5B.11–5B.13 | 2, 4 | sin spec |
+| 3 | [Higiene del corpus](3-higiene-del-corpus.md) | 5B.6–5B.8 | 1, 2 | ✅ **spec [008](../../specs/008-higiene-corpus/), implementada** |
+| 4 | [Qué falta para responder mejor](4-que-falta-para-responder-mejor.md) | 5B.9–5B.10 | 1 | ✅ **spec [009](../../specs/009-que-falta-para-responder-mejor/), implementada** |
+| 5 | [Entrevista desde el tráfico real](5-entrevista-desde-el-trafico-real.md) | 5B.11–5B.13 | 2, 4 | ✅ **spec [010](../../specs/010-entrevista-desde-el-trafico-real/), implementada** |
 | 6 | [Cola de escalados por área](6-cola-de-escalados-por-area.md) | 5B.15 | — (usa la spec 005) | sin spec |
+| 7 | [Una sola pantalla para mejorar](7-una-sola-pantalla-para-mejorar.md) | — (corrige 5B.9–5B.13) | 4, 5 | sin spec |
 
 ```mermaid
 graph LR
@@ -26,6 +27,8 @@ graph LR
     P2 --> P5["5 · Entrevista desde el tráfico real"]
     P4 --> P5
     P5 -.-> S5C["Sprint 5C"]
+    P4 --> P7["7 · Una sola pantalla"]
+    P5 --> P7
     P6["6 · Cola de escalados por área"]
     style P1 fill:#4a9eff,color:white
     style P6 fill:#ffa94d,color:white
