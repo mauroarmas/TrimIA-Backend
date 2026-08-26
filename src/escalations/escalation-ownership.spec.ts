@@ -1,5 +1,9 @@
 import { AgentType } from '@prisma/client';
-import { RANGO_PERTENENCIA, resolverPertenencia } from './escalation-ownership';
+import {
+  PERTENENCIA_PREVIA_A_013,
+  RANGO_PERTENENCIA,
+  resolverPertenencia,
+} from './escalation-ownership';
 
 /**
  * Spec 013 — la regla de pertenencia, sin base de datos.
@@ -116,5 +120,37 @@ describe('resolverPertenencia (spec 013)', () => {
   it('el orden de la cola es propio → sin área → ajeno', () => {
     expect(RANGO_PERTENENCIA.PROPIA).toBeLessThan(RANGO_PERTENENCIA.SIN_AREA);
     expect(RANGO_PERTENENCIA.SIN_AREA).toBeLessThan(RANGO_PERTENENCIA.AJENA);
+  });
+});
+
+/**
+ * El histórico previo a la spec 013 (nota de `specs/futuras/`, cerrada).
+ */
+describe('los eventos anteriores a la spec 013', () => {
+  it('tienen un valor propio, distinto de cualquier pertenencia real', () => {
+    expect(PERTENENCIA_PREVIA_A_013).toBe('PREVIO_A_013');
+    expect(['PROPIA', 'AJENA', 'SIN_AREA']).not.toContain(
+      PERTENENCIA_PREVIA_A_013,
+    );
+  });
+
+  it('resolverPertenencia NUNCA lo devuelve: no se rellena hacia atrás', () => {
+    // Solo se escribe una vez, sobre el histórico. Si esta función lo devolviera,
+    // significaría que alguien lo está infiriendo — que es justo lo que la nota
+    // descartó: las áreas de entonces no están guardadas.
+    const casos = [
+      { area: AgentType.COLLECTIONS, delegatedToId: null },
+      { area: AgentType.SALES, delegatedToId: null },
+      { area: null, delegatedToId: null },
+      { area: AgentType.SALES, delegatedToId: 'otro' },
+    ];
+    for (const caso of casos) {
+      expect(
+        resolverPertenencia(caso, {
+          empleadoId: 'emp-x',
+          agentesPropios: [AgentType.COLLECTIONS],
+        }),
+      ).not.toBe(PERTENENCIA_PREVIA_A_013);
+    }
   });
 });

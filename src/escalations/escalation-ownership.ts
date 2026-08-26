@@ -23,6 +23,24 @@ import { AgentType } from '@prisma/client';
 export type Pertenencia = 'PROPIA' | 'AJENA' | 'SIN_AREA';
 
 /**
+ * Lo que dice un evento `escalation_resolved` **anterior** a la spec 013.
+ *
+ * No es una pertenencia: es la ausencia de una. Los eventos viejos se marcaron
+ * con este valor en vez de dejarlos en `null` para que el `null` siga
+ * significando **una sola** cosa —el payload no se escribió, o sea un bug— y no
+ * se confunda con "esto pasó antes de que midiéramos".
+ *
+ * ⚠️ **No se rellena hacia atrás con un valor real.** La pertenencia se resuelve
+ * contra las áreas que la persona tenía **al responder**, y eso no quedó
+ * guardado: un backfill diría "propia" o "ajena" según las responsabilidades de
+ * hoy, que no son las de entonces. Un dato inventado es peor que uno faltante,
+ * porque no se distingue del verdadero.
+ *
+ * `resolverPertenencia` nunca lo devuelve. Solo aparece leyendo el histórico.
+ */
+export const PERTENENCIA_PREVIA_A_013 = 'PREVIO_A_013';
+
+/**
  * El orden de la cola: lo propio, después lo que no es de nadie, después lo
  * ajeno (FR-003, FR-008).
  *

@@ -3,6 +3,15 @@
 **Anotado** 2026-08-26, implementando la spec 013.
 **Tipo** deuda de performance a futuro. Hoy no se nota y no frena nada.
 
+> **Revisada el 2026-08-26 y se decidió NO tocarla todavía.** Los números: hay **14
+> escalados** en la base, y `Escalation` ya tiene índices en `status` y en `createdAt`.
+> Un índice compuesto sobre 14 filas no cambia nada medible — sería trabajo que no se
+> puede notar. Y la parte que sí costaría (denormalizar `currentAgent` para evitar el
+> `JOIN`) **violaría FR-006** y exige decidir qué pasa cuando la conversación cambia de
+> agente después de escalarse: eso es diseño, no un arreglo.
+>
+> Vuelve a mirarse cuando el volumen lo haga real, no antes.
+
 ## Qué pasa
 
 `listPending` ordena por un `CASE` calculado (pertenencia) y después por

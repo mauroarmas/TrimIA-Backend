@@ -1,7 +1,30 @@
 # Los `escalation_resolved` viejos no tienen pertenencia
 
 **Anotado** 2026-08-26, implementando la spec 013 (cola de escalados por área).
-**Tipo** decisión pendiente, no defecto. Nada de lo entregado está roto.
+**RESUELTO** 2026-08-26, el mismo día. Sin spec: no había nada que decidir sobre qué
+construir, solo qué decir de un dato que no existe.
+
+## Cómo se cerró
+
+Se tomó la **segunda** opción de las dos que están más abajo: los 3 eventos previos se
+marcaron explícitamente con `PREVIO_A_013` (`UPDATE` sobre el payload, 3 filas), y el
+valor quedó documentado como constante en
+[`escalation-ownership.ts`](../../src/escalations/escalation-ownership.ts).
+
+**No se rellenó nada hacia atrás**, que era el riesgo: la pertenencia se resuelve contra
+las áreas que la persona tenía al responder, y eso no quedó guardado. Marcarlos dice la
+verdad —"esto pasó antes de que midiéramos"— sin inventar cuál habría sido el valor.
+
+Lo que se gana: `null` vuelve a significar **una sola** cosa, un payload que no se
+escribió, o sea un bug. Antes significaba dos, y las dos se veían igual.
+
+Hay un test que fija que `resolverPertenencia` **nunca** devuelve ese valor: si algún día
+lo devolviera, significaría que alguien lo está infiriendo, que es justo lo que acá se
+descartó.
+
+---
+
+## Lo que decía la nota (se conserva)
 
 ## Qué pasa
 
