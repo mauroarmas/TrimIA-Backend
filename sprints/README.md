@@ -20,6 +20,26 @@ specs/NNN-nombre/       /speckit-specify → plan → tasks → implement
 Cada paso **mueve**, no copia. Un tema vive en un solo lugar a la vez, y ese lugar
 dice en qué etapa está.
 
+### El atajo de los defectos
+
+Ese flujo es para **funcionalidad**. Un **defecto de lo ya entregado** no lo recorre:
+
+```
+specs/futuras/          se anota igual (el registro de CÓMO se encontró no se
+      ↓                 reconstruye después)
+      └──────────────►  se arregla directo, con test de regresión. Sin spec.
+```
+
+Una spec sirve para decidir **qué construir**; en un defecto no hay nada que decidir:
+algo que se dio por terminado no hace lo que dice. Mientras espera un sprint, la tesis
+tiene una feature "completa" que falla.
+
+**La excepción**: si el arreglo cambia el **modelo de datos** o el **alcance**, deja de
+ser un arreglo y pasa a ser trabajo nuevo — ahí sí, pre-spec.
+
+Los defectos viven en [`specs/futuras/`](../specs/futuras/#defectos-de-lo-ya-entregado),
+en su propia sección y con su propia tabla de estado.
+
 ## Cómo se arranca un sprint
 
 1. Se miran las futuras que le tocan a ese sprint según

@@ -145,7 +145,7 @@ verificar que el parecido queda registrado sin haber interrumpido el procesamien
 - ¿Qué pasa si el documento que quedó corto es de **otra área**? El supervisor no puede
   modificarlo (regla de escritura de la spec 005). No se le ofrece, y el camino es
   derivar. **Esto puede ocurrir hoy**: la cola de escalados no filtra por área — ver
-  [`specs/futuras/cola-de-escalados-por-area.md`](../futuras/cola-de-escalados-por-area.md).
+  [`specs/futuras/cola-de-escalados-por-area.md`](../../sprints/5B-conocimiento-confiable/9-cola-de-escalados-por-area.md).
 - ¿Qué pasa si el documento cercano **no es del tema**, y solo se parecía por casualidad?
   La elección es del supervisor: el sistema ofrece, no decide.
 - ¿Qué pasa si **otra persona edita** el documento entre que se propone la corrección y

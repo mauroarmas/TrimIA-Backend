@@ -71,7 +71,13 @@ specs/NNN-nombre/ /speckit-specify → plan → tasks → implement
 ```
 
 **Cada paso mueve, no copia**: un tema vive en un solo lugar a la vez, y ese lugar dice
-en qué etapa está. La convención completa —qué lleva una pre-spec, el tope de una
+en qué etapa está.
+
+**Los defectos de lo ya entregado no recorren ese flujo**: se anotan en `specs/futuras/`
+(para dejar registro de cómo se encontraron) y **se arreglan directo, con test de
+regresión, sin spec**. Una spec decide qué construir; en un defecto no hay nada que
+decidir. La excepción es cuando el arreglo cambia el modelo de datos o el alcance —
+ahí es trabajo nuevo y va como pre-spec. La convención completa —qué lleva una pre-spec, el tope de una
 página, cuándo se congela— está en `sprints/README.md`.
 
 Lo primero al arrancar un sprint es escribir sus pre-specs. Recién después se especifica

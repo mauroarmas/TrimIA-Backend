@@ -1,8 +1,13 @@
-# Pre-spec 6 — Cola de escalados por área
+# Pre-spec 9 — Cola de escalados por área
 
-**Sprint** 5B · **Orden** 6 de 6 · **Tareas del plan** 5B.15
+**Sprint** 5B · **Orden** 9 de 9, **última** · **Tareas del plan** 5B.15
 **Depende de** — (usa la spec 005, ya implementada) · **Estado** sin spec · **Spec** —
 **Origen** futura del 2026-08-22, especificando la spec 007
+
+> **Renumerada de 6 a 9** el 2026-08-25. No cambió nada de su contenido: se movió al
+> final porque el sprint creció con pre-specs que sí encadenan con el corpus, y ésta no
+> depende de ninguna. Es la única que no es sobre conocimiento — va última porque puede
+> ir en cualquier momento, no porque importe menos.
 
 ## Qué se quiere
 

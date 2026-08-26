@@ -551,13 +551,11 @@ da `CORREGIR_DOCUMENTO` en los dos lados; sin documento sigue en `NINGUNA`
 (no hay qué corregir). La banda no cambió: sigue siendo un aviso temprano, no
 un fallo.
 
-**El panel y la entrevista no se solapan, se encadenan.** El panel mide y
-deriva (`Entrevistar sobre esto` salta a la entrevista de esa área); la
-entrevista arregla. Lo que **solo** vive en el panel: los temas que la
-entrevista excluye a propósito (`SE_COMPITEN` → higiene, `NO_ES_DEL_CORPUS`),
-las áreas de las que uno **no** es responsable (ver no es editar, Principio I),
-la medición de la corrida (OE-11), el "marcar como atendido", y el botón que
-dispara el barrido — sin el cual la entrevista no tiene material.
+~~**El panel y la entrevista no se solapan, se encadenan.**~~ ⚠️ **Retirado por
+la spec 011.** Este párrafo describía la división de trabajo entre "¿Qué me
+falta?" y "Entrevista", y correr el flujo completo en el panel mostró que eran
+**una sola cosa partida en dos**: la primera se miraba y se pasaba a la
+segunda. Hoy son una pantalla; ver abajo.
 
 **Un tema no se vuelve a preguntar entre sesiones** (hallazgo del
 `/speckit-analyze`, no de la spec original): cada `InterviewQuestion` copia los
@@ -580,6 +578,26 @@ había cerrado. Aprobar un candidato de escalado pendiente cierra ese caso
 (`Escalation.status = RESOLVED`) sin mandarle nada al usuario original —
 aprobar una entrevista no es responderle al cliente.
 
+⚠️ **Aprobar una corrección AGREGA al documento, no lo pisa** (`applyMode`,
+default `AGREGAR`). Es el defecto más caro que encontró el uso real: la
+pregunta que origina una corrección es *"¿qué le **falta** a este
+documento?"*, y quien redacta la ficha —el modelo— **no ve el documento
+original**, solo la respuesta. Escribir esa ficha como contenido entero borra
+todo lo que el documento decía. Pasó con «Sobre Nosotros», que después de una
+entrevista sobre facturación quedó hablando **solo de facturas**.
+
+Ningún test lo veía porque todos miraban el *resultado* de aprobar (`ok:
+true`), no **qué se escribió**. Quien aprueba puede elegir `REEMPLAZAR`, y el
+panel le muestra antes lo que el documento dice hoy — pero es una decisión, no
+el default.
+
+⚠️ **`KnowledgeChange` no guarda el contenido anterior.** Registra que
+`content` cambió y quién lo hizo, pero no el texto que había, así que un
+reemplazo indebido **no se puede deshacer** ni auditar de verdad. Se descubrió
+buscando cómo recuperar «Sobre Nosotros»: Chroma ya estaba reindexado con lo
+nuevo y no quedaba copia en ningún lado. Es una carencia real de OE-11 y
+conviene atenderla antes de que el corpus tenga valor de producción.
+
 Dos bugs de integración, encontrados corriendo el flujo contra los servicios
 reales (ninguno lo veía un test con mocks): la heurística de "respuesta vacía"
 no reconocía `"no se"` — el patrón real más común — porque `"se"` no estaba en
@@ -587,6 +605,94 @@ la lista de muletillas; y el documento creado al aprobar guardaba
 `sourceId = candidate.id` en vez de `sourceId = session.id` (contradice el
 comentario de `schema.prisma` sobre `KnowledgeSourceType.ENTREVISTA`, ahí desde
 el Sprint 5A). Los dos con test de regresión.
+
+**Una sola pantalla para mejorar** (spec 011, módulo `src/improvements/`): las
+dos features de arriba eran **un solo trabajo partido en dos** — "¿Qué me
+falta?" decía qué estaba flojo y "Entrevista" lo arreglaba, y en uso real la
+primera era un desvío. Hoy son una: `GET /improvements?sectorId=` devuelve la
+lista ya unificada, ordenada, deduplicada y filtrada, y cada ítem entra a la
+entrevista. `POST /improvements/refresh` dispara **los dos** análisis con una
+sola acción. Se retiraron los cuatro endpoints de `/knowledge/coverage/*`; el
+`KnowledgeCoverageService` **no** se retiró: sigue siendo la primera fuente.
+
+La dependencia entre módulos va en **una sola dirección**: `InterviewsService`
+consume `ImprovementsService`, nunca al revés. Lo que `improvements` necesita
+saber de la entrevista —qué se preguntó ya— lo lee de `InterviewQuestion` por
+Prisma. Sin eso hay ciclo, y `resolverMaterialDeRespaldo` desapareció de
+`interviews.service.ts`: los escalados dejaron de ser respaldo condicionado a
+que no hubiera temas y pasaron a fuente de primera.
+
+**La tercera fuente es lo nuevo**: un detector que lee **un documento a la vez**
+y pregunta si se basta a sí mismo. Es distinto de la higiene (spec 008), que
+compara documentos **entre sí**: un documento puede ser único en su tema y aun
+así dejar sin responder la mitad de lo que le preguntan. Encontró, por ejemplo,
+que *"Situación: producto dañado detectado al momento de la entrega"* habla de
+daños en el título y solo cubre retrasos en el cuerpo — una contradicción
+interna que ningún tráfico había revelado.
+
+⚠️ **El detector NO mide confianza del modelo, mide severidad.** La spec
+apostaba a filtrar por confianza alta; medido sobre los 75 documentos reales,
+el modelo devolvió `ALTA` en los 53 que señaló y `MEDIA`/`BAJA` en **ninguno**:
+el filtro dejaba el 71% del corpus en la lista. La causa no es el modelo sino
+la pregunta — casi todo documento *está* incompleto en algún sentido, y un
+sí/no obtiene un sí honesto y sin valor. Con una severidad 0-100 y una barra de
+calibración explícita en el prompt, el corte en `DOC_REVIEW_SEVERITY_CUT` (80)
+deja ~12%. La severidad viene **cuantizada** (85/75/65/55/45/20/15): recalibrar
+significa moverse de banda, no de a un punto.
+
+El análisis es **secuencial** (medido: lotes de 5 en paralelo tardaron 5,7 s por
+documento contra 3,7 s secuencial) e **incremental** (un documento se reanaliza
+solo si su `version` cambió). Dos consecuencias que no son obvias:
+
+- **Se persiste todo señalamiento, no solo los que pasan el corte**, y el corte
+  se aplica al leer. La fila `DocumentFinding` es el registro de "este
+  documento, en esta versión, ya se analizó": si solo se guardaran los que
+  pasan, los ~66 que quedan por debajo se reanalizarían en cada corrida y el
+  incremental no incrementaría nada. De regalo, recalibrar el corte deja de
+  exigir reanalizar el corpus.
+- **La lista se arma con los señalamientos vigentes por documento, no con los
+  de la última corrida.** Una corrida incremental que saltea 20 documentos y
+  analiza 2 produce 2 findings; los otros 20 siguen siendo verdad. Leer "los de
+  la última revisión" vaciaba la pantalla en la segunda corrida (lo encontró el
+  `/speckit-analyze`, antes de que llegara al código).
+
+**Los documentos transversales** (`agentType` nulo) son 15 de los 75 activos.
+Entran en la revisión de cualquier área —dejarlos afuera los volvería el único
+pedazo del corpus que nadie mira nunca— pero sus señalamientos se **muestran**
+solo a quien es responsable de todas las áreas: es la misma regla que gobierna
+la escritura del corpus, y un ítem que quien lo ve no puede corregir es ruido.
+Esto subió el peor caso de la primera corrida a ~137 s.
+
+**El descarte es uno solo para las tres fuentes** (`ImprovementDismissal`), y
+absorbió el "marcar como atendido" de la spec 009. `CoverageThemeMark` **deja
+de escribirse pero se sigue leyendo**: borrar esa lectura obligaría a la gente
+a volver a descartar lo que ya descartó. ⚠️ Y una marca no filtra para siempre:
+filtra **hasta que llegue tráfico posterior** a su fecha — es lo que hace
+visible a un reincidente, y leerla como un booleano rompería esa regla *en
+silencio*, porque nadie nota lo que no aparece. Para un documento la evidencia
+nueva es otra: la versión.
+
+⚠️ **Una revisión puede quedar `RUNNING` sin que nadie la esté ejecutando.** Si
+el worker se reinicia a mitad de la corrida —o si el proveedor tarda más que el
+`lockDuration` de BullMQ— el job se marca `stalled` y muere **sin pasar por el
+`catch`** que deja la fila en `FAILED`. Como `startReview` se *engancha* a lo
+que está corriendo, esa área quedaba **bloqueada para siempre**. Lo encontró la
+validación en vivo, después de un hot reload; ningún test con mocks lo veía
+porque en un test el worker no se muere. Hoy `cerrarSiQuedoColgada` cierra como
+`FAILED` (con motivo, no en silencio) toda revisión más vieja que
+`DOC_REVIEW_STALE_MINUTES` y arranca una nueva.
+
+**El mismo agujero sigue abierto en el barrido de cobertura** (`startScan`
+lanza `409` eterno) y ahí es peor, porque ese barrido es global: bloquearía las
+cinco áreas, no una. Anotado en `specs/futuras/barrido-de-cobertura-colgado.md`.
+
+**La latencia del proveedor no es estable.** La Fase 0 midió 3,7 s por
+documento; durante la validación en vivo una llamada suelta —sin reintentos—
+tardó **43 s**, y la corrida completa de Ventas (36 documentos analizados, 1
+salteado por el incremental) tardó 409 s, o sea ~11 s por documento. Los
+objetivos de tiempo de la spec valen contra la latencia medida, no contra
+cualquier latencia; el incremental es lo que hace que eso importe una sola vez
+por documento.
 
 ---
 

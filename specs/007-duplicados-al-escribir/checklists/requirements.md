@@ -71,7 +71,7 @@ limpio y la traza completa, y sigue el mismo criterio que la spec 006 usó para
   (`supervisor.controller.ts:342`). La regla es correcta como producto pero no está
   implementada, así que la spec **no se apoya en ella**: FR-006 se apoya en la regla de
   escritura por área, que sí existe. El hueco quedó anotado en
-  [`specs/futuras/cola-de-escalados-por-area.md`](../../futuras/cola-de-escalados-por-area.md).
+  [`specs/futuras/cola-de-escalados-por-area.md`](../../../sprints/5B-conocimiento-confiable/9-cola-de-escalados-por-area.md).
 
 ### Nota sobre el alcance
 

@@ -1,6 +1,7 @@
 /**
  * Genera tráfico REAL que cae en huecos del corpus, para poder demostrar la
- * corrida de cobertura (spec 009) y la entrevista (spec 010).
+ * pantalla de mejoras (spec 011), que une la cobertura (spec 009), los
+ * escalados y el detector de documentos incompletos.
  *
  *   docker compose exec nestjs npx ts-node scripts/generar-huecos.ts
  *   docker compose exec nestjs npx ts-node scripts/generar-huecos.ts --grupo Facturación
@@ -189,7 +190,7 @@ async function main() {
   const escalados = resultados.filter((r) => r.ruteo.includes('ESCALÓ')).length;
   console.log(
     `Listo: ${resultados.length} turno(s), ${escalados} escalado(s).\n` +
-      `Ahora: panel → Base de Conocimiento → "¿Qué me falta?" → Correr el resumen.`,
+      `Ahora: panel → "Mejorar el conocimiento" → elegí el área → Actualizar.`,
   );
 }
 

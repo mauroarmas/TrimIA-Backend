@@ -136,7 +136,7 @@ scripts/
 - **`assertPuedeEscribir`.** Se **llama**, no se reimplementa ni se copia su lógica.
 - **La cola de escalados.** FR-028: que un supervisor vea casos de otras áreas es un
   hueco conocido y anotado en
-  [`specs/futuras/cola-de-escalados-por-area.md`](../futuras/cola-de-escalados-por-area.md).
+  [`specs/futuras/cola-de-escalados-por-area.md`](../../sprints/5B-conocimiento-confiable/9-cola-de-escalados-por-area.md).
 
 ## Complexity Tracking
 
