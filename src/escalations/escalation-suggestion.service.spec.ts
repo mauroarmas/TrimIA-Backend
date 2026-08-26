@@ -19,17 +19,30 @@ const PUBLIC_HIT = {
   score: 0.82,
 };
 
+/**
+ * Cuándo se creó el caso. Los mensajes posteriores a esta fecha son los que
+ * el cliente mandó MIENTRAS esperaba, y no son los que escalaron.
+ */
+const ESCALATED_AT = new Date('2026-08-26T01:01:57.000Z');
+
 function buildService(
   options: {
     userType?: 'CLIENTE' | 'EMPLEADO';
     hits?: (typeof PUBLIC_HIT)[];
     lastUserMessage?: string | null;
+    /**
+     * Mensajes de la conversación, para el caso en que llegan más DESPUÉS del
+     * escalado. El mock de `findFirst` respeta el filtro por fecha, que es
+     * justamente lo que se está probando.
+     */
+    messages?: { content: string; createdAt: Date }[];
   } = {},
 ) {
   const escalation = {
     id: ESCALATION_ID,
     conversationId: 'conv-1',
     reason: 'baja confianza del RAG',
+    createdAt: ESCALATED_AT,
     conversation: {
       id: 'conv-1',
       userType: options.userType ?? 'CLIENTE',
@@ -37,19 +50,33 @@ function buildService(
     },
   };
 
+  const messages = options.messages ?? [
+    {
+      content:
+        options.lastUserMessage === null
+          ? null
+          : (options.lastUserMessage ?? '¿Cómo doy de baja mi plan?'),
+      createdAt: new Date('2026-08-26T01:01:55.000Z'),
+    },
+  ];
+
   const prisma = {
     escalation: {
       findUnique: jest.fn().mockResolvedValue(escalation),
       update: jest.fn().mockResolvedValue(escalation),
     },
     message: {
-      findFirst: jest.fn().mockResolvedValue(
-        options.lastUserMessage === null
-          ? null
-          : {
-              content: options.lastUserMessage ?? '¿Cómo doy de baja mi plan?',
-            },
-      ),
+      // Mock fiel: aplica el `where` de fecha si viene, y ordena desc. Sin
+      // esto el test no puede distinguir "el último de la conversación" de
+      // "el último de antes del escalado", que es el defecto.
+      findFirst: jest.fn().mockImplementation((args: any) => {
+        const tope = args?.where?.createdAt?.lte as Date | undefined;
+        const candidatos = messages
+          .filter((m) => m.content !== null)
+          .filter((m) => !tope || m.createdAt <= tope)
+          .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime());
+        return Promise.resolve(candidatos[0] ?? null);
+      }),
     },
   };
 
@@ -125,6 +152,82 @@ describe('⭐ EscalationSuggestionService — de dónde sale la audiencia (Princ
     await service.suggest(ESCALATION_ID);
 
     expect(search.mock.calls[0][0]).toBe('¿Cómo doy de baja mi plan?');
+  });
+});
+
+describe('⭐ EscalationSuggestionService — busca el mensaje QUE ESCALÓ (regresión)', () => {
+  /**
+   * Defecto real, encontrado probando el panel el 2026-08-26
+   * (`specs/futuras/propuesta-busca-el-mensaje-equivocado.md`).
+   *
+   * La conversación queda en WAITING_HUMAN, no cerrada: el cliente sigue
+   * escribiendo mientras espera. Buscar "el último mensaje del usuario"
+   * recuperaba material de una consulta POSTERIOR, y la pantalla informaba
+   * "no hay información cargada sobre este tema" cuando sí la había.
+   *
+   * Medido en el caso real: la consulta que escaló daba 71.2% (sobre el umbral
+   * de 65%) y la que se buscaba daba 62.4%. El fallo era silencioso porque el
+   * mensaje equivocado suele dar "casi".
+   */
+  const CONVERSACION_REAL = [
+    {
+      content: 'me pueden reenviar la factura por mail',
+      createdAt: new Date('2026-08-26T01:01:55.000Z'), // ← el que escaló
+    },
+    {
+      content: 'cuantas veces reintentan la entrega si no estoy',
+      createdAt: new Date('2026-08-26T01:02:50.000Z'),
+    },
+    {
+      content: 'atienden los feriados',
+      createdAt: new Date('2026-08-26T01:02:58.000Z'), // ← el último
+    },
+  ];
+
+  it('con mensajes posteriores al escalado, busca el que lo originó', async () => {
+    const { service, search } = buildService({ messages: CONVERSACION_REAL });
+
+    await service.suggest(ESCALATION_ID);
+
+    expect(search.mock.calls[0][0]).toBe(
+      'me pueden reenviar la factura por mail',
+    );
+    expect(search.mock.calls[0][0]).not.toBe('atienden los feriados');
+  });
+
+  it('acota la búsqueda del mensaje por la fecha del caso', async () => {
+    // Lo que hace correcta a la consulta: sin el `lte`, el `orderBy desc`
+    // devuelve el último de toda la conversación.
+    const { service, prisma } = buildService({ messages: CONVERSACION_REAL });
+
+    await service.suggest(ESCALATION_ID);
+
+    expect(prisma.message.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          conversationId: 'conv-1',
+          role: 'USER',
+          createdAt: { lte: ESCALATED_AT },
+        }),
+      }),
+    );
+  });
+
+  it('si no hay ningún mensaje previo al caso, cae al motivo antes que fallar', async () => {
+    // Puede pasar con casos viejos o creados a mano. Buscar el `reason` es
+    // peor que buscar la consulta, pero mejor que romper la pantalla.
+    const { service, search } = buildService({
+      messages: [
+        {
+          content: 'un mensaje muy posterior',
+          createdAt: new Date('2026-08-26T02:00:00.000Z'),
+        },
+      ],
+    });
+
+    await service.suggest(ESCALATION_ID);
+
+    expect(search.mock.calls[0][0]).toBe('baja confianza del RAG');
   });
 });
 

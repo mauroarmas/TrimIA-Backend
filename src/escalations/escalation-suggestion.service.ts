@@ -83,6 +83,7 @@ export class EscalationSuggestionService {
     const audience = audienceFor(conversation.userType);
     const query = await this.buildQuery(
       escalation.conversationId,
+      escalation.createdAt,
       escalation.reason,
     );
 
@@ -143,21 +144,42 @@ export class EscalationSuggestionService {
   }
 
   /**
-   * La consulta a buscar es el último mensaje del usuario, no el `reason` de
-   * la escalación: el motivo lo escribió el agente ("baja confianza"), y
-   * buscar eso recuperaría cualquier cosa. Si no hay mensaje, se cae al
-   * motivo antes que fallar.
+   * La consulta a buscar es el mensaje del usuario **que provocó el escalado**.
+   *
+   * Dos precisiones, y las dos costaron un defecto:
+   *
+   * 1. **No es el `reason`.** El motivo lo escribió el agente ("baja
+   *    confianza"), y buscar eso recuperaría cualquier cosa.
+   *
+   * 2. **No es el último mensaje de la conversación** (defecto encontrado el
+   *    2026-08-26). El escalado deja la conversación en `WAITING_HUMAN`, no
+   *    cerrada: el cliente sigue escribiendo mientras espera. Para cuando el
+   *    supervisor abre el caso, "el último mensaje" ya es otra consulta, y la
+   *    propuesta se redactaba —o no— sobre un tema que nadie escaló.
+   *
+   *    El fallo era silencioso: la pantalla decía "no hay información cargada
+   *    sobre este tema" cuando sí la había. Medido en el caso real, la consulta
+   *    que escaló daba 71.2% y la que se buscaba 62.4%, contra un umbral de
+   *    65% — nunca tan bajo como para parecer un bug.
+   *
+   *    Por eso se acota por `createdAt <= escalatedAt`: el último mensaje del
+   *    usuario ANTERIOR al caso es exactamente el turno que no alcanzó el
+   *    umbral.
+   *
+   * Si no hay ninguno (casos viejos, o creados a mano), se cae al motivo antes
+   * que fallar.
    */
   private async buildQuery(
     conversationId: string,
+    escalatedAt: Date,
     fallback: string,
   ): Promise<string> {
-    const lastUserMessage = await this.prisma.message.findFirst({
-      where: { conversationId, role: 'USER' },
+    const escalatingMessage = await this.prisma.message.findFirst({
+      where: { conversationId, role: 'USER', createdAt: { lte: escalatedAt } },
       orderBy: { createdAt: 'desc' },
       select: { content: true },
     });
-    return lastUserMessage?.content ?? fallback;
+    return escalatingMessage?.content ?? fallback;
   }
 
   private async draft(query: string, hits: SearchHit[]): Promise<string> {
