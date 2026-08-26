@@ -10,7 +10,26 @@
 > `JOIN`) **violaría FR-006** y exige decidir qué pasa cuando la conversación cambia de
 > agente después de escalarse: eso es diseño, no un arreglo.
 >
-> Vuelve a mirarse cuando el volumen lo haga real, no antes.
+> **Medido, no estimado** (`EXPLAIN ANALYZE` sobre la consulta real de `listPending`):
+>
+> ```
+> Planning Time:  3.218 ms
+> Execution Time: 0.398 ms      ← ocho veces menos que planificarla
+> Seq Scan on "Escalation"      ← Postgres NO usa índice, y hace bien
+> ```
+>
+> Postgres elige recorrer la tabla entera a propósito: con esta cantidad de filas es más
+> barato que abrir un índice. Agregar uno ahora no lo cambiaría —el planner lo seguiría
+> ignorando— así que sería un índice que se mantiene en cada escritura y no se usa en
+> ninguna lectura.
+>
+> **Ojo con el reflejo de "limpiar la base para probarlo":** borrar casos va en la
+> dirección contraria. El índice se justifica con **más** filas, no con menos; con menos,
+> el `Seq Scan` gana por más margen todavía.
+>
+> **Cuándo volver:** cuando `Execution Time` empiece a acercarse o superar a
+> `Planning Time` en esa misma consulta. Ese cruce es la señal, y se vuelve a medir con
+> el mismo `EXPLAIN ANALYZE` — no hace falta acordarse de nada más.
 
 ## Qué pasa
 
