@@ -1,7 +1,7 @@
 # Pre-spec 9 — Cola de escalados por área
 
 **Sprint** 5B · **Orden** 9 de 9, **última** · **Tareas del plan** 5B.15
-**Depende de** — (usa la spec 005, ya implementada) · **Estado** sin spec · **Spec** —
+**Depende de** — (usa la spec 005, ya implementada) · **Estado** ✅ **implementada** · **Spec** [013-cola-de-escalados-por-area](../../specs/013-cola-de-escalados-por-area/)
 **Origen** futura del 2026-08-22, especificando la spec 007
 
 > **Renumerada de 6 a 9** el 2026-08-25. No cambió nada de su contenido: se movió al

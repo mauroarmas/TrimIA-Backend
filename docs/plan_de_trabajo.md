@@ -227,7 +227,7 @@ mensajes al mismo webhook, así que un workflow separado nunca los recibiría.
 
 ### Sprint 5B — Conocimiento Confiable 🧠
 
-*Pre-specs:* [`sprints/5B-conocimiento-confiable/`](../sprints/5B-conocimiento-confiable/) — **6 specs, en orden**.
+*Pre-specs:* [`sprints/5B-conocimiento-confiable/`](../sprints/5B-conocimiento-confiable/) — **9 specs, todas implementadas** ✅.
 *Pantallas del prototipo: Entrevista de Capacitación (Fig 14), Base de Conocimiento (Fig 15), Detalle (Fig 16).*
 
 El 5A dejó el corpus **editable**; este sprint lo deja **confiable**: que lo que hay
@@ -250,13 +250,13 @@ el supervisor sepa qué le falta cargar en vez de mirar un porcentaje sin acció
 | **Qué falta para responder mejor** |||
 | 5B.9 | Resumen de consultas sin respuesta confiable | `src/supervisor/` | Agrupadas **por tema**, no listadas: la materia prima ya está en el payload de `ROUTED_TO_AGENT` (`message` + `confidence`). Tiene que **separar las cuatro causas** —falta el tema / el documento quedó corto / dos se compiten / ruido del embedding— porque piden acciones opuestas |
 | 5B.10 | Ventana y mínimo de muestra en la confianza | `supervisor.service.ts:334` | Hoy es un `AVG` sin ventana sobre toda la historia: con 2 turnos muestra 0.67 como si significara algo. Aplicar el criterio de `hasData` que ya existe en `KnowledgeUsageService` |
-| **Entrevista de capacitación (RF11) — por chat de texto** |||
+| **Entrevista de capacitación (RF11) — por chat de texto** — ✅ specs [010](../specs/010-entrevista-desde-el-trafico-real/) y [012](../specs/012-entrevista-como-conversacion/) |||
 | 5B.11 | Modelo `InterviewSession` | `schema.prisma` | Área, progreso (4/9), estado, respuestas, pausar/reanudar. `KnowledgeSourceType.ENTREVISTA` ya está reservado |
 | 5B.12 | `POST /interviews/message` **alimentado por 5B.9** ⭐ | `src/interviews/` | **Acá está la sinergia con el 5C.** Las preguntas salen del tráfico real —"estas 6 consultas sobre plazos de entrega quedaron sin respuesta"— en vez de un cuestionario a ciegas por área. Opciones predefinidas + texto libre |
 | 5B.13 | Al finalizar → ingesta RAG | `knowledge.service.ts` | Supervisor revisa/edita/aprueba antes de publicar (RF11). Pasa por el aviso de 5B.5 como cualquier otra escritura |
 | 5B.14 | Tests | `*.spec.ts` | Fusión que respeta audiencia y área; el umbral remedido; agrupación de consultas |
-| **Cola de escalados por área** |||
-| 5B.15 | La cola de casos escalados tenga en cuenta el área del supervisor | `escalations.service.ts`, `supervisor.controller.ts` | Hoy `listPending` solo filtra por estado: cualquier `SUPERVISOR` ve los casos de las cinco áreas. La spec 005 ya resolvió la mitad de la regla en la escritura (`assertPuedeEscribir`); acá falta la lectura. Diego (gerente, todas las áreas) no puede perder visibilidad — probar con un supervisor de una sola área |
+| **Cola de escalados por área** — ✅ **spec [013](../specs/013-cola-de-escalados-por-area/), implementada el 2026-08-26** |||
+| 5B.15 | La cola de casos escalados tiene en cuenta el área del supervisor | `escalations.service.ts`, `supervisor.controller.ts` | Hecho: cada caso trae `pertenencia` y la cola viene priorizada. **No oculta lo ajeno: lo ordena detrás** — filtrarlo dejaría sin cobertura las áreas sin responsable activo (Principio I, "ver no es editar"). El filtro "solo los míos" existe y viene **apagado**. `SIN_AREA` quedó como tercer valor y no como sinónimo de "no es mío": son casos que no llegaron a rutearse y aplastarlos contra `AJENA` los mandaría al fondo. Diego no perdió visibilidad, y se probó con Silvia (una sola área), que es lo único que lo demuestra |
 
 > [!WARNING]
 > **La higiene del corpus (5B.6–5B.8) es la excepción a "el panel es un banco de pruebas".**
@@ -471,13 +471,19 @@ el banco de escenarios necesita un corpus estable para que dos corridas sean com
 ## 8. Estado y próximo paso
 
 > [!IMPORTANT]
-> **Sprints 1, 2, 3, 4 y 5A completos.** El siguiente es el **Sprint 5B
-> (Conocimiento Confiable)**, y después el **5C (Capacitación, Audio y Medición)**.
+> **Sprints 1, 2, 3, 4, 5A y 5B completos.** El siguiente es el **5C (Capacitación,
+> Audio y Medición)**.
 >
-> El orden importa: el 5C **genera contenido a partir del corpus**, así que arrancarlo
-> antes de limpiar y medir multiplicaría el problema en vez de resolverlo. Dentro del 5B
-> el orden también es deliberado: **5B.1–5B.3 van primero** porque cambiar los embeddings
-> mueve todos los scores, y cualquier medición hecha antes queda invalidada.
+> El orden importó: el 5C **genera contenido a partir del corpus**, así que arrancarlo
+> antes de limpiar y medir habría multiplicado el problema en vez de resolverlo. Dentro
+> del 5B el orden también fue deliberado: **5B.1–5B.3 fueron primero** porque cambiar los
+> embeddings mueve todos los scores, y cualquier medición hecha antes queda invalidada.
+>
+> **El 5B creció de 5 pre-specs a 9 mientras se ejecutaba**, y las cuatro que se sumaron
+> salieron de usar lo construido, no de planificar mejor: la 7 al ver que dos pantallas
+> eran un solo trabajo partido en dos, la 8 al releer los prototipos, la 9 de una
+> asunción falsa descubierta especificando la 007. Vale tenerlo presente al estimar
+> el 5C.
 >
 > Dos cosas quedaron abiertas del 5A y conviene no perderlas de vista:
 >

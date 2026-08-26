@@ -1,7 +1,7 @@
 # Pre-spec 8 — La entrevista como la dibujamos
 
-**Sprint** 5B · **Orden** 8 de 9, **la próxima a especificar** · **Tareas del plan** — (completa 5B.11–5B.13)
-**Depende de** spec [010](../../specs/010-entrevista-desde-el-trafico-real/), implementada · **Estado** sin spec · **Spec** —
+**Sprint** 5B · **Orden** 8 de 9 · **Tareas del plan** — (completa 5B.11–5B.13)
+**Depende de** spec [010](../../specs/010-entrevista-desde-el-trafico-real/), implementada · **Estado** ✅ **implementada** · **Spec** [012-entrevista-como-conversacion](../../specs/012-entrevista-como-conversacion/)
 **Origen** relectura de `docs/prototipos.pdf` (Figura 14) el 2026-08-25, mientras se especificaba la 011
 
 ## Qué se quiere
