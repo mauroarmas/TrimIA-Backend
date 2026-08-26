@@ -14,6 +14,7 @@ import {
   KnowledgeDocument,
 } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
+import { estaColgado, motivoColgado } from '../../common/stale-job';
 import { KnowledgeService } from './knowledge.service';
 import { KnowledgeUsageService } from './knowledge-usage.service';
 
@@ -93,11 +94,47 @@ export class KnowledgeHygieneService {
   // ==========================================================================
 
   /** Encola un barrido nuevo. No corre la detección dentro del request (Principio IV). */
+  /**
+   * Cierra como `FAILED` un barrido que quedó colgado, para que el próximo
+   * pueda arrancar. Devuelve `true` si lo hizo.
+   *
+   * No se borra en silencio: que se cayó es información, y el resumen de la
+   * pantalla ignora los `FAILED` igual.
+   */
+  private async cerrarSiQuedoColgado(scan: {
+    id: string;
+    createdAt: Date;
+  }): Promise<boolean> {
+    const minutos = this.config.get<number>('HYGIENE_SCAN_STALE_MINUTES')!;
+    if (!estaColgado(scan.createdAt, minutos)) return false;
+
+    this.logger.warn(
+      `El barrido de higiene ${scan.id} quedó colgado más de ${minutos} min: ` +
+        `se cierra como FAILED y se arranca uno nuevo`,
+    );
+    await this.prisma.hygieneScan.update({
+      where: { id: scan.id },
+      data: {
+        status: HygieneScanStatus.FAILED,
+        failureReason: motivoColgado(minutos),
+        finishedAt: new Date(),
+      },
+    });
+    return true;
+  }
+
   async startScan(employeeId: string) {
     const yaCorriendo = await this.prisma.hygieneScan.findFirst({
       where: { status: HygieneScanStatus.RUNNING },
     });
-    if (yaCorriendo) {
+    // ⚠️ Un barrido que quedó RUNNING porque el worker murió bloquea esta
+    // pantalla para siempre: el 409 no vence solo. El encontrado en vivo
+    // llevaba 38 horas y dejaba el botón "Analizar" muerto. Ver
+    // `src/common/stale-job.ts` — es el mismo criterio de los otros dos
+    // barridos, y esta fue su tercera aparición.
+    if (yaCorriendo && (await this.cerrarSiQuedoColgado(yaCorriendo))) {
+      // Se cerró la muerta: se sigue y se arranca una nueva.
+    } else if (yaCorriendo) {
       throw new ConflictException({
         statusCode: 409,
         reason: 'SCAN_ALREADY_RUNNING',

@@ -11,7 +11,6 @@ import { KnowledgeMergeService } from './knowledge-merge.service';
 import { KnowledgeHygieneController } from './knowledge-hygiene.controller';
 import { KnowledgeCoverageService } from './knowledge-coverage.service';
 import { KnowledgeCoverageGroupingService } from './knowledge-coverage-grouping';
-import { KnowledgeCoverageController } from './knowledge-coverage.controller';
 import { TEXT_EXTRACTORS } from './extractors/text-extractor.port';
 import { PdfExtractor } from './extractors/pdf.extractor';
 import { DocxExtractor } from './extractors/docx.extractor';
@@ -64,11 +63,7 @@ import { EmployeesModule } from '../../employees/employees.module';
       inject: [PdfExtractor, DocxExtractor, ImageExtractor, AudioExtractor],
     },
   ],
-  controllers: [
-    KnowledgeController,
-    KnowledgeHygieneController,
-    KnowledgeCoverageController,
-  ],
+  controllers: [KnowledgeController, KnowledgeHygieneController],
   exports: [
     KnowledgeService,
     KnowledgeStorageService,

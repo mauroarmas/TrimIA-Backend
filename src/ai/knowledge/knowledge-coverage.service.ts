@@ -1,10 +1,8 @@
 import {
   BadRequestException,
   ConflictException,
-  ForbiddenException,
   Injectable,
   Logger,
-  NotFoundException,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { InjectQueue } from '@nestjs/bullmq';
@@ -16,6 +14,7 @@ import {
   CoverageScanStatus,
 } from '@prisma/client';
 import { PrismaService } from '../../database/prisma.service';
+import { estaColgado, motivoColgado } from '../../common/stale-job';
 import { KnowledgeService } from './knowledge.service';
 import {
   KnowledgeCoverageGroupingService,
@@ -93,7 +92,7 @@ export class KnowledgeCoverageService {
     const yaCorriendo = await this.prisma.coverageScan.findFirst({
       where: { status: CoverageScanStatus.RUNNING },
     });
-    if (yaCorriendo) {
+    if (yaCorriendo && !(await this.cerrarSiQuedoColgado(yaCorriendo))) {
       throw new ConflictException({
         statusCode: 409,
         reason: 'SCAN_ALREADY_RUNNING',
@@ -128,6 +127,43 @@ export class KnowledgeCoverageService {
       windowTo,
       truncatedWindow,
     };
+  }
+
+  /**
+   * ⚠️ Un barrido puede quedar `RUNNING` **sin que nadie lo esté ejecutando**:
+   * si el worker se reinicia a mitad de la corrida, el job muere sin pasar por
+   * el `catch` de `runScan`, que es lo único que deja la fila en `FAILED`.
+   *
+   * Como este barrido es **global**, el 409 eterno no bloquea un área: bloquea
+   * **las cinco**. Se vio en la pantalla de mejoras (spec 011), donde el botón
+   * "Actualizar" quedó deshabilitado en todas — no se dedujo, se miró.
+   *
+   * Se marca `FAILED` con motivo en vez de borrarlo en silencio: que se cayó
+   * es información.
+   *
+   * @returns `true` si estaba colgado y se cerró — o sea, se puede arrancar
+   *   uno nuevo.
+   */
+  private async cerrarSiQuedoColgado(scan: {
+    id: string;
+    createdAt: Date;
+  }): Promise<boolean> {
+    const minutos = this.config.get<number>('COVERAGE_SCAN_STALE_MINUTES')!;
+    if (!estaColgado(scan.createdAt, minutos)) return false;
+
+    this.logger.warn(
+      `El barrido ${scan.id} quedó colgado más de ${minutos} min: se cierra ` +
+        `como FAILED y se arranca uno nuevo`,
+    );
+    await this.prisma.coverageScan.update({
+      where: { id: scan.id },
+      data: {
+        status: CoverageScanStatus.FAILED,
+        failureReason: motivoColgado(minutos),
+        finishedAt: new Date(),
+      },
+    });
+    return true;
   }
 
   /**
@@ -636,6 +672,18 @@ export class KnowledgeCoverageService {
    * acotado, igual que `HygieneScan` en la spec 008): no hay endpoint para
    * corridas anteriores.
    */
+  /**
+   * Spec 011: ¿hay un barrido en curso? Lo usa la pantalla unificada para
+   * decir "estoy trabajando" (FR-013). El barrido es global, así que la
+   * pregunta no lleva área.
+   */
+  async hayScanCorriendo(): Promise<boolean> {
+    const n = await this.prisma.coverageScan.count({
+      where: { status: CoverageScanStatus.RUNNING },
+    });
+    return n > 0;
+  }
+
   async getLatest(employeeId: string) {
     const ultima = await this.prisma.coverageScan.findFirst({
       orderBy: { createdAt: 'desc' },
@@ -913,84 +961,17 @@ export class KnowledgeCoverageService {
   }
 
   // ==========================================================================
-  // Atendido y reaparición (FR-026..FR-029, T030)
+  // Atendido y reaparición (spec 009, FR-026..FR-029)
   // ==========================================================================
 
-  async markHandled(themeId: string, employeeId: string, note?: string) {
-    const tema = await this.prisma.coverageTheme.findUniqueOrThrow({
-      where: { id: themeId },
-    });
-
-    const puede = await this.knowledge.esResponsableDeAgente(
-      employeeId,
-      tema.agentType,
-    );
-    if (!puede) {
-      const autor = await this.prisma.employee.findUniqueOrThrow({
-        where: { id: employeeId },
-        include: { areasSupervisadas: { select: { name: true } } },
-      });
-      const propias = autor.areasSupervisadas.map((a) => a.name).join(', ');
-      throw new ForbiddenException(
-        `Este tema es de otra área. ` +
-          (propias
-            ? `Sos responsable de: ${propias}.`
-            : `No tenés áreas asignadas, así que no podés marcar temas como atendidos.`),
-      );
-    }
-
-    const yaMarcado = await this.prisma.coverageThemeMark.findUnique({
-      where: { themeId },
-    });
-    if (yaMarcado) {
-      throw new ConflictException('Este tema ya está marcado como atendido.');
-    }
-
-    return this.prisma.coverageThemeMark.create({
-      data: { themeId, markedById: employeeId, note },
-    });
-  }
-
-  async unmarkHandled(themeId: string, employeeId: string) {
-    const tema = await this.prisma.coverageTheme.findUniqueOrThrow({
-      where: { id: themeId },
-    });
-    const puede = await this.knowledge.esResponsableDeAgente(
-      employeeId,
-      tema.agentType,
-    );
-    if (!puede) {
-      const autor = await this.prisma.employee.findUniqueOrThrow({
-        where: { id: employeeId },
-        include: { areasSupervisadas: { select: { name: true } } },
-      });
-      const propias = autor.areasSupervisadas.map((a) => a.name).join(', ');
-      throw new ForbiddenException(
-        `Este tema es de otra área. ` +
-          (propias
-            ? `Sos responsable de: ${propias}.`
-            : `No tenés áreas asignadas.`),
-      );
-    }
-
-    // Un tema "reincidente" (FR-027) tiene `handled` en la respuesta de
-    // `getLatest` sin tener una marca PROPIA — la marca real quedó en el
-    // tema viejo que reemplazó, y `getLatest` la muestra por solape. Sin este
-    // chequeo, `delete()` tira P2025 (no encuentra qué borrar) y eso
-    // burbujeaba como 500: un caso de datos esperable no puede devolver un
-    // error genérico.
-    const marca = await this.prisma.coverageThemeMark.findUnique({
-      where: { themeId },
-    });
-    if (!marca) {
-      throw new NotFoundException(
-        'Este tema no tiene una marca propia para desmarcar — es un tema ' +
-          'reincidente: lo que se marcó fue una corrida anterior, con menos ' +
-          'consultas. Si ya está resuelto de nuevo, marcalo desde acá.',
-      );
-    }
-
-    await this.prisma.coverageThemeMark.delete({ where: { themeId } });
-    return { unmarked: true };
-  }
+  // ⚠️ `markHandled`/`unmarkHandled` **se retiraron** en la spec 011: los
+  // reemplaza el descarte unificado, que sirve para las tres fuentes de la
+  // pantalla de mejoras y no solo para los temas de cobertura (FR-024a).
+  // Sostener dos mecanismos que hacen lo mismo era el ruido que aquella spec
+  // vino a sacar.
+  //
+  // **`CoverageThemeMark` NO se retira**: deja de escribirse pero se sigue
+  // leyendo, acá en `filterHandled` y en el filtro de la lista unificada
+  // (FR-024b). Borrar esa lectura obligaría a la gente a volver a descartar lo
+  // que ya descartó.
 }

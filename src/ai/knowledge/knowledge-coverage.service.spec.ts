@@ -107,7 +107,7 @@ function buildFakePrisma(events: FakeEvent[]) {
         return Promise.resolve(scan);
       }),
       update: jest.fn(({ where, data }: any) => {
-        const scan = scans.find((s) => s.id === where.id);
+        const scan = scans.find((s) => s.id === where.id) ?? { id: where.id };
         Object.assign(scan, data);
         return Promise.resolve(scan);
       }),
@@ -226,6 +226,7 @@ function buildConfig(overrides: Record<string, number> = {}) {
     COVERAGE_THEME_OVERLAP: 0.5,
     COVERAGE_MAX_QUOTES_PER_THEME: 3,
     COVERAGE_SCAN_MIN_QUERIES: 2,
+    COVERAGE_SCAN_STALE_MINUTES: 20,
     ...overrides,
   };
   return { get: jest.fn((key: string) => values[key]) };
@@ -284,9 +285,11 @@ const knowledgeStub = {
 describe('KnowledgeCoverageService — startScan', () => {
   it('409 si ya hay una corrida RUNNING, con su scanId', async () => {
     const { prisma } = buildFakePrisma([]);
-    prisma.coverageScan.findFirst = jest
-      .fn()
-      .mockResolvedValue({ id: 'scan-en-curso', status: 'RUNNING' });
+    prisma.coverageScan.findFirst = jest.fn().mockResolvedValue({
+      id: 'scan-en-curso',
+      status: 'RUNNING',
+      createdAt: new Date(), // recién arrancado: no está colgado
+    });
     const service = new KnowledgeCoverageService(
       prisma as any,
       buildConfig() as any,
@@ -296,6 +299,39 @@ describe('KnowledgeCoverageService — startScan', () => {
     );
 
     await expect(service.startScan('emp-1')).rejects.toThrow(ConflictException);
+  });
+
+  // ⚠️ Spec 011, visto en la pantalla. Si el worker muere a mitad de la
+  // corrida, el job no pasa por el catch de `runScan` y la fila queda RUNNING
+  // para siempre. Como este barrido es GLOBAL, el 409 eterno no bloqueaba un
+  // área: dejaba el botón "Actualizar" muerto en las CINCO.
+  it('un barrido colgado se cierra como FAILED y NO bloquea las cinco áreas', async () => {
+    const { prisma } = buildFakePrisma([]);
+    prisma.coverageScan.findFirst = jest.fn().mockResolvedValue({
+      id: 'scan-zombi',
+      status: 'RUNNING',
+      createdAt: new Date(Date.now() - 45 * 60_000), // 45 min > 20
+    });
+    const queue = buildQueue();
+    const service = new KnowledgeCoverageService(
+      prisma as any,
+      buildConfig() as any,
+      queue as any,
+      buildGroupingAllTogether() as any,
+      knowledgeStub as any,
+    );
+
+    const res = await service.startScan('emp-1');
+
+    expect(res.scanId).not.toBe('scan-zombi');
+    expect(queue.add).toHaveBeenCalled();
+    // Se cierra con motivo, no se borra en silencio.
+    expect(prisma.coverageScan.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'scan-zombi' },
+        data: expect.objectContaining({ status: 'FAILED' }),
+      }),
+    );
   });
 
   it('FR-025: windowFrom >= windowTo → 400', async () => {
@@ -690,7 +726,9 @@ describe('KnowledgeCoverageService — atendido y reaparición (FR-026/027/028, 
     const primeraCorrida = await service.getLatest('emp-1');
     expect(primeraCorrida.themes).toHaveLength(1);
 
-    await service.markHandled(primeraCorrida.themes[0].id, 'emp-1');
+    await prisma.coverageThemeMark.create({
+      data: { themeId: primeraCorrida.themes[0].id, markedById: 'emp-1' },
+    });
 
     // Segunda corrida: MISMOS eventos, sin tráfico nuevo.
     const scan2 = await prisma.coverageScan.create({
@@ -720,10 +758,9 @@ describe('KnowledgeCoverageService — atendido y reaparición (FR-026/027/028, 
 
     const { service } = await runOnce(prisma, grouping);
     const primeraCorrida = await service.getLatest('emp-1');
-    const marca = await service.markHandled(
-      primeraCorrida.themes[0].id,
-      'emp-1',
-    );
+    const marca = await prisma.coverageThemeMark.create({
+      data: { themeId: primeraCorrida.themes[0].id, markedById: 'emp-1' },
+    });
 
     // Tráfico nuevo posterior a la marca: se agregan 2 eventos frescos, con
     // timestamp explícitamente POSTERIOR al de la marca (no `new Date()` a
@@ -834,103 +871,10 @@ describe('KnowledgeCoverageService — banda AL_LIMITE, conteos separados (US3, 
   });
 });
 
-describe('KnowledgeCoverageService — unmarkHandled', () => {
-  const now = new Date('2026-08-24T00:00:00Z');
-  const dentro = (h: number) => new Date(now.getTime() - h * 60 * 60 * 1000);
-
-  it('con marca propia, desmarca sin problema', async () => {
-    const events = [
-      ev('e1', 'uno', 40, dentro(1)),
-      ev('e2', 'dos', 40, dentro(1)),
-    ];
-    const grouping = buildGroupingAllTogether();
-    const { prisma, marks } = buildFakePrisma(events);
-    const service = new KnowledgeCoverageService(
-      prisma as any,
-      buildConfig() as any,
-      buildQueue() as any,
-      grouping as any,
-      knowledgeStub as any,
-    );
-    const scan = await prisma.coverageScan.create({
-      data: {
-        status: 'RUNNING',
-        windowFrom: dentro(24 * 30),
-        windowTo: now,
-        noiseFloor: 54.3,
-        threshold: 65,
-        marginalBand: 5,
-        startedById: 'emp-1',
-      },
-    });
-    await service.runScan(scan.id);
-    const latest = await service.getLatest('emp-1');
-    await service.markHandled(latest.themes[0].id, 'emp-1');
-    expect(marks).toHaveLength(1);
-
-    const result = await service.unmarkHandled(latest.themes[0].id, 'emp-1');
-
-    expect(result).toEqual({ unmarked: true });
-    expect(marks).toHaveLength(0);
-  });
-
-  it('BUG REAL (encontrado en vivo): un tema reincidente sin marca propia da 404 explicativo, no un 500 de Prisma sin capturar', async () => {
-    // Reproduce exactamente el caso real: marcar, generar tráfico nuevo,
-    // correr de nuevo (nace un tema NUEVO que reconoce la marca por solape
-    // pero no la tiene puesta encima), e intentar desmarcar ESE tema nuevo.
-    const events = [
-      ev('e1', 'tema repetido', 40, dentro(48)),
-      ev('e2', 'tema repetido variante', 42, dentro(48)),
-    ];
-    const grouping = buildGroupingAllTogether();
-    const { prisma } = buildFakePrisma(events);
-    const service = new KnowledgeCoverageService(
-      prisma as any,
-      buildConfig() as any,
-      buildQueue() as any,
-      grouping as any,
-      knowledgeStub as any,
-    );
-    const scan1 = await prisma.coverageScan.create({
-      data: {
-        status: 'RUNNING',
-        windowFrom: dentro(24 * 30),
-        windowTo: now,
-        noiseFloor: 54.3,
-        threshold: 65,
-        marginalBand: 5,
-        startedById: 'emp-1',
-      },
-    });
-    await service.runScan(scan1.id);
-    const primeraCorrida = await service.getLatest('emp-1');
-    await service.markHandled(primeraCorrida.themes[0].id, 'emp-1');
-
-    const UN_DIA_MS = 24 * 60 * 60 * 1000;
-    const marca = await prisma.coverageThemeMark.findUnique({
-      where: { themeId: primeraCorrida.themes[0].id },
-    });
-    const despuesDeLaMarca = new Date(marca.markedAt.getTime() + UN_DIA_MS);
-    events.push(ev('e3', 'tema repetido de nuevo', 41, despuesDeLaMarca));
-    events.push(ev('e4', 'tema repetido otra vez', 43, despuesDeLaMarca));
-
-    const scan2 = await prisma.coverageScan.create({
-      data: {
-        status: 'RUNNING',
-        windowFrom: dentro(24 * 30),
-        windowTo: new Date(despuesDeLaMarca.getTime() + UN_DIA_MS),
-        noiseFloor: 54.3,
-        threshold: 65,
-        marginalBand: 5,
-        startedById: 'emp-1',
-      },
-    });
-    await service.runScan(scan2.id);
-    const segundaCorrida = await service.getLatest('emp-1');
-    expect(segundaCorrida.themes[0].handled.recurring).toBe(true); // precondición
-
-    await expect(
-      service.unmarkHandled(segundaCorrida.themes[0].id, 'emp-1'),
-    ).rejects.toThrow('no tiene una marca propia');
-  });
-});
+// ⚠️ El describe de `unmarkHandled` se **eliminó** con la spec 011, junto con
+// el método: el descarte unificado lo reemplaza y sirve para las tres fuentes
+// (FR-024a). Los tests de un endpoint retirado se eliminan, no se adaptan.
+//
+// Lo que NO se retiró es la reaparición por tráfico nuevo (`filterHandled`,
+// arriba): `CoverageThemeMark` deja de escribirse pero se sigue leyendo, y esa
+// regla es la que hace visible a un reincidente.

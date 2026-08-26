@@ -97,6 +97,69 @@ describe('elegirForma — invariante SC-001', () => {
       }
     }
   });
+
+  // Spec 011: el mismo invariante, ahora con los CUATRO orígenes. Que un
+  // origen nuevo lo rompa sin que nadie lo note es el riesgo que este test
+  // existe para atajar — un `PEDIR_NUEVO` con documento al lado convierte la
+  // entrevista en la máquina de duplicados más eficiente del sistema.
+  it('propiedad (spec 011): PEDIR_NUEVO implica cero documentos, sobre los cuatro orígenes', () => {
+    const documentosDe = (m: MaterialDePregunta) => {
+      if (m.origin === 'TEMA_COBERTURA') return m.documents;
+      if (m.origin === 'DOCUMENTO_INCONCLUSO') return [m.document];
+      return [];
+    };
+
+    for (let i = 0; i < 200; i++) {
+      const dado = Math.random();
+      let material: MaterialDePregunta;
+      if (dado < 0.25) {
+        material = temaMaterial({
+          documents: Array.from(
+            { length: Math.floor(Math.random() * 3) },
+            (_, j) => doc(`d${j}`),
+          ),
+        });
+      } else if (dado < 0.5) {
+        material = {
+          origin: 'ESCALADO_SIN_CAPITALIZAR',
+          escalationId: `e${i}`,
+          resolutionText: 'se le repuso el producto',
+        };
+      } else if (dado < 0.75) {
+        material = {
+          origin: 'ESCALADO_PENDIENTE',
+          escalationId: `e${i}`,
+          quotes: ['¿y si llega dañado?'],
+        };
+      } else {
+        material = {
+          origin: 'DOCUMENTO_INCONCLUSO',
+          document: doc(`d${i}`),
+          unansweredQuestions: ['¿quién absorbe el costo del nuevo envío?'],
+          reason: 'el título habla de daños y el cuerpo solo cubre retrasos',
+          severity: Math.floor(Math.random() * 101),
+        };
+      }
+
+      if (elegirForma(material) === 'PEDIR_NUEVO') {
+        expect(documentosDe(material).length).toBe(0);
+      }
+    }
+  });
+
+  // Un documento inconcluso SIEMPRE trae documento, así que la forma es
+  // corregir ese documento — nunca escribir uno nuevo al lado.
+  it('spec 011: DOCUMENTO_INCONCLUSO → CORREGIR', () => {
+    expect(
+      elegirForma({
+        origin: 'DOCUMENTO_INCONCLUSO',
+        document: doc('d1'),
+        unansweredQuestions: ['¿y si llega dañado?'],
+        reason: 'el título promete algo que el cuerpo no cubre',
+        severity: 85,
+      }),
+    ).toBe('CORREGIR');
+  });
 });
 
 describe('excluirPorCausa — FR-008', () => {
@@ -169,6 +232,46 @@ describe('yaPreguntado — FR-006b/c (C1, /speckit-analyze)', () => {
       { themeQueryEventIds: [], escalationId: 'esc-1' },
     ];
     expect(yaPreguntado(material, previos, overlapCut)).toBe(false);
+  });
+
+  it('spec 011: un documento ya entrevistado en su versión actual se excluye', () => {
+    const material: MaterialDePregunta = {
+      origin: 'DOCUMENTO_INCONCLUSO',
+      document: { id: 'D1', title: 'Envíos', version: 2, isActive: true },
+      unansweredQuestions: ['¿y si llega dañado?'],
+      reason: 'quedó corto',
+      severity: 85,
+    };
+    const previos = [
+      {
+        themeQueryEventIds: [],
+        escalationId: null,
+        documentId: 'D1',
+        documentVersion: 2,
+      },
+    ];
+    expect(yaPreguntado(material, previos, 0.5)).toBe(true);
+  });
+
+  // FR-026: lo que se entrevistó fue el documento tal como estaba. Si se
+  // editó después, vuelve a preguntarse.
+  it('spec 011: el mismo documento en OTRA versión no se excluye', () => {
+    const material: MaterialDePregunta = {
+      origin: 'DOCUMENTO_INCONCLUSO',
+      document: { id: 'D1', title: 'Envíos', version: 3, isActive: true },
+      unansweredQuestions: ['¿y si llega dañado?'],
+      reason: 'quedó corto',
+      severity: 85,
+    };
+    const previos = [
+      {
+        themeQueryEventIds: [],
+        escalationId: null,
+        documentId: 'D1',
+        documentVersion: 2,
+      },
+    ];
+    expect(yaPreguntado(material, previos, 0.5)).toBe(false);
   });
 
   it('sin previos, nada se excluye', () => {

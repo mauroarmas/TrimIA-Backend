@@ -20,7 +20,15 @@ export interface MaterialDocumento {
   isActive: boolean;
 }
 
-/** Un tema del resumen de cobertura (spec 009), o un escalado, normalizados. */
+/**
+ * Un tema del resumen de cobertura (spec 009), un escalado, o un documento que
+ * el detector marcó incompleto (spec 011), normalizados.
+ *
+ * Los nombres NO coinciden con `ImprovementSource` a propósito: allá importa
+ * POR QUÉ el ítem está en la lista, acá QUÉ forma toma la pregunta — por eso
+ * `ESCALADO` se abre en dos (uno ya tiene resolución escrita, el otro no). El
+ * mapeo completo está en `specs/011-.../data-model.md`.
+ */
 export type MaterialDePregunta =
   | {
       origin: 'TEMA_COBERTURA';
@@ -43,6 +51,13 @@ export type MaterialDePregunta =
       origin: 'ESCALADO_PENDIENTE';
       escalationId: string;
       quotes: string[];
+    }
+  | {
+      origin: 'DOCUMENTO_INCONCLUSO';
+      document: MaterialDocumento;
+      unansweredQuestions: string[];
+      reason: string;
+      severity: number;
     };
 
 /**
@@ -64,6 +79,10 @@ export function elegirForma(
       return 'GENERALIZAR';
     case 'ESCALADO_PENDIENTE':
       return 'ABIERTA';
+    // Spec 011: siempre hay documento detrás, así que nunca puede ser
+    // PEDIR_NUEVO. La regla de SC-001 se sostiene con el cuarto origen.
+    case 'DOCUMENTO_INCONCLUSO':
+      return 'CORREGIR';
   }
 }
 
@@ -83,6 +102,9 @@ export function excluirPorCausa(material: MaterialDePregunta): boolean {
 export interface PreguntaPrevia {
   themeQueryEventIds: string[];
   escalationId: string | null;
+  /** Spec 011: el documento entrevistado, con la versión que tenía entonces. */
+  documentId?: string | null;
+  documentVersion?: number | null;
 }
 
 /**
@@ -101,6 +123,16 @@ export function yaPreguntado(
       (p) =>
         p.themeQueryEventIds.length > 0 &&
         overlap(material.queryEventIds, p.themeQueryEventIds) >= overlapCut,
+    );
+  }
+  // Spec 011: un documento se identifica por id MÁS versión, por el mismo
+  // motivo que el descarte (FR-026) — uno editado después de entrevistarse
+  // merece volver a preguntarse; uno que no cambió, no.
+  if (material.origin === 'DOCUMENTO_INCONCLUSO') {
+    return previos.some(
+      (p) =>
+        p.documentId === material.document.id &&
+        p.documentVersion === material.document.version,
     );
   }
   return previos.some((p) => p.escalationId === material.escalationId);

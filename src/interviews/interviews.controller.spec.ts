@@ -57,7 +57,22 @@ describe('InterviewsController — delegación', () => {
   it('POST /interviews delega en open() con el sectorId y el empleado del token', async () => {
     const { controller, interviews } = buildController();
     await controller.open({ sectorId: 'sector-1' }, req as any);
-    expect(interviews.open).toHaveBeenCalledWith('sector-1', 'emp-1');
+    expect(interviews.open).toHaveBeenCalledWith(
+      'sector-1',
+      'emp-1',
+      undefined,
+    );
+  });
+
+  // Spec 011 (FR-005): el ítem elegido en la lista viaja al servicio. Sin él,
+  // la entrevista sería sobre el área y no sobre lo que la persona apretó.
+  it('POST /interviews pasa el itemId cuando viene', async () => {
+    const { controller, interviews } = buildController();
+    await controller.open(
+      { sectorId: 'sector-1', itemId: 'doc:D1' },
+      req as any,
+    );
+    expect(interviews.open).toHaveBeenCalledWith('sector-1', 'emp-1', 'doc:D1');
   });
 
   it('403 por área ajena se propaga tal cual (FR-002)', async () => {

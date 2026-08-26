@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import {
   Audience,
+  CandidateApplyMode,
   InterviewCandidateStatus,
   InterviewStatus,
 } from '@prisma/client';
@@ -185,6 +186,7 @@ export class InterviewsCandidatesService {
       audience: Audience;
       targetDocumentId: string | null;
       targetVersion: number | null;
+      applyMode: CandidateApplyMode;
       questionId: string;
       question: { order: number; text: string; origin: string };
     },
@@ -202,18 +204,23 @@ export class InterviewsCandidatesService {
       documentId: string;
       title: string;
       version: number;
+      currentContent: string;
       changedSinceOpen: boolean;
     } | null = null;
     if (candidate.targetDocumentId) {
       const doc = await this.prisma.knowledgeDocument.findUnique({
         where: { id: candidate.targetDocumentId },
-        select: { id: true, title: true, version: true },
+        select: { id: true, title: true, version: true, content: true },
       });
       target = doc
         ? {
             documentId: doc.id,
             title: doc.title,
             version: doc.version,
+            // Lo que el documento dice HOY. Sin esto, quien aprueba decide
+            // entre agregar y reemplazar a ciegas — y reemplazar borra algo
+            // que no está viendo.
+            currentContent: doc.content,
             changedSinceOpen:
               candidate.targetVersion != null &&
               doc.version !== candidate.targetVersion,
@@ -245,6 +252,9 @@ export class InterviewsCandidatesService {
       id: candidate.id,
       status: candidate.status,
       candidateKind: candidate.targetDocumentId ? 'CORRECCION' : 'NUEVO',
+      // Solo tiene sentido en una corrección: un documento nuevo no tiene a
+      // qué agregarse.
+      applyMode: candidate.targetDocumentId ? candidate.applyMode : null,
       title: candidate.title,
       content,
       edited: candidate.editedContent != null,
@@ -268,6 +278,7 @@ export class InterviewsCandidatesService {
       content?: string;
       audience?: Audience;
       targetDocumentId?: string | null;
+      applyMode?: CandidateApplyMode;
     },
     empleadoId: string,
   ) {
@@ -285,6 +296,9 @@ export class InterviewsCandidatesService {
     if (input.title !== undefined) data.title = input.title;
     if (input.content !== undefined) data.editedContent = input.content;
     if (input.audience !== undefined) data.audience = input.audience;
+    // Agregar o pisar. Solo se decide en una corrección; en un candidato nuevo
+    // no hay a qué agregarse y el valor queda inerte.
+    if (input.applyMode !== undefined) data.applyMode = input.applyMode;
     if ('targetDocumentId' in input) {
       data.targetDocumentId = input.targetDocumentId;
       if (input.targetDocumentId) {
@@ -428,11 +442,25 @@ export class InterviewsCandidatesService {
     return { results, sessionStatus };
   }
 
+  /**
+   * Aplica una corrección a un documento existente.
+   *
+   * ⚠️ **Por defecto AGREGA, no reemplaza.** La pregunta que originó la ficha
+   * fue "¿qué le FALTA a este documento?", y quien la redacta —el modelo— no
+   * ve el documento original: solo la respuesta. Escribir esa ficha como
+   * contenido entero borra todo lo que el documento ya decía.
+   *
+   * Pasó de verdad: «Sobre Nosotros» quedó hablando solo de facturas después
+   * de una entrevista sobre facturación. Quien aprueba puede elegir
+   * `REEMPLAZAR` cuando de verdad quiere pisar el texto, pero tiene que ser
+   * una decisión, no el default.
+   */
   private async aprobarCorreccion(
     candidate: {
       id: string;
       targetDocumentId: string;
       targetVersion: number | null;
+      applyMode: CandidateApplyMode;
     },
     contenido: string,
     empleadoId: string,
@@ -452,11 +480,16 @@ export class InterviewsCandidatesService {
       return { ok: false, code: 'DOCUMENTO_AUSENTE' };
     }
 
+    const contenidoFinal =
+      candidate.applyMode === CandidateApplyMode.AGREGAR
+        ? `${doc.content.trimEnd()}\n\n${contenido.trimStart()}`
+        : contenido;
+
     try {
       await this.knowledge.update(
         candidate.targetDocumentId,
         {
-          content: contenido,
+          content: contenidoFinal,
           origin: 'AI_ACCEPTED' as never,
           expectedVersion: candidate.targetVersion ?? doc.version,
         },

@@ -201,6 +201,67 @@ describe('KnowledgeService.update — qué dispara reindexación', () => {
  * el service para que valga sin importar quién llame: el test va donde está
  * la lógica que protege.)
  */
+describe('KnowledgeService.update — la bitácora guarda el texto anterior', () => {
+  // ⚠️ Sin esto la bitácora decía QUE el contenido cambió pero no QUÉ decía
+  // antes: un cambio indebido no se podía deshacer ni auditar de verdad
+  // (OE-11 pide la trazabilidad entera, no la mitad).
+  //
+  // Se descubrió buscando cómo recuperar «Sobre Nosotros» después de que una
+  // corrección de entrevista lo pisara: no había de dónde. Chroma ya estaba
+  // reindexado y `version` es un contador de escrituras concurrentes, no un
+  // historial. El texto se perdió.
+  it('guarda contentBefore cuando cambia el contenido', async () => {
+    const { service, changeCreate } = buildService({
+      content: 'EL TEXTO QUE HABÍA ANTES.',
+    });
+
+    await service.update(DOC_ID, { content: 'El texto nuevo.' }, AUTHOR);
+
+    expect(changeCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          contentBefore: 'EL TEXTO QUE HABÍA ANTES.',
+        }),
+      }),
+    );
+  });
+
+  // Guardarlo en un cambio de audiencia sería ruido que crece con cada
+  // edición, y encima mentiría: ese cambio no tocó el texto.
+  it('NO lo guarda cuando el contenido no cambió', async () => {
+    const { service, changeCreate } = buildService();
+
+    await service.update(DOC_ID, { audience: 'INTERNO' }, AUTHOR);
+
+    expect(changeCreate).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ contentBefore: null }),
+      }),
+    );
+  });
+
+  // El caso que motivó todo esto: una corrección de entrevista aprobada como
+  // reemplazo. Hoy el default es AGREGAR, pero si alguien elige REEMPLAZAR el
+  // texto viejo tiene que quedar recuperable.
+  it('un reemplazo total deja recuperable lo que se pisó', async () => {
+    const { service, changeCreate } = buildService({
+      content: 'Credimisión es una empresa comercial de Misiones.',
+    });
+
+    await service.update(
+      DOC_ID,
+      {
+        content: 'Las facturas se envían por mail.',
+        origin: 'AI_ACCEPTED' as never,
+      },
+      AUTHOR,
+    );
+
+    const guardado = changeCreate.mock.calls[0][0].data.contentBefore;
+    expect(guardado).toContain('Credimisión es una empresa comercial');
+  });
+});
+
 describe('KnowledgeService.update — baseVersion desactualizada (FR-033)', () => {
   it('409 si otro supervisor editó entre el preview y el apply', async () => {
     // El caso real: dos personas abren el mismo documento, una guarda, la

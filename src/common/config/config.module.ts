@@ -149,6 +149,34 @@ import * as Joi from 'joi';
         INTERVIEW_MAX_QUOTES_PER_QUESTION: Joi.number().min(1).default(2),
         INTERVIEW_ABANDON_DAYS: Joi.number().min(1).default(7),
         INTERVIEW_MAX_ESCALATIONS_FALLBACK: Joi.number().min(1).default(10),
+
+        // Spec 011 — una sola pantalla para mejorar. COVERAGE_THEME_OVERLAP
+        // (arriba) se reusa tal cual para reconocer un tema descartado entre
+        // corridas: es la misma identidad por solape que la spec 009 midió.
+        //
+        // El corte de severidad NO es confianza del modelo: medido sobre los
+        // 75 documentos reales, devuelve confianza alta para todo lo que marca
+        // (53 de 53) y no corta nada. La severidad sí discrimina, y viene
+        // cuantizada (85/75/65/55/45/20/15), así que mover el corte de 80 a 78
+        // no cambia nada — recalibrar significa moverse de banda.
+        DOC_REVIEW_SEVERITY_CUT: Joi.number().min(0).max(100).default(80),
+        DOC_REVIEW_MAX_FINDINGS: Joi.number().min(1).default(10),
+        IMPROVEMENT_MAX_ITEMS: Joi.number().min(1).default(15),
+        // Cuánto puede durar una revisión antes de darla por muerta. Un job
+        // que el worker perdió —reinicio, o un lock vencido porque el
+        // proveedor tardó más que `lockDuration`— deja la fila en RUNNING
+        // para siempre, y como el refresh se ENGANCHA a lo que está
+        // corriendo, esa área queda bloqueada. Pasó en la validación en vivo.
+        DOC_REVIEW_STALE_MINUTES: Joi.number().min(1).default(30),
+        // El mismo problema que arriba, en el barrido de cobertura (spec
+        // 009). Ahí es peor porque ese barrido es GLOBAL: un scan colgado
+        // dejaba el botón "Actualizar" muerto en las CINCO áreas. Visto en la
+        // pantalla, no deducido.
+        COVERAGE_SCAN_STALE_MINUTES: Joi.number().min(1).default(20),
+        // Spec 008, la tercera aparición del mismo defecto: un barrido de
+        // higiene colgado dejaba el botón "Analizar" muerto. El encontrado en
+        // vivo llevaba 38 horas en RUNNING.
+        HYGIENE_SCAN_STALE_MINUTES: Joi.number().min(1).default(20),
       }),
       validationOptions: {
         allowUnknown: true,

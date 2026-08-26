@@ -65,10 +65,31 @@ function buildFakePrisma() {
         if (!s) throw new Error('not found');
         return Promise.resolve(s);
       }),
+      // `findMany` y `delete` los usa la reconciliación de sesiones
+      // duplicadas: sin ellos el fake no puede representar la carrera que
+      // FR-003 tiene que resolver.
+      findMany: jest.fn(({ where }: any) =>
+        Promise.resolve(
+          sessions.filter(
+            (s) =>
+              s.openedById === where.openedById &&
+              s.sectorId === where.sectorId &&
+              where.status.in.includes(s.status),
+          ),
+        ),
+      ),
+      delete: jest.fn(({ where }: any) => {
+        const i = sessions.findIndex((s) => s.id === where.id);
+        if (i === -1) throw new Error('not found');
+        return Promise.resolve(sessions.splice(i, 1)[0]);
+      }),
       create: jest.fn(({ data }: any) => {
         const session = {
           id: nextId('session'),
           lastActivityAt: new Date(),
+          // Prisma lo pone con @default(now()); el desempate de la
+          // reconciliación lo necesita.
+          createdAt: new Date(),
           ...data,
         };
         sessions.push(session);
@@ -171,12 +192,19 @@ const knowledgeStub = {
   esResponsableDeAgente: jest.fn().mockResolvedValue(true),
 };
 
-function coverageStubConTemas(n = 3) {
+/**
+ * Spec 011: el material ya NO lo resuelve esta clase — lo arma
+ * `ImprovementsService` uniendo las tres fuentes, y la entrevista lo consume.
+ * Acá se stubea esa entrada; el armado de la lista (orden, deduplicación,
+ * corte, filtrado por descarte y por lo ya entrevistado) se prueba en
+ * `improvements-list.spec.ts` y `improvements.service.spec.ts`.
+ */
+function improvementsStubConTemas(n = 3) {
   return {
-    getLatest: jest.fn().mockResolvedValue({
-      scan: { id: 'scan-1' },
-      themes: Array.from({ length: n }, (_, i) => ({
-        id: `theme-${i}`,
+    materialParaEntrevista: jest.fn().mockResolvedValue({
+      material: Array.from({ length: n }, (_, i) => ({
+        origin: 'TEMA_COBERTURA',
+        themeId: `theme-${i}`,
         label: `Tema ${i}`,
         agentType: 'SALES',
         band: 'SIN_RESPUESTA',
@@ -186,24 +214,30 @@ function coverageStubConTemas(n = 3) {
         queryCount: 3 - i,
         documents: [],
       })),
-      notice: null,
+      huboItems: n > 0,
     }),
   };
 }
 
-function coverageStubSinNada() {
+/** Ni consultas sin responder, ni escalados, ni documentos incompletos. */
+function improvementsStubSinNada() {
   return {
-    getLatest: jest.fn().mockResolvedValue({
-      scan: null,
-      themes: [],
-      notice: {
-        code: 'SIN_MUESTRA_SUFICIENTE',
-        queriesInWindow: 3,
-        minimumSample: 10,
-      },
-    }),
+    materialParaEntrevista: jest
+      .fn()
+      .mockResolvedValue({ material: [], huboItems: false }),
   };
 }
+
+/** Había ítems, pero todos se preguntaron ya: NO es lo mismo que no haber nada. */
+function improvementsStubTodoPreguntado() {
+  return {
+    materialParaEntrevista: jest
+      .fn()
+      .mockResolvedValue({ material: [], huboItems: true }),
+  };
+}
+
+const coverageStub = { getLatest: jest.fn(), hayScanCorriendo: jest.fn() };
 
 function draftingStubOk() {
   return {
@@ -223,6 +257,7 @@ function buildService(overrides: {
   prisma: any;
   config?: any;
   coverage?: any;
+  improvements?: any;
   drafting?: any;
   knowledge?: any;
   openQueue?: any;
@@ -236,8 +271,9 @@ function buildService(overrides: {
     openQueue as any,
     closeQueue as any,
     (overrides.knowledge ?? knowledgeStub) as any,
-    (overrides.coverage ?? coverageStubConTemas()) as any,
+    (overrides.coverage ?? coverageStub) as any,
     (overrides.drafting ?? draftingStubOk()) as any,
+    (overrides.improvements ?? improvementsStubConTemas()) as any,
   );
   return { service, openQueue, closeQueue };
 }
@@ -275,34 +311,19 @@ describe('InterviewsService — open', () => {
     );
   });
 
-  it('YA_ENTREVISTADO: si el único tema del área ya se preguntó antes, el 422 lo dice — no "TODO_CUBIERTO", que sería mentir (bug real, encontrado clickeando)', async () => {
+  // Los dos motivos que sobreviven a la spec 011 NO son intercambiables:
+  // decirle "no hay nada que mejorar" a quien viene de apretar un ítem que
+  // está viendo en pantalla es mentirle. El bug se encontró clickeando el
+  // salto entre pantallas, que por API no se veía.
+  //
+  // Spec 011: QUÉ ya se preguntó lo decide `ImprovementsService` (y se prueba
+  // en `improvements-list.spec.ts`). Lo que le queda a esta clase, y es lo que
+  // se prueba acá, es distinguir "había y ya se preguntó todo" de "no había".
+  it('YA_ENTREVISTADO: había ítems pero ya se preguntaron todos — no "TODO_CUBIERTO", que sería mentir', async () => {
     const { prisma } = buildFakePrisma();
     const { service } = buildService({
       prisma,
-      coverage: coverageStubConTemas(1),
-    });
-
-    // Una sesión previa (no FALLIDA) que ya preguntó ese mismo tema: mismas
-    // queryEventIds, que es la identidad real (FR-006c).
-    const primera = await service.open('sector-ventas', 'emp-1');
-    await service.runOpen(primera.id, [
-      {
-        origin: 'TEMA_COBERTURA',
-        themeId: 'theme-0',
-        label: 'Tema 0',
-        agentType: 'SALES',
-        band: 'SIN_RESPUESTA',
-        cause: 'NO_HAY_NADA',
-        queryEventIds: ['ev-0'],
-        quotes: ['consulta 0'],
-        queryCount: 3,
-        documents: [],
-      },
-    ] as any);
-    // Se cierra para liberar la regla de "una sesión por área" (FR-003).
-    await (prisma as any).interviewSession.update({
-      where: { id: primera.id },
-      data: { status: 'CERRADA' },
+      improvements: improvementsStubTodoPreguntado(),
     });
 
     await expect(service.open('sector-ventas', 'emp-1')).rejects.toMatchObject({
@@ -310,11 +331,76 @@ describe('InterviewsService — open', () => {
     });
   });
 
+  it('TODO_CUBIERTO: no había ningún ítem de ninguna de las tres fuentes', async () => {
+    const { prisma } = buildFakePrisma();
+    const { service } = buildService({
+      prisma,
+      improvements: improvementsStubSinNada(),
+    });
+
+    await expect(service.open('sector-ventas', 'emp-1')).rejects.toMatchObject({
+      response: { reason: 'TODO_CUBIERTO' },
+    });
+  });
+
+  // ⚠️ La carrera que FR-003 debía impedir y no impedía. Entre el `findFirst`
+  // y el `create` hay una ventana: dos aperturas casi simultáneas la pasan las
+  // dos. Pasó de verdad al automatizar el panel — dos sesiones de Ventas con
+  // **6 milisegundos** de diferencia, con las mismas cuatro preguntas.
+  //
+  // Prisma no modela índices únicos parciales, así que se reconcilia después
+  // de crear: gana la más vieja, con desempate por id. Determinista, para que
+  // las dos llamadas lleguen a la misma conclusión sin hablarse.
+  it('FR-003: dos aperturas simultáneas dejan UNA sola sesión', async () => {
+    const { prisma, sessions } = buildFakePrisma();
+    const { service } = buildService({ prisma });
+
+    // Las dos pasan el findFirst antes de que ninguna cree: se simula
+    // arrancándolas juntas.
+    const [a, b] = await Promise.allSettled([
+      service.open('sector-ventas', 'emp-1'),
+      service.open('sector-ventas', 'emp-1'),
+    ]);
+
+    const abiertas = sessions.filter((s: { status: string }) =>
+      ['PREPARANDO', 'EN_CURSO', 'CERRANDO', 'EN_REVISION'].includes(s.status),
+    );
+    expect(abiertas).toHaveLength(1);
+
+    // Una ganó y la otra recibió un 409 apuntando a la que ganó — no un
+    // error genérico: para quien llama es "seguí con la que ya tenías".
+    const oks = [a, b].filter((r) => r.status === 'fulfilled');
+    const fallos = [a, b].filter((r) => r.status === 'rejected');
+    expect(oks).toHaveLength(1);
+    expect(fallos).toHaveLength(1);
+    expect((fallos[0] as PromiseRejectedResult).reason).toMatchObject({
+      response: { reason: 'SESSION_ALREADY_OPEN' },
+    });
+  });
+
+  // Spec 011 (FR-005): entrevistarse sobre el ítem elegido en la lista. El
+  // itemId viaja hasta quien arma el material — si se perdiera en el camino,
+  // alguien aprieta un ítem y le preguntan por otro.
+  it('FR-005: el itemId elegido llega a quien arma el material', async () => {
+    const { prisma } = buildFakePrisma();
+    const improvements = improvementsStubConTemas(2);
+    const { service } = buildService({ prisma, improvements });
+
+    await service.open('sector-ventas', 'emp-1', 'doc:D1');
+
+    expect(improvements.materialParaEntrevista).toHaveBeenCalledWith(
+      'sector-ventas',
+      'SALES',
+      'emp-1',
+      'doc:D1',
+    );
+  });
+
   it('FR-016: sin temas ni respaldo, da 422 con el motivo', async () => {
     const { prisma } = buildFakePrisma();
     const { service } = buildService({
       prisma,
-      coverage: coverageStubSinNada(),
+      improvements: improvementsStubSinNada(),
     });
 
     await expect(service.open('sector-ventas', 'emp-1')).rejects.toThrow(

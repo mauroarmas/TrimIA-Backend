@@ -946,6 +946,11 @@ export class KnowledgeService implements OnModuleInit {
           changedFields,
           origin: input.origin ?? KnowledgeChangeOrigin.MANUAL,
           aiInstruction: input.aiInstruction ?? null,
+          // El texto de antes, para poder deshacer y para que la auditoría
+          // muestre QUÉ cambió y no solo que algo cambió (OE-11). Solo cuando
+          // el contenido es lo que cambió: guardarlo en un cambio de audiencia
+          // sería ruido que crece con cada edición.
+          contentBefore: contentChanged ? current.content : null,
           // Spec 007: de qué caso escalado salió esta edición, si salió de uno.
           escalationId: input.escalationId ?? null,
           // Spec 008 (FR-016): si esta edición fue una fusión, de qué

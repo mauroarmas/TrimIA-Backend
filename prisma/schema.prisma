@@ -165,6 +165,10 @@ model Sector {
 
   // Spec 010 — entrevista desde el tráfico real
   interviews InterviewSession[]
+
+  // Spec 011 — una sola pantalla para mejorar
+  documentReviews DocumentReview[]
+  dismissals      ImprovementDismissal[]
 }
 
 // Empleado/supervisor autorizado. Determina userType al recibir un mensaje.
@@ -227,6 +231,10 @@ model Employee {
   // Spec 010 — entrevista desde el tráfico real
   entrevistasAbiertas InterviewSession[]   @relation("EntrevistasAbiertas")
   candidatosResueltos InterviewCandidate[] @relation("CandidatosResueltos")
+
+  // Spec 011 — una sola pantalla para mejorar
+  docReviewsStarted DocumentReview[]       @relation("DocReviewStartedBy")
+  dismissalsMade    ImprovementDismissal[] @relation("ImprovementDismissedBy")
 
   @@index([phone])
   @@index([email])
@@ -549,6 +557,9 @@ model Escalation {
   // Spec 010 — preguntas de entrevista que salieron de este caso.
   entrevistaPreguntas InterviewQuestion[]
 
+  // Spec 011 — descartes de este caso como ítem para mejorar.
+  dismissals ImprovementDismissal[]
+
   createdAt DateTime @default(now())
 
   @@index([conversationId])
@@ -666,6 +677,10 @@ model KnowledgeDocument {
   entrevistaCandidatosDestino InterviewCandidate[] @relation("EntrevistaCorrigeCandidato")
   entrevistaProdujo           InterviewCandidate[] @relation("EntrevistaProdujo")
 
+  // Spec 011 — señalamientos del detector y descartes sobre este documento.
+  findings   DocumentFinding[]      @relation("DocFinding")
+  dismissals ImprovementDismissal[] @relation("DocDismissal")
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -729,6 +744,21 @@ model KnowledgeChange {
   changedFields String[] // ["content", "audience"]
   origin        KnowledgeChangeOrigin
   aiInstruction String? // qué le pidió el supervisor a la IA
+
+  /// El texto que el documento tenía ANTES de este cambio. Solo se guarda
+  /// cuando `content` está entre los `changedFields`.
+  ///
+  /// Sin esto la bitácora decía QUE el contenido cambió pero no QUÉ decía
+  /// antes, así que un cambio indebido no se podía deshacer ni auditar de
+  /// verdad — media trazabilidad, para un requisito (OE-11) que la pide
+  /// entera. Se descubrió buscando cómo recuperar «Sobre Nosotros» después de
+  /// que una corrección lo pisara: no había de dónde. Chroma ya estaba
+  /// reindexado y `version` es un contador para detectar escrituras
+  /// concurrentes, no un historial.
+  ///
+  /// Se guarda el texto entero y no un diff: son ~75 documentos y los cambios
+  /// son poco frecuentes, así que la simplicidad gana sobre el espacio.
+  contentBefore String?
 
   // Spec 007 (FR-009): de qué caso escalado salió esta edición, si salió de uno.
   //
@@ -1071,6 +1101,18 @@ enum InterviewQuestionOrigin {
   TEMA_COBERTURA // salió del resumen de la spec 009
   ESCALADO_SIN_CAPITALIZAR // caso resuelto que nunca se guardó como conocimiento
   ESCALADO_PENDIENTE // caso que nadie contestó todavía
+  DOCUMENTO_INCONCLUSO // el detector lo marcó incompleto (spec 011)
+}
+
+/// Cómo se aplica un candidato que corrige un documento existente.
+///
+/// La pregunta `CORREGIR` dice "¿qué le FALTA a este documento?", así que la
+/// respuesta es un complemento y el default es AGREGAR. Reemplazar todo el
+/// documento con la respuesta a esa pregunta borra lo que ya decía — pasó con
+/// «Sobre Nosotros», que quedó hablando solo de facturas.
+enum CandidateApplyMode {
+  AGREGAR // se suma al final del contenido actual
+  REEMPLAZAR // pisa el contenido entero
 }
 
 enum InterviewQuestionKind {
@@ -1212,12 +1254,12 @@ model InterviewCandidate {
 
   status InterviewCandidateStatus @default(PENDIENTE)
 
-  title    String
+  title           String
   /// `KnowledgeDocument.category` es obligatoria al ingestar (spec 5A) y
   /// ningún otro camino de esta feature la deriva sola. Se prellena con la
   /// etiqueta del tema cuando la pregunta vino de cobertura, y es editable
   /// como el resto de la ficha.
-  category String
+  category        String
   /// Lo que redactó el modelo. Se conserva aunque se edite, para poder
   /// comparar qué cambió la persona.
   proposedContent String
@@ -1236,6 +1278,12 @@ model InterviewCandidate {
   targetDocument   KnowledgeDocument? @relation("EntrevistaCorrigeCandidato", fields: [targetDocumentId], references: [id])
   targetVersion    Int?
 
+  /// Solo cuando corrige: si el contenido se SUMA al del documento o lo pisa.
+  /// Default AGREGAR porque la pregunta fue "qué le falta", y la ficha que
+  /// redacta el modelo responde solo eso — nunca ve el documento original, así
+  /// que no puede reescribirlo entero. Editable antes de aprobar.
+  applyMode CandidateApplyMode @default(AGREGAR)
+
   /// El documento que produjo al aprobarse.
   resultDocumentId String?
   resultDocument   KnowledgeDocument? @relation("EntrevistaProdujo", fields: [resultDocumentId], references: [id])
@@ -1249,4 +1297,157 @@ model InterviewCandidate {
   createdAt    DateTime  @default(now())
 
   @@index([sessionId, status])
+}
+
+// ============================================================================
+// Spec 011 — Una sola pantalla para mejorar el conocimiento
+// ============================================================================
+
+enum DocReviewStatus {
+  RUNNING
+  READY
+  FAILED
+}
+
+/// De qué fuente salió un ítem de la lista (FR-004, FR-020).
+///
+/// Nombra lo mismo que `InterviewQuestionOrigin` pero con otras palabras,
+/// porque son dos ejes distintos: acá importa POR QUÉ el ítem está en la
+/// lista, allá QUÉ forma toma la pregunta. El mapeo es:
+///
+///   CONSULTA_FALLIDA     ↔ TEMA_COBERTURA
+///   ESCALADO             ↔ ESCALADO_SIN_CAPITALIZAR | ESCALADO_PENDIENTE
+///   DOCUMENTO_INCONCLUSO ↔ DOCUMENTO_INCONCLUSO
+///
+/// El ESCALADO se abre en dos del lado de la entrevista a propósito: uno ya
+/// tiene resolución escrita (se generaliza) y el otro no (se pregunta abierto).
+enum ImprovementSource {
+  CONSULTA_FALLIDA // tema del resumen de cobertura (spec 009)
+  ESCALADO // caso escalado sin capitalizar (spec 010)
+  DOCUMENTO_INCONCLUSO // señalamiento del detector (esta spec)
+}
+
+/// Una corrida del detector sobre los documentos de un área.
+model DocumentReview {
+  id     String          @id @default(uuid())
+  status DocReviewStatus @default(RUNNING)
+
+  /// El área revisada. Se guardan los dos por el mismo motivo que en la spec
+  /// 010: el sector dice a quién le corresponde, el agente dice qué documentos
+  /// entran — y un sector puede cambiar de agente sin que las corridas viejas
+  /// se muevan.
+  ///
+  /// Qué documentos entran: los del `agentType` MÁS los transversales
+  /// (`agentType` nulo), que son 15 de los 75 activos. Sin ellos, un quinto
+  /// del corpus no lo revisaría nadie nunca. Se analizan una vez —el
+  /// incremental hace que la segunda área los saltee— pero sus señalamientos
+  /// solo se MUESTRAN a quien es responsable de todas las áreas: es quien
+  /// puede corregirlos, y un ítem que quien lo ve no puede tocar es ruido.
+  sectorId  String
+  sector    Sector    @relation(fields: [sectorId], references: [id])
+  agentType AgentType
+
+  startedById String
+  startedBy   Employee @relation("DocReviewStartedBy", fields: [startedById], references: [id])
+
+  /// Cuántos se miraron de verdad y cuántos se saltearon por no haber
+  /// cambiado (FR-013a). Los dos hacen falta para el resumen de una línea
+  /// (FR-006): "20 sin cambios, 2 revisados" explica por qué tardó 8s.
+  documentsAnalyzed Int @default(0)
+  documentsSkipped  Int @default(0)
+  findingsFound     Int @default(0)
+
+  /// El corte de severidad vigente al correr. Guardado con la corrida por el
+  /// mismo motivo que `HygieneScan.threshold`: si alguien recalibra, las
+  /// corridas viejas se explican con el número que usaron.
+  severityCut Int
+
+  failureReason String?
+
+  findings DocumentFinding[]
+
+  createdAt  DateTime  @default(now())
+  finishedAt DateTime?
+
+  @@index([sectorId, status, createdAt])
+}
+
+/// El señalamiento del detector sobre UN documento.
+///
+/// La lista se arma con el último señalamiento VIGENTE de cada documento, no
+/// con los de la última corrida: con el incremental (FR-013a) una corrida que
+/// saltea 20 documentos y analiza 2 produce 2 findings, pero los otros 20
+/// siguen siendo verdad. Vigente = `documentVersion` coincide con la `version`
+/// actual del documento.
+model DocumentFinding {
+  id       String         @id @default(uuid())
+  reviewId String
+  review   DocumentReview @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+
+  documentId      String
+  document        KnowledgeDocument @relation("DocFinding", fields: [documentId], references: [id], onDelete: Cascade)
+  /// La versión sobre la que se juzgó (FR-019). Hace tres trabajos: saltear el
+  /// documento en la próxima corrida si no cambió (FR-013a), decidir si un
+  /// descarte sigue valiendo (FR-026) y decidir si el señalamiento vigente.
+  documentVersion Int
+
+  /// 0-100 (D1/D2). NO es confianza: el modelo devuelve confianza alta para
+  /// todo lo que marca (53 de 53 en la medición), así que no cortaba nada.
+  /// Esto mide cuánto DUELE la carencia, que sí discrimina.
+  ///
+  /// Viene cuantizada: el modelo usa 85/75/65/55/45/20/15 y casi nunca valores
+  /// intermedios. Cualquier corte entre 76 y 85 se comporta igual.
+  severity Int
+
+  /// Las preguntas concretas que el documento deja abiertas (FR-014). Nunca
+  /// vacío: un señalamiento sin preguntas no habilita ninguna acción y no se
+  /// persiste. Medido: 2,8 por señalamiento, ninguno vino vacío.
+  unansweredQuestions String[]
+  reason              String
+
+  createdAt DateTime @default(now())
+
+  @@unique([reviewId, documentId])
+  @@index([reviewId, severity])
+  /// Para resolver "el señalamiento VIGENTE de este documento" sin pasar por
+  /// la corrida que lo produjo.
+  @@index([documentId, documentVersion])
+}
+
+/// El descarte, para las tres fuentes. Reemplaza a `CoverageThemeMark`, que
+/// solo servía para una (FR-024a).
+model ImprovementDismissal {
+  id     String            @id @default(uuid())
+  source ImprovementSource
+
+  /// A qué apunta, según la fuente. Uno solo está lleno:
+  ///  - CONSULTA_FALLIDA     → themeQueryEventIds (identidad por solape, spec 009 D6)
+  ///  - ESCALADO             → escalationId
+  ///  - DOCUMENTO_INCONCLUSO → documentId + documentVersion
+  ///
+  /// Sin FK a CoverageTheme a propósito: el tema es una fila por corrida y
+  /// desaparece en la siguiente. La identidad estable son sus consultas —
+  /// el mismo criterio que la spec 009 ya usa para reconocer un reincidente.
+  themeQueryEventIds String[] @default([])
+
+  escalationId String?
+  escalation   Escalation? @relation(fields: [escalationId], references: [id])
+
+  documentId      String?
+  document        KnowledgeDocument? @relation("DocDismissal", fields: [documentId], references: [id], onDelete: Cascade)
+  /// Solo para documentos: el descarte muere si el documento cambia (FR-026).
+  /// Para las otras dos fuentes es null y el descarte rige hasta que aparezca
+  /// evidencia nueva (FR-026a).
+  documentVersion Int?
+
+  sectorId String
+  sector   Sector @relation(fields: [sectorId], references: [id])
+
+  dismissedById String
+  dismissedBy   Employee @relation("ImprovementDismissedBy", fields: [dismissedById], references: [id])
+  dismissedAt   DateTime @default(now())
+  note          String?
+
+  @@index([sectorId, source])
+  @@index([documentId, documentVersion])
 }

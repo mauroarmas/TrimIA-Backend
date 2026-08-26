@@ -49,14 +49,17 @@ export class InterviewsController {
       'Encola la redacción de preguntas y responde sin esperar (Principio IV).\n\n' +
       '**409** `SESSION_ALREADY_OPEN` — ya hay una sesión sin cerrar de esta ' +
       'persona para esta área; viene con esa sesión, no se crea una segunda.\n\n' +
-      '**422** — no hay material, con `reason` distinguido: `SIN_CORRIDA` ' +
-      '(nunca se corrió el barrido de cobertura), `SIN_MUESTRA_SUFICIENTE` ' +
-      '(hay tráfico pero no alcanza) o `TODO_CUBIERTO` (corrió y no hay ' +
-      'huecos ni escalados de respaldo). Los tres dan cero preguntas y no ' +
-      'son intercambiables.',
+      '**422** — no hay material, con `reason` distinguido: `TODO_CUBIERTO` ' +
+      '(no hay consultas sin responder, ni casos pendientes, ni documentos ' +
+      'incompletos) o `YA_ENTREVISTADO` (había, y ya se preguntó todo). Los ' +
+      'dos dan cero preguntas y no son intercambiables.\n\n' +
+      'Spec 011: `itemId` opcional entrevista sobre el ítem elegido en la ' +
+      'lista de mejoras, sin pasar por una pantalla intermedia (FR-005). ' +
+      '`SIN_CORRIDA` y `SIN_MUESTRA_SUFICIENTE` dejaron de ser motivos: las ' +
+      'otras dos fuentes no dependen del barrido de cobertura.',
   })
   open(@Body() dto: OpenInterviewDto, @Req() req: AuthenticatedRequest) {
-    return this.interviews.open(dto.sectorId, req.user.id);
+    return this.interviews.open(dto.sectorId, req.user.id, dto.itemId);
   }
 
   @Get(':id')
@@ -141,7 +144,11 @@ export class InterviewsController {
     description:
       'Mandar `targetDocumentId` convierte un candidato nuevo en corrección ' +
       'de ese documento (desde el aviso de parecido, FR-029); en `null` lo ' +
-      'devuelve a nuevo.',
+      'devuelve a nuevo.\n\n' +
+      '`applyMode` decide, en una corrección, si el contenido se **suma** al ' +
+      'documento (`AGREGAR`, default) o lo **pisa** (`REEMPLAZAR`). El ' +
+      'default no es caprichoso: la pregunta fue "qué le falta", y quien ' +
+      'redacta la ficha no ve el documento original.',
   })
   patchCandidate(
     @Param('candidateId') candidateId: string,

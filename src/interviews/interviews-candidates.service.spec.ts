@@ -388,6 +388,108 @@ describe('InterviewsCandidatesService — approve (FR-027/FR-028/FR-029/FR-030/F
     });
   });
 
+  // ⚠️ El defecto que reportó el uso real (2026-08-25). La pregunta que
+  // origina una corrección es "¿qué le FALTA a este documento?", y quien
+  // redacta la ficha —el modelo— **no ve el documento original**: solo la
+  // respuesta. Escribir esa ficha como contenido entero borra todo lo que el
+  // documento decía.
+  //
+  // Pasó de verdad: «Sobre Nosotros» quedó hablando solo de facturas después
+  // de una entrevista sobre facturación. Ningún test lo veía porque todos
+  // miraban el resultado (`ok: true`), no QUÉ se escribió.
+  it('AGREGAR (default): la corrección se suma al contenido, no lo pisa', async () => {
+    const { prisma, sessions, questions, candidates, documents } =
+      buildFakePrisma();
+    sessions.push({ id: 'sess-1', agentType: 'SALES', status: 'EN_REVISION' });
+    questions.push({
+      id: 'q1',
+      sessionId: 'sess-1',
+      origin: 'TEMA_COBERTURA',
+      escalationId: null,
+    });
+    candidates.push({
+      id: 'cand-1',
+      sessionId: 'sess-1',
+      questionId: 'q1',
+      status: 'PENDIENTE',
+      title: 'T',
+      category: 'General',
+      proposedContent: 'Las facturas se envían por mail al procesarse el pago.',
+      editedContent: null,
+      audience: 'INTERNO',
+      targetDocumentId: 'doc-1',
+      targetVersion: 3,
+      applyMode: 'AGREGAR',
+    });
+    documents.push({
+      id: 'doc-1',
+      isActive: true,
+      version: 3,
+      content: 'Credimisión es una empresa comercial de Misiones.',
+    });
+
+    const knowledge = knowledgeStub();
+    const service = new InterviewsCandidatesService(
+      prisma as any,
+      knowledge as any,
+      draftingStub() as any,
+    );
+
+    const { results } = await service.approve(['cand-1'], 'emp-1');
+    expect(results[0]).toMatchObject({ ok: true });
+
+    const escrito = knowledge.update.mock.calls[0][1].content;
+    // Lo viejo SIGUE ahí…
+    expect(escrito).toContain('Credimisión es una empresa comercial');
+    // …y lo nuevo se sumó.
+    expect(escrito).toContain('Las facturas se envían por mail');
+  });
+
+  it('REEMPLAZAR: pisa el contenido, pero solo si alguien lo eligió', async () => {
+    const { prisma, sessions, questions, candidates, documents } =
+      buildFakePrisma();
+    sessions.push({ id: 'sess-1', agentType: 'SALES', status: 'EN_REVISION' });
+    questions.push({
+      id: 'q1',
+      sessionId: 'sess-1',
+      origin: 'TEMA_COBERTURA',
+      escalationId: null,
+    });
+    candidates.push({
+      id: 'cand-1',
+      sessionId: 'sess-1',
+      questionId: 'q1',
+      status: 'PENDIENTE',
+      title: 'T',
+      category: 'General',
+      proposedContent: 'El texto nuevo y definitivo.',
+      editedContent: null,
+      audience: 'INTERNO',
+      targetDocumentId: 'doc-1',
+      targetVersion: 3,
+      applyMode: 'REEMPLAZAR',
+    });
+    documents.push({
+      id: 'doc-1',
+      isActive: true,
+      version: 3,
+      content: 'Lo que decía antes.',
+    });
+
+    const knowledge = knowledgeStub();
+    const service = new InterviewsCandidatesService(
+      prisma as any,
+      knowledge as any,
+      draftingStub() as any,
+    );
+
+    await service.approve(['cand-1'], 'emp-1');
+
+    const escrito = knowledge.update.mock.calls[0][1].content;
+    expect(escrito).toBe('El texto nuevo y definitivo.');
+    expect(escrito).not.toContain('Lo que decía antes');
+  });
+
   it('FR-031: documento desactivado da DOCUMENTO_AUSENTE', async () => {
     const { prisma, sessions, questions, candidates, documents } =
       buildFakePrisma();

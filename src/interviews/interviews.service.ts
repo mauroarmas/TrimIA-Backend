@@ -12,7 +12,6 @@ import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
 import {
   AgentType,
-  EscalationStatus,
   InterviewQuestionOrigin,
   InterviewQuestionStatus,
   InterviewStatus,
@@ -20,25 +19,28 @@ import {
 import { PrismaService } from '../database/prisma.service';
 import { KnowledgeService } from '../ai/knowledge/knowledge.service';
 import { KnowledgeCoverageService } from '../ai/knowledge/knowledge-coverage.service';
+import { ImprovementsService } from '../improvements/improvements.service';
 import { InterviewsDraftingService } from './interviews-drafting.service';
 import {
   elegirForma,
-  excluirPorCausa,
-  yaPreguntado,
   MaterialDePregunta,
-  PreguntaPrevia,
+  MaterialDocumento,
 } from './interviews-questions';
-import {
-  materialDeEscalados,
-  EscaladoParaMaterial,
-} from './interviews-fallback';
 import { esAsentimientoVacio } from './interviews-thin-answer';
 
-type MotivoSinMaterial =
-  | 'SIN_CORRIDA'
-  | 'SIN_MUESTRA_SUFICIENTE'
-  | 'TODO_CUBIERTO'
-  | 'YA_ENTREVISTADO';
+/**
+ * Por qué una sesión no tiene con qué preguntar.
+ *
+ * Spec 011: `SIN_CORRIDA` y `SIN_MUESTRA_SUFICIENTE` **dejaron de ser
+ * motivos**. Las otras dos fuentes de la lista —escalados históricos y
+ * documentos que el detector marcó incompletos— no dependen del barrido de
+ * cobertura, así que quedarse sin preguntas ya no puede achacársele a él.
+ *
+ * Los dos que sobreviven siguen sin ser intercambiables: "no hay huecos" y "ya
+ * se preguntó todo lo que había" piden acciones distintas, y la distinción se
+ * encontró clickeando el salto entre pantallas, no por API.
+ */
+type MotivoSinMaterial = 'TODO_CUBIERTO' | 'YA_ENTREVISTADO';
 
 const ESTADOS_SIN_CERRAR: InterviewStatus[] = [
   InterviewStatus.PREPARANDO,
@@ -70,13 +72,14 @@ export class InterviewsService {
     private readonly knowledge: KnowledgeService,
     private readonly coverage: KnowledgeCoverageService,
     private readonly drafting: InterviewsDraftingService,
+    private readonly improvements: ImprovementsService,
   ) {}
 
   // ==========================================================================
   // Abrir
   // ==========================================================================
 
-  async open(sectorId: string, empleadoId: string) {
+  async open(sectorId: string, empleadoId: string, itemId?: string) {
     const sector = await this.prisma.sector.findUnique({
       where: { id: sectorId },
     });
@@ -119,6 +122,7 @@ export class InterviewsService {
       sectorId,
       sector.agentType,
       empleadoId,
+      itemId,
     );
     if (resuelto.material.length === 0) {
       throw new UnprocessableEntityException({
@@ -134,9 +138,39 @@ export class InterviewsService {
         sectorId,
         agentType: sector.agentType,
         openedById: empleadoId,
-        coverageScanId: resuelto.coverageScanId,
+        // Spec 011: la sesión ya no cuelga de una corrida de cobertura. El
+        // material viene de tres fuentes y solo una de ellas es un barrido;
+        // atarla a un `scanId` diría que la entrevista salió de ahí cuando
+        // puede haber salido de un escalado de hace meses o del detector.
+        coverageScanId: null,
       },
     });
+
+    // ⚠️ El `findFirst` de arriba deja una ventana: dos aperturas casi
+    // simultáneas la pasan las dos y quedan DOS sesiones abiertas del mismo
+    // área, que es justo lo que FR-003 prohíbe. Pasó de verdad — dos sesiones
+    // con 6 MILISEGUNDOS de diferencia, al automatizar el panel.
+    //
+    // Prisma no modela índices únicos parciales, así que la regla no puede
+    // vivir en la base sin sacar SQL fuera del esquema (y el proyecto usa
+    // `db push`). Se reconcilia después de crear: gana **la más vieja**, con
+    // desempate por id. Como el criterio es determinista, las dos llamadas
+    // llegan a la MISMA conclusión sin hablarse — una se borra y la otra
+    // sigue. Es seguro porque una sesión recién creada todavía no tiene
+    // preguntas: el job se encola más abajo.
+    const perdedora = await this.reconciliarSesionDuplicada(
+      session,
+      empleadoId,
+      sectorId,
+    );
+    if (perdedora) {
+      throw new ConflictException({
+        statusCode: 409,
+        reason: 'SESSION_ALREADY_OPEN',
+        session: { id: perdedora.id, status: perdedora.status },
+        message: 'Ya tenés una entrevista sin cerrar para esta área.',
+      });
+    }
 
     // FR-004: el material se resolvió ACÁ, en el momento de abrir, y viaja
     // con el job — el worker no lo vuelve a derivar más tarde.
@@ -153,235 +187,113 @@ export class InterviewsService {
     };
   }
 
+  /**
+   * Cierra la ventana entre el `findFirst` y el `create` de `open()`.
+   *
+   * Si quedaron varias sesiones sin cerrar de la misma persona y área, gana
+   * **la más vieja** (desempate por id, que es estable). Determinista a
+   * propósito: las dos llamadas concurrentes calculan lo mismo sin
+   * coordinarse.
+   *
+   * @returns la sesión ganadora **si la nuestra perdió** (y entonces la
+   *   nuestra ya se borró); `null` si la nuestra ganó y se puede seguir.
+   */
+  private async reconciliarSesionDuplicada(
+    propia: { id: string; createdAt: Date },
+    empleadoId: string,
+    sectorId: string,
+  ): Promise<{ id: string; status: InterviewStatus } | null> {
+    const abiertas = await this.prisma.interviewSession.findMany({
+      where: {
+        openedById: empleadoId,
+        sectorId,
+        status: { in: ESTADOS_SIN_CERRAR },
+      },
+      select: { id: true, status: true, createdAt: true },
+    });
+    if (abiertas.length <= 1) return null;
+
+    const ganadora = abiertas.reduce((mejor, actual) => {
+      if (actual.createdAt.getTime() !== mejor.createdAt.getTime()) {
+        return actual.createdAt < mejor.createdAt ? actual : mejor;
+      }
+      return actual.id < mejor.id ? actual : mejor;
+    });
+    if (ganadora.id === propia.id) return null;
+
+    this.logger.warn(
+      `Dos aperturas simultáneas de ${sectorId}: se descarta ${propia.id} y ` +
+        `se retoma ${ganadora.id}`,
+    );
+    await this.prisma.interviewSession
+      .delete({ where: { id: propia.id } })
+      .catch(() => {
+        // Si otra llamada ya la borró, no hay nada que arreglar.
+      });
+    return { id: ganadora.id, status: ganadora.status };
+  }
+
   private mensajeSinMaterial(motivo: MotivoSinMaterial): string {
     switch (motivo) {
-      case 'SIN_CORRIDA':
-        return 'Todavía no se corrió el resumen de cobertura para esta área.';
-      case 'SIN_MUESTRA_SUFICIENTE':
-        return 'Todavía no hay tráfico suficiente como para saber qué falta.';
       case 'TODO_CUBIERTO':
-        return 'No se detectaron huecos ni casos pendientes para esta área.';
+        return (
+          'No hay nada que mejorar en esta área: ni consultas sin responder, ' +
+          'ni casos pendientes, ni documentos incompletos.'
+        );
       case 'YA_ENTREVISTADO':
         return (
-          'Ya se entrevistó todo lo que el resumen encontró para esta área. ' +
-          'Volvé a correr el resumen cuando haya consultas nuevas: los temas ' +
-          'que ya se preguntaron no se repiten.'
+          'Ya se entrevistó todo lo que hay para esta área. Actualizá desde ' +
+          'la pantalla de mejoras cuando haya novedades: lo que ya se ' +
+          'preguntó no se repite.'
         );
     }
   }
 
   /**
-   * FR-007..FR-016. Primero los temas de cobertura del área; si no hay
-   * ninguno (excluidos por causa o ya preguntados), el respaldo (FR-013/015).
+   * De dónde salen las preguntas (spec 011, FR-008/FR-029).
+   *
+   * **Ya no las resuelve esta clase.** La lista unificada —consultas que
+   * fallaron, escalados históricos y documentos que el detector marcó
+   * incompletos— la arma `ImprovementsService`, y la entrevista la consume. Es
+   * lo que hace que la lista que se ve en pantalla y las preguntas que se
+   * reciben salgan del mismo lugar: si divergieran, alguien aprieta un ítem y
+   * le preguntan por otro.
+   *
+   * Las tres fuentes son de primera (FR-008): se retiró el respaldo que hacía
+   * entrar a los escalados solo cuando no había temas de cobertura.
+   *
+   * `itemId` opcional: con él, ese ítem va primero — la entrevista es sobre lo
+   * que se eligió, sin pasar por una pantalla intermedia (FR-005).
    */
   private async resolverMaterial(
     sectorId: string,
     agentType: AgentType,
     empleadoId: string,
+    itemId?: string,
   ): Promise<{
     material: MaterialDePregunta[];
-    coverageScanId: string | null;
-    fromCoverage: boolean;
     motivo: MotivoSinMaterial | null;
   }> {
-    const overlapCut = this.config.get<number>('COVERAGE_THEME_OVERLAP')!;
-    const maxQuotes = this.config.get<number>(
-      'INTERVIEW_MAX_QUOTES_PER_QUESTION',
-    )!;
     const maxQuestions = this.config.get<number>('INTERVIEW_MAX_QUESTIONS')!;
 
-    // FR-006b/c: qué ya se preguntó en sesiones no FALLIDA de esta área.
-    const previas = await this.prisma.interviewQuestion.findMany({
-      where: {
-        session: { sectorId, status: { not: InterviewStatus.FALLIDA } },
-      },
-      select: { themeQueryEventIds: true, escalationId: true },
-    });
-    const previos: PreguntaPrevia[] = previas.map((p) => ({
-      themeQueryEventIds: p.themeQueryEventIds,
-      escalationId: p.escalationId,
-    }));
-
-    const latest = await this.coverage.getLatest(empleadoId);
-
-    let coverageScanId: string | null = null;
-    let sinCorridaOInsuficiente: MotivoSinMaterial | null = null;
-    let temaMaterial: MaterialDePregunta[] = [];
-    // ¿Había material para esta área, pero todo ya se preguntó antes
-    // (FR-006b)? No es lo mismo que "no hay huecos": decirle `TODO_CUBIERTO`
-    // a quien viene de apretar "Entrevistar sobre esto" sobre un tema que
-    // está viendo en pantalla es mentirle. Encontrado clickeando el salto
-    // entre pantallas, que por API no se veía.
-    let todoYaPreguntado = false;
-
-    if (
-      latest.notice?.code === 'SIN_CORRIDA' ||
-      latest.notice?.code === 'SIN_MUESTRA_SUFICIENTE'
-    ) {
-      sinCorridaOInsuficiente = latest.notice.code;
-    } else if (latest.scan) {
-      coverageScanId = latest.scan.id;
-      temaMaterial = latest.themes
-        .filter((t) => t.agentType === agentType)
-        .map(
-          (t): MaterialDePregunta => ({
-            origin: 'TEMA_COBERTURA',
-            themeId: t.id,
-            label: t.label,
-            agentType: t.agentType,
-            band: t.band,
-            cause: t.cause,
-            queryEventIds: t.queryEventIds,
-            quotes: t.quotes.slice(0, maxQuotes),
-            queryCount: t.queryCount,
-            documents: t.documents
-              .filter((d) => d.isActive)
-              .map((d) => ({
-                id: d.id,
-                title: d.title,
-                version: d.version,
-                isActive: d.isActive,
-              })),
-          }),
-        )
-        .filter((m) => !excluirPorCausa(m));
-
-      const antesDeFiltrarPreguntados = temaMaterial.length;
-      temaMaterial = temaMaterial.filter(
-        (m) => !yaPreguntado(m, previos, overlapCut),
+    const { material, huboItems } =
+      await this.improvements.materialParaEntrevista(
+        sectorId,
+        agentType,
+        empleadoId,
+        itemId,
       );
-      todoYaPreguntado =
-        antesDeFiltrarPreguntados > 0 && temaMaterial.length === 0;
+
+    if (material.length > 0) {
+      return { material: material.slice(0, maxQuestions), motivo: null };
     }
 
-    if (temaMaterial.length > 0) {
-      const ordenado = [...temaMaterial]
-        .sort((a, b) => {
-          const qa = a.origin === 'TEMA_COBERTURA' ? a.queryCount : 0;
-          const qb = b.origin === 'TEMA_COBERTURA' ? b.queryCount : 0;
-          return qb - qa;
-        })
-        .slice(0, maxQuestions);
-      return {
-        material: ordenado,
-        coverageScanId,
-        fromCoverage: true,
-        motivo: null,
-      };
-    }
-
-    // FR-013/015: sin temas de cobertura para el área, probar el respaldo.
-    const respaldo = await this.resolverMaterialDeRespaldo(
-      agentType,
-      previos,
-      overlapCut,
-    );
-    if (respaldo.length > 0) {
-      return {
-        material: respaldo.slice(0, maxQuestions),
-        coverageScanId: null,
-        fromCoverage: false,
-        motivo: null,
-      };
-    }
-
+    // Los dos no son intercambiables: decirle "no hay nada" a quien viene de
+    // apretar un ítem que está viendo en pantalla es mentirle.
     return {
       material: [],
-      coverageScanId: null,
-      fromCoverage: false,
-      motivo:
-        sinCorridaOInsuficiente ??
-        (todoYaPreguntado ? 'YA_ENTREVISTADO' : 'TODO_CUBIERTO'),
+      motivo: huboItems ? 'YA_ENTREVISTADO' : 'TODO_CUBIERTO',
     };
-  }
-
-  /**
-   * FR-013c/e: el área se asocia por `currentAgent` de la conversación —
-   * `Escalation` no guarda agentType propio.
-   */
-  private async resolverMaterialDeRespaldo(
-    agentType: AgentType,
-    previos: PreguntaPrevia[],
-    overlapCut: number,
-  ): Promise<MaterialDePregunta[]> {
-    const tope = this.config.get<number>('INTERVIEW_MAX_ESCALATIONS_FALLBACK')!;
-
-    const escalados = await this.prisma.escalation.findMany({
-      where: {
-        conversation: { currentAgent: agentType },
-        status: { in: [EscalationStatus.RESOLVED, EscalationStatus.PENDING] },
-      },
-      orderBy: { createdAt: 'desc' },
-      take: tope,
-      select: {
-        id: true,
-        status: true,
-        resolution: true,
-        resolvedWithDocumentId: true,
-        conversationId: true,
-        createdAt: true,
-      },
-    });
-    if (escalados.length === 0) return [];
-
-    const ids = escalados.map((e) => e.id);
-
-    // FR-013e señal 2: documento creado enseñando al agente (spec 005) o al
-    // guardar sin enviar (spec 007) — ninguno de los dos toca resolvedWithDocumentId.
-    const documentosCapitalizados =
-      await this.prisma.knowledgeDocument.findMany({
-        where: { sourceType: 'ESCALADO', sourceId: { in: ids } },
-        select: { sourceId: true },
-      });
-    const capitalizadosPorDocumento = new Set(
-      documentosCapitalizados.map((d) => d.sourceId!),
-    );
-
-    // FR-013e señal 3: ya cerrado por esta misma feature.
-    const candidatosAprobados = await this.prisma.interviewCandidate.findMany({
-      where: {
-        status: 'APROBADO',
-        question: { escalationId: { in: ids } },
-      },
-      select: { question: { select: { escalationId: true } } },
-    });
-    const capitalizadosPorEntrevista = new Set(
-      candidatosAprobados.map((c) => c.question.escalationId!),
-    );
-
-    // La consulta original de los PENDING: el último mensaje del usuario
-    // antes de la escalación (Escalation.reason es diagnóstico del sistema,
-    // no la consulta — ver research.md).
-    const pendientes = escalados.filter(
-      (e) => e.status === EscalationStatus.PENDING,
-    );
-    const consultaOriginalPorEscalado = new Map<string, string>();
-    for (const e of pendientes) {
-      const mensaje = await this.prisma.message.findFirst({
-        where: {
-          conversationId: e.conversationId,
-          role: 'USER',
-          createdAt: { lte: e.createdAt },
-        },
-        orderBy: { createdAt: 'desc' },
-        select: { content: true },
-      });
-      if (mensaje) consultaOriginalPorEscalado.set(e.id, mensaje.content);
-    }
-
-    const paraMaterial: EscaladoParaMaterial[] = escalados.map((e) => ({
-      id: e.id,
-      status: e.status as 'RESOLVED' | 'PENDING',
-      resolution: e.resolution,
-      yaCapitalizado:
-        e.resolvedWithDocumentId != null ||
-        capitalizadosPorDocumento.has(e.id) ||
-        capitalizadosPorEntrevista.has(e.id),
-      consultaOriginal: consultaOriginalPorEscalado.get(e.id) ?? null,
-    }));
-
-    const material = materialDeEscalados(paraMaterial);
-    return material.filter((m) => !yaPreguntado(m, previos, overlapCut));
   }
 
   /**
@@ -434,18 +346,17 @@ export class InterviewsService {
                 it.material.origin === 'ESCALADO_SIN_CAPITALIZAR'
                   ? it.material.resolutionText
                   : null,
-              documentId:
-                it.material.origin === 'TEMA_COBERTURA' &&
-                it.material.documents[0]
-                  ? it.material.documents[0].id
-                  : null,
+              // El documento a corregir sale de dos orígenes: un tema de
+              // cobertura que trae documentos, o un señalamiento del detector
+              // (spec 011), que trae exactamente uno. Guardar la VERSIÓN es lo
+              // que después permite decidir que ya se entrevistó sobre él
+              // (FR-023) sin bloquearlo para siempre si alguien lo edita.
+              documentId: documentoDelMaterial(it.material)?.id ?? null,
               documentVersion:
-                it.material.origin === 'TEMA_COBERTURA' &&
-                it.material.documents[0]
-                  ? it.material.documents[0].version
-                  : null,
+                documentoDelMaterial(it.material)?.version ?? null,
               escalationId:
-                it.material.origin !== 'TEMA_COBERTURA'
+                it.material.origin === 'ESCALADO_SIN_CAPITALIZAR' ||
+                it.material.origin === 'ESCALADO_PENDIENTE'
                   ? it.material.escalationId
                   : null,
             },
@@ -759,4 +670,19 @@ export class InterviewsService {
       retried: retried != null,
     };
   }
+}
+
+/**
+ * El documento que una pregunta va a corregir, si lo hay. Sale de dos
+ * orígenes distintos y conviene resolverlo en un solo lugar: un tema de
+ * cobertura puede traer varios (gana el primero, el de más peso) y un
+ * señalamiento del detector trae exactamente uno.
+ */
+function documentoDelMaterial(
+  material: MaterialDePregunta,
+): MaterialDocumento | null {
+  if (material.origin === 'TEMA_COBERTURA')
+    return material.documents[0] ?? null;
+  if (material.origin === 'DOCUMENTO_INCONCLUSO') return material.document;
+  return null;
 }

@@ -19,8 +19,10 @@ import { KnowledgeIngestionProcessor } from './processors/knowledge-ingestion.pr
 import { HygieneScanProcessor } from './processors/hygiene-scan.processor';
 import { CoverageScanProcessor } from './processors/coverage-scan.processor';
 import { InterviewOpenProcessor } from './processors/interview-open.processor';
+import { DocumentReviewProcessor } from './processors/document-review.processor';
 import { InterviewCloseProcessor } from './processors/interview-close.processor';
 import { InterviewsModule } from '../interviews/interviews.module';
+import { ImprovementsModule } from '../improvements/improvements.module';
 
 @Module({
   imports: [
@@ -34,6 +36,7 @@ import { InterviewsModule } from '../interviews/interviews.module';
       { name: 'coverage-scan' }, // Spec 009
       { name: 'interview-open' }, // Spec 010
       { name: 'interview-close' }, // Spec 010
+      { name: 'document-review' }, // Spec 011
     ),
     ConversationsModule,
     MessagingModule,
@@ -46,6 +49,7 @@ import { InterviewsModule } from '../interviews/interviews.module';
     CollectionsModule,
     KnowledgeModule,
     InterviewsModule,
+    ImprovementsModule,
   ],
   providers: [
     MessageProcessor,
@@ -57,6 +61,7 @@ import { InterviewsModule } from '../interviews/interviews.module';
     HygieneScanProcessor,
     CoverageScanProcessor,
     InterviewOpenProcessor,
+    DocumentReviewProcessor,
     InterviewCloseProcessor,
   ],
 })

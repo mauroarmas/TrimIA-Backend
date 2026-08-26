@@ -370,9 +370,39 @@ describe('startScan — 409 si ya hay un barrido corriendo', () => {
     ).findFirst.mockResolvedValue({
       id: 'scan-en-curso',
       status: 'RUNNING',
+      createdAt: new Date(), // recién arrancado: no está colgado
     });
 
     await expect(service.startScan('emp-1')).rejects.toThrow(ConflictException);
+  });
+
+  // ⚠️ Tercera aparición del mismo defecto (documentos, cobertura, higiene).
+  // Un barrido que quedó RUNNING porque el worker murió no vence solo, y el
+  // 409 eterno deja el botón "Analizar" muerto para siempre. El encontrado en
+  // vivo llevaba 38 HORAS. Ningún test lo veía porque en un test el worker no
+  // se muere.
+  it('un barrido colgado se cierra como FAILED y deja arrancar uno nuevo', async () => {
+    const { service, prisma } = buildService([]);
+    const hygieneScan = prisma.hygieneScan as {
+      findFirst: jest.Mock;
+      update: jest.Mock;
+    };
+    hygieneScan.findFirst.mockResolvedValue({
+      id: 'scan-zombi',
+      status: 'RUNNING',
+      createdAt: new Date(Date.now() - 38 * 60 * 60_000), // 38 horas
+    });
+
+    const res = await service.startScan('emp-1');
+
+    expect(res.scanId).not.toBe('scan-zombi');
+    // Se cierra con motivo, no se borra en silencio.
+    expect(hygieneScan.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'scan-zombi' },
+        data: expect.objectContaining({ status: 'FAILED' }),
+      }),
+    );
   });
 });
 
