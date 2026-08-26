@@ -48,6 +48,7 @@ function buildService(documentos: ReturnType<typeof doc>[]) {
     },
     knowledgeMergeDiscard: {
       findUnique: jest.fn().mockResolvedValue(null),
+      findMany: jest.fn().mockResolvedValue([]),
       upsert: jest.fn().mockResolvedValue({}),
     },
     hygieneScan: {
@@ -332,7 +333,9 @@ describe('latestScan — los tres estados que no son error', () => {
 
     expect(res.status).toBe('RUNNING');
     expect(prisma.hygienePair.findMany).toHaveBeenCalledWith(
-      expect.objectContaining({ where: { scanId: 'scan-ready' } }),
+      expect.objectContaining({
+        where: expect.objectContaining({ scanId: 'scan-ready' }),
+      }),
     );
   });
 
@@ -588,5 +591,141 @@ describe('discard — US2', () => {
     const scan = await service.runScan('scan-1');
 
     expect(scan.pairsFound).toBe(0);
+  });
+});
+
+describe('latestScan — una pareja resuelta deja de listarse (defecto encontrado en vivo)', () => {
+  /**
+   * El bug: `runScan` filtra por `isActive` y por descarte vigente, pero la
+   * LECTURA no filtraba nada. Una pareja que ya se había fusionado —o que se
+   * acababa de descartar— seguía en pantalla hasta correr el barrido de
+   * nuevo, y correrlo no la sacaba si la corrida vieja seguía siendo la
+   * última READY.
+   *
+   * Visto en vivo: se fusionó la pareja a las 02:55, el último barrido era de
+   * las 02:53, y la pareja siguió apareciendo. "Ya lo solucioné y no se va."
+   */
+  const scanReady = {
+    id: 'scan-1',
+    status: 'READY',
+    threshold: 85,
+    documentsScanned: 75,
+    pairsFound: 1,
+    failureReason: null,
+    createdAt: new Date(),
+    finishedAt: new Date(),
+  };
+
+  function pareja(overrides: {
+    aActivo?: boolean;
+    bActivo?: boolean;
+    versionA?: number;
+    versionB?: number;
+  }) {
+    return {
+      id: 'pair-1',
+      scanId: 'scan-1',
+      documentAId: 'doc-a',
+      documentBId: 'doc-b',
+      similarity: 85.7,
+      escalatedTurns: 0,
+      versionA: 1,
+      versionB: 1,
+      createdAt: new Date(),
+      documentA: doc('doc-a', {
+        title: 'Procedimiento de recepción',
+        isActive: overrides.aActivo ?? true,
+        version: overrides.versionA ?? 1,
+      }),
+      documentB: doc('doc-b', {
+        title: 'Situación de capacitación',
+        isActive: overrides.bActivo ?? true,
+        version: overrides.versionB ?? 1,
+      }),
+    };
+  }
+
+  it('⚠️ FUSIONADA: si el documento absorbido quedó inactivo, la pareja NO se lista', async () => {
+    const { service, prisma } = buildService([]);
+    (
+      prisma.hygieneScan as { findFirst: jest.Mock }
+    ).findFirst.mockResolvedValue(scanReady);
+    // El filtro vive en la consulta: con `isActive: true` en el where, Prisma
+    // ya no la devuelve. Se representa devolviendo [] para ese filtro.
+    (prisma.hygienePair.findMany as jest.Mock).mockResolvedValue([]);
+
+    const res = await service.latestScan('emp-1');
+
+    expect(res.pairs).toEqual([]);
+    // Lo que fija el test es que el filtro se PIDA: sin esto, Prisma traía la
+    // pareja igual y la pantalla la mostraba.
+    expect(prisma.hygienePair.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: expect.objectContaining({
+          documentA: { isActive: true },
+          documentB: { isActive: true },
+        }),
+      }),
+    );
+  });
+
+  it('⚠️ DESCARTADA en las mismas versiones: la pareja NO se lista', async () => {
+    const { service, prisma } = buildService([]);
+    (
+      prisma.hygieneScan as { findFirst: jest.Mock }
+    ).findFirst.mockResolvedValue(scanReady);
+    (prisma.hygienePair.findMany as jest.Mock).mockResolvedValue([
+      pareja({ versionA: 1, versionB: 1 }),
+    ]);
+    (prisma.knowledgeMergeDiscard.findMany as jest.Mock).mockResolvedValue([
+      { documentAId: 'doc-a', documentBId: 'doc-b', versionA: 1, versionB: 1 },
+    ]);
+
+    const res = await service.latestScan('emp-1');
+
+    expect(res.pairs).toEqual([]);
+  });
+
+  it('pero un descarte de OTRA versión no la esconde — el documento cambió, vuelve a proponerse', async () => {
+    const { service, prisma } = buildService([]);
+    (
+      prisma.hygieneScan as { findFirst: jest.Mock }
+    ).findFirst.mockResolvedValue(scanReady);
+    (prisma.hygienePair.findMany as jest.Mock).mockResolvedValue([
+      pareja({ versionA: 2, versionB: 1 }),
+    ]);
+    // Se descartó cuando A estaba en v1; ahora está en v2.
+    (prisma.knowledgeMergeDiscard.findMany as jest.Mock).mockResolvedValue([
+      { documentAId: 'doc-a', documentBId: 'doc-b', versionA: 1, versionB: 1 },
+    ]);
+
+    const res = await service.latestScan('emp-1');
+
+    expect(res.pairs).toHaveLength(1);
+  });
+
+  it('sin descartes, una pareja con los dos activos se lista normal', async () => {
+    const { service, prisma } = buildService([]);
+    (
+      prisma.hygieneScan as { findFirst: jest.Mock }
+    ).findFirst.mockResolvedValue(scanReady);
+    (prisma.hygienePair.findMany as jest.Mock).mockResolvedValue([pareja({})]);
+
+    const res = await service.latestScan('emp-1');
+
+    expect(res.pairs).toHaveLength(1);
+    expect(res.pairs[0].similarity).toBe(85.7);
+  });
+
+  it('sin parejas no consulta descartes — `OR: []` en Prisma no filtra nada', async () => {
+    const { service, prisma } = buildService([]);
+    (
+      prisma.hygieneScan as { findFirst: jest.Mock }
+    ).findFirst.mockResolvedValue(scanReady);
+    (prisma.hygienePair.findMany as jest.Mock).mockResolvedValue([]);
+
+    await service.latestScan('emp-1');
+
+    expect(prisma.knowledgeMergeDiscard.findMany).not.toHaveBeenCalled();
   });
 });

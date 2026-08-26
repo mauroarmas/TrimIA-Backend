@@ -218,8 +218,21 @@ export class KnowledgeHygieneService {
     scanId: string,
     employeeId: string,
   ): Promise<HygienePairView[]> {
+    // ⚠️ Una pareja RESUELTA deja de listarse. Fusionar desactiva el documento
+    // absorbido (`setActive(absorb.id, false)`), pero la fila `HygienePair`
+    // queda intacta: sin este filtro la pareja seguía apareciendo después de
+    // fusionarla, y la única forma de sacarla de la pantalla era correr el
+    // barrido de nuevo (que sí filtra por `isActive`, ver `runScan`).
+    //
+    // Se resuelve al LEER y no borrando la fila: el registro de que esos dos
+    // documentos se parecían en esa corrida sigue siendo cierto y sirve de
+    // historial. Lo que cambió es que ya no hay nada que hacer al respecto.
     const pares = await this.prisma.hygienePair.findMany({
-      where: { scanId },
+      where: {
+        scanId,
+        documentA: { isActive: true },
+        documentB: { isActive: true },
+      },
       orderBy: [
         { escalatedTurns: 'desc' },
         { similarity: 'desc' },
@@ -228,11 +241,46 @@ export class KnowledgeHygieneService {
       include: { documentA: true, documentB: true },
     });
 
-    const idsDocumentos = pares.flatMap((p) => [p.documentAId, p.documentBId]);
+    // ⚠️ Un descarte vigente también saca la pareja de la lista. `runScan` ya
+    // no la vuelve a proponer (FR-013/FR-014), pero las parejas YA guardadas
+    // de corridas anteriores seguían apareciendo aunque se las descartara:
+    // descartar no hacía nada visible hasta correr el barrido de nuevo.
+    //
+    // Se repite acá la MISMA regla que en `runScan` —el descarte vale solo
+    // para las versiones que se descartaron— para que un documento editado
+    // vuelva a proponerse. Una regla más laxa ("descartada para siempre")
+    // escondería parejas que volvieron a ser ciertas.
+    // `OR: []` en Prisma no filtra nada (trae TODOS los descartes), así que
+    // sin este corte una corrida sin parejas haría una consulta inútil.
+    const descartes = pares.length
+      ? await this.prisma.knowledgeMergeDiscard.findMany({
+          where: {
+            OR: pares.map((p) => ({
+              documentAId: p.documentAId,
+              documentBId: p.documentBId,
+            })),
+          },
+        })
+      : [];
+    const descartePorPareja = new Map(
+      descartes.map((d) => [`${d.documentAId}:${d.documentBId}`, d]),
+    );
+    const vigentes = pares.filter((p) => {
+      const d = descartePorPareja.get(`${p.documentAId}:${p.documentBId}`);
+      if (!d) return true;
+      return !(
+        d.versionA === p.documentA.version && d.versionB === p.documentB.version
+      );
+    });
+
+    const idsDocumentos = vigentes.flatMap((p) => [
+      p.documentAId,
+      p.documentBId,
+    ]);
     const usoPorDocumento = await this.usage.forDocuments(idsDocumentos);
 
     const vistas: HygienePairView[] = [];
-    for (const par of pares) {
+    for (const par of vigentes) {
       const [documentA, motivoA] = await this.vistaDocumento(
         par.documentA,
         employeeId,

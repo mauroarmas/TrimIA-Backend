@@ -356,6 +356,28 @@ export class KnowledgeService implements OnModuleInit {
   }
 
   /**
+   * Spec 013 (FR-021): **qué** agentes son de este empleado, todos de una vez.
+   *
+   * `esResponsableDeAgente` responde de a uno y relee el empleado en cada
+   * llamada. La cola de escalados necesita la pregunta al revés —"¿de cuáles soy
+   * responsable?"— para una lista paginada: preguntar por caso sería una consulta
+   * de empleado por fila, el mismo empleado N veces (SC-007).
+   *
+   * El dato ya se calcula acá adentro; lo único que faltaba era devolverlo. Es
+   * una consulta más, no un criterio más: quien quiera saber si un área le toca
+   * sigue teniendo **una** implementación de la regla, no dos que puedan
+   * divergir.
+   */
+  async agentesPropiosDe(autorId: string): Promise<AgentType[]> {
+    const autor = await this.employees.findById(autorId);
+    // Un área sin `agentType` no habilita ningún documento y, por lo mismo, no
+    // vuelve propio ningún caso: sin él no hay traducción de área a corpus.
+    return (autor.areasSupervisadas ?? [])
+      .map((area) => area.agentType)
+      .filter((tipo): tipo is AgentType => tipo !== null);
+  }
+
+  /**
    * Ingesta un documento: lo guarda en Prisma y vuelca sus chunks a Chroma.
    *
    * ⚠️ **No autoriza nada**: es la primitiva de escritura, y también la usa el worker

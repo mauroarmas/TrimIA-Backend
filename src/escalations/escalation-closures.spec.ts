@@ -10,7 +10,7 @@
  *    confirmó**, nunca `suggestedResponse`. Ahora que la propuesta se
  *    persiste, esa confusión es una regresión posible y silenciosa.
  */
-import { ConflictException } from '@nestjs/common';
+import { ConflictException, ForbiddenException } from '@nestjs/common';
 import { EscalationsService } from './escalations.service';
 
 const ID = '66666666-6666-4666-8666-666666666666';
@@ -21,6 +21,11 @@ function buildService(
     conversationStatus?: string;
     userType?: string;
     suggestedResponse?: string | null;
+    // Spec 013: el área del caso y a quién está derivado, para el registro de
+    // "respondió alguien de otra área".
+    currentAgent?: string | null;
+    delegatedToId?: string | null;
+    agentesPropios?: string[];
   } = {},
 ) {
   const escalation = {
@@ -28,6 +33,7 @@ function buildService(
     conversationId: 'conv-1',
     status: overrides.status ?? 'PENDING',
     suggestedResponse: overrides.suggestedResponse ?? null,
+    delegatedToId: overrides.delegatedToId ?? null,
   };
 
   const conversation = {
@@ -35,7 +41,8 @@ function buildService(
     externalId: '5491100000000',
     channel: 'WHATSAPP',
     userType: overrides.userType ?? 'CLIENTE',
-    currentAgent: 'SALES',
+    currentAgent:
+      overrides.currentAgent === undefined ? 'SALES' : overrides.currentAgent,
     status: overrides.conversationStatus ?? 'WAITING_HUMAN',
   };
 
@@ -58,6 +65,11 @@ function buildService(
     ingest: jest.fn().mockResolvedValue({ documentId: 'doc-nuevo', chunks: 2 }),
     // Spec 005: el área permite escribir. El alcance por área se prueba aparte.
     assertPuedeEscribir: jest.fn(),
+    // Spec 013: por defecto quien resuelve es responsable de SALES, el área del
+    // caso — así los tests que ya existían siguen siendo "respondió el suyo".
+    agentesPropiosDe: jest
+      .fn()
+      .mockResolvedValue(overrides.agentesPropios ?? ['SALES']),
   };
   const employees = { findById: jest.fn() };
 
@@ -266,5 +278,139 @@ describe('Los tres cierres respetan una intervención humana en curso', () => {
     await service.discard(ID, undefined, 'sup-1');
 
     expect(conversations.setStatus).toHaveBeenCalledWith('conv-1', 'ACTIVE');
+  });
+});
+
+/**
+ * ⭐ Spec 013, US5 — responder un caso de otra área NO se bloquea, pero se
+ * registra.
+ *
+ * Es la mitad de la regla que la spec 005 dejó abierta: hoy un supervisor de
+ * Cobranzas puede contestarle a un cliente de Ventas, pero no puede capitalizar
+ * esa respuesta enseñándosela a la IA. Esta spec no cierra esa puerta —cerrarla
+ * dejaría clientes esperando a un responsable que no está— sino que la vuelve
+ * visible.
+ *
+ * `agentesPropios: ['COLLECTIONS']` = Silvia, responsable de una sola área,
+ * respondiendo un caso de Ventas.
+ */
+describe('responder un caso de otra área queda registrado (spec 013, FR-015 a FR-017)', () => {
+  const RESPUESTA = { message: 'Te confirmo por acá el estado del pedido.' };
+
+  const eventoResuelto = (logger: { logEvent: jest.Mock }) =>
+    logger.logEvent.mock.calls.find(
+      ([e]: [{ eventType: string }]) => e.eventType === 'escalation_resolved',
+    )?.[0];
+
+  it('la respuesta SE ENVÍA aunque el caso sea de otra área (FR-015)', async () => {
+    const { service, sender } = buildService({
+      currentAgent: 'SALES',
+      agentesPropios: ['COLLECTIONS'],
+    });
+
+    await service.resolve(ID, RESPUESTA, 'emp-silvia');
+
+    // Nada de 403: el cliente no espera a que aparezca el responsable.
+    expect(sender.send).toHaveBeenCalled();
+  });
+
+  it('y queda registrado que la dio alguien de otra área, con el área (FR-016)', async () => {
+    const { service, logger } = buildService({
+      currentAgent: 'SALES',
+      agentesPropios: ['COLLECTIONS'],
+    });
+
+    await service.resolve(ID, RESPUESTA, 'emp-silvia');
+
+    expect(eventoResuelto(logger).payload).toMatchObject({
+      pertenencia: 'AJENA',
+      areaDelCaso: 'SALES',
+    });
+  });
+
+  it('responder un caso PROPIO no deja esa marca', async () => {
+    const { service, logger } = buildService({
+      currentAgent: 'COLLECTIONS',
+      agentesPropios: ['COLLECTIONS'],
+    });
+
+    await service.resolve(ID, RESPUESTA, 'emp-silvia');
+
+    expect(eventoResuelto(logger).payload.pertenencia).toBe('PROPIA');
+  });
+
+  it('⭐ responder un caso SIN ÁREA tampoco es un cruce de área (FR-017)', async () => {
+    // La distinción que un booleano aplastaría: un caso escalado antes de que el
+    // turno se ruteara no le toca a nadie, y responderlo es lo esperado. Si se
+    // registrara como "ajeno", el registro se llenaría de ruido justo en lo que
+    // existe para medir.
+    const { service, logger } = buildService({
+      currentAgent: null,
+      agentesPropios: ['COLLECTIONS'],
+    });
+
+    await service.resolve(ID, RESPUESTA, 'emp-silvia');
+
+    const { payload } = eventoResuelto(logger);
+    expect(payload.pertenencia).toBe('SIN_AREA');
+    expect(payload.pertenencia).not.toBe('AJENA');
+    expect(payload.areaDelCaso).toBeUndefined();
+  });
+
+  it('un caso derivado a quien responde cuenta como propio (FR-010)', async () => {
+    const { service, logger } = buildService({
+      currentAgent: 'SALES',
+      delegatedToId: 'emp-silvia',
+      agentesPropios: ['COLLECTIONS'],
+    });
+
+    await service.resolve(ID, RESPUESTA, 'emp-silvia');
+
+    // Es de Ventas, pero se lo derivaron a ella: para eso se deriva.
+    expect(eventoResuelto(logger).payload.pertenencia).toBe('PROPIA');
+  });
+
+  it('⭐ enseñarle a la IA en un área ajena SIGUE rechazándose (FR-020, SC-010)', async () => {
+    // La asimetría deja de ser accidental y pasa a ser deliberada: responder se
+    // permite, enseñar no. La regla de escritura de la 005 no se movió.
+    const { service, knowledge } = buildService({
+      currentAgent: 'SALES',
+      agentesPropios: ['COLLECTIONS'],
+    });
+    knowledge.assertPuedeEscribir.mockRejectedValueOnce(
+      new ForbiddenException('Este documento es de otra área.'),
+    );
+
+    await expect(
+      service.resolve(
+        ID,
+        { ...RESPUESTA, teachAgent: true, title: 'x', category: 'y' },
+        'emp-silvia',
+      ),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+  });
+
+  it('el rechazo de enseñar no puede dejar el caso resuelto ni el mensaje enviado', async () => {
+    // El orden de operaciones de `resolve` no se tocó: se chequea ANTES de
+    // enviar, para que un rechazo deje el caso intacto y no un 403 imposible de
+    // deshacer.
+    const { service, knowledge, sender, prisma } = buildService({
+      currentAgent: 'SALES',
+      agentesPropios: ['COLLECTIONS'],
+    });
+    knowledge.assertPuedeEscribir.mockRejectedValueOnce(
+      new ForbiddenException('Este documento es de otra área.'),
+    );
+
+    await expect(
+      service.resolve(
+        ID,
+        { ...RESPUESTA, teachAgent: true, title: 'x', category: 'y' },
+        'emp-silvia',
+      ),
+    ).rejects.toBeInstanceOf(ForbiddenException);
+
+    expect(sender.send).not.toHaveBeenCalled();
+    expect(prisma.escalation.update).not.toHaveBeenCalled();
   });
 });

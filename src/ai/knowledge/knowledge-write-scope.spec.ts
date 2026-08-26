@@ -389,3 +389,49 @@ describe('quitarle un área le saca la edición de lo que él mismo creó (CL-7)
     expect(prisma.knowledgeDocument.delete).not.toHaveBeenCalled();
   });
 });
+
+/**
+ * Spec 013 — `agentesPropiosDe`: el mismo criterio, preguntado al revés.
+ *
+ * La cola de escalados necesita "¿de cuáles soy responsable?" en vez de "¿lo soy
+ * de ésta?", para no consultar el empleado una vez por fila. Va acá, con el resto
+ * de la regla de área, para que se vea que es **una** implementación con dos
+ * formas de preguntar y no dos reglas que puedan divergir.
+ */
+describe('agentesPropiosDe (spec 013)', () => {
+  it('devuelve los agentes de las áreas propias', async () => {
+    const { service } = buildService({ areas: SOLO_VENTAS });
+    await expect(service.agentesPropiosDe(AUTOR)).resolves.toEqual(['SALES']);
+  });
+
+  it('quien es responsable de todas las áreas los obtiene todos, por derivación', async () => {
+    // No hay rama especial para "gerente": serlo es la consecuencia de tener
+    // todas las áreas (spec 005), y de acá sale que su cola no cambie (FR-005).
+    const { service } = buildService({ areas: TODAS });
+    const propios = await service.agentesPropiosDe(AUTOR);
+    expect(propios).toHaveLength(5);
+    expect(propios).toEqual(
+      expect.arrayContaining([
+        'SALES',
+        'COLLECTIONS',
+        'LOGISTICS',
+        'DEPOSITS',
+        'ADMIN',
+      ]),
+    );
+  });
+
+  it('un responsable sin áreas no tiene ningún agente propio', async () => {
+    const { service } = buildService({ areas: [] });
+    await expect(service.agentesPropiosDe(AUTOR)).resolves.toEqual([]);
+  });
+
+  it('un área sin agente asignado no aporta nada', async () => {
+    // Mismo tratamiento que en la escritura: sin `agentType` no hay traducción
+    // de área a corpus, y por lo tanto tampoco a casos de la cola.
+    const { service } = buildService({
+      areas: [{ id: 's9', name: 'Área nueva', agentType: null }],
+    });
+    await expect(service.agentesPropiosDe(AUTOR)).resolves.toEqual([]);
+  });
+});

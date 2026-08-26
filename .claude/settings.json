@@ -25,7 +25,9 @@
       "Bash(cd /home/mauro/Proyectos/trimIA *)",
       "Read(//home/mauro/Proyectos/trimIA-frontend/src/**)",
       "Bash(curl -s http://localhost:5173/src/components/CollectionsPanel.jsx)",
-      "Bash(curl -s http://localhost:5173/src/index.css)"
+      "Bash(curl -s http://localhost:5173/src/index.css)",
+      "mcp__playwright__browser_navigate",
+      "Bash(timeout 180 npx playwright install chrome)"
     ],
     "additionalDirectories": [
       "/home/mauro/Proyectos/trimIA-frontend/src/components"

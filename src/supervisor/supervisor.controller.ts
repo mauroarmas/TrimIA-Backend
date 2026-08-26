@@ -335,15 +335,34 @@ export class SupervisorController {
   @ApiQuery({ name: 'status', enum: EscalationStatus, required: false })
   @ApiQuery({ name: 'page', type: Number, required: false })
   @ApiQuery({ name: 'limit', type: Number, required: false })
+  // Spec 013: la cola prioriza lo del área de quien mira — primero lo propio,
+  // después lo que no es de nadie, después lo ajeno. No oculta nada: ver lo de
+  // otras áreas hace falta para no dejar sin cobertura las que no tienen
+  // responsable activo, y para saber a quién derivar.
+  @ApiQuery({
+    name: 'soloMios',
+    type: Boolean,
+    required: false,
+    description:
+      'Restringe a lo propio: las áreas de quien consulta, lo derivado a esa ' +
+      'persona y los casos sin área. Por defecto `false` — el defecto es la ' +
+      'cola completa, priorizada pero sin filtrar.',
+  })
   getEscalations(
+    @Req() req: AuthenticatedRequest,
     @Query('status') status?: EscalationStatus,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
+    @Query('soloMios') soloMios?: string,
   ) {
     return this.escalations.listPending({
       status,
       page: page ? parseInt(page, 10) : undefined,
       limit: limit ? parseInt(limit, 10) : undefined,
+      // Del token, no de un query param: un `?empleadoId=` dejaría pedir la
+      // cola de otro.
+      empleadoId: req.user.id,
+      soloMios: soloMios === 'true',
     });
   }
 
@@ -352,8 +371,10 @@ export class SupervisorController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('SUPERVISOR')
   @ApiOperation({ summary: 'Detalle de un caso escalado' })
-  getEscalation(@Param('id') id: string) {
-    return this.escalations.findById(id);
+  getEscalation(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+    // Spec 013: el detalle NO se restringe por área (FR-023) — se le suma la
+    // pertenencia para que el panel pueda avisar antes de responder (FR-018).
+    return this.escalations.findById(id, req.user.id);
   }
 
   /**

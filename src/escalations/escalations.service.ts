@@ -13,7 +13,9 @@ import {
   KnowledgeSourceType,
   UserType,
 } from '@prisma/client';
+import { Prisma } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
+import { RANGO_PERTENENCIA, resolverPertenencia } from './escalation-ownership';
 import { ConversationsService } from '../conversations/conversations.service';
 import { WhatsappSenderService } from '../messaging/whatsapp-sender.service';
 import { OrchestrationLogger } from '../ai/orchestrator/orchestration-logger.service';
@@ -36,6 +38,16 @@ export interface ListEscalationsFilter {
   status?: EscalationStatus;
   page?: number;
   limit?: number;
+  /**
+   * Quién está mirando la cola (spec 013). Sale del **token**, nunca de un query
+   * param: pedir la cola de otro no es una consulta, es un permiso.
+   *
+   * Opcional porque `listPending` también la usa código interno sin sesión; sin
+   * él la cola se comporta como antes de la spec 013.
+   */
+  empleadoId?: string;
+  /** Restringir a lo propio (FR-012). Por defecto `false`: el defecto es la cola completa priorizada. */
+  soloMios?: boolean;
 }
 
 export interface ResolveEscalationInput {
@@ -134,12 +146,127 @@ export class EscalationsService {
     return escalation;
   }
 
-  /** Lista casos, paginados (default: PENDING). */
+  /**
+   * Lista casos, paginados (default: PENDING).
+   *
+   * Spec 013: la cola sabe **quién la mira**. Lo propio primero, después lo que no
+   * es de nadie, después lo ajeno — sin que desaparezca nada (FR-002).
+   *
+   * El orden se resuelve **en la base y antes de paginar**, no en memoria. Ordenar
+   * la página ya traída ordenaría solo esos 20 casos, y un caso propio que por
+   * antigüedad cayó en la página 3 seguiría en la página 3: la cola de un
+   * responsable de un área seguiría igual de inútil, con la diferencia de que
+   * parecería resuelta.
+   *
+   * Sin `empleadoId` —código interno que no viene de una sesión— se comporta
+   * exactamente como antes: todo por antigüedad, sin marcar nada.
+   */
   async listPending(filter: ListEscalationsFilter = {}) {
     const page = Math.max(1, filter.page ?? 1);
     const limit = Math.min(100, Math.max(1, filter.limit ?? 20));
     const skip = (page - 1) * limit;
-    const where = { status: filter.status ?? 'PENDING' } as const;
+    const status = filter.status ?? 'PENDING';
+
+    if (!filter.empleadoId) {
+      return this.listSinPertenencia({ status, page, limit, skip });
+    }
+
+    // UNA consulta por request, no una por caso: `esResponsableDeAgente`
+    // preguntaría de a un agente releyendo el empleado cada vez (FR-021, SC-007).
+    const agentesPropios = await this.knowledge.agentesPropiosDe(
+      filter.empleadoId,
+    );
+    const quien = { empleadoId: filter.empleadoId, agentesPropios };
+
+    // `Prisma.sql` parametriza: nada de esto se concatena a mano aunque el orden
+    // no lo permita expresar `findMany`.
+    const propios =
+      agentesPropios.length > 0
+        ? Prisma.sql`c."currentAgent"::text IN (${Prisma.join(agentesPropios)})`
+        : Prisma.sql`false`;
+
+    // El rango vive junto a RANGO_PERTENENCIA y dice lo mismo: propio (1),
+    // sin área (2), ajeno (3). Un caso derivado manda sobre el área, en los dos
+    // sentidos (FR-010, FR-011).
+    const rango = Prisma.sql`CASE
+      WHEN e."delegatedToId" = ${filter.empleadoId} THEN ${RANGO_PERTENENCIA.PROPIA}
+      WHEN e."delegatedToId" IS NOT NULL THEN ${RANGO_PERTENENCIA.AJENA}
+      WHEN c."currentAgent" IS NULL THEN ${RANGO_PERTENENCIA.SIN_AREA}
+      WHEN ${propios} THEN ${RANGO_PERTENENCIA.PROPIA}
+      ELSE ${RANGO_PERTENENCIA.AJENA}
+    END`;
+
+    // `soloMios` (FR-012): lo propio, lo derivado a mí y **lo sin área**. Dejar
+    // los sin área afuera los volvería invisibles justo para quien filtra.
+    const filtro = filter.soloMios
+      ? Prisma.sql`AND ${rango} <> ${RANGO_PERTENENCIA.AJENA}`
+      : Prisma.empty;
+
+    const base = Prisma.sql`
+      FROM "Escalation" e
+      JOIN "Conversation" c ON c.id = e."conversationId"
+      WHERE e.status::text = ${status} ${filtro}`;
+
+    const [ordenados, totales] = await Promise.all([
+      this.prisma.$queryRaw<{ id: string }[]>`
+        SELECT e.id ${base}
+        ORDER BY ${rango} ASC, e."createdAt" ASC
+        LIMIT ${limit} OFFSET ${skip}`,
+      this.prisma.$queryRaw<{ total: bigint }[]>`
+        SELECT COUNT(*)::bigint AS total ${base}`,
+    ]);
+
+    // El total sale de la MISMA consulta que ordena y filtra, para que con
+    // `soloMios` corresponda a lo restringido y no a la cola entera (FR-014).
+    const total = Number(totales[0]?.total ?? 0);
+
+    const ids = ordenados.map((fila) => fila.id);
+    const casos = await this.prisma.escalation.findMany({
+      where: { id: { in: ids } },
+      include: {
+        conversation: {
+          select: {
+            externalId: true,
+            channel: true,
+            userType: true,
+            currentAgent: true,
+          },
+        },
+      },
+    });
+
+    // `findMany` con `in` no garantiza el orden pedido: se rearma según los ids.
+    const porId = new Map(casos.map((caso) => [caso.id, caso]));
+    const data = ids
+      .map((id) => porId.get(id))
+      .filter((caso): caso is (typeof casos)[number] => caso !== undefined)
+      .map((caso) => ({
+        ...caso,
+        pertenencia: resolverPertenencia(
+          {
+            area: caso.conversation.currentAgent,
+            delegatedToId: caso.delegatedToId,
+          },
+          quien,
+        ),
+      }));
+
+    return { data, total, page, limit, hasMore: skip + data.length < total };
+  }
+
+  /**
+   * La cola de siempre, sin noción de quién mira: para el código interno que no
+   * tiene una sesión detrás. Se mantiene aparte para que el camino con empleado
+   * no tenga que fingir un `empleadoId` ni inventarle una pertenencia a nadie.
+   */
+  private async listSinPertenencia(params: {
+    status: EscalationStatus;
+    page: number;
+    limit: number;
+    skip: number;
+  }) {
+    const { status, page, limit, skip } = params;
+    const where = { status } as const;
 
     const [data, total] = await Promise.all([
       this.prisma.escalation.findMany({
@@ -164,7 +291,15 @@ export class EscalationsService {
     return { data, total, page, limit, hasMore: skip + data.length < total };
   }
 
-  async findById(id: string) {
+  /**
+   * Detalle de un caso.
+   *
+   * **No se restringe por área** (FR-023): hace falta leerlo para saber a quién
+   * derivarlo. Con `empleadoId` se agrega la `pertenencia` —igual que en la
+   * cola— para que el panel pueda avisar, antes de que la persona escriba, que
+   * el caso no es de sus áreas (FR-018). Es un aviso, no una traba.
+   */
+  async findById(id: string, empleadoId?: string) {
     const escalation = await this.prisma.escalation.findUnique({
       where: { id },
       include: {
@@ -177,7 +312,22 @@ export class EscalationsService {
     if (!escalation) {
       throw new NotFoundException('Caso pendiente no encontrado');
     }
-    return escalation;
+
+    if (!empleadoId) return escalation;
+
+    return {
+      ...escalation,
+      pertenencia: resolverPertenencia(
+        {
+          area: escalation.conversation.currentAgent,
+          delegatedToId: escalation.delegatedToId,
+        },
+        {
+          empleadoId,
+          agentesPropios: await this.knowledge.agentesPropiosDe(empleadoId),
+        },
+      ),
+    };
   }
 
   /**
@@ -373,7 +523,7 @@ export class EscalationsService {
     input: ResolveEscalationInput,
     resolvedById: string,
   ) {
-    const { conversation } = await this.loadPending(id);
+    const { conversation, escalation } = await this.loadPending(id);
 
     // ⚠️ Spec 005, US5 — la otra puerta de atrás: "enseñarle al agente" ingesta un
     // documento, así que vale la misma regla de área que la pantalla de gestión.
@@ -488,6 +638,27 @@ export class EscalationsService {
       },
     });
 
+    // Spec 013 (FR-016, FR-017) — responder un caso de otra área NO se bloquea,
+    // pero queda registrado. La 005 restringió la ESCRITURA porque un documento
+    // en un área ajena degrada las respuestas de todos, en silencio y hacia
+    // adelante; una respuesta a un cliente se agota en ese cliente. Como el daño
+    // no se acumula, bloquear costaría más de lo que protege: el costo de
+    // bloquear es inmediato y cae sobre el cliente que espera.
+    //
+    // Va como atributo del evento que ya se emite, no como tipo de evento nuevo:
+    // un tipo aparte partiría las resoluciones en dos y todo lo que hoy las
+    // cuenta tendría que sumar ambos.
+    const pertenencia = resolverPertenencia(
+      {
+        area: conversation.currentAgent,
+        delegatedToId: escalation.delegatedToId,
+      },
+      {
+        empleadoId: resolvedById,
+        agentesPropios: await this.knowledge.agentesPropiosDe(resolvedById),
+      },
+    );
+
     await this.logger.logEvent({
       conversationId: conversation.id,
       eventType: 'escalation_resolved',
@@ -495,6 +666,12 @@ export class EscalationsService {
         resolvedById,
         teachAgent: !!input.teachAgent,
         corregido: corregido ?? undefined,
+        // Tres estados, no un booleano: responder un caso SIN_AREA es lo
+        // esperado, no una excepción. Con un booleano cada caso escalado antes
+        // de rutearse aparecería como cruce de área y el registro se llenaría de
+        // ruido justo en lo que existe para medir (FR-017).
+        pertenencia,
+        areaDelCaso: conversation.currentAgent ?? undefined,
       },
     });
 

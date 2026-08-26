@@ -47,6 +47,9 @@ describe('EscalationsService', () => {
     ingest: jest.Mock;
     assertPuedeEscribir: jest.Mock;
     update: jest.Mock;
+    // Spec 013: `resolve` consulta las áreas de quien responde para registrar si
+    // el caso era de otra. No autoriza nada — responder no se bloquea (FR-015).
+    agentesPropiosDe: jest.Mock;
   };
   let employees: { findById: jest.Mock };
   // Spec 007: se reusa tal cual de "editar con la IA"; acá se mockea su preview.
@@ -91,6 +94,10 @@ describe('EscalationsService', () => {
       ingest: jest.fn(),
       assertPuedeEscribir: jest.fn(),
       update: jest.fn(),
+      // La conversación de estos tests es de SALES: por defecto quien resuelve
+      // es responsable de esa área, así que son casos propios y el registro de
+      // la spec 013 no cambia lo que estos tests miran.
+      agentesPropiosDe: jest.fn().mockResolvedValue(['SALES']),
     };
     employees = { findById: jest.fn() };
     aiEdit = { preview: jest.fn() };
