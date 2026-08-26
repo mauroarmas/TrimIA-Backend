@@ -828,3 +828,52 @@ describe('InterviewsCandidatesService — SC-009', () => {
     expect(candidates[0].status).toBe('PENDIENTE');
   });
 });
+
+describe('InterviewsCandidatesService — el cierre no se entera de la spec 012', () => {
+  it('la ficha se redacta del texto guardado, venga de una opción o del teclado', async () => {
+    // US3/T025: `InterviewAnswer` no distingue el origen, así que el cierre
+    // funciona igual. Si algún día hiciera falta saber de dónde salió una
+    // respuesta, este test es el que se rompe primero — y es la señal de que
+    // el diseño de data-model.md cambió.
+    const { prisma, sessions, questions, answers, candidates } =
+      buildFakePrisma();
+    sessions.push({ id: 'sess-1', agentType: 'SALES', status: 'CERRANDO' });
+    questions.push({
+      id: 'q1',
+      sessionId: 'sess-1',
+      status: 'RESPONDIDA',
+      kind: 'PEDIR_NUEVO',
+      text: '¿Cobran envío a domicilio?',
+      order: 1,
+      documentId: null,
+      documentVersion: null,
+      themeLabel: 'Tema',
+      // La pregunta tenía opciones y la persona eligió una tal cual.
+      options: ['Sí, con recargo del 10%.'],
+    });
+    answers.push({
+      questionId: 'q1',
+      attempt: 1,
+      text: 'Sí, con recargo del 10%.',
+    });
+
+    const redactarFicha = jest.fn().mockResolvedValue({
+      title: 'Envío a domicilio',
+      content: 'El envío a domicilio tiene un recargo del 10%.',
+    });
+    const service = new InterviewsCandidatesService(
+      prisma as any,
+      knowledgeStub() as any,
+      draftingStub({ redactarFicha }) as any,
+    );
+
+    await service.runClose('sess-1');
+
+    // Lo que llega al redactor es el texto, sin ninguna marca de origen.
+    expect(redactarFicha).toHaveBeenCalledWith(
+      expect.objectContaining({ respuestaCruda: 'Sí, con recargo del 10%.' }),
+    );
+    expect(candidates.filter((c) => c.sessionId === 'sess-1')).toHaveLength(1);
+    expect(sessions.find((s) => s.id === 'sess-1').status).toBe('EN_REVISION');
+  });
+});

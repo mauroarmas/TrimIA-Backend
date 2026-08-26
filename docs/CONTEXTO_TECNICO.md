@@ -694,6 +694,47 @@ objetivos de tiempo de la spec valen contra la latencia medida, no contra
 cualquier latencia; el incremental es lo que hace que eso importe una sola vez
 por documento.
 
+**La entrevista se contesta como se dibujó** (spec 012): el prototipo la diseñó
+como una conversación y era un formulario de a una pregunta por vez. Dos
+agregados sobre el módulo que ya existía, sin endpoints nuevos.
+
+- **El historial viaja en el envelope.** `GET /interviews/:id` suma `history[]`
+  junto a `current`, y **excluye la pregunta actual**: concatenar los dos da la
+  conversación sin duplicados. No hizo falta guardar nada nuevo — sale de las
+  preguntas y respuestas que la spec 010 ya persistía, y por eso sobrevive a
+  una pausa. De una pregunta repreguntada se muestra el intento **final**.
+  ⚠️ Los tres finales no son intercambiables: `SALTEADA` no tiene nada que la
+  persona haya puesto, `SIN_RESPONDER` **sí** (contestó, no alcanzó, pero el
+  texto es suyo) — aplastarlos en "sin respuesta" tira información real.
+- **Las opciones no agregan una llamada al modelo.** Viajan dentro del mismo
+  `withStructuredOutput` que ya redactaba las preguntas, como un campo más del
+  schema, y se persisten congeladas en `InterviewQuestion.options` (único
+  cambio de esquema de la spec). Una sesión sigue costando **1 + N**.
+
+⚠️ **La degradación es asimétrica, y es la decisión que sostiene la feature.**
+Si falta el *texto* de una pregunta, la sesión entera queda `FALLIDA` — sin
+pregunta no hay entrevista. Si faltan las *opciones*, esa pregunta va con texto
+libre y la sesión sigue: `options: []` es un estado **normal**, no una falla. El
+riesgo real no era quedarse sin opciones sino tenerlas malas — una opción
+genérica se elige por comodidad y llena el corpus de respuestas plausibles que
+nadie dijo. Por eso el prompt prohíbe lo genérico y ordena preferir ninguna
+antes que una de relleno.
+
+**`InterviewAnswer` no cambió, y eso es deliberado.** Una respuesta elegida de
+una tarjeta y una escrita a mano son la misma fila: el cierre, la redacción de
+fichas y la revisión no se enteran de esta spec. La contracara es que **no se
+registra cuál opción se eligió** — una opción editada deja de coincidir con la
+propuesta, así que lo único que se guarda es el texto final.
+
+⚠️ **Una opción enviada tal cual nunca dispara la repregunta** (`esOpcionSinEditar`,
+en `interviews-chosen-option.ts`): el sistema no puede proponer un texto y
+después objetar que lo elijan. Envuelve a `esAsentimientoVacio` **sin
+modificarla** — que `interviews-thin-answer.spec.ts` siga verde sin tocarse es
+la prueba de que la envolvió en vez de romperla. La comparación es exacta:
+normaliza espacios pero **no** mayúsculas ni tildes, porque editar la
+acentuación *es* editar, y normalizar de más desactivaría la repregunta justo
+donde corresponde.
+
 ---
 
 ### 5.9 Sprint 5B: los chats del panel en tiempo real (spec 004)

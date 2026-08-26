@@ -28,6 +28,13 @@ const preguntasSchema = z.object({
             'La pregunta redactada para el responsable del área, en español, ' +
               'tono directo y concreto, sin rodeos',
           ),
+        opciones: z
+          .array(z.string())
+          .describe(
+            'Entre 2 y 3 respuestas plausibles a ESTA pregunta, redactadas como ' +
+              'las diría el responsable del área. Array VACÍO si no se puede ' +
+              'proponer ninguna concreta — es preferible ninguna a una genérica',
+          ),
       }),
     )
     .describe('Una entrada por CADA ítem recibido, en cualquier orden'),
@@ -48,7 +55,22 @@ const PREGUNTAS_PROMPT =
   'documento — nunca pide "escribir uno nuevo".\n' +
   '- Si el ítem trae una resolución de un caso, la pregunta pide CONFIRMAR una versión ' +
   'general de esa resolución, no repetirla.\n' +
-  '- Si el ítem no trae nada propuesto, la pregunta simplemente pide la respuesta.';
+  '- Si el ítem no trae nada propuesto, la pregunta simplemente pide la respuesta.\n\n' +
+  'Además de la pregunta, proponé para cada ítem entre 2 y 3 `opciones`: respuestas ' +
+  'posibles a ESA pregunta, para que quien contesta pueda elegir una en vez de escribir ' +
+  'desde cero.\n\n' +
+  'Reglas de las opciones:\n' +
+  '- Redactalas como las diría el responsable del área: una respuesta concreta y ' +
+  'completa, no un título ni una categoría.\n' +
+  '- Tienen que ser CONCRETAS y DISTINTAS entre sí — que elegir una diga algo que ' +
+  'elegir otra no dice.\n' +
+  '- ⚠️ Prohibido lo genérico: nada de "depende del caso", "habría que consultarlo", ' +
+  '"varía según el cliente" ni equivalentes. Una opción que serviría para cualquier ' +
+  'pregunta no sirve para ninguna.\n' +
+  '- Si el ítem no te da material para proponer nada concreto, devolvé `opciones` ' +
+  'VACÍO. Preferimos ninguna opción antes que una de relleno: quien contesta siempre ' +
+  'puede escribir con sus palabras, y el conocimiento útil suele ser justo el que no ' +
+  'estaba en la lista.';
 
 const fichaSchema = z.object({
   title: z
@@ -85,9 +107,18 @@ export class InterviewsDraftingService {
 
   /**
    * Una sola pasada para toda la sesión (FR-006a). `items` ya vienen con su
-   * `kind` decidido (`elegirForma`) — este método solo redacta el texto.
-   * Devuelve `null` si el modelo falla o si falta el texto de algún id: no
-   * hay degradación parcial (T024/FR-005), la sesión completa queda FALLIDA.
+   * `kind` decidido (`elegirForma`) — este método solo redacta el texto y,
+   * desde la spec 012, las opciones de respuesta de cada pregunta.
+   *
+   * **Las opciones no agregan una llamada**: viajan dentro de esta misma,
+   * como un campo más del schema. Una sesión sigue costando 1 + N (FR-011).
+   *
+   * La degradación es asimétrica a propósito:
+   * - Falta el **texto** de algún id → `null`, y la sesión queda FALLIDA. Sin
+   *   pregunta no hay entrevista (T024/FR-005).
+   * - Faltan las **opciones** → esa pregunta queda con `[]` y la sesión
+   *   sigue. Una pregunta sin opciones se contesta con texto libre, que es un
+   *   estado normal y no una falla (FR-006, SC-004).
    */
   async redactarPreguntas(
     items: {
@@ -95,7 +126,7 @@ export class InterviewsDraftingService {
       kind: InterviewQuestionKind;
       material: MaterialDePregunta;
     }[],
-  ): Promise<Map<string, string> | null> {
+  ): Promise<Map<string, { texto: string; opciones: string[] }> | null> {
     if (items.length === 0) return new Map();
 
     const structured = this.llm.chat.withStructuredOutput(preguntasSchema, {
@@ -119,9 +150,17 @@ export class InterviewsDraftingService {
       return null;
     }
 
-    const textos = new Map<string, string>();
+    const textos = new Map<string, { texto: string; opciones: string[] }>();
     for (const p of parsed.preguntas) {
-      if (p.texto?.trim()) textos.set(p.id, p.texto.trim());
+      if (!p.texto?.trim()) continue;
+      textos.set(p.id, {
+        texto: p.texto.trim(),
+        // `opciones` puede venir ausente o con entradas en blanco: se limpia
+        // y, si no queda ninguna, la pregunta va con texto libre solo.
+        opciones: (p.opciones ?? [])
+          .map((o) => o?.trim())
+          .filter((o): o is string => !!o),
+      });
     }
 
     const faltantes = items.filter((it) => !textos.has(it.id));
@@ -151,6 +190,27 @@ export class InterviewsDraftingService {
         return `Un caso se resolvió así: "${material.resolutionText}". Pedí confirmar una versión general de esto.`;
       case 'ESCALADO_PENDIENTE':
         return `Esta consulta quedó sin responder: "${material.quotes[0]}". Pedí la respuesta.`;
+      // ⚠️ Sin este caso el `switch` caía en `undefined` y el modelo recibía
+      // "[id] (CORREGIR) undefined": redactaba una pregunta de relleno
+      // ("aclarame el punto que quedó incompleto") que no dice QUÉ falta ni
+      // de qué documento habla. Encontrado en vivo con la spec 012, cuando el
+      // historial dejó las preguntas a la vista una al lado de la otra.
+      //
+      // El material tiene todo lo que hace falta para preguntar bien: las
+      // preguntas concretas que el documento no contesta y el motivo del
+      // detector. Se le pasan las dos cosas.
+      case 'DOCUMENTO_INCONCLUSO': {
+        const faltantes = material.unansweredQuestions
+          .map((q) => `"${q}"`)
+          .join(', ');
+        const base =
+          `El documento "${material.document.title}" quedó incompleto. ` +
+          `Motivo: ${material.reason}.`;
+        return faltantes
+          ? `${base} No contesta: ${faltantes}. Preguntá por ESO en concreto, ` +
+              `citando lo que el documento no cubre — no pidas "aclarar el punto".`
+          : `${base} Preguntá qué le falta a ese documento en concreto.`;
+      }
     }
   }
 

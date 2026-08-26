@@ -1219,6 +1219,21 @@ model InterviewQuestion {
   escalationId String?
   escalation   Escalation? @relation(fields: [escalationId], references: [id])
 
+  /// Las opciones de respuesta propuestas al abrir la sesión (spec 012,
+  /// FR-004/FR-012). Se redactan en la MISMA pasada que `text` y quedan
+  /// congeladas: una sesión que se pausa y se retoma muestra estas mismas,
+  /// sin volver a llamar al modelo (FR-011).
+  ///
+  /// Vacío es un estado normal y esperado, no una falla: si el modelo no
+  /// propuso nada razonable, la pregunta se contesta solo con texto libre
+  /// (FR-006). El texto libre nunca depende de esto.
+  ///
+  /// Son texto suelto, sin id: lo que se guarda al responder es el texto
+  /// resultante, no una referencia a la opción — una opción editada deja de
+  /// coincidir con la que se propuso, y esa distinción es la que FR-009
+  /// necesita poder hacer.
+  options String[] @default([])
+
   answers   InterviewAnswer[]
   candidate InterviewCandidate?
 

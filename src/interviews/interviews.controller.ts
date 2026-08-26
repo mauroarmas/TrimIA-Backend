@@ -73,7 +73,17 @@ export class InterviewsController {
       'no quedan pendientes o el estado no es `EN_CURSO` — una sesión ' +
       'cerrada anticipadamente llega a `EN_REVISION` con pendientes.\n\n' +
       'Detecta acá, al consultar, si la sesión pasó a `ABANDONADA` por ' +
-      'inactividad (FR-022) — no hay barrido programado para eso.',
+      'inactividad (FR-022) — no hay barrido programado para eso.\n\n' +
+      '**Spec 012.** `history[]` trae lo ya contestado, en orden, y **excluye ' +
+      'la pregunta actual** (que viaja en `current`): concatenar los dos da ' +
+      'la conversación completa sin duplicados. Sale de la base, así que ' +
+      'sobrevive a una pausa. De una pregunta repreguntada muestra el intento ' +
+      'final. Los tres finales **no son intercambiables**: `RESPONDIDA` trae ' +
+      'el texto, `SALTEADA` trae `answer: null` (no hay nada que la persona ' +
+      'haya puesto) y `SIN_RESPONDER` trae el texto que igual dio.\n\n' +
+      '`current.options[]` son las respuestas propuestas para esa pregunta. ' +
+      '`history` y `options` **siempre están**; `[]` es un estado normal ' +
+      '—"contestá con tus palabras"— y nunca indica una falla.',
   })
   get(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
     return this.interviews.get(id, req.user.id);
@@ -85,7 +95,13 @@ export class InterviewsController {
     description:
       'Sin llamada al modelo: la pregunta ya está redactada. `retry: true` ' +
       'en la respuesta significa que se consideró vacía y se repregunta — ' +
-      'solo pasa una vez por pregunta (FR-018).',
+      'solo pasa una vez por pregunta (FR-018).\n\n' +
+      '**Spec 012 (FR-009).** El body no cambia: no se declara si el texto ' +
+      'vino de una opción o del teclado, el servidor lo determina comparando ' +
+      'contra las opciones que él mismo guardó. Un texto que coincide **sin ' +
+      'editar** con una opción propuesta nunca da `retry: true`, aunque sea ' +
+      'corto — el sistema no puede objetar el texto que él redactó. Una ' +
+      'opción editada vuelve a la validación normal.',
   })
   answer(
     @Param('id') id: string,

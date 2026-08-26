@@ -102,7 +102,8 @@ function buildFakePrisma() {
       }),
     },
     interviewQuestion: {
-      findMany: jest.fn(({ where }: any) => {
+      findMany: jest.fn((args: any) => {
+        const { where } = args;
         // Usado para "yaPreguntado": preguntas previas de sesiones no FALLIDA del área.
         if (where.session) {
           const idsSesionesDelArea = sessions
@@ -116,9 +117,28 @@ function buildFakePrisma() {
             questions.filter((q) => idsSesionesDelArea.includes(q.sessionId)),
           );
         }
-        return Promise.resolve(
-          questions.filter((q) => q.sessionId === where.sessionId),
-        );
+        let rows = questions.filter((q) => q.sessionId === where.sessionId);
+        // Spec 012: `historial()` pide `status: { not: PENDIENTE }`, ordenado
+        // por `order`, con el último intento de cada respuesta embebido. El
+        // fake tiene que honrarlo: si devolviera todas las preguntas sin
+        // ordenar y sin `answers`, los tests del historial pasarían contra
+        // una ficción — en particular el de que la pregunta actual NO está.
+        if (where.status?.not) {
+          rows = rows.filter((q) => q.status !== where.status.not);
+        }
+        if (args.orderBy?.order === 'asc') {
+          rows = [...rows].sort((a, b) => a.order - b.order);
+        }
+        if (args.select?.answers) {
+          rows = rows.map((q) => ({
+            ...q,
+            answers: answers
+              .filter((a) => a.questionId === q.id)
+              .sort((a, b) => b.attempt - a.attempt)
+              .slice(0, args.select.answers.take ?? answers.length),
+          }));
+        }
+        return Promise.resolve(rows);
       }),
       findFirst: jest.fn(({ where }: any) => {
         let rows = questions.filter((q) => q.sessionId === where.sessionId);
@@ -239,11 +259,18 @@ function improvementsStubTodoPreguntado() {
 
 const coverageStub = { getLatest: jest.fn(), hayScanCorriendo: jest.fn() };
 
-function draftingStubOk() {
+function draftingStubOk(opciones: string[] = []) {
+  // Spec 012: la firma devuelve `{ texto, opciones }` por id, no un string.
+  // Cambia por la firma nueva, no por un cambio de comportamiento.
   return {
     redactarPreguntas: jest.fn((items: { id: string }[]) =>
       Promise.resolve(
-        new Map(items.map((it) => [it.id, `Pregunta redactada para ${it.id}`])),
+        new Map(
+          items.map((it) => [
+            it.id,
+            { texto: `Pregunta redactada para ${it.id}`, opciones },
+          ]),
+        ),
       ),
     ),
   };
@@ -807,5 +834,267 @@ describe('InterviewsService — retomar y abandonar (US4)', () => {
     await expect(
       service.answer(session.id, pregunta.id, 'algo', 'emp-1'),
     ).rejects.toThrow(ConflictException);
+  });
+});
+
+describe('InterviewsService — el historial de la conversación (spec 012, US1)', () => {
+  async function sesionConTresPreguntas() {
+    const { prisma, sessions, questions } = buildFakePrisma();
+    const { service, closeQueue } = buildService({ prisma });
+    const session = await service.open('sector-ventas', 'emp-1');
+    await service.runOpen(
+      session.id,
+      [0, 1, 2].map((i) => ({
+        origin: 'TEMA_COBERTURA',
+        themeId: `t${i}`,
+        label: `Tema ${i}`,
+        agentType: 'SALES',
+        band: 'SIN_RESPUESTA',
+        cause: 'NO_HAY_NADA',
+        queryEventIds: [`ev-${i}`],
+        quotes: [`consulta ${i}`],
+        queryCount: 3 - i,
+        documents: [],
+      })) as any,
+    );
+    const preguntaDe = (order: number) =>
+      questions.find((q) => q.sessionId === session.id && q.order === order);
+    return { service, session, sessions, questions, preguntaDe, closeQueue };
+  }
+
+  it('FR-001: en la primera pregunta el historial está pero vacío — nunca undefined', async () => {
+    const { service, session } = await sesionConTresPreguntas();
+
+    const estado = await service.get(session.id, 'emp-1');
+
+    expect(estado.history).toEqual([]);
+    expect(estado.current!.order).toBe(1);
+  });
+
+  it('FR-001/FR-003: distingue RESPONDIDA, SALTEADA y SIN_RESPONDER, en orden y sin la pregunta actual', async () => {
+    const { service, session, preguntaDe } = await sesionConTresPreguntas();
+
+    await service.answer(
+      session.id,
+      preguntaDe(1).id,
+      'Llega en 3 a 5 días hábiles.',
+      'emp-1',
+    );
+    await service.skip(session.id, preguntaDe(2).id, 'emp-1');
+    // Dos veces vacía: se repregunta y la segunda tampoco alcanza.
+    await service.answer(session.id, preguntaDe(3).id, 'ok', 'emp-1');
+    await service.answer(session.id, preguntaDe(3).id, 'nada', 'emp-1');
+
+    const estado = await service.get(session.id, 'emp-1');
+
+    expect(estado.history).toEqual([
+      expect.objectContaining({
+        order: 1,
+        status: 'RESPONDIDA',
+        answer: 'Llega en 3 a 5 días hábiles.',
+      }),
+      // SALTEADA no tiene nada que el responsable haya puesto...
+      expect.objectContaining({ order: 2, status: 'SALTEADA', answer: null }),
+      // ...pero SIN_RESPONDER sí: contestó, no alcanzó, y el texto es suyo.
+      expect.objectContaining({
+        order: 3,
+        status: 'SIN_RESPONDER',
+        answer: 'nada',
+      }),
+    ]);
+  });
+
+  it('FR-001: la pregunta actual NO está en el historial — history + current no duplica', async () => {
+    const { service, session, preguntaDe } = await sesionConTresPreguntas();
+    await service.answer(
+      session.id,
+      preguntaDe(1).id,
+      'una respuesta',
+      'emp-1',
+    );
+
+    const estado = await service.get(session.id, 'emp-1');
+
+    expect(estado.current!.order).toBe(2);
+    expect(estado.history.map((h) => h.order)).toEqual([1]);
+    expect(estado.history.some((h) => h.id === estado.current!.id)).toBe(false);
+  });
+
+  it('FR-002: de una pregunta repreguntada se muestra el intento FINAL, no los intermedios', async () => {
+    const { service, session, preguntaDe } = await sesionConTresPreguntas();
+
+    await service.answer(session.id, preguntaDe(1).id, 'ok', 'emp-1');
+    await service.answer(
+      session.id,
+      preguntaDe(1).id,
+      'Son 30 días hábiles desde la seña.',
+      'emp-1',
+    );
+
+    const estado = await service.get(session.id, 'emp-1');
+
+    expect(estado.history).toHaveLength(1);
+    expect(estado.history[0]).toEqual(
+      expect.objectContaining({
+        status: 'RESPONDIDA',
+        answer: 'Son 30 días hábiles desde la seña.',
+      }),
+    );
+  });
+
+  it('FR-002: el historial sale de la base, así que sobrevive a la pausa — no depende de lo que el navegador acumuló', async () => {
+    const { service, session, preguntaDe, sessions } =
+      await sesionConTresPreguntas();
+    await service.answer(
+      session.id,
+      preguntaDe(1).id,
+      'contestada antes de la pausa',
+      'emp-1',
+    );
+
+    // "Se aleja y vuelve": una consulta nueva, sin ningún estado acumulado.
+    const alVolver = await service.get(session.id, 'emp-1');
+
+    expect(sessions.find((s) => s.id === session.id).status).toBe('EN_CURSO');
+    expect(alVolver.history).toEqual([
+      expect.objectContaining({
+        order: 1,
+        answer: 'contestada antes de la pausa',
+      }),
+    ]);
+  });
+});
+
+describe('InterviewsService — opciones de respuesta (spec 012, US2/US3)', () => {
+  const OPCIONES = ['Sí, con recargo del 10%.', 'No, el envío es sin cargo.'];
+
+  async function sesionConOpciones(opciones: string[]) {
+    const { prisma, questions, answers } = buildFakePrisma();
+    const { service, closeQueue } = buildService({
+      prisma,
+      drafting: draftingStubOk(opciones),
+    });
+    const session = await service.open('sector-ventas', 'emp-1');
+    await service.runOpen(session.id, [
+      {
+        origin: 'TEMA_COBERTURA',
+        themeId: 't1',
+        label: 'Tema 1',
+        agentType: 'SALES',
+        band: 'SIN_RESPUESTA',
+        cause: 'NO_HAY_NADA',
+        queryEventIds: ['ev-1'],
+        quotes: ['consulta'],
+        queryCount: 3,
+        documents: [],
+      },
+      {
+        origin: 'TEMA_COBERTURA',
+        themeId: 't2',
+        label: 'Tema 2',
+        agentType: 'SALES',
+        band: 'SIN_RESPUESTA',
+        cause: 'NO_HAY_NADA',
+        queryEventIds: ['ev-2'],
+        quotes: ['otra consulta'],
+        queryCount: 2,
+        documents: [],
+      },
+    ] as any);
+    const preguntaDe = (order: number) =>
+      questions.find((q) => q.sessionId === session.id && q.order === order);
+    return { service, session, questions, answers, preguntaDe, closeQueue };
+  }
+
+  it('FR-012: las opciones se persisten con la pregunta y viajan en el envelope', async () => {
+    const { service, session } = await sesionConOpciones(OPCIONES);
+
+    const estado = await service.get(session.id, 'emp-1');
+
+    expect(estado.current!.options).toEqual(OPCIONES);
+  });
+
+  it('FR-004/006: sin opciones el envelope trae [] — siempre presente, nunca undefined', async () => {
+    const { service, session } = await sesionConOpciones([]);
+
+    const estado = await service.get(session.id, 'emp-1');
+
+    expect(estado.current!.options).toEqual([]);
+  });
+
+  it('⚠️ FR-009: una opción enviada TAL CUAL no repregunta, aunque dispararía la heurística', async () => {
+    // "Sí, con recargo del 10%." arranca con "sí": `esAsentimientoVacio` no la
+    // marca porque tiene contenido, así que usamos una opción que SÍ sería
+    // marcada si no existiera la regla nueva.
+    const { service, session, preguntaDe } = await sesionConOpciones(['Sí.']);
+
+    const res = await service.answer(
+      session.id,
+      preguntaDe(1).id,
+      'Sí.',
+      'emp-1',
+    );
+
+    expect(res.retry).toBe(false);
+    expect(res.retryHint).toBeNull();
+    // Y avanza: la pregunta queda RESPONDIDA, no SIN_RESPONDER.
+    expect(preguntaDe(1).status).toBe('RESPONDIDA');
+  });
+
+  it('⚠️ FR-009: la MISMA respuesta sin opciones detrás sí repregunta — la regla es la coincidencia, no el texto', async () => {
+    const { service, session, preguntaDe } = await sesionConOpciones([]);
+
+    const res = await service.answer(
+      session.id,
+      preguntaDe(1).id,
+      'Sí.',
+      'emp-1',
+    );
+
+    expect(res.retry).toBe(true);
+    expect(res.retryHint).not.toBeNull();
+  });
+
+  it('FR-007/009: una opción EDITADA vuelve a la validación normal', async () => {
+    const { service, session, preguntaDe } = await sesionConOpciones(['Sí.']);
+
+    const res = await service.answer(
+      session.id,
+      preguntaDe(1).id,
+      'ok',
+      'emp-1',
+    );
+
+    expect(res.retry).toBe(true);
+  });
+
+  it('FR-007: lo que se guarda es el texto final, venga de una opción editada o del teclado', async () => {
+    const { service, session, preguntaDe, answers } =
+      await sesionConOpciones(OPCIONES);
+    const editada = 'Sí, con recargo del 15% y solo en Posadas.';
+
+    await service.answer(session.id, preguntaDe(1).id, editada, 'emp-1');
+
+    const guardadas = answers.filter((a) => a.questionId === preguntaDe(1).id);
+    expect(guardadas).toHaveLength(1);
+    expect(guardadas[0].text).toBe(editada);
+    // US3/data-model: `InterviewAnswer` no distingue el origen. Una respuesta
+    // que salió de una tarjeta y una del teclado son la misma fila.
+    expect(guardadas[0]).not.toHaveProperty('fromOption');
+    expect(guardadas[0]).not.toHaveProperty('optionIndex');
+  });
+
+  it('FR-005: con opciones, el texto libre sigue funcionando igual', async () => {
+    const { service, session, preguntaDe } = await sesionConOpciones(OPCIONES);
+
+    const res = await service.answer(
+      session.id,
+      preguntaDe(1).id,
+      'Cobramos envío solo fuera del radio urbano.',
+      'emp-1',
+    );
+
+    expect(res.retry).toBe(false);
+    expect(res.next!.order).toBe(2);
   });
 });

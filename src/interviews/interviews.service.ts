@@ -27,6 +27,7 @@ import {
   MaterialDocumento,
 } from './interviews-questions';
 import { esAsentimientoVacio } from './interviews-thin-answer';
+import { esOpcionSinEditar } from './interviews-chosen-option';
 
 /**
  * Por qué una sesión no tiene con qué preguntar.
@@ -328,7 +329,10 @@ export class InterviewsService {
               order: idx + 1,
               origin: it.material.origin as InterviewQuestionOrigin,
               kind: it.kind,
-              text: textos.get(it.id)!,
+              text: textos.get(it.id)!.texto,
+              // Spec 012 (FR-012): congeladas junto al texto. Una sesión que
+              // se pausa y se retoma muestra estas mismas, sin regenerarlas.
+              options: textos.get(it.id)!.opciones,
               themeLabel:
                 it.material.origin === 'TEMA_COBERTURA'
                   ? it.material.label
@@ -417,7 +421,12 @@ export class InterviewsService {
       where: { questionId },
     });
     const yaRepregunto = previas.some((a) => a.flaggedThin);
-    const esVacia = esAsentimientoVacio(text);
+    // Spec 012 (FR-009): una opción propuesta y enviada TAL CUAL nunca
+    // dispara repregunta, aunque sea corta — el sistema no puede proponer un
+    // texto y después objetar que lo elijan. Envuelve a `esAsentimientoVacio`
+    // sin modificarla: una opción editada vuelve a la validación de siempre.
+    const eligioUnaOpcion = esOpcionSinEditar(text, actual.options);
+    const esVacia = !eligioUnaOpcion && esAsentimientoVacio(text);
     const ofrecerRetry = esVacia && !yaRepregunto;
 
     await this.prisma.interviewAnswer.create({
@@ -578,9 +587,55 @@ export class InterviewsService {
       agentType: session.agentType,
       progress: await this.progreso(sessionId),
       fromCoverage: session.coverageScanId != null,
+      history: await this.historial(sessionId),
       current: current ? await this.currentEnvelope(current) : null,
       failureReason: session.failureReason,
     };
+  }
+
+  /**
+   * El historial de la conversación (spec 012, FR-001/002/003). Se arma
+   * leyendo lo que la spec 010 ya persiste: no hay nada nuevo que guardar
+   * para poder mostrarlo.
+   *
+   * Sale de la base y no de lo que el navegador acumuló, que es lo que hace
+   * que una sesión pausada y retomada muestre todo lo contestado antes de la
+   * pausa (FR-002).
+   *
+   * **Excluye la pregunta actual**, que viaja en `current`: concatenar
+   * `history + current` da la conversación completa sin duplicados. Filtrar
+   * por `status != PENDIENTE` alcanza — la actual es siempre la primera
+   * pendiente (`preguntaActual`).
+   */
+  private async historial(sessionId: string) {
+    const preguntas = await this.prisma.interviewQuestion.findMany({
+      where: { sessionId, status: { not: InterviewQuestionStatus.PENDIENTE } },
+      orderBy: { order: 'asc' },
+      select: {
+        id: true,
+        order: true,
+        text: true,
+        status: true,
+        // El intento final, no todos: la repregunta es una corrección dentro
+        // de la misma pregunta, no una pregunta nueva.
+        answers: {
+          orderBy: { attempt: 'desc' },
+          take: 1,
+          select: { text: true },
+        },
+      },
+    });
+
+    return preguntas.map((p) => ({
+      id: p.id,
+      order: p.order,
+      text: p.text,
+      status: p.status,
+      // SALTEADA y SIN_RESPONDER no son lo mismo y no se aplastan (FR-003):
+      // en una no hay nada que el responsable haya puesto, en la otra sí —
+      // contestó, se repreguntó, y tampoco alcanzó, pero el texto es suyo.
+      answer: p.answers[0]?.text ?? null,
+    }));
   }
 
   /**
@@ -644,6 +699,7 @@ export class InterviewsService {
     origin: string;
     text: string;
     quotes: string[];
+    options: string[];
     resolutionText: string | null;
     documentId: string | null;
   }) {
@@ -665,6 +721,10 @@ export class InterviewsService {
       origin: pregunta.origin,
       text: pregunta.text,
       quotes: pregunta.quotes,
+      // Spec 012 (FR-004/005/006). Siempre presente: `[]` significa
+      // "contestá con tus palabras", no que haya fallado algo — un campo
+      // ausente obligaría al panel a inventar una rama.
+      options: pregunta.options ?? [],
       document,
       resolutionText: pregunta.resolutionText,
       retried: retried != null,
