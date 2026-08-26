@@ -179,6 +179,30 @@ export class ConversationsService {
     });
   }
 
+  /**
+   * Lo que el usuario preguntó **después** de que se abrió el caso.
+   *
+   * El escalado deja la conversación en `WAITING_HUMAN`, no cerrada: el cliente
+   * sigue escribiendo mientras espera. Esas consultas no generan caso propio ni
+   * aparecen en ningún lado más que en el historial, así que hoy **no las
+   * atiende nadie** — el supervisor responde la que escaló y cierra.
+   *
+   * Se listan para que las vea al responder y las conteste todas juntas. No es
+   * lo mismo que `getLastUserMessage`: aquélla busca la última de todas, ésta
+   * las posteriores a una fecha.
+   *
+   * Ojo con el borde: se usa `gt` y no `gte` a propósito. El mensaje que escaló
+   * puede compartir timestamp con la creación del caso, y con `gte` aparecería
+   * listado como "sin atender" siendo justamente el que se está respondiendo.
+   */
+  async getMessagesAfter(conversationId: string, desde: Date) {
+    return this.prisma.message.findMany({
+      where: { conversationId, role: 'USER', createdAt: { gt: desde } },
+      orderBy: { createdAt: 'asc' },
+      select: { content: true, createdAt: true },
+    });
+  }
+
   /** Fija el agente sticky de la conversación tras resolver un mensaje. */
   async setCurrentAgent(conversationId: string, agent: AgentType) {
     return this.prisma.conversation.update({

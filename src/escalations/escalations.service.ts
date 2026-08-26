@@ -1,6 +1,7 @@
 import {
   ConflictException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common';
 import {
@@ -91,6 +92,8 @@ export interface SaveUnsentInput {
  */
 @Injectable()
 export class EscalationsService {
+  private readonly log = new Logger(EscalationsService.name);
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly conversations: ConversationsService,
@@ -298,6 +301,9 @@ export class EscalationsService {
    * derivarlo. Con `empleadoId` se agrega la `pertenencia` —igual que en la
    * cola— para que el panel pueda avisar, antes de que la persona escriba, que
    * el caso no es de sus áreas (FR-018). Es un aviso, no una traba.
+   *
+   * Trae además las **consultas posteriores**: lo que el cliente preguntó
+   * mientras esperaba. Ver `consultasPosteriores()` acá abajo.
    */
   async findById(id: string, empleadoId?: string) {
     const escalation = await this.prisma.escalation.findUnique({
@@ -313,10 +319,13 @@ export class EscalationsService {
       throw new NotFoundException('Caso pendiente no encontrado');
     }
 
-    if (!empleadoId) return escalation;
+    const consultasPosteriores = await this.consultasPosteriores(escalation);
+
+    if (!empleadoId) return { ...escalation, consultasPosteriores };
 
     return {
       ...escalation,
+      consultasPosteriores,
       pertenencia: resolverPertenencia(
         {
           area: escalation.conversation.currentAgent,
@@ -328,6 +337,42 @@ export class EscalationsService {
         },
       ),
     };
+  }
+
+  /**
+   * Lo que el cliente siguió preguntando después de que se abrió el caso.
+   *
+   * El escalado deja la conversación en `WAITING_HUMAN`, no cerrada, así que el
+   * cliente sigue escribiendo mientras espera. Esas consultas **no generan caso
+   * propio** ni aparecen en ninguna cola: quedan solo en el historial, y hoy no
+   * las atiende nadie — el supervisor contesta la que escaló y cierra.
+   *
+   * Mostrarlas en el detalle es la opción mínima de las tres que se evaluaron
+   * (`specs/futuras/propuesta-busca-el-mensaje-equivocado.md`): no multiplica la
+   * cola con casos de la misma conversación ni toca el modelo de datos, y deja
+   * que el supervisor las conteste todas juntas.
+   *
+   * **Nunca rompe el detalle del caso.** Es información de más: si la consulta
+   * falla, el caso igual se tiene que poder abrir y responder. Mismo criterio
+   * que los candidatos de conocimiento de la spec 007.
+   */
+  private async consultasPosteriores(escalation: {
+    conversationId: string;
+    createdAt: Date;
+  }): Promise<{ content: string; createdAt: Date }[]> {
+    try {
+      return await this.conversations.getMessagesAfter(
+        escalation.conversationId,
+        escalation.createdAt,
+      );
+    } catch (err) {
+      this.log.warn(
+        `No se pudieron traer las consultas posteriores del caso: ${
+          err instanceof Error ? err.message : err
+        }`,
+      );
+      return [];
+    }
   }
 
   /**

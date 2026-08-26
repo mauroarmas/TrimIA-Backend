@@ -40,6 +40,8 @@ describe('EscalationsService', () => {
     setStatus: jest.Mock;
     addAgentNote: jest.Mock;
     getLastUserMessage: jest.Mock;
+    // Las consultas que el cliente mandó mientras esperaba respuesta.
+    getMessagesAfter: jest.Mock;
   };
   let sender: { send: jest.Mock };
   let logger: { logEvent: jest.Mock };
@@ -85,6 +87,7 @@ describe('EscalationsService', () => {
       setStatus: jest.fn(),
       addAgentNote: jest.fn(),
       getLastUserMessage: jest.fn(),
+      getMessagesAfter: jest.fn().mockResolvedValue([]),
     };
     sender = { send: jest.fn() };
     logger = { logEvent: jest.fn() };
@@ -1351,6 +1354,84 @@ describe('EscalationsService', () => {
    * hygieneWarning — spec 008, US3. El disparador reactivo: NO re-detecta
    * nada, solo cruza contra la última corrida `READY` de higiene del corpus.
    */
+  describe('⭐ consultas posteriores al escalado (findById)', () => {
+    /**
+     * El escalado deja la conversación en WAITING_HUMAN, no cerrada: el cliente
+     * sigue escribiendo mientras espera. Esas consultas no generan caso propio
+     * ni aparecen en ningún lado más que en el historial, así que hoy no las
+     * atiende nadie — el supervisor responde la que escaló y cierra.
+     *
+     * Caso real (2026-08-26, `specs/futuras/propuesta-busca-el-mensaje-equivocado.md`):
+     * el cliente hizo TRES consultas más mientras esperaba.
+     */
+    const ESCALADO_EN = new Date('2026-08-26T01:01:57.000Z');
+    const caso = {
+      id: 'esc-1',
+      conversationId: 'conv-1',
+      status: 'PENDING',
+      createdAt: ESCALADO_EN,
+      conversation,
+      delegatedToId: null,
+    };
+
+    beforeEach(() => {
+      prisma.escalation.findUnique.mockResolvedValue(caso);
+    });
+
+    it('lista las consultas que llegaron después de abrirse el caso', async () => {
+      conversations.getMessagesAfter.mockResolvedValue([
+        {
+          content: 'cuantas veces reintentan la entrega si no estoy',
+          createdAt: new Date('2026-08-26T01:02:50.000Z'),
+        },
+        {
+          content: 'atienden los feriados',
+          createdAt: new Date('2026-08-26T01:02:58.000Z'),
+        },
+      ]);
+
+      const res = await service.findById('esc-1', 'employee-1');
+
+      expect(res.consultasPosteriores).toHaveLength(2);
+      expect(res.consultasPosteriores[0].content).toBe(
+        'cuantas veces reintentan la entrega si no estoy',
+      );
+    });
+
+    it('las busca DESPUÉS de la fecha del caso, no desde el principio', async () => {
+      // Sin acotar por fecha traería también el mensaje que escaló, que es
+      // justamente el que el supervisor está respondiendo.
+      conversations.getMessagesAfter.mockResolvedValue([]);
+
+      await service.findById('esc-1', 'employee-1');
+
+      expect(conversations.getMessagesAfter).toHaveBeenCalledWith(
+        'conv-1',
+        ESCALADO_EN,
+      );
+    });
+
+    it('sin consultas posteriores devuelve lista vacía, no undefined', async () => {
+      // El panel tiene que poder hacer `.length` sin chequear antes.
+      conversations.getMessagesAfter.mockResolvedValue([]);
+
+      const res = await service.findById('esc-1', 'employee-1');
+
+      expect(res.consultasPosteriores).toEqual([]);
+    });
+
+    it('un fallo al traerlas NO rompe el detalle del caso', async () => {
+      // Son información de más: si fallan, el caso igual se tiene que poder
+      // abrir y responder. Mismo criterio que los candidatos de la spec 007.
+      conversations.getMessagesAfter.mockRejectedValue(new Error('DB caída'));
+
+      const res = await service.findById('esc-1', 'employee-1');
+
+      expect(res.id).toBe('esc-1');
+      expect(res.consultasPosteriores).toEqual([]);
+    });
+  });
+
   describe('hygieneWarning (spec 008)', () => {
     const caso = { id: 'esc-1', conversationId: 'conv-1', status: 'PENDING' };
 

@@ -3,7 +3,15 @@
 **Anotado** 2026-08-26, probando el panel a mano.
 **Tipo** **defecto** de lo ya entregado (spec 003, US3). Se arregla directo con test de
 regresión, sin spec — no cambia el modelo de datos ni el alcance.
-**Estado** arreglado en `fix/propuesta-busca-el-mensaje-equivocado`.
+**RESUELTO** — commit `ca6bf12`, ya en `dev`, con test de regresión en
+[`escalation-suggestion.service.spec.ts`](../../src/escalations/escalation-suggestion.service.spec.ts)
+(*«con mensajes posteriores al escalado, busca el que lo originó»*). La búsqueda se acota
+por `createdAt <= escalation.createdAt` y el porqué quedó escrito en el código, no solo acá.
+
+> ⚠️ **El defecto está cerrado; la parte de producto NO.** Lo de abajo —"los mensajes que
+> llegan después del escalado no los atiende nadie"— sigue abierto y **va como pre-spec**.
+> Está anotado al final de este archivo para no perder el contexto de cómo se descubrió,
+> pero el prefijo `RESUELTO-` se refiere **solo al defecto de búsqueda**.
 
 ## El síntoma
 
@@ -72,23 +80,45 @@ original es el dato limpio.
 
 ---
 
-## Lo que queda abierto (problema de producto, no este defecto)
+## Lo que quedaba abierto — resuelto por la opción mínima
 
-**Los mensajes que llegan después del escalado no los atiende nadie.** En el caso de
+**Los mensajes que llegan después del escalado no los atendía nadie.** En el caso de
 arriba, el cliente hizo **tres** consultas más mientras esperaba: sobre reintentos de
-entrega, cambio por falla y feriados. Ninguna generó su propio caso ni aparece en
+entrega, cambio por falla y feriados. Ninguna generaba su propio caso ni aparecía en
 ningún lado más que en el historial de la conversación.
 
-Arreglar la búsqueda hace que la propuesta responda **la consulta correcta** — y con eso
-deja más visible que las otras tres siguen sin respuesta.
+Arreglar la búsqueda hizo que la propuesta responda **la consulta correcta** — y con eso
+dejó más visible que las otras tres seguían sin respuesta.
 
-Opciones cuando se toque:
+Se evaluaron tres opciones:
 
-- **Mostrarlas en el caso** como "consultas posteriores sin atender", para que el
-  supervisor las vea al responder y las conteste todas juntas.
-- **Que generen su propio caso** si vuelven a caer bajo el umbral. Riesgo: multiplica la
-  cola con casos de la misma conversación.
-- **Dejarlo así** y asumir que el supervisor lee la conversación entera. Es lo que pasa
-  hoy, pero nada se lo señala.
+- ✅ **Mostrarlas en el caso**, para que el supervisor las vea al responder y las conteste
+  todas juntas. **Es la que se implementó.**
+- **Que generen su propio caso** si vuelven a caer bajo el umbral. Descartada por ahora:
+  multiplica la cola con casos de la misma conversación, y eso choca de frente con lo
+  que la spec 013 acaba de ordenar.
+- **Dejarlo así** y asumir que el supervisor lee la conversación entera. Es lo que pasaba,
+  y nada se lo señalaba.
 
-Es una decisión de producto con alcance propio: **va como pre-spec**, no como defecto.
+**RESUELTO** — `findById` devuelve `consultasPosteriores` (`ConversationsService.getMessagesAfter`).
+Verificado contra la API con el caso `c2f91f34`: devuelve las **tres** consultas perdidas.
+
+No hizo falta pre-spec: la opción elegida no toca el modelo de datos ni agrega endpoints
+—es un campo más en un detalle que ya se consultaba—, así que entra en la regla de
+"defecto de lo ya entregado, se arregla directo con test de regresión". Las otras dos
+opciones sí habrían necesitado spec, y por eso se anotaron acá antes de elegir.
+
+### Dos decisiones del arreglo que conviene recordar
+
+1. **`gt` y no `gte`.** El mensaje que escaló puede compartir timestamp con la creación
+   del caso, y con `gte` aparecería listado como "sin atender" siendo justamente el que
+   se está respondiendo.
+2. **Un fallo al traerlas no rompe el detalle del caso.** Son información de más: si la
+   consulta falla, el caso igual se tiene que poder abrir y responder. Mismo criterio que
+   los candidatos de conocimiento de la spec 007. Hay test.
+
+### Lo que sigue abierto, ahora sí como pre-spec
+
+Que el supervisor **las vea** no es que el sistema **las atienda**. Sigue sin haber una
+forma de decir "contesté ésta pero no aquélla", ni de que una consulta posterior que
+nadie respondió reclame atención. Eso sí es una decisión de producto con alcance propio.
