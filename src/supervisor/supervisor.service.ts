@@ -66,14 +66,37 @@ export interface AgentStatus {
   activeConversations: number;
   /** Última vez que se tocó una conversación de este agente (null si ninguna). */
   lastActivityAt: Date | null;
-  /** Turnos ruteados a este agente (base de las métricas de abajo). */
+  /** Turnos ruteados a este agente EN LA VENTANA (base de las métricas de abajo). */
   routedTurns: number;
-  /** Confianza RAG promedio (0-1) de los turnos ruteados; null si aún no hay datos. */
-  avgConfidence: number | null;
+  /**
+   * Proporción de turnos ruteados con confianza ≥ umbral, 0-1 (spec 009,
+   * FR-017). `null` si `hasData` es false — nunca `0`: un agente sin muestra
+   * suficiente no es lo mismo que uno que contestó mal siempre.
+   */
+  coverage: number | null;
+  /**
+   * `avg(confidence) − umbral`, en puntos porcentuales y con signo (spec 009,
+   * FR-017a). Reemplaza a `avgConfidence`: la cobertura sola no distingue un
+   * corpus holgado de uno que aprueba raspando, y expresado como distancia
+   * al umbral no admite la lectura de "nota" que el 0-100% invitaba.
+   * `null` si `hasData` es false.
+   */
+  marginPoints: number | null;
   /** Turnos que terminaron escalando a un humano por baja confianza. */
   escalations: number;
   /** escalations / routedTurns (0 si no hubo turnos). */
   escalationRate: number;
+  /** Mismo valor que `routedTurns`, nombrado explícito para viajar siempre —
+   *  incluso con `hasData: false`, donde `coverage`/`marginPoints` no dicen
+   *  nada por sí solos (spec 009, FR-016). */
+  sampleSize: number;
+  /** `sampleSize >= minimumSample`. Distingue "sin datos" de "cobertura cero". */
+  hasData: boolean;
+  /** `COVERAGE_MIN_SAMPLE` vigente, para que el panel pueda decir "N de M". */
+  minimumSample: number;
+  /** Ventana efectivamente usada para este cálculo. */
+  windowFrom: Date;
+  windowTo: Date;
 }
 
 export interface AgentsStatusResponse {
@@ -310,34 +333,57 @@ export class SupervisorService {
   }
 
   /**
-   * Estado de los 5 agentes especializados (tarea 2.4 — mockup del Panel).
-   * Combina:
-   *  - Conversation  → cuántas conversaciones atiende cada agente y su actividad.
-   *  - OrchestrationEvent (ROUTED_TO_AGENT) → confianza RAG promedio y escalados.
-   * La confianza sale del payload del evento, que el orquestador persiste por turno.
+   * Estado de los 5 agentes especializados (tarea 2.4 — mockup del Panel;
+   * reescrito en la spec 009, US2). Combina:
+   *  - Conversation  → cuántas conversaciones atiende cada agente y su actividad
+   *    (siempre histórico: es sobre a quién está asignado HOY, no un turno).
+   *  - OrchestrationEvent (ROUTED_TO_AGENT) → cobertura, margen y escalados,
+   *    ahora acotados a una VENTANA. Antes agregaba sobre toda la historia sin
+   *    ventana ni mínimo de muestra: 7 turnos de un agente pesaban lo mismo que
+   *    7000. Medido en specs/009-que-falta-para-responder-mejor/research.md
+   *    (D0): con la base real, ese cálculo mostraba `avgConfidence: 0.674`
+   *    sobre 7 turnos y lo pintaba como "apenas aprueba" — la mitad del
+   *    problema que esa spec vino a arreglar.
    */
   async getAgentsStatus(): Promise<AgentsStatusResponse> {
+    // Sin default en código, a propósito: el umbral se pinea por variable de
+    // entorno (CLAUDE.md, y Joi ya lo valida con su propio default en
+    // config.module.ts). Un segundo default acá era una segunda fuente de
+    // verdad: si alguien cambiaba el de Joi, el panel seguía pintando contra
+    // 0.65 y mostraba un umbral distinto del que el agente aplicaba.
     const confidenceThreshold = this.config.get<number>(
       'RAG_CONFIDENCE_THRESHOLD',
-      0.65,
+    )!;
+    // Mínimo POR AGENTE (spec 009, FR-015). Distinto de
+    // COVERAGE_SCAN_MIN_QUERIES, que es el mínimo GLOBAL de la corrida de
+    // cobertura (US1) — cuentan poblaciones distintas, ver data-model.md.
+    const minimumSample = this.config.get<number>('COVERAGE_MIN_SAMPLE')!;
+    const windowDays = this.config.get<number>('COVERAGE_WINDOW_DAYS')!;
+    const windowTo = new Date();
+    const windowFrom = new Date(
+      windowTo.getTime() - windowDays * 24 * 60 * 60 * 1000,
     );
 
-    // Confianza promedio y escalados por agente, agregados en Postgres sobre el
-    // JSON del payload (AVG ignora los null de eventos previos a la tarea 2.4).
+    // Cobertura, margen y escalados por agente, agregados en Postgres sobre el
+    // JSON del payload, acotados a la ventana. `covered` cuenta los turnos que
+    // alcanzaron el umbral — es la cobertura de FR-017, no una calificación.
     const eventStatsPromise = this.prisma.$queryRaw<
       {
         agentType: AgentType;
         avgConfidence: number | null;
         escalations: bigint;
+        covered: bigint;
         routed: bigint;
       }[]
     >(Prisma.sql`
       SELECT "agentType",
-             AVG((payload->>'confidence')::float)                              AS "avgConfidence",
-             COUNT(*) FILTER (WHERE payload->>'escalated' = 'true')            AS "escalations",
-             COUNT(*)                                                          AS "routed"
+             AVG((payload->>'confidence')::float)                                        AS "avgConfidence",
+             COUNT(*) FILTER (WHERE payload->>'escalated' = 'true')                      AS "escalations",
+             COUNT(*) FILTER (WHERE (payload->>'confidence')::float >= ${confidenceThreshold}) AS "covered",
+             COUNT(*)                                                                    AS "routed"
       FROM "OrchestrationEvent"
       WHERE "eventType" = 'ROUTED_TO_AGENT' AND "agentType" IS NOT NULL
+        AND "createdAt" >= ${windowFrom} AND "createdAt" < ${windowTo}
       GROUP BY "agentType"
     `);
 
@@ -369,9 +415,19 @@ export class SupervisorService {
 
       const routedTurns = stats ? Number(stats.routed) : 0;
       const escalations = stats ? Number(stats.escalations) : 0;
-      const avgConfidence =
-        stats && stats.avgConfidence != null
-          ? Math.round(stats.avgConfidence * 1000) / 1000
+      const covered = stats ? Number(stats.covered) : 0;
+      // `hasData` es la puerta: por debajo del mínimo, `coverage` y
+      // `marginPoints` NO se publican (spec 009, FR-015) — un agente sin
+      // muestra no comparte el cero con uno que contestó mal siempre.
+      const hasData = routedTurns >= minimumSample;
+      const coverage = hasData
+        ? Math.round((covered / routedTurns) * 1000) / 1000
+        : null;
+      const marginPoints =
+        hasData && stats?.avgConfidence != null
+          ? Math.round(
+              (stats.avgConfidence * 100 - confidenceThreshold * 100) * 10,
+            ) / 10
           : null;
 
       return {
@@ -381,9 +437,15 @@ export class SupervisorService {
         activeConversations: active,
         lastActivityAt: total?._max.updatedAt ?? null,
         routedTurns,
-        avgConfidence,
+        coverage,
+        marginPoints,
         escalations,
         escalationRate: routedTurns > 0 ? escalations / routedTurns : 0,
+        sampleSize: routedTurns,
+        hasData,
+        minimumSample,
+        windowFrom,
+        windowTo,
       };
     });
 

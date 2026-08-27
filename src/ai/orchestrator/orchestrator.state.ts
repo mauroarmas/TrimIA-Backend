@@ -71,6 +71,20 @@ export const OrchestratorState = Annotation.Root({
   retrievedDocs: Annotation<RetrievedDoc[] | null>,
   escalated: Annotation<boolean | null>, // true si se derivó a humano (por baja confianza O a pedido del agente)
 
+  /**
+   * Id del caso creado al escalar (spec 007).
+   *
+   * Viaja hasta `trackRetrievals` para enlazar los documentos que se
+   * consultaron con el caso concreto, en vez de correlacionar por fecha. Es lo
+   * que después permite ofrecerle al supervisor "estos quedaron cortos, ¿querés
+   * corregir uno?" al resolverlo.
+   *
+   * El orden lo hace posible: la Escalation se crea DENTRO del grafo y
+   * `escalations.create()` la devuelve, mientras que trackRetrievals corre
+   * después, ya en el processor.
+   */
+  escalationId: Annotation<string | null>,
+
   // --- Derivación decidida por el propio agente (no por el score del RAG) ---
   // Las completa generate_response con su salida estructurada. Cubren el caso
   // que el umbral de confianza no detecta: el RAG encontró contexto suficiente,

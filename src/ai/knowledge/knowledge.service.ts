@@ -17,6 +17,7 @@ import {
   KnowledgeChangeOrigin,
   KnowledgeSourceType,
   KnowledgeSyncStatus,
+  Sector,
 } from '@prisma/client';
 import { createHash } from 'crypto';
 import { PrismaService } from '../../database/prisma.service';
@@ -48,6 +49,32 @@ export interface IngestInput {
    */
   sourceType?: KnowledgeSourceType;
   sourceId?: string | null;
+  /**
+   * Salta la detección de duplicado exacto (spec 007, FR-012).
+   *
+   * El 409 es detección, no prohibición — misma convención que ya rige para
+   * archivos repetidos (`assertNotDuplicate`, clarificación 2026-08-08).
+   */
+  force?: boolean;
+}
+
+/**
+ * Cuántos candidatos se traen del corpus antes de deduplicar por documento
+ * (spec 007). Más alto que MAX_PARECIDOS_INFORMADOS porque un documento largo
+ * ocupa varios lugares del top-k.
+ */
+const MAX_PARECIDOS_CANDIDATOS = 12;
+
+/** Cuántos documentos parecidos se informan al cargar (FR-018). */
+const MAX_PARECIDOS_INFORMADOS = 4;
+
+/** Un documento parecido al que se está cargando (spec 007, US3). */
+export interface SimilarDocument {
+  documentId: string;
+  title: string;
+  score: number;
+  /** true si además tiene otra audiencia: parecido no es duplicado (FR-020). */
+  audienciaDistinta: boolean;
 }
 
 export interface SearchOptions {
@@ -63,6 +90,21 @@ export interface SearchHit {
   title: string;
   content: string;
   score: number; // 1 - distancia coseno (1 = idéntico, 0 = sin relación)
+  /**
+   * La versión del documento **con la que se vectorizó este fragmento**, según
+   * la metadata del chunk.
+   *
+   * Ojo: NO es la versión vigente del documento. Que sean distintas significa
+   * que el vector quedó atrás — el agente está buscando contra un texto viejo
+   * aunque el panel muestre el nuevo. Es un estado que hasta ahora no se podía
+   * ver desde ningún lado: en el defecto del 2026-08-27 el título del vector
+   * decía «Horarios de atención y contacto» y el del documento «Horarios de
+   * atención, feriados y contacto», y nada lo delataba.
+   *
+   * Opcional porque los chunks anteriores al Sprint 5A no la traen; ausente
+   * significa "no se sabe", no "cero".
+   */
+  version?: number;
 }
 
 /** Filtros del listado del panel (Sprint 5A). */
@@ -70,6 +112,8 @@ export interface ListFilter {
   agentType?: AgentType;
   category?: string;
   isActive?: boolean;
+  /** Texto libre: busca en título o contenido, sin distinguir mayúsculas (fix buscador de documentos). */
+  search?: string;
   page?: number;
   limit?: number;
 }
@@ -91,6 +135,20 @@ export interface UpdateInput {
    * Opcional: el `PUT` manual no lo usa.
    */
   expectedVersion?: number;
+  /**
+   * Caso escalado del que salió esta edición (spec 007, FR-009).
+   *
+   * Queda en el `KnowledgeChange` para que desde la bitácora de un documento se
+   * pueda saber de qué caso vino cada cambio. El enlace inverso
+   * (`Escalation.resolvedWithDocumentId`) no alcanza: un documento corregido
+   * varias veces obligaría a adivinar por fecha cuál cambio vino de cuál caso.
+   */
+  escalationId?: string;
+  /**
+   * Spec 008 (FR-016): de qué documento se incorporó el contenido, cuando
+   * esta edición es el resultado de aprobar una fusión.
+   */
+  mergedFromDocumentId?: string;
 }
 
 /**
@@ -234,23 +292,30 @@ export class KnowledgeService implements OnModuleInit {
    *   todos los agentes, así que con la regla general no lo podría tocar nadie
    *   (CL-6) y necesita su propia línea.
    */
-  async assertPuedeEscribir(
+  /**
+   * El criterio de "es responsable de esta área" en sí, sin decidir qué hacer
+   * si no lo es. `assertPuedeEscribir` lo usa para la escritura del corpus;
+   * `esResponsableDeAgente` (spec 009) lo reusa para marcar un tema de
+   * cobertura como atendido — que no es escritura del corpus, pero es la
+   * misma pregunta de área. Extraído para que haya **una** implementación del
+   * criterio con dos usos, no dos implementaciones que puedan divergir.
+   */
+  private async resolverResponsabilidad(
     autorId: string,
     agentType: AgentType | null,
-  ): Promise<void> {
+  ): Promise<{
+    permitido: boolean;
+    areas: Pick<Sector, 'id' | 'name' | 'agentType'>[];
+  }> {
     const autor = await this.employees.findById(autorId);
     const areas = autor.areasSupervisadas ?? [];
 
     if (agentType === null) {
       const totalAreas = await this.prisma.sector.count();
-      if (!esResponsableDeTodasLasAreas(areas.length, totalAreas)) {
-        throw new ForbiddenException(
-          'Este documento no es de un área en particular: responde para todos ' +
-            'los agentes, así que solo lo puede modificar quien es responsable de ' +
-            'todas las áreas.',
-        );
-      }
-      return;
+      return {
+        permitido: esResponsableDeTodasLasAreas(areas.length, totalAreas),
+        areas,
+      };
     }
 
     // Un área sin agente asignado no habilita ningún documento: `Sector.agentType`
@@ -259,19 +324,74 @@ export class KnowledgeService implements OnModuleInit {
       .map((area) => area.agentType)
       .filter((tipo): tipo is AgentType => tipo !== null);
 
-    if (!agentesPropios.includes(agentType)) {
-      // El mensaje dice de qué áreas SÍ es responsable: sin eso, alguien recién
-      // asignado no tiene forma de saber si el problema es el documento o su
-      // propia asignación. Y un responsable sin áreas —que no puede escribir
-      // nada— es un estado detectable en vez de un permiso implícito (CL-10).
-      const propias = areas.map((area) => area.name).join(', ');
+    return { permitido: agentesPropios.includes(agentType), areas };
+  }
+
+  async assertPuedeEscribir(
+    autorId: string,
+    agentType: AgentType | null,
+  ): Promise<void> {
+    const { permitido, areas } = await this.resolverResponsabilidad(
+      autorId,
+      agentType,
+    );
+    if (permitido) return;
+
+    if (agentType === null) {
       throw new ForbiddenException(
-        `Este documento es de otra área. ` +
-          (propias
-            ? `Sos responsable de: ${propias}.`
-            : `No tenés áreas asignadas, así que no podés modificar documentos.`),
+        'Este documento no es de un área en particular: responde para todos ' +
+          'los agentes, así que solo lo puede modificar quien es responsable de ' +
+          'todas las áreas.',
       );
     }
+
+    // El mensaje dice de qué áreas SÍ es responsable: sin eso, alguien recién
+    // asignado no tiene forma de saber si el problema es el documento o su
+    // propia asignación. Y un responsable sin áreas —que no puede escribir
+    // nada— es un estado detectable en vez de un permiso implícito (CL-10).
+    const propias = areas.map((area) => area.name).join(', ');
+    throw new ForbiddenException(
+      `Este documento es de otra área. ` +
+        (propias
+          ? `Sos responsable de: ${propias}.`
+          : `No tenés áreas asignadas, así que no podés modificar documentos.`),
+    );
+  }
+
+  /**
+   * Spec 009 (FR-029): ¿este empleado puede marcar como atendido un tema de
+   * cobertura del agente `agentType`? Mismo criterio que la escritura del
+   * corpus — `null` (transversal) exige ser responsable de todas las áreas —
+   * pero sin lanzar: quien pregunta puede ser un supervisor de otra área que
+   * solo necesita saber si puede o no, no un mensaje de error.
+   */
+  async esResponsableDeAgente(
+    autorId: string,
+    agentType: AgentType | null,
+  ): Promise<boolean> {
+    return (await this.resolverResponsabilidad(autorId, agentType)).permitido;
+  }
+
+  /**
+   * Spec 013 (FR-021): **qué** agentes son de este empleado, todos de una vez.
+   *
+   * `esResponsableDeAgente` responde de a uno y relee el empleado en cada
+   * llamada. La cola de escalados necesita la pregunta al revés —"¿de cuáles soy
+   * responsable?"— para una lista paginada: preguntar por caso sería una consulta
+   * de empleado por fila, el mismo empleado N veces (SC-007).
+   *
+   * El dato ya se calcula acá adentro; lo único que faltaba era devolverlo. Es
+   * una consulta más, no un criterio más: quien quiera saber si un área le toca
+   * sigue teniendo **una** implementación de la regla, no dos que puedan
+   * divergir.
+   */
+  async agentesPropiosDe(autorId: string): Promise<AgentType[]> {
+    const autor = await this.employees.findById(autorId);
+    // Un área sin `agentType` no habilita ningún documento y, por lo mismo, no
+    // vuelve propio ningún caso: sin él no hay traducción de área a corpus.
+    return (autor.areasSupervisadas ?? [])
+      .map((area) => area.agentType)
+      .filter((tipo): tipo is AgentType => tipo !== null);
   }
 
   /**
@@ -283,12 +403,199 @@ export class KnowledgeService implements OnModuleInit {
    * —el endpoint o el caso que se resuelve—, donde todavía existe un autor. Si
    * aparece una puerta nueva que llame acá, tiene que llamar antes a la regla.
    */
-  async ingest(
-    input: IngestInput,
-  ): Promise<{ documentId: string; chunks: number }> {
+  /**
+   * El texto con el que se calcula el vector de un fragmento (spec 006, FR-005).
+   *
+   * **El título no se vectorizaba.** Viajaba solo en la metadata de Chroma, que
+   * no participa de la similitud, así que un documento «Sobre Nosotros» cuyo
+   * cuerpo no repite la palabra "empresa" perdía contra la consulta "qué sabés
+   * sobre la empresa" frente a documentos que no eran la respuesta.
+   *
+   * Medido sobre el corpus real: la señal sube entre 1.3 y 3.3 puntos y el piso
+   * de ruido **baja** 2.1 — o sea que separa mejor por los dos lados. En el
+   * caso que falló el 2026-08-20 el documento correcto pasa de la posición 3 a
+   * la 1.
+   *
+   * ⚠️ **Esto NO cambia lo que se guarda como `documents` en Chroma**, que es
+   * lo que `search()` devuelve y lo que termina leyendo el asistente (FR-006).
+   * El vector se calcula sobre un texto enriquecido; el contenido que se
+   * devuelve es el original. Que los dos dejen de coincidir es a propósito, y
+   * es lo que permite mejorar el recall sin cambiar lo que el agente responde.
+   *
+   * **Solo el título.** Categoría y agente quedaron afuera a conciencia: son
+   * etiquetas cortas y repetidas, y el riesgo de que acerquen entre sí a todos
+   * los documentos de una misma área es real y no se midió.
+   */
+  private textoAVectorizar(title: string, chunk: string): string {
+    return `${title}\n\n${chunk}`;
+  }
+
+  /**
+   * Vectoriza y **verifica que salió bien** (spec 006, FR-001..004).
+   *
+   * ⚠️ **`embedDocuments` no lanza cuando falla.** Su implementación en
+   * `@langchain/google-genai` usa `Promise.allSettled` y, para el lote
+   * rechazado, devuelve `Array(n).fill([])`:
+   *
+   *     .flatMap((res, idx) => res.status === "fulfilled"
+   *       ? res.value.embeddings.map((e) => e.values || [])
+   *       : Array(batchEmbedChunks[idx].length).fill([]))
+   *
+   * Sin esta guarda, esos vectores vacíos se escribían en ChromaDB y el
+   * documento quedaba `SYNCED` a continuación: el panel lo mostraba sano, el
+   * documento dejaba de ser recuperable, y nada lo delataba. Es el mismo modo
+   * de fallo que `KnowledgeSyncStatus` existe para evitar, entrando por una
+   * puerta que el diseño del Sprint 5A no contemplaba.
+   *
+   * No es teórico: midiendo el corpus real, una corrida devolvió **98 vectores
+   * vacíos** de golpe sin un solo error en consola.
+   *
+   * La invariante: `SYNCED` ⟹ hay un vector válido por cada fragmento.
+   *
+   * Vive acá, en un solo lugar, y la usan los dos caminos que vectorizan
+   * (`ingest` y `reindex`). Si aparece un tercero, tiene que pasar por acá.
+   */
+  private async vectorizar(textos: string[]): Promise<number[][]> {
+    const vectores = await this.embeddings.embedDocuments(textos);
+
+    if (vectores.length !== textos.length) {
+      throw new Error(
+        `El servicio de embeddings devolvió ${vectores.length} vectores para ` +
+          `${textos.length} fragmentos. No se escribe nada.`,
+      );
+    }
+    const vacios = vectores.filter((v) => !v || v.length === 0).length;
+    if (vacios > 0) {
+      throw new Error(
+        `El servicio de embeddings devolvió ${vacios} de ${textos.length} ` +
+          `vectores vacíos (probable fallo de cuota o de red en un lote). ` +
+          `No se escribe nada.`,
+      );
+    }
+
+    return vectores;
+  }
+
+  /**
+   * ¿Ya existe un documento con este contenido, EXACTO? (spec 007, US2 / FR-010).
+   *
+   * El `checksum` se calcula en cada `ingest()` desde el Sprint 5A y **nunca se
+   * leía**: no había índice, ni consulta, ni nadie preguntando. Es la
+   * comparación más barata que existe — no cuesta ni una llamada de
+   * embeddings — y estaba tirada.
+   */
+  private async buscarDuplicadoExacto(
+    checksum: string,
+  ): Promise<{ id: string; title: string } | null> {
+    return this.prisma.knowledgeDocument.findFirst({
+      where: { checksum },
+      select: { id: true, title: true },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  /**
+   * Documentos ya existentes que se parecen a un contenido — cargado, o
+   * todavía por cargar (spec 007, US3 / FR-014..FR-020; spec 010, D6).
+   *
+   * **No bloquea nada** (FR-015): es información que acompaña al resultado de
+   * la carga, no una validación. Y si falla —el servicio de comparación no
+   * responde—, se traga el error y devuelve vacío: guardar el conocimiento es
+   * lo importante, opinar sobre parecidos es lo accesorio (FR-025).
+   *
+   * `excluirId` es **opcional** (spec 010, D6): al cargar, excluye el
+   * documento recién creado de sus propios resultados; al revisar un
+   * candidato de entrevista que todavía no existe en el corpus, no hay nada
+   * que excluir. Es extracción de la versión privada original, no
+   * duplicación — `ingest()` la sigue llamando igual, con el id que antes.
+   */
+  async buscarParecidos(
+    content: string,
+    audience: Audience,
+    excluirId?: string,
+  ): Promise<SimilarDocument[]> {
+    try {
+      const umbral = this.config.get<number>('KNOWLEDGE_SIMILARITY_THRESHOLD')!;
+
+      // Se compara contra el corpus COMPLETO (INTERNO ve todo), no según la
+      // audiencia del documento que se carga: comparar documentos entre sí no
+      // es lo mismo que decidir qué puede leer un cliente. Ese filtro sigue
+      // viviendo solo en `search()` cuando la llama un agente conversando.
+      const hits = await this.search(content, {
+        audience: Audience.INTERNO,
+        k: MAX_PARECIDOS_CANDIDATOS,
+      });
+
+      // Un documento largo ocupa varios lugares del top-k: se queda el mejor
+      // de cada uno. Mismo criterio que `mejoresPorDocumento` en
+      // low-confidence.node.ts, y por el mismo motivo — repetir el título con
+      // scores distintos hace pensar que hay duplicados donde no los hay.
+      const mejorPorDocumento = new Map<string, SearchHit>();
+      for (const hit of hits) {
+        if (excluirId && hit.documentId === excluirId) continue;
+        const previo = mejorPorDocumento.get(hit.documentId);
+        if (!previo || hit.score > previo.score) {
+          mejorPorDocumento.set(hit.documentId, hit);
+        }
+      }
+
+      const candidatos = [...mejorPorDocumento.values()]
+        .filter((h) => h.score >= umbral)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, MAX_PARECIDOS_INFORMADOS);
+
+      if (candidatos.length === 0) return [];
+
+      // `search()` no expone la audiencia de cada hit (no la necesita: el
+      // filtro de audiencia ya decidió qué puede volver). Acá sí hace falta,
+      // para FR-020 — se consulta aparte, sobre los pocos candidatos que
+      // sobrevivieron al umbral.
+      const documentos = await this.prisma.knowledgeDocument.findMany({
+        where: { id: { in: candidatos.map((c) => c.documentId) } },
+        select: { id: true, audience: true },
+      });
+      const audienciaPorId = new Map(documentos.map((d) => [d.id, d.audience]));
+
+      return candidatos.map((c) => ({
+        documentId: c.documentId,
+        title: c.title,
+        score: c.score,
+        audienciaDistinta: audienciaPorId.get(c.documentId) !== audience,
+      }));
+    } catch (err) {
+      this.logger.warn(
+        `No se pudo calcular parecidos al ingestar: ${
+          err instanceof Error ? err.message : err
+        }`,
+      );
+      return [];
+    }
+  }
+
+  async ingest(input: IngestInput): Promise<{
+    documentId: string;
+    chunks: number;
+    similarDocuments?: SimilarDocument[];
+  }> {
     const audience = input.audience ?? Audience.INTERNO;
     const agentTag = input.agentType ?? 'GENERAL';
     const checksum = createHash('sha256').update(input.content).digest('hex');
+
+    // Duplicado EXACTO primero: es gratis comparado con la vectorización, y
+    // corta antes de gastar un solo token si el contenido ya está (FR-013).
+    if (!input.force) {
+      const duplicado = await this.buscarDuplicadoExacto(checksum);
+      if (duplicado) {
+        throw new ConflictException({
+          statusCode: 409,
+          reason: 'DUPLICATE_DOCUMENT',
+          existing: duplicado,
+          message:
+            `Ya existe un documento con este contenido exacto: "${duplicado.title}". ` +
+            `Si querés cargarlo igual, reintentá con force=true.`,
+        });
+      }
+    }
 
     const doc = await this.prisma.knowledgeDocument.create({
       data: {
@@ -304,9 +611,49 @@ export class KnowledgeService implements OnModuleInit {
     });
 
     const chunks = this.chunk(input.content);
+
     // Precomputamos los vectores con Gemini y los pasamos explícitos a Chroma,
     // para no depender de la función de embeddings interna de la colección.
-    const vectors = await this.embeddings.embedDocuments(chunks);
+    //
+    // Si la vectorización falla, el documento se CONSERVA en REINDEX_FAILED en
+    // vez de borrarse (spec 006, FR-002). Tres motivos:
+    //
+    //  1. En `POST /knowledge/upload` el texto ya costó una extracción cara
+    //     (unpdf, mammoth o Gemini Vision). Borrarlo obliga a reprocesar el
+    //     archivo entero por un 429.
+    //  2. En "responder y enseñar a la IA" la respuesta al cliente YA se envió;
+    //     la ingesta es un efecto posterior. Borrar perdería el conocimiento en
+    //     silencio — justo el modo de fallo que esta guarda vino a eliminar.
+    //  3. REINDEX_FAILED ya existe y el panel ya sabe mostrarlo, con su botón
+    //     de reintentar.
+    //
+    // La invariante que importa no es "el documento no existe", es **"no hay
+    // vectores inválidos en el índice"**. Un documento sin vectores se arregla
+    // con un clic; uno con vectores rotos marcado SYNCED no, porque nadie sabe
+    // que está roto.
+    // Spec 007: los parecidos se buscan EN PARALELO con vectorizar, no antes
+    // ni después — son dos llamadas independientes, y encadenarlas duplicaría
+    // la espera sin ganar nada. `buscarParecidos` nunca lanza (se traga sus
+    // propios errores), así que no interfiere con el `try` de abajo.
+    let vectors: number[][];
+    let similarDocuments: SimilarDocument[];
+    try {
+      [vectors, similarDocuments] = await Promise.all([
+        this.vectorizar(
+          chunks.map((c) => this.textoAVectorizar(input.title, c)),
+        ),
+        this.buscarParecidos(input.content, audience, doc.id),
+      ]);
+    } catch (err) {
+      const motivo = err instanceof Error ? err.message : String(err);
+      await this.markReindexFailed(doc.id, motivo);
+      this.logger.error(
+        `Documento "${input.title}" quedó sin vectorizar (${motivo}). ` +
+          `Se conserva en REINDEX_FAILED para reintentar desde el panel.`,
+      );
+      throw err;
+    }
+
     await this.collection.add({
       ids: chunks.map((_, idx) => `${doc.id}:${idx}`),
       embeddings: vectors,
@@ -334,7 +681,11 @@ export class KnowledgeService implements OnModuleInit {
     this.logger.log(
       `Documento "${input.title}" ingestado (${chunks.length} chunks, audiencia=${audience})`,
     );
-    return { documentId: doc.id, chunks: chunks.length };
+    return {
+      documentId: doc.id,
+      chunks: chunks.length,
+      similarDocuments,
+    };
   }
 
   /**
@@ -388,9 +739,64 @@ export class KnowledgeService implements OnModuleInit {
       const meta = (metas[i] ?? {}) as Record<string, unknown>;
       return {
         documentId: String(meta.documentId ?? ''),
+        // Sale de la METADATA del chunk y no de Postgres, a propósito: es el
+        // título con el que este fragmento se vectorizó. Leerlo de Postgres
+        // taparía justamente el desfase que interesa poder ver.
         title: String(meta.title ?? ''),
         content: content ?? '',
         score: 1 - (dists[i] ?? 1),
+        ...(typeof meta.version === 'number' ? { version: meta.version } : {}),
+      };
+    });
+  }
+
+  /**
+   * Le agrega a cada resultado lo que el documento dice **hoy en Postgres**,
+   * para poder comparar contra lo que quedó en el vector.
+   *
+   * Solo lo usa la pantalla «Probar búsqueda», que existe para inspeccionar el
+   * RAG en crudo. `search()` no lo hace por su cuenta porque corre en cada
+   * turno de cada agente y esto es una consulta más a Postgres.
+   *
+   * Un documento que no está en Postgres devuelve `vigente: null`: es un
+   * huérfano de Chroma, y la pantalla tiene que poder decirlo en vez de
+   * mostrarlo como cualquier otro resultado.
+   */
+  async conEstadoDeSincronizacion(hits: SearchHit[]) {
+    if (hits.length === 0) return [];
+
+    const docs = await this.prisma.knowledgeDocument.findMany({
+      where: { id: { in: [...new Set(hits.map((h) => h.documentId))] } },
+      select: { id: true, title: true, version: true, updatedAt: true },
+    });
+    const porId = new Map(docs.map((d) => [d.id, d]));
+
+    return hits.map((hit) => {
+      const doc = porId.get(hit.documentId);
+      return {
+        ...hit,
+        vigente: doc
+          ? {
+              title: doc.title,
+              version: doc.version,
+              updatedAt: doc.updatedAt,
+            }
+          : null,
+        // Se calcula acá y no en el panel: "¿está al día?" es una comparación
+        // con reglas (un chunk viejo sin `version` no es lo mismo que uno
+        // desfasado), y el panel es el único lugar del proyecto sin tests.
+        //
+        //   AL_DIA        el vector refleja lo que dice el documento
+        //   DESFASADO     el documento cambió y el vector quedó atrás
+        //   HUERFANO      el vector existe y el documento no
+        //   SIN_VERSION   chunk anterior al Sprint 5A: no se puede saber
+        desincronizado: !doc
+          ? ('HUERFANO' as const)
+          : hit.version === undefined
+            ? ('SIN_VERSION' as const)
+            : hit.version !== doc.version || hit.title !== doc.title
+              ? ('DESFASADO' as const)
+              : ('AL_DIA' as const),
       };
     });
   }
@@ -409,6 +815,24 @@ export class KnowledgeService implements OnModuleInit {
       ...(filter.agentType ? { agentType: filter.agentType } : {}),
       ...(filter.category ? { category: filter.category } : {}),
       ...(filter.isActive === undefined ? {} : { isActive: filter.isActive }),
+      ...(filter.search
+        ? {
+            OR: [
+              {
+                title: {
+                  contains: filter.search,
+                  mode: 'insensitive' as const,
+                },
+              },
+              {
+                content: {
+                  contains: filter.search,
+                  mode: 'insensitive' as const,
+                },
+              },
+            ],
+          }
+        : {}),
     };
 
     const [rows, total] = await Promise.all([
@@ -570,6 +994,21 @@ export class KnowledgeService implements OnModuleInit {
       (field) => input[field] !== undefined && input[field] !== current[field],
     );
 
+    // Spec 008 (FR-009, FR-016): una fusión SIEMPRE es un cambio, aunque el
+    // documento absorbido resulte byte-a-byte idéntico al que sobrevive (el
+    // caso más común: duplicados exactos). Sin esto, `changedFields` daría
+    // vacío, el early-return de abajo devolvería `current` sin escribir el
+    // `KnowledgeChange`, y la fusión desaparecería de la bitácora — la
+    // "subida de versión, igual que cualquier edición" que pide FR-009 no es
+    // opcional para el caso que esta feature existe para atrapar.
+    const esFusion = input.mergedFromDocumentId !== undefined;
+    // Si el contenido es byte-idéntico, `changedFields` no lo va a listar por
+    // sí solo (el filtro de arriba compara valores) — se agrega a mano para
+    // que la bitácora diga la verdad: el documento SÍ cambió, absorbió otro.
+    if (esFusion && !changedFields.includes('content')) {
+      changedFields.push('content');
+    }
+
     if (changedFields.length === 0) return current;
 
     const contentChanged = changedFields.includes('content');
@@ -578,8 +1017,25 @@ export class KnowledgeService implements OnModuleInit {
     // mismo: si no, un documento que pasa a INTERNO seguiría siendo
     // recuperable por un cliente. Es un agujero de confidencialidad, no una
     // desprolijidad (Principio I).
+    //
+    // ⭐ **El título también, y desde la spec 006 no es opcional.** Antes de
+    // esa spec el título era decorado: viajaba en la metadata y no participaba
+    // de la similitud, así que renombrar no cambiaba nada de la búsqueda. La
+    // spec 006 lo metió DENTRO del texto que se vectoriza (`textoAVectorizar`)
+    // justamente porque lleva señal — y esta lista quedó como estaba.
+    //
+    // El resultado era un renombre que no servía para nada y no avisaba:
+    // «Horarios de atención y contacto» pasó a «Horarios de atención, feriados
+    // y contacto» y la consulta «atienden feriados» siguió midiendo 0.631,
+    // contra un umbral de 0.65. El log decía «editado (title) → sin
+    // reindexar»; la pantalla, nada.
+    //
+    // No alcanza con parchear la metadata (`updateChunkMetadata`): el título
+    // está en el VECTOR, así que hay que volver a embeber. Es más caro, y es
+    // el precio de que el título cuente.
     const needsReindex =
       contentChanged ||
+      changedFields.includes('title') ||
       changedFields.includes('audience') ||
       changedFields.includes('agentType');
 
@@ -619,6 +1075,16 @@ export class KnowledgeService implements OnModuleInit {
           changedFields,
           origin: input.origin ?? KnowledgeChangeOrigin.MANUAL,
           aiInstruction: input.aiInstruction ?? null,
+          // El texto de antes, para poder deshacer y para que la auditoría
+          // muestre QUÉ cambió y no solo que algo cambió (OE-11). Solo cuando
+          // el contenido es lo que cambió: guardarlo en un cambio de audiencia
+          // sería ruido que crece con cada edición.
+          contentBefore: contentChanged ? current.content : null,
+          // Spec 007: de qué caso escalado salió esta edición, si salió de uno.
+          escalationId: input.escalationId ?? null,
+          // Spec 008 (FR-016): si esta edición fue una fusión, de qué
+          // documento se incorporó el contenido.
+          mergedFromDocumentId: input.mergedFromDocumentId ?? null,
         },
       });
 
@@ -700,13 +1166,26 @@ export class KnowledgeService implements OnModuleInit {
     });
     if (!doc) throw new NotFoundException('Documento no encontrado');
 
-    // Borrar ANTES de agregar: si se agregara primero, una falla intermedia
-    // dejaría las dos versiones conviviendo y el agente podría responder con
-    // la vieja aunque el panel muestre la nueva.
+    const chunks = this.chunk(doc.content);
+
+    // ORDEN DELIBERADO: vectorizar y validar ANTES de borrar (spec 006, FR-003).
+    //
+    // El borrado sigue yendo antes del alta —si se agregara primero, una falla
+    // intermedia dejaría las dos versiones conviviendo y el agente podría
+    // responder con la vieja aunque el panel muestre la nueva—, pero la
+    // vectorización se adelantó a las dos cosas.
+    //
+    // El motivo: si se vectorizara después del borrado, un fallo de embeddings
+    // dejaría al documento SIN fragmentos, invisible para la búsqueda hasta que
+    // alguien reintentara a mano. Validando primero, un fallo no cuesta nada:
+    // el documento sigue respondiendo con su versión anterior mientras BullMQ
+    // reintenta. El estado anterior es *viejo*, no *roto*.
+    const vectors = await this.vectorizar(
+      chunks.map((c) => this.textoAVectorizar(doc.title, c)),
+    );
+
     await this.collection.delete({ where: { documentId } });
 
-    const chunks = this.chunk(doc.content);
-    const vectors = await this.embeddings.embedDocuments(chunks);
     await this.collection.add({
       ids: chunks.map((_, idx) => `${doc.id}:${idx}`),
       embeddings: vectors,

@@ -27,6 +27,7 @@ describe('buildRagAgentGraph', () => {
     confidence: null,
     retrievedDocs: null,
     escalated: null,
+    escalationId: null,
     needsHuman: null,
     handoffReason: null,
     internalNote: null,
@@ -445,6 +446,21 @@ describe('buildRagAgentGraph', () => {
       expect(structuredInvoke).not.toHaveBeenCalled();
     });
 
+    /**
+     * Spec 007: el id del caso viaja por el estado hasta `trackRetrievals`, que
+     * corre después en el processor. Es lo que enlaza los documentos que
+     * quedaron cortos con ESTE caso, en vez de tener que correlacionarlos por
+     * fecha — y sin ese enlace no se le puede ofrecer al supervisor "corregí
+     * uno de estos" al resolverlo.
+     */
+    it('deja el id del caso en el estado, para enlazar los documentos consultados', async () => {
+      const { graph } = buildGraph(0.3);
+
+      const result = await graph.invoke(baseState);
+
+      expect(result.escalationId).toBe('esc-1');
+    });
+
     // El supervisor que toma el caso no debería tener que abrir la
     // conversación para saber qué preguntó el cliente.
     it('deja una nota interna factual, sin gastar una llamada extra al LLM', async () => {
@@ -727,6 +743,21 @@ describe('buildRagAgentGraph', () => {
         }),
       );
       expect(result.escalated).toBe(true);
+    });
+
+    // Spec 007: el enlace tiene que valer para los DOS caminos de escalado, no
+    // solo para el de baja confianza. Si solo uno lo setea, la mitad de los
+    // casos llegarían sin candidatos que ofrecer y nadie sabría por qué.
+    it('también deja el id del caso en el estado', async () => {
+      const { graph } = buildGraph(0.9, {
+        response: 'Dejame consultarlo con un responsable y te confirmo.',
+        needsHuman: true,
+        handoffReason: 'motivo',
+      });
+
+      const result = await graph.invoke(baseState);
+
+      expect(result.escalationId).toBe('esc-1');
     });
 
     // El texto que ya redactó el agente es más contextual que el canned.

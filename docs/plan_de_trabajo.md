@@ -39,10 +39,11 @@ graph LR
     S2 --> S3["S3 Human-in-the-loop ✅"]
     S3 --> S4["S4 Cobranzas"]
     S2 --> S5A["S5A Archivos+Chat Web+Conocimiento"]
-    S5A --> S5B["S5B Capacitación+Audio"]
+    S5A --> S5B["S5B Conocimiento Confiable"]
+    S5B --> S5C["S5C Capacitación+Audio+Medición"]
     S3 --> S6["S6 Integraciones"]
     S6 --> S7["S7 Venta Financiada"]
-    S5B --> S8["S8 Hardening+Deploy"]
+    S5C --> S8["S8 Hardening+Deploy"]
     S7 --> S8
     style S1 fill:#4a9eff,color:white
     style S2 fill:#ffd93d,color:black
@@ -50,6 +51,7 @@ graph LR
     style S4 fill:#e67e22,color:white
     style S5A fill:#6bcb77,color:white
     style S5B fill:#6bcb77,color:white
+    style S5C fill:#6bcb77,color:white
     style S6 fill:#95a5a6,color:white
     style S7 fill:#8e44ad,color:white
     style S8 fill:#2c3e50,color:white
@@ -58,6 +60,29 @@ graph LR
 > [!NOTE]
 > El Sprint 5 se partió en **5A** y **5B** en la revisión v5: al incorporar la Base de
 > Conocimiento y la pipeline de audio quedó con más de 20 tareas, inviable como un solo sprint.
+
+> [!IMPORTANT]
+> **Segundo corte (2026-08-22): aparece el Sprint 5C y el 5B cambia de tema.**
+>
+> Lo que hasta ahora era el 5B (Capacitación y Audio) es **ahora el 5C**, y el 5B pasa a
+> ser **Conocimiento Confiable**. No es un reacomodo cosmético: son dos motivos concretos.
+>
+> 1. **El 5B viejo estaba desbalanceado.** Catorce tareas que incluían la entrevista, la
+>    generación de píldoras, una pipeline de audio entera (guion + TTS + storage) y dos
+>    modos de simulación. Es el mismo problema que motivó el corte 5A/5B.
+> 2. **Probando el 5A a mano aparecieron cuatro problemas de calidad** que no estaban en
+>    ningún sprint y que **la capacitación agrava en vez de resolver**. Se repartieron
+>    entre los dos como pre-specs, en [`sprints/`](../sprints/).
+>
+> **La dependencia 5B → 5C es real, no de conveniencia:** el 5C **genera contenido a partir
+> del corpus** (las píldoras salen de la entrevista + RAG). Generar capacitación sobre un
+> corpus con documentos que se compiten entre sí no produce material flojo: produce material
+> flojo **y lo multiplica**, porque cada píldora aprobada entra al corpus como un documento
+> más. Primero se limpia y se mide, después se genera.
+>
+> Y hay una sinergia en el otro sentido: la entrevista del 5B deja de preguntar a ciegas
+> —"contame sobre Logística"— y pasa a preguntar por lo que el agente **realmente no pudo
+> contestar**. Eso hace mejor a la entrevista *y* le da al 5C mejor materia prima.
 
 ---
 
@@ -200,30 +225,85 @@ mensajes al mismo webhook, así que un workflow separado nunca los recibiría.
 
 ---
 
-### Sprint 5B — Capacitación y Audio 🎧
+### Sprint 5B — Conocimiento Confiable 🧠
 
-*Pantallas del prototipo: Entrevista de Capacitación (Fig 14), Planificación (Fig 17), Inicio (Fig 18), Introducción (Fig 19), Teórica (Fig 20), Práctica (Fig 21), Simulación Libre (Fig 22).*
+*Pre-specs:* [`sprints/5B-conocimiento-confiable/`](../sprints/5B-conocimiento-confiable/) — **9 specs, todas implementadas** ✅.
+*Pantallas del prototipo: Entrevista de Capacitación (Fig 14), Base de Conocimiento (Fig 15), Detalle (Fig 16).*
+
+El 5A dejó el corpus **editable**; este sprint lo deja **confiable**: que lo que hay
+adentro no se estorbe a sí mismo, que la búsqueda separe lo relevante del ruido, y que
+el supervisor sepa qué le falta cargar en vez de mirar un porcentaje sin acción detrás.
 
 | # | Tarea | Dónde | Criterio |
 |---|-------|-------|---------|
-| **Entrevista de capacitación (RF11) — por chat de texto** |||
-| 5B.1 | Modelo `InterviewSession` | `schema.prisma` | Área, progreso (4/9), estado, respuestas, pausar/reanudar |
-| 5B.2 | `POST /interviews/message` | `src/interviews/` | Gemini genera la siguiente pregunta adaptativa. Opciones predefinidas + texto libre |
-| 5B.3 | Al finalizar → ingesta RAG | `knowledge.service.ts` | Supervisor revisa/edita/aprueba antes de publicar (RF11) |
+| **Base de la búsqueda** — ✅ **spec [006](../specs/006-calidad-busqueda-rag/), implementada el 2026-08-22** |||
+| 5B.1 | ~~`taskType` en los embeddings~~ **descartado** → **guarda de integridad de vectores** | `knowledge.service.ts` | **La premisa era falsa y la investigación la refutó.** Ningún modelo de embeddings disponible respeta `taskType`: el vector sale bit a bit idéntico, también llamando a la API sin intermediarios ([research.md §1](../specs/006-calidad-busqueda-rag/research.md)). En su lugar apareció un defecto activo más grave: `embedDocuments` devuelve vectores **vacíos** en vez de lanzar cuando falla un lote, y el código los escribía marcando el documento `SYNCED` — el panel lo mostraba sano y nada lo delataba. 98 vectores vacíos en una corrida real |
+| 5B.2 | **El título entra al texto que se vectoriza** + reindexado del corpus | `knowledge.service.ts`, `prisma/reindex-corpus.ts` | El título era **solo metadata** y no participaba de la similitud. Incorporarlo es lo que reemplaza a 5B.1: medido sobre los 78 documentos, ruido −0.2 pp y señal +2.2/+2.6 pp; «qué sabés sobre la empresa» pasó de **no entrar al top-4** a ser el **primer** resultado. Migración: 78/78 `SYNCED`, cero fallos |
+| 5B.3 | **Umbral medido, no cambiado** | `scripts/medir-umbral.ts` | Se midió y **0.65 resultó estar bien puesto**: ruido 54.1%, señal 78.4%. Lo que faltaba no era otro valor sino **poder volver a comprobarlo**, así que el entregable es un arnés repetible con consultas de control. ⚠️ Descubierto de paso: el nivel gratuito de Gemini limita a **100 RPM** en embeddings — el ritmo de cualquier reindexado masivo es parte del diseño |
+| **Evitar duplicados al escribir** — ✅ **spec [007](../specs/007-duplicados-al-escribir/), implementada el 2026-08-23** |||
+| 5B.4 | Leer el `checksum` que ya se guarda | `knowledge.service.ts` | Hecho: `buscarDuplicadoExacto` corta **antes** de vectorizar (FR-013). 409 con el previo identificado — detección, no prohibición — y `force` para insistir. Aplica a los **cuatro** caminos: alta manual, archivo subido, `resolve` con `teachAgent`, `saveUnsent` |
+| 5B.5 | Aviso "ya hay algo parecido" al ingestar | `knowledge.service.ts`, `scripts/calibrar-parecido.ts` | La historia principal terminó siendo **corregir**, no solo avisar: al resolver un caso escalado, el supervisor puede mejorar el documento que quedó corto en vez de crear uno que compita con él — el propio aviso de baja confianza ya se lo aconsejaba y no había forma de hacerlo. El aviso de "parecido" al cargar a mano también se implementó, con un umbral **medido, no heredado** del de confianza del RAG: margen de solo 3.2 puntos entre "mismo dominio" y "duplicado" |
+| **Higiene del corpus** |||
+| 5B.6 | Detección de documentos que se compiten | `KnowledgeRetrieval` | La señal fuerte no es la similitud: es **qué documentos salen juntos, turno tras turno, en consultas que escalan**. Parecido ≠ fusionable: dos audiencias o dos áreas distintas son legítimas (Principio I) |
+| 5B.7 | Propuesta de fusión con aprobación | reusa `knowledge-ai-edit.service.ts` | `preview`/`apply` ya resuelve el patrón: la IA redacta, se guarda el texto que la persona confirmó. **Nunca fusiona sola** |
+| 5B.8 | Descarte persistido | `schema.prisma` | "son distintos a propósito". Sin esto vuelve a proponer la misma pareja cada vez y en dos semanas nadie abre la pantalla |
+| **Qué falta para responder mejor** |||
+| 5B.9 | Resumen de consultas sin respuesta confiable | `src/supervisor/` | Agrupadas **por tema**, no listadas: la materia prima ya está en el payload de `ROUTED_TO_AGENT` (`message` + `confidence`). Tiene que **separar las cuatro causas** —falta el tema / el documento quedó corto / dos se compiten / ruido del embedding— porque piden acciones opuestas |
+| 5B.10 | Ventana y mínimo de muestra en la confianza | `supervisor.service.ts:334` | Hoy es un `AVG` sin ventana sobre toda la historia: con 2 turnos muestra 0.67 como si significara algo. Aplicar el criterio de `hasData` que ya existe en `KnowledgeUsageService` |
+| **Entrevista de capacitación (RF11) — por chat de texto** — ✅ specs [010](../specs/010-entrevista-desde-el-trafico-real/) y [012](../specs/012-entrevista-como-conversacion/) |||
+| 5B.11 | Modelo `InterviewSession` | `schema.prisma` | Área, progreso (4/9), estado, respuestas, pausar/reanudar. `KnowledgeSourceType.ENTREVISTA` ya está reservado |
+| 5B.12 | `POST /interviews/message` **alimentado por 5B.9** ⭐ | `src/interviews/` | **Acá está la sinergia con el 5C.** Las preguntas salen del tráfico real —"estas 6 consultas sobre plazos de entrega quedaron sin respuesta"— en vez de un cuestionario a ciegas por área. Opciones predefinidas + texto libre |
+| 5B.13 | Al finalizar → ingesta RAG | `knowledge.service.ts` | Supervisor revisa/edita/aprueba antes de publicar (RF11). Pasa por el aviso de 5B.5 como cualquier otra escritura |
+| 5B.14 | Tests | `*.spec.ts` | Fusión que respeta audiencia y área; el umbral remedido; agrupación de consultas |
+| **Cola de escalados por área** — ✅ **spec [013](../specs/013-cola-de-escalados-por-area/), implementada el 2026-08-26** |||
+| 5B.15 | La cola de casos escalados tiene en cuenta el área del supervisor | `escalations.service.ts`, `supervisor.controller.ts` | Hecho: cada caso trae `pertenencia` y la cola viene priorizada. **No oculta lo ajeno: lo ordena detrás** — filtrarlo dejaría sin cobertura las áreas sin responsable activo (Principio I, "ver no es editar"). El filtro "solo los míos" existe y viene **apagado**. `SIN_AREA` quedó como tercer valor y no como sinónimo de "no es mío": son casos que no llegaron a rutearse y aplastarlos contra `AJENA` los mandaría al fondo. Diego no perdió visibilidad, y se probó con Silvia (una sola área), que es lo único que lo demuestra |
+
+> [!WARNING]
+> **La higiene del corpus (5B.6–5B.8) es la excepción a "el panel es un banco de pruebas".**
+> Decidir si dos documentos se fusionan es un acto de comparación: hay que ver qué aporta
+> cada uno y qué se pierde. Una propuesta que no se puede leer comparativamente se aprueba
+> a ciegas, y ahí la aprobación humana del Principio III deja de ser una garantía y pasa a
+> ser un trámite — peor que no tener la feature, porque el corpus se degrada *con* firma.
+> Está desarrollado en el insumo; **conviene decidirlo al escribir la spec, no al final.**
+
+---
+
+### Sprint 5C — Capacitación, Audio y Medición 🎧
+
+*Pre-specs:* [`sprints/5C-capacitacion-audio-medicion/`](../sprints/5C-capacitacion-audio-medicion/) — incompletas: se cortan al arrancar el sprint.
+*Pantallas del prototipo: Planificación (Fig 17), Inicio (Fig 18), Introducción (Fig 19), Teórica (Fig 20), Práctica (Fig 21), Simulación Libre (Fig 22).*
+
+**Depende del 5B**: las píldoras se generan desde la entrevista (5B.11–5B.13) y el RAG, y
+el banco de escenarios necesita un corpus estable para que dos corridas sean comparables.
+
+| # | Tarea | Dónde | Criterio |
+|---|-------|-------|---------|
 | **Contenido de capacitación (RF05)** |||
-| 5B.4 | Módulo `src/training/` | `schema.prisma` | `TrainingModule`, `Pill`, `EmployeeProgress`. Desbloqueo secuencial por puesto |
-| 5B.5 | Generación de píldoras | `src/training/` | Desde la entrevista + RAG: título, objetivo, contenido, 2 preguntas de verificación. Editable y aprobable por el supervisor |
+| 5C.1 | Módulo `src/training/` | `schema.prisma` | `TrainingModule`, `Pill`, `EmployeeProgress`. Desbloqueo secuencial por puesto |
+| 5C.2 | Generación de píldoras | `src/training/` | Desde la entrevista del 5B + RAG: título, objetivo, contenido, 2 preguntas de verificación. Editable y aprobable por el supervisor |
 | **Pipeline de audio (Gemini TTS)** |||
-| 5B.6 | Generación del guion a 2 voces | `gemini-3.1-flash-lite` | Convierte el texto de la píldora en guion conversacional de dos locutores. Editable por el supervisor. **El guion ES la transcripción** — no hace falta alineación forzada |
-| 5B.7 | Generación de audio TTS | `gemini-3.1-flash-tts-preview` | `multiSpeakerVoiceConfig` (2 locutores), tono rioplatense por prompt. Salida PCM 24 kHz base64 → MP3. Job BullMQ disparado al aprobar la píldora. **Píldoras ≤5 min** (la calidad se degrada más allá). Reintentos: el modelo es *preview* y a veces devuelve texto en vez de audio |
-| 5B.8 | Storage de audio | `src/training/` | No existe object storage hoy. Volumen + endpoint de servido para dev; GCS al desplegar |
-| 5B.9 | Progreso de reproducción | `src/training/` | Tracking del 80% escuchado para desbloquear el resumen de texto |
+| 5C.3 | Generación del guion a 2 voces | `gemini-3.1-flash-lite` | Convierte el texto de la píldora en guion conversacional de dos locutores. Editable por el supervisor. **El guion ES la transcripción** — no hace falta alineación forzada |
+| 5C.4 | Generación de audio TTS | `gemini-3.1-flash-tts-preview` | `multiSpeakerVoiceConfig` (2 locutores), tono rioplatense por prompt. Salida PCM 24 kHz base64 → MP3. Job BullMQ disparado al aprobar la píldora. **Píldoras ≤5 min** (la calidad se degrada más allá). Reintentos: el modelo es *preview* y a veces devuelve texto en vez de audio |
+| 5C.5 | Storage de audio | `src/training/` | No existe object storage hoy. Volumen + endpoint de servido para dev; GCS al desplegar |
+| 5C.6 | Progreso de reproducción | `src/training/` | Tracking del 80% escuchado para desbloquear el resumen de texto |
 | **Práctica y simulación** |||
-| 5B.10 | Práctica Guiada | `src/training/` | El agente asume rol de cliente (prompt de rol + historial, sobre la infraestructura que ya existe). Panel de guía con checklist en vivo vía structured output |
-| 5B.11 | Simulación Libre | `src/training/` | Mismo mecanismo sin panel de guía. Estética de WhatsApp/Instagram es **sólo cosmética del frontend** — los canales reales siguen siendo WHATSAPP y WEB |
-| 5B.12 | Feedback final | `src/training/` | 3 tarjetas (qué hizo bien / a mejorar / reglas). **Bandas cualitativas por dimensión** (Logrado / A mejorar / No logrado), no puntaje sobre 100: un LLM puntuando /100 no es reproducible |
-| 5B.13 | Diagnóstico inicial | `src/training/` | Test de 5 min que permite saltear contenido ya conocido |
-| 5B.14 | Tests | `*.spec.ts` | |
+| 5C.7 | Práctica Guiada | `src/training/` | El agente asume rol de cliente (prompt de rol + historial, sobre la infraestructura que ya existe). Panel de guía con checklist en vivo vía structured output |
+| 5C.8 | Simulación Libre | `src/training/` | Mismo mecanismo sin panel de guía. Estética de WhatsApp/Instagram es **sólo cosmética del frontend** — los canales reales siguen siendo WHATSAPP y WEB |
+| 5C.9 | Feedback final | `src/training/` | 3 tarjetas (qué hizo bien / a mejorar / reglas). **Bandas cualitativas por dimensión** (Logrado / A mejorar / No logrado), no puntaje sobre 100: un LLM puntuando /100 no es reproducible |
+| 5C.10 | Diagnóstico inicial | `src/training/` | Test de 5 min que permite saltear contenido ya conocido |
+| **Banco de escenarios** — medir que el asistente cumple lo que el prompt le pide |||
+| 5C.11 | Corpus fijo de prueba | `test/` | Los resultados dependen de qué documentos hay cargados; con la base cambiando, dos corridas no son comparables. Choca con que hoy los tests corren contra la base real |
+| 5C.12 | Los 8 escenarios + N corridas | `test/` | Salen de defectos reales ya ocurridos (ver insumo). La unidad de medida **no es pasa/falla sino "pasó N de M"**: el mismo escenario dio respuestas distintas en corridas seguidas |
+| 5C.13 | Evaluación y comando aparte | `package.json` | Empezar por patrones sobre lo que **no** puede aparecer, que es donde estuvieron los defectos. **No puede ser `npm test`**: no puede depender de la red ni gastar tokens en cada cambio |
+| 5C.14 | Tests | `*.spec.ts` | |
+
+> [!NOTE]
+> **Por qué el banco de escenarios cae acá y no en el 5B.** Necesita el corpus estable que
+> deja el 5B, y el 5C es donde más superficie no determinística se agrega: el agente
+> haciendo de cliente y el evaluador de bandas cualitativas. La contra, que conviene
+> aceptar a propósito: **el cambio de embeddings del 5B.1 se va a tener que validar a
+> mano**, porque el banco todavía no existe cuando se hace. Uno de los primeros usos del
+> 5C es justamente fijar lo que el 5B dejó andando.
 
 ---
 
@@ -346,7 +426,7 @@ mensajes al mismo webhook, así que un workflow separado nunca los recibiría.
 | **Roles** | `role` + `sector` (ya existen) + un flag `isController`. No se infla el enum `EmployeeRole` |
 | **Notificaciones** | Badges por query + WhatsApp en los 2-3 casos críticos. Sin websockets |
 | **"Editar con la IA"** | Va con prioridad normal (tarea 5A.13), siempre con aprobación humana |
-| **Diagnóstico de 5 min** | Se conserva (tarea 5B.13) |
+| **Diagnóstico de 5 min** | Se conserva (tarea 5C.10) |
 | **Estética Instagram/Facebook** | Cosmética del frontend. **Ojo en la redacción de la tesis:** no implica integración con esas plataformas |
 
 ### 6.3 Malentendidos del prototipo a corregir en la redacción
@@ -365,19 +445,19 @@ mensajes al mismo webhook, así que un workflow separado nunca los recibiría.
 | RF02 | ✅ Hecho | Orquestador |
 | RF03 | S6 | CRM n8n→Sheets (Postgres fuente de verdad) |
 | RF04 | S4 | Cobranzas completo |
-| RF05 | S5B | Capacitación por rol + audio |
-| RF06 | ✅ S5A + ✅ S3 | Pipeline archivos + retroalimentación (`teachAgent` y los tres cierres) |
+| RF05 | S5C | Capacitación por rol + audio |
+| RF06 | ✅ S5A + ✅ S3 + S5B | Pipeline archivos + retroalimentación (`teachAgent` y los tres cierres). **S5B agrega la higiene**: sin ella cada retroalimentación deja un documento más que compite con los que ya están |
 | RF07 | ✅ S5A | Chat web + línea de tiempo unificada por contacto |
 | RF08 | ✅ Hecho | WhatsApp |
 | RF09 | S6 | StockPort + alternativas |
 | RF10 | S6 + S7 | CreditPort + degradación |
-| RF11 | S5B | Entrevista guiada **por chat** + revisar/aprobar |
+| RF11 | S5B | Entrevista guiada **por chat** + revisar/aprobar. Las preguntas salen del tráfico real (5B.9 → 5B.12) |
 | RF12 | ✅ S1 | Whitelist + sectores |
 | RF13 | S7 | Venta financiada E2E |
 | RF14 | ✅ S5A | Transcripción con Gemini + el binario nunca se persiste |
 | RNF-01 | S8 | Performance + uptime |
 | RNF-02 | ✅ + S1 | Confidencialidad + JWT |
-| RNF-03 | ✅ + S3 | RAG confidence + capitalización |
+| RNF-03 | ✅ + S3 + S5B + S5C | RAG confidence + capitalización. **S5B** ajusta embeddings y umbral; **S5C** mide que el comportamiento se sostenga |
 | RNF-04 | S6 | Port/adapter desacoplado |
 | RI-01 | S6 | Paljet mock/real (solo lectura) |
 | RI-02 | S6 | Riesgo Online mock (vía agente ADMIN) |
@@ -391,8 +471,19 @@ mensajes al mismo webhook, así que un workflow separado nunca los recibiría.
 ## 8. Estado y próximo paso
 
 > [!IMPORTANT]
-> **Sprints 1, 2, 3, 4 y 5A completos.** El siguiente es el **Sprint 5B
-> (Capacitación y Audio)**.
+> **Sprints 1, 2, 3, 4, 5A y 5B completos.** El siguiente es el **5C (Capacitación,
+> Audio y Medición)**.
+>
+> El orden importó: el 5C **genera contenido a partir del corpus**, así que arrancarlo
+> antes de limpiar y medir habría multiplicado el problema en vez de resolverlo. Dentro
+> del 5B el orden también fue deliberado: **5B.1–5B.3 fueron primero** porque cambiar los
+> embeddings mueve todos los scores, y cualquier medición hecha antes queda invalidada.
+>
+> **El 5B creció de 5 pre-specs a 9 mientras se ejecutaba**, y las cuatro que se sumaron
+> salieron de usar lo construido, no de planificar mejor: la 7 al ver que dos pantallas
+> eran un solo trabajo partido en dos, la 8 al releer los prototipos, la 9 de una
+> asunción falsa descubierta especificando la 007. Vale tenerlo presente al estimar
+> el 5C.
 >
 > Dos cosas quedaron abiertas del 5A y conviene no perderlas de vista:
 >

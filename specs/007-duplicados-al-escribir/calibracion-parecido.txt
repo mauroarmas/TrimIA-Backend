@@ -1,0 +1,79 @@
+Calibración del umbral de parecido — spec 007 (FR-017, SC-008)
+Fecha: 2026-08-23  ·  corpus: 78 documentos activos
+Comando: docker compose exec nestjs npx ts-node scripts/calibrar-parecido.ts
+
+
+Corpus: 78 documentos activos
+Umbral configurado hoy: 80.0%
+
+── ALTO: "sobre nosotros" ↔ "qué es credimisión"
+   «Sobre Nosotros»
+   «Qué es Credimisión: la empresa en una página»
+   similitud = 77.6%
+   EL DUPLICADO REAL del 2026-08-20: dos documentos sobre la empresa cargados con 19 minutos de diferencia. Se reparten la señal y ninguno gana — «qué sabés sobre la empresa» quedó en 62.1% con el correcto primero, bajo el umbral. Si este par no da "alto", el umbral no detecta el caso que motivó la spec.
+
+── ALTO: "garantia extendida" ↔ "devoluciones, cambios y garantía"
+   «Garantia extendida en electrodomesticos»
+   «Devoluciones, cambios y garantía»
+   similitud = 76.3%
+   Se solapan de verdad: los dos hablan de garantía de electrodomésticos. Aparecieron juntos en el top-3 de "que garantia tienen las heladeras" durante la spec 006.
+
+── BAJO: "envios" ↔ "monto mínimo de compra"
+   «Envios»
+   «Monto mínimo de compra»
+   similitud = 73.1%
+   MISMO DOMINIO, TEMAS DISTINTOS — el par más importante del conjunto. Los dos hablan de compras interprovinciales y comparten vocabulario (Misiones, Posadas, Tierra del Fuego), así que van a puntuar alto sin ser duplicados. Es el que fija el techo: si este da "alto", el umbral produce falsos positivos.
+
+── BAJO: "envios" ↔ "auditoría de decisiones en el panel del supervisor"
+   no se recuperaron mutuamente ni en el top-20
+
+── CONTROL: «Sobre Nosotros» contra sí mismo → 98.8%
+   Tiene que dar cerca de 100%. Si no, algo está mal.
+
+═══ Resumen ═══
+  parecidos de verdad (el más flojo) : 76.3%
+  NO parecidos (el más alto)         : 73.1%
+
+  ✅ Los dos grupos se separan.
+  Umbral sugerido: 75.0%  →  0.75
+
+  Se ubica al 60% del camino entre los dos grupos, no en el medio:
+  un falso negativo (no avisar de un duplicado) es más barato que un
+  falso positivo (avisar siempre), que vuelve invisible el aviso.
+
+
+═══════════════════════════════════════════════════════════════════
+LECTURA DEL RESULTADO
+═══════════════════════════════════════════════════════════════════
+
+Valor elegido: KNOWLEDGE_SIMILARITY_THRESHOLD=0.75
+
+⚠️ EL MARGEN ES FINO: 3.2 puntos porcentuales.
+
+    73.1%  «Envios» ↔ «Monto mínimo de compra»   NO son duplicados
+    ────── 75.0% ← el umbral
+    76.3%  «Garantia extendida» ↔ «Devoluciones»  SÍ se solapan
+    77.6%  «Sobre Nosotros» ↔ «Qué es Credimisión» EL duplicado real
+
+Comparar documentos enteros apenas distingue "duplicado" de "mismo dominio,
+tema distinto". Consecuencias que conviene aceptar a propósito:
+
+  · Va a haber falsos positivos y falsos negativos cerca del borde. Por eso
+    el aviso NO bloquea (FR-015): con este margen, bloquear sería insufrible.
+  · Si se cargan documentos de un dominio nuevo, conviene recalibrar: el
+    margen es demasiado angosto para asumir que se sostiene solo.
+
+POR QUÉ NO SE HEREDÓ NINGÚN OTRO VALOR
+
+  0.65 (RAG_CONFIDENCE_THRESHOLD)  → habría avisado en TODO: hasta el par
+       deliberadamente NO parecido da 73.1%, muy por encima de 0.65.
+       Confirma que el riesgo principal declarado de la feature era real.
+
+  0.80 (provisional al declarar la variable) → habría perdido LOS DOS
+       duplicados reales, que dan 77.6% y 76.3%. O sea: la feature no
+       habría detectado el caso que la originó.
+
+Las dos equivocaciones eran plausibles a ojo. Ninguna sobrevive a medir.
+
+CONTROL DE CORDURA: un documento contra sí mismo da 98.8%. La medición
+está midiendo lo que dice medir.

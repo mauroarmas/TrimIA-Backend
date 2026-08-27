@@ -39,19 +39,19 @@ enum EmployeeRole {
 // le contestó?" sea una sola condición (`status === RESOLVED`) en todas las
 // consultas del panel. Ver specs/003-archivos-chat-conocimiento/data-model.md §1.1.
 enum EscalationStatus {
-  PENDING      // sin resolver — el usuario espera
-  RESOLVED     // se aprobó y SE ENVIÓ la respuesta
+  PENDING // sin resolver — el usuario espera
+  RESOLVED // se aprobó y SE ENVIÓ la respuesta
   SAVED_UNSENT // se aprobó, se capitalizó al RAG, NO se envió (Sprint 5A, FR-039)
-  DISCARDED    // caso puntual, no amerita respuesta estándar (Sprint 5A, FR-038)
+  DISCARDED // caso puntual, no amerita respuesta estándar (Sprint 5A, FR-038)
 }
 
 // De dónde salió un documento de conocimiento (Sprint 5A, FR-026).
 // ENTREVISTA se define ahora aunque su generador llegue en el Sprint 5B:
 // cerrar el enum de una evita una segunda migración.
 enum KnowledgeSourceType {
-  DOCUMENTO  // cargado a mano o subiendo un archivo
+  DOCUMENTO // cargado a mano o subiendo un archivo
   ENTREVISTA // generado por una entrevista de capacitación (Sprint 5B)
-  ESCALADO   // capitalizado al resolver una consulta escalada
+  ESCALADO // capitalizado al resolver una consulta escalada
 }
 
 // Postgres y ChromaDB son dos almacenes sin transacción común: al editar un
@@ -59,21 +59,21 @@ enum KnowledgeSourceType {
 // coinciden. Este estado hace visible esa ventana en vez de dejarla silenciosa
 // (Sprint 5A, FR-024) — que era el bug que motivó la tarea.
 enum KnowledgeSyncStatus {
-  SYNCED          // Postgres y ChromaDB coinciden
+  SYNCED // Postgres y ChromaDB coinciden
   PENDING_REINDEX // hay cambios sin volcar a ChromaDB
-  REINDEX_FAILED  // se agotaron los reintentos — requiere acción humana
+  REINDEX_FAILED // se agotaron los reintentos — requiere acción humana
 }
 
 // Procesamiento de un archivo subido (Sprint 5A, FR-006).
 enum FileProcessingStatus {
   PROCESSING // en cola o extrayendo texto
-  READY      // texto extraído e ingestado
-  FAILED     // formato no soportado, dañado o sin texto útil
+  READY // texto extraído e ingestado
+  FAILED // formato no soportado, dañado o sin texto útil
 }
 
 // Quién originó un cambio sobre un documento (Sprint 5A, FR-049).
 enum KnowledgeChangeOrigin {
-  MANUAL      // el supervisor editó a mano
+  MANUAL // el supervisor editó a mano
   AI_ACCEPTED // el supervisor aprobó una propuesta de la IA
 }
 
@@ -81,37 +81,37 @@ enum KnowledgeChangeOrigin {
 // Permite distinguir un documento que nunca se recupera de uno que se recupera
 // seguido pero nunca alcanza el umbral de confianza — que es la señal útil.
 enum RetrievalOutcome {
-  ANSWERED  // el turno terminó con respuesta generada
+  ANSWERED // el turno terminó con respuesta generada
   ESCALATED // la confianza no alcanzó y se derivó a un humano
 }
 
 // Estado de una cuota (Sprint 4 — Cobranzas). Ver transiciones en
 // specs/002-collections-payments/data-model.md.
 enum QuotaStatus {
-  PENDING               // aún no vence, sin acción
+  PENDING // aún no vence, sin acción
   AWAITING_CONFIRMATION // el cliente avisó/envió comprobante, esperando decisión del cobrador
-  PAID                  // comprobante aceptado Y verificado con impacto bancario confirmado
-  OVERDUE               // vencida, sin respuesta tras el máximo de intentos de recordatorio
-  MANUAL                // el cobrador la marcó como gestionada manualmente
+  PAID // comprobante aceptado Y verificado con impacto bancario confirmado
+  OVERDUE // vencida, sin respuesta tras el máximo de intentos de recordatorio
+  MANUAL // el cobrador la marcó como gestionada manualmente
 }
 
 enum PaymentProofStatus {
-  PENDING_REVIEW   // recién recibido, esperando decisión del cobrador
-  ACCEPTED         // el cobrador lo aceptó
-  REJECTED         // el cobrador marcó un problema (ver ProofRejectionReason)
-  MANUAL_HANDLING  // "otro problema — voy a manejarlo yo" (pausa la IA, ver takeover Sprint 3)
+  PENDING_REVIEW // recién recibido, esperando decisión del cobrador
+  ACCEPTED // el cobrador lo aceptó
+  REJECTED // el cobrador marcó un problema (ver ProofRejectionReason)
+  MANUAL_HANDLING // "otro problema — voy a manejarlo yo" (pausa la IA, ver takeover Sprint 3)
 }
 
 enum ProofRejectionReason {
-  PAST_DATE       // el comprobante es de una fecha anterior
-  WRONG_CBU       // el CBU de destino no es el de la empresa
-  AMOUNT_TOO_LOW  // el monto transferido es menor al que corresponde
+  PAST_DATE // el comprobante es de una fecha anterior
+  WRONG_CBU // el CBU de destino no es el de la empresa
+  AMOUNT_TOO_LOW // el monto transferido es menor al que corresponde
 }
 
 enum ImpactStatus {
-  PENDING    // comprobante aceptado, aún no verificado contra la cuenta bancaria
-  CONFIRMED  // el Cobrador Controlador confirmó que el pago impactó
-  MISSING    // el Cobrador Controlador indicó que no impactó
+  PENDING // comprobante aceptado, aún no verificado contra la cuenta bancaria
+  CONFIRMED // el Cobrador Controlador confirmó que el pago impactó
+  MISSING // el Cobrador Controlador indicó que no impactó
 }
 
 // ─────────────────────────────────────────────────────────────────────────
@@ -121,7 +121,7 @@ enum ImpactStatus {
 // ─────────────────────────────────────────────────────────────────────────
 
 enum PurchaseRequestStatus {
-  DRAFT          // el agente la está armando durante la conversación
+  DRAFT // el agente la está armando durante la conversación
   PENDING_REVIEW // esperando que un vendedor la gestione
   APPROVED
   REJECTED
@@ -129,7 +129,7 @@ enum PurchaseRequestStatus {
 }
 
 enum PaymentModality {
-  CASH     // contado / transferencia por el total
+  CASH // contado / transferencia por el total
   FINANCED // en cuotas
 }
 
@@ -162,22 +162,29 @@ model Sector {
   // Quiénes son RESPONSABLES de este sector (N:M, spec 005). Son dos cosas
   // distintas: alguien puede trabajar en Ventas y supervisar además Depósito.
   supervisores Employee[] @relation("AreasSupervisadas")
+
+  // Spec 010 — entrevista desde el tráfico real
+  interviews InterviewSession[]
+
+  // Spec 011 — una sola pantalla para mejorar
+  documentReviews DocumentReview[]
+  dismissals      ImprovementDismissal[]
 }
 
 // Empleado/supervisor autorizado. Determina userType al recibir un mensaje.
 model Employee {
-  id        String       @id @default(uuid())
-  phone     String       @unique // número WhatsApp normalizado
-  email     String       @unique
-  name      String
-  password  String       // hash bcrypt
-  role      EmployeeRole @default(EMPLEADO)
-  isActive  Boolean      @default(true)
-  sectorId  String
+  id       String       @id @default(uuid())
+  phone    String       @unique // número WhatsApp normalizado
+  email    String       @unique
+  name     String
+  password String // hash bcrypt
+  role     EmployeeRole @default(EMPLEADO)
+  isActive Boolean      @default(true)
+  sectorId String
   // Dónde trabaja (1:N). El nombre de la relación es OBLIGATORIO desde la spec
   // 005: hay DOS relaciones entre Employee y Sector, y sin nombrarlas Prisma no
   // puede inferir cuál es cuál (falla el `db push`).
-  sector    Sector       @relation("EmpleadoDelSector", fields: [sectorId], references: [id])
+  sector   Sector       @relation("EmpleadoDelSector", fields: [sectorId], references: [id])
 
   // De qué áreas es RESPONSABLE (N:M, spec 005). Vacío para un empleado común;
   // una o más para un supervisor; todas para el gerente.
@@ -190,9 +197,9 @@ model Employee {
   // Permiso adicional de Cobrador Controlador (Sprint 4). No es un valor nuevo
   // de EmployeeRole: convive con role=EMPLEADO + sector=Cobranzas. Ver
   // specs/002-collections-payments/data-model.md.
-  isController Boolean   @default(false)
-  createdAt DateTime     @default(now())
-  updatedAt DateTime     @updatedAt
+  isController      Boolean  @default(false)
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
 
   delegatedEscalations Escalation[]   @relation("EscalationDelegatedTo")
   delegationsMade      Escalation[]   @relation("EscalationDelegatedBy")
@@ -212,6 +219,22 @@ model Employee {
   knowledgeFiles       KnowledgeFile[]     @relation("KnowledgeFileUploadedBy")
   knowledgeChanges     KnowledgeChange[]   @relation("KnowledgeChangeAuthor")
   escalationsDiscarded Escalation[]        @relation("EscalationDiscardedBy")
+
+  // Spec 008 — higiene del corpus
+  hygieneScans  HygieneScan[]           @relation("HygieneScanStartedBy")
+  mergeDiscards KnowledgeMergeDiscard[] @relation("MergeDiscardBy")
+
+  // Spec 009 — qué falta para responder mejor
+  coverageScans CoverageScan[]      @relation("CoverageScanStartedBy")
+  coverageMarks CoverageThemeMark[] @relation("CoverageThemeMarkedBy")
+
+  // Spec 010 — entrevista desde el tráfico real
+  entrevistasAbiertas InterviewSession[]   @relation("EntrevistasAbiertas")
+  candidatosResueltos InterviewCandidate[] @relation("CandidatosResueltos")
+
+  // Spec 011 — una sola pantalla para mejorar
+  docReviewsStarted DocumentReview[]       @relation("DocReviewStartedBy")
+  dismissalsMade    ImprovementDismissal[] @relation("ImprovementDismissedBy")
 
   @@index([phone])
   @@index([email])
@@ -254,7 +277,7 @@ model PurchaseRequest {
   id             String                @id @default(uuid())
   clientId       String
   client         Client                @relation(fields: [clientId], references: [id])
-  conversationId String?               // de qué conversación salió
+  conversationId String? // de qué conversación salió
   conversation   Conversation?         @relation(fields: [conversationId], references: [id])
   productSummary String
   amount         Decimal?
@@ -295,7 +318,7 @@ model CreditAssessment {
   purchaseRequestId String?
   purchaseRequest   PurchaseRequest? @relation(fields: [purchaseRequestId], references: [id])
   verdict           CreditVerdict
-  reason            String           // el porqué del dictamen, en texto
+  reason            String // el porqué del dictamen, en texto
   source            String           @default("RIESGO_ONLINE") // RIESGO_ONLINE | MANUAL
   rawPayload        Json?
   assessedById      String?
@@ -346,7 +369,7 @@ model Quota {
   client             Client      @relation(fields: [clientId], references: [id])
   financingId        String?
   financing          Financing?  @relation(fields: [financingId], references: [id])
-  number             Int?        // nº de cuota dentro del plan (1..quotaCount)
+  number             Int? // nº de cuota dentro del plan (1..quotaCount)
   amount             Decimal
   dueDate            DateTime
   status             QuotaStatus @default(PENDING)
@@ -368,33 +391,33 @@ model Quota {
 // campos extracted* son SIEMPRE una sugerencia editable de Gemini Vision,
 // nunca verdad del sistema — el cobrador decide.
 model PaymentProof {
-  id             String                 @id @default(uuid())
-  quotaId        String
-  quota          Quota                  @relation(fields: [quotaId], references: [id])
-  messageId      String?
-  message        Message?               @relation(fields: [messageId], references: [id])
-  imagePath      String
-  extractedAmount Decimal?
-  extractedDate   DateTime?
-  extractedBank   String?
-  extractedOpCode String?               @unique
-  status          PaymentProofStatus    @default(PENDING_REVIEW)
-  rejectionReason ProofRejectionReason?
+  id                 String                @id @default(uuid())
+  quotaId            String
+  quota              Quota                 @relation(fields: [quotaId], references: [id])
+  messageId          String?
+  message            Message?              @relation(fields: [messageId], references: [id])
+  imagePath          String
+  extractedAmount    Decimal?
+  extractedDate      DateTime?
+  extractedBank      String?
+  extractedOpCode    String?               @unique
+  status             PaymentProofStatus    @default(PENDING_REVIEW)
+  rejectionReason    ProofRejectionReason?
   // Motivo que dejó el cobrador al marcar "voy a manejarlo yo". Vive acá y no
   // solo como InternalNote de la conversación porque es un atributo de ESTE
   // comprobante puntual, no de la conversación en general (que puede tener
   // varias notas por otros motivos). El InternalNote se sigue creando igual,
   // para el historial del cliente en el panel.
   manualHandlingNote String?
-  acceptedById    String?
-  acceptedBy      Employee?             @relation("PaymentProofAcceptedBy", fields: [acceptedById], references: [id])
-  acceptedAt      DateTime?
-  impactStatus       ImpactStatus       @default(PENDING)
+  acceptedById       String?
+  acceptedBy         Employee?             @relation("PaymentProofAcceptedBy", fields: [acceptedById], references: [id])
+  acceptedAt         DateTime?
+  impactStatus       ImpactStatus          @default(PENDING)
   impactVerifiedById String?
-  impactVerifiedBy   Employee?          @relation("PaymentProofImpactVerifiedBy", fields: [impactVerifiedById], references: [id])
+  impactVerifiedBy   Employee?             @relation("PaymentProofImpactVerifiedBy", fields: [impactVerifiedById], references: [id])
   impactVerifiedAt   DateTime?
   impactObservation  String?
-  createdAt          DateTime           @default(now())
+  createdAt          DateTime              @default(now())
 
   @@index([quotaId])
   @@index([status])
@@ -433,15 +456,15 @@ enum UserType {
 }
 
 model Conversation {
-  id         String     @id @default(uuid())
-  channel    Channel
-  externalId String
+  id            String     @id @default(uuid())
+  channel       Channel
+  externalId    String
   status        ConvStatus @default(ACTIVE)
   currentAgent  AgentType? // agente "sticky" que atiende la conversación (null = sin asignar)
   agentLockedAt DateTime? // cuándo se fijó el currentAgent
   userType      UserType   @default(CLIENTE) // determina audiencia e intents permitidas
   createdAt     DateTime   @default(now())
-  updatedAt  DateTime   @updatedAt
+  updatedAt     DateTime   @updatedAt
 
   handledById String? // supervisor con control manual (Sprint 3, status=HUMAN_HANDLING)
   handledBy   Employee? @relation("ConversationHandledBy", fields: [handledById], references: [id])
@@ -467,13 +490,13 @@ model Conversation {
 }
 
 model Message {
-  id             String      @id @default(uuid())
+  id             String       @id @default(uuid())
   conversationId String
   conversation   Conversation @relation(fields: [conversationId], references: [id])
   role           MessageRole
   content        String
   agentType      AgentType?
-  createdAt      DateTime    @default(now())
+  createdAt      DateTime     @default(now())
 
   paymentProofs PaymentProof[]
 
@@ -485,9 +508,9 @@ model Message {
 // una Escalation PENDING por conversación a la vez (regla de aplicación en
 // EscalationsService, no constraint de DB — ver specs/001-human-in-the-loop/data-model.md).
 model Escalation {
-  id             String       @id @default(uuid())
+  id             String           @id @default(uuid())
   conversationId String
-  conversation   Conversation @relation(fields: [conversationId], references: [id])
+  conversation   Conversation     @relation(fields: [conversationId], references: [id])
   reason         String
   status         EscalationStatus @default(PENDING)
 
@@ -510,16 +533,48 @@ model Escalation {
   // Texto aprobado en el cierre SAVED_UNSENT. Campo APARTE de `resolution` a
   // propósito: así "hay algo en resolution" sigue significando "esto se le
   // envió al usuario", que es justo la distinción que pide FR-039.
-  savedResponse String?
-  discardedById String?
-  discardedBy   Employee? @relation("EscalationDiscardedBy", fields: [discardedById], references: [id])
-  discardedAt   DateTime?
+  savedResponse     String?
+  discardedById     String?
+  discardedBy       Employee? @relation("EscalationDiscardedBy", fields: [discardedById], references: [id])
+  discardedAt       DateTime?
+
+  // --- Spec 007 ---
+  // Con qué documento se cerró el caso, cuando NO se creó uno nuevo.
+  //
+  // Va de este lado y no del documento porque un documento apunta a UN solo caso
+  // que lo originó (`sourceType`/`sourceId`), y muchos casos pueden resolverse
+  // con el mismo conocimiento. Además responde la pregunta donde alguien se la
+  // hace de verdad: mirando el caso, no el corpus.
+  resolvedWithDocumentId String?
+  resolvedWithDocument   KnowledgeDocument?         @relation("EscalationResolvedWith", fields: [resolvedWithDocumentId], references: [id])
+  resolvedWithAction     EscalationKnowledgeAction?
+
+  // Lados inversos (spec 007): los documentos que se consultaron en este caso y
+  // no alcanzaron, y las ediciones del corpus que salieron de resolverlo.
+  retrievals       KnowledgeRetrieval[]
+  knowledgeChanges KnowledgeChange[]
+
+  // Spec 010 — preguntas de entrevista que salieron de este caso.
+  entrevistaPreguntas InterviewQuestion[]
+
+  // Spec 011 — descartes de este caso como ítem para mejorar.
+  dismissals ImprovementDismissal[]
 
   createdAt DateTime @default(now())
 
   @@index([conversationId])
   @@index([status])
   @@index([createdAt])
+}
+
+// Cómo se capitalizó el conocimiento al cerrar un caso (spec 007).
+//
+// `null` sigue significando lo de siempre —se creó un documento nuevo, que
+// apunta al caso por `sourceId`— así que los casos ya resueltos no cambian de
+// sentido y no hizo falta migrar nada.
+enum EscalationKnowledgeAction {
+  CORRECTED // se mejoró un documento que ya existía y había quedado corto (US1)
+  REUSED // el contenido ya existía idéntico: no se creó nada (FR-023)
 }
 
 // Comentario interno sobre una conversación, visible solo para supervisores/
@@ -600,22 +655,55 @@ model KnowledgeDocument {
   changes      KnowledgeChange[]
   retrievals   KnowledgeRetrieval[]
 
-  createdAt DateTime   @default(now())
-  updatedAt DateTime   @updatedAt
+  // Spec 007: casos que se resolvieron reusando o corrigiendo ESTE documento en
+  // vez de crear uno nuevo. Lado inverso de `Escalation.resolvedWithDocument`.
+  resolvedEscalations Escalation[] @relation("EscalationResolvedWith")
+
+  // Spec 008 — higiene del corpus. Los cuatro lados inversos de las relaciones
+  // con nombre que Prisma exige (HygienePair, KnowledgeMergeDiscard), más el
+  // lado inverso de `KnowledgeChange.mergedFrom`.
+  hygienePairsAsA     HygienePair[]           @relation("HygienePairA")
+  hygienePairsAsB     HygienePair[]           @relation("HygienePairB")
+  mergeDiscardsAsA    KnowledgeMergeDiscard[] @relation("MergeDiscardA")
+  mergeDiscardsAsB    KnowledgeMergeDiscard[] @relation("MergeDiscardB")
+  absorbedIntoChanges KnowledgeChange[]       @relation("KnowledgeChangeMergedFrom")
+
+  // Spec 009 — lado inverso de CoverageThemeDocument, un documento señalado
+  // por uno o más temas de cobertura.
+  coverageThemeRefs CoverageThemeDocument[] @relation("CoverageThemeDoc")
+
+  // Spec 010 — entrevista desde el tráfico real
+  entrevistaPreguntas         InterviewQuestion[]  @relation("EntrevistaCorrige")
+  entrevistaCandidatosDestino InterviewCandidate[] @relation("EntrevistaCorrigeCandidato")
+  entrevistaProdujo           InterviewCandidate[] @relation("EntrevistaProdujo")
+
+  // Spec 011 — señalamientos del detector y descartes sobre este documento.
+  findings   DocumentFinding[]      @relation("DocFinding")
+  dismissals ImprovementDismissal[] @relation("DocDismissal")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   @@index([category])
   @@index([category, version])
   @@index([audience])
-  @@index([isActive])             // el listado del panel filtra por esto
-  @@index([syncStatus])           // encontrar los desincronizados
+  @@index([isActive]) // el listado del panel filtra por esto
+  @@index([syncStatus]) // encontrar los desincronizados
   @@index([sourceType, sourceId]) // "¿de dónde salió esto?"
+  // Spec 007: el checksum se calculaba desde el Sprint 5A y NUNCA se leía. Con
+  // el índice pasa a ser la detección de duplicados más barata que hay — no
+  // cuesta ni una llamada de embeddings.
+  //
+  // A propósito NO es @unique: la detección avisa, no prohíbe (FR-012), y un
+  // unique haría imposible cargar un duplicado a sabiendas.
+  @@index([checksum])
 }
 
 // Archivo subido a la base de conocimiento y su resultado de procesamiento
 // (Sprint 5A, FR-006/FR-044).
 model KnowledgeFile {
-  id       String @id @default(uuid())
-  filename String // nombre original, para mostrar
+  id            String               @id @default(uuid())
+  filename      String // nombre original, para mostrar
   // NULL para audio: el binario se elimina apenas se transcribe (FR-004),
   // pero la fila sobrevive para saber que ese conocimiento vino de un audio
   // y quién lo subió. Es la diferencia entre FR-004 y FR-044, hecha explícita.
@@ -656,9 +744,144 @@ model KnowledgeChange {
   changedFields String[] // ["content", "audience"]
   origin        KnowledgeChangeOrigin
   aiInstruction String? // qué le pidió el supervisor a la IA
-  createdAt     DateTime              @default(now())
+
+  /// El texto que el documento tenía ANTES de este cambio. Solo se guarda
+  /// cuando `content` está entre los `changedFields`.
+  ///
+  /// Sin esto la bitácora decía QUE el contenido cambió pero no QUÉ decía
+  /// antes, así que un cambio indebido no se podía deshacer ni auditar de
+  /// verdad — media trazabilidad, para un requisito (OE-11) que la pide
+  /// entera. Se descubrió buscando cómo recuperar «Sobre Nosotros» después de
+  /// que una corrección lo pisara: no había de dónde. Chroma ya estaba
+  /// reindexado y `version` es un contador para detectar escrituras
+  /// concurrentes, no un historial.
+  ///
+  /// Se guarda el texto entero y no un diff: son ~75 documentos y los cambios
+  /// son poco frecuentes, así que la simplicidad gana sobre el espacio.
+  contentBefore String?
+
+  // Spec 007 (FR-009): de qué caso escalado salió esta edición, si salió de uno.
+  //
+  // No alcanza con el enlace inverso (`Escalation.resolvedWithDocumentId`): ése
+  // va del caso al documento, pero desde la bitácora de un documento corregido
+  // varias veces habría que adivinar por fecha cuál cambio vino de cuál caso.
+  // Es la misma fragilidad que se descartó para enlazar los retrievals.
+  escalationId String?
+  escalation   Escalation? @relation(fields: [escalationId], references: [id])
+
+  // Spec 008 (FR-016): si esta edición fue una fusión, de qué documento se
+  // incorporó el contenido. No hace falta copiar la traza de origen del
+  // absorbido: ese documento SIGUE EXISTIENDO, desactivado, con su
+  // sourceType/sourceId intactos — alcanza con poder llegar a él.
+  mergedFromDocumentId String?
+  mergedFrom           KnowledgeDocument? @relation("KnowledgeChangeMergedFrom", fields: [mergedFromDocumentId], references: [id])
+
+  createdAt DateTime @default(now())
 
   @@index([documentId, createdAt])
+}
+
+// ============================================================================
+// Spec 008 — Higiene del corpus
+// ============================================================================
+
+enum HygieneScanStatus {
+  RUNNING
+  READY
+  FAILED
+}
+
+/// Una corrida del barrido de higiene. Se persiste porque recalcular en cada
+/// apertura del panel costaría ~78 llamadas de embeddings y ~55 s.
+model HygieneScan {
+  id     String            @id @default(uuid())
+  status HygieneScanStatus @default(RUNNING)
+
+  // Qué umbral se usó, en escala 0-100 (igual que `similarity` de HygienePair).
+  // Se guarda con la corrida, no se lee del entorno al mostrarla: si alguien
+  // recalibra, las corridas viejas tienen que seguir explicándose con el valor
+  // que realmente usaron.
+  threshold Float
+
+  // Contexto para poder comparar dos corridas y decir si el corpus mejoró.
+  documentsScanned Int @default(0)
+  pairsFound       Int @default(0)
+
+  // En castellano y sin jerga: se le muestra al supervisor.
+  failureReason String?
+
+  startedById String
+  startedBy   Employee @relation("HygieneScanStartedBy", fields: [startedById], references: [id])
+
+  pairs HygienePair[]
+
+  createdAt  DateTime  @default(now())
+  finishedAt DateTime?
+
+  @@index([status, createdAt])
+}
+
+/// Una pareja de documentos que se solapan por encima del umbral, encontrada
+/// en una corrida. Orden canónico: A es siempre el de id menor.
+model HygienePair {
+  id     String      @id @default(uuid())
+  scanId String
+  scan   HygieneScan @relation(fields: [scanId], references: [id], onDelete: Cascade)
+
+  documentAId String
+  documentA   KnowledgeDocument @relation("HygienePairA", fields: [documentAId], references: [id], onDelete: Cascade)
+  documentBId String
+  documentB   KnowledgeDocument @relation("HygienePairB", fields: [documentBId], references: [id], onDelete: Cascade)
+
+  // Cuánto se solapan, 0-100 (el `score` 0-1 de `search()` × 100, convertido
+  // una sola vez al persistir). Es lo que los puso en la lista.
+  similarity Float
+
+  // Cuántos turnos escalados tuvieron a LOS DOS como candidatos. Es el
+  // criterio de prioridad (FR-005), no de detección: hoy vale 0 en casi todas
+  // las parejas porque la base tiene 2 turnos escalados en total. Cero es un
+  // valor normal, no "sin datos".
+  escalatedTurns Int @default(0)
+
+  // Las versiones que se compararon. Permite saber después si la pareja sigue
+  // siendo la misma que alguien descartó.
+  versionA Int
+  versionB Int
+
+  createdAt DateTime @default(now())
+
+  @@unique([scanId, documentAId, documentBId])
+  @@index([scanId, escalatedTurns, similarity])
+}
+
+/// "Son distintos a propósito": la decisión persistida de que una pareja NO
+/// debe fusionarse. Mismo orden canónico que HygienePair.
+model KnowledgeMergeDiscard {
+  id String @id @default(uuid())
+
+  documentAId String
+  documentA   KnowledgeDocument @relation("MergeDiscardA", fields: [documentAId], references: [id], onDelete: Cascade)
+  documentBId String
+  documentB   KnowledgeDocument @relation("MergeDiscardB", fields: [documentBId], references: [id], onDelete: Cascade)
+
+  // Las versiones que se vieron al descartar (FR-013/FR-014). El descarte no
+  // vence por tiempo: vence cuando alguno de los dos documentos cambia.
+  versionA Int
+  versionB Int
+
+  reason String?
+
+  discardedById String
+  discardedBy   Employee @relation("MergeDiscardBy", fields: [discardedById], references: [id])
+
+  createdAt DateTime @default(now())
+
+  // No es @@unique([documentAId, documentBId, versionA, versionB]): un segundo
+  // descarte de la misma pareja actualiza el registro con las versiones nuevas
+  // en vez de acumular filas.
+  @@unique([documentAId, documentBId])
+  @@index([documentAId])
+  @@index([documentBId])
 }
 
 // Registro de que un documento salió como candidato de una búsqueda
@@ -676,8 +899,23 @@ model KnowledgeRetrieval {
   conversationId String?
   conversation   Conversation? @relation(fields: [conversationId], references: [id])
 
-  score     Float            // similitud normalizada 0-100 (100 * (1 - distancia))
-  rank      Int              // posición en el top-k (0 = mejor)
+  // Spec 007: el caso al que pertenece este turno, cuando el turno escaló.
+  //
+  // Es lo que permite preguntar "¿qué documentos quedaron cortos en ESTE caso?"
+  // sin correlacionar por fecha. El orden real lo hace posible: la Escalation se
+  // crea DENTRO del grafo y `create()` la devuelve, mientras que trackRetrievals
+  // corre después, en el processor.
+  //
+  // Nullable porque la enorme mayoría de los turnos responden bien y no tienen
+  // caso. Y `create()` devuelve la escalación EXISTENTE si ya había una
+  // pendiente, así que los turnos que siguieron estancados se enlazan todos al
+  // mismo caso: el supervisor ve todo lo que se consultó, no solo el último
+  // intento.
+  escalationId String?
+  escalation   Escalation? @relation(fields: [escalationId], references: [id])
+
+  score     Float // similitud normalizada 0-100 (100 * (1 - distancia))
+  rank      Int // posición en el top-k (0 = mejor)
   agentType AgentType?
   outcome   RetrievalOutcome
 
@@ -685,7 +923,8 @@ model KnowledgeRetrieval {
 
   @@index([documentId, createdAt])
   @@index([documentId, outcome]) // "apareció" vs. "sirvió" en una sola query
-  @@index([createdAt])           // deja lista una purga por antigüedad
+  @@index([createdAt]) // deja lista una purga por antigüedad
+  @@index([escalationId]) // spec 007: los candidatos de un caso
 }
 
 model OrchestrationEvent {
@@ -700,4 +939,530 @@ model OrchestrationEvent {
   @@index([conversationId])
   @@index([eventType])
   @@index([createdAt])
+}
+
+// ============================================================================
+// Spec 009 — Qué falta para responder mejor
+// ============================================================================
+
+enum CoverageScanStatus {
+  RUNNING
+  READY
+  FAILED
+}
+
+/// Una corrida del resumen de cobertura. Se persiste porque recalcular en cada
+/// apertura costaría una llamada de chat, y porque SC-007 ("dos personas ven lo
+/// mismo") se cumple leyendo la misma corrida, no repitiendo el cálculo: el
+/// agrupador es un LLM y no es determinista.
+model CoverageScan {
+  id     String             @id @default(uuid())
+  status CoverageScanStatus @default(RUNNING)
+
+  windowFrom DateTime
+  windowTo   DateTime
+
+  // Los tres cortes vigentes al correr, en escala 0-100. Guardados con la
+  // corrida por el mismo motivo que HygieneScan.threshold: si alguien
+  // recalibra, las corridas viejas se explican con lo que usaron.
+  noiseFloor   Float
+  threshold    Float
+  marginalBand Float
+
+  queriesConsidered Int     @default(0)
+  looseQueries      Int     @default(0)
+  themesFound       Int     @default(0)
+  truncated         Boolean @default(false)
+
+  failureReason String?
+
+  startedById String
+  startedBy   Employee @relation("CoverageScanStartedBy", fields: [startedById], references: [id])
+
+  themes CoverageTheme[]
+
+  // Spec 010 — sesiones de entrevista que salieron de esta corrida.
+  interviews InterviewSession[]
+
+  createdAt  DateTime  @default(now())
+  finishedAt DateTime?
+
+  @@index([status, createdAt])
+}
+
+enum CoverageBand {
+  SIN_RESPUESTA
+  AL_LIMITE
+}
+
+enum CoverageCause {
+  NO_HAY_NADA
+  QUEDO_CORTO
+  SE_COMPITEN
+  NO_ES_DEL_CORPUS
+  INDETERMINADA
+}
+
+model CoverageTheme {
+  id     String       @id @default(uuid())
+  scanId String
+  scan   CoverageScan @relation(fields: [scanId], references: [id], onDelete: Cascade)
+
+  // Nombre del pase de LLM. NO es la identidad del tema: el modelo dice
+  // "Plazos de entrega" en una corrida y "Demoras en la entrega" en la
+  // siguiente. La identidad la hacen queryEventIds (D6, spec 009).
+  label String
+
+  // null = tema de documentos transversales (sin agente).
+  agentType AgentType?
+
+  band  CoverageBand
+  // null cuando band = AL_LIMITE: ahí la consulta SÍ se contestó por encima
+  // del umbral, así que ninguna de las cuatro causas de "sin respuesta"
+  // aplica — banda y causa son ejes distintos (research.md, spec 009, I3).
+  cause CoverageCause?
+
+  // Las consultas que forman el tema. Son la identidad entre corridas
+  // (FR-028): dos temas son el mismo si sus conjuntos se solapan por encima
+  // del corte. Ids de OrchestrationEvent, sin FK porque el evento puede caer
+  // fuera de la retención y el tema histórico tiene que sobrevivir a eso.
+  queryEventIds String[]
+  queryCount    Int
+
+  bestScore Float?
+
+  documents CoverageThemeDocument[]
+
+  // La pareja de higiene que explica SE_COMPITEN. Sin FK dura: un barrido
+  // posterior reemplaza sus parejas y el tema viejo no debe caerse con ellas.
+  hygienePairId String?
+
+  // Escalaciones del tema ya resueltas a mano (FR-009a). Material de lectura.
+  resolvedEscalationIds String[]
+
+  mark CoverageThemeMark?
+
+  createdAt DateTime @default(now())
+
+  @@index([scanId, band, queryCount])
+}
+
+/// Un documento implicado en un tema, con el score que sacó. Tabla aparte y no
+/// un array de ids: hace falta el score de cada uno para explicar la causa, y
+/// la FK para saber si el documento sigue activo (FR-007).
+model CoverageThemeDocument {
+  id      String        @id @default(uuid())
+  themeId String
+  theme   CoverageTheme @relation(fields: [themeId], references: [id], onDelete: Cascade)
+
+  documentId String
+  document   KnowledgeDocument @relation("CoverageThemeDoc", fields: [documentId], references: [id], onDelete: Cascade)
+
+  score   Float
+  // Versión del documento al momento de la corrida. Permite decir "esto
+  // cambió desde que te lo señalé" sin volver a correr nada.
+  version Int
+
+  @@unique([themeId, documentId])
+}
+
+/// "Ya me ocupé de esto" (FR-026). Apunta al tema de la corrida en la que se
+/// marcó; las corridas siguientes lo resuelven por solape de queryEventIds.
+model CoverageThemeMark {
+  id String @id @default(uuid())
+
+  themeId String        @unique
+  theme   CoverageTheme @relation(fields: [themeId], references: [id], onDelete: Cascade)
+
+  // La fecha es lo que hace el trabajo, no un booleano: define qué consultas
+  // cuentan como "nuevas" para que el tema reaparezca (FR-027).
+  markedAt   DateTime @default(now())
+  markedById String
+  markedBy   Employee @relation("CoverageThemeMarkedBy", fields: [markedById], references: [id])
+
+  note String?
+}
+
+// ============================================================================
+// Spec 010 — Entrevista desde el tráfico real
+// ============================================================================
+
+enum InterviewStatus {
+  PREPARANDO // el job está redactando las preguntas
+  EN_CURSO // hay preguntas y se puede contestar
+  CERRANDO // el job está armando las fichas
+  EN_REVISION // hay candidatos esperando aprobación
+  CERRADA // se revisaron todos los candidatos
+  ABANDONADA // sin actividad más allá del plazo; sus candidatos siguen aprobables
+  FALLIDA // el job de apertura no pudo armar la sesión
+}
+
+enum InterviewQuestionOrigin {
+  TEMA_COBERTURA // salió del resumen de la spec 009
+  ESCALADO_SIN_CAPITALIZAR // caso resuelto que nunca se guardó como conocimiento
+  ESCALADO_PENDIENTE // caso que nadie contestó todavía
+  DOCUMENTO_INCONCLUSO // el detector lo marcó incompleto (spec 011)
+}
+
+/// Cómo se aplica un candidato que corrige un documento existente.
+///
+/// La pregunta `CORREGIR` dice "¿qué le FALTA a este documento?", así que la
+/// respuesta es un complemento y el default es AGREGAR. Reemplazar todo el
+/// documento con la respuesta a esa pregunta borra lo que ya decía — pasó con
+/// «Sobre Nosotros», que quedó hablando solo de facturas.
+enum CandidateApplyMode {
+  AGREGAR // se suma al final del contenido actual
+  REEMPLAZAR // pisa el contenido entero
+}
+
+enum InterviewQuestionKind {
+  PEDIR_NUEVO // no hay documento cerca: se pide conocimiento nuevo
+  CORREGIR // hay documento y quedó corto o contestó al límite: se pide qué le falta
+  GENERALIZAR // hay una resolución escrita: se propone una versión sin el caso puntual
+  ABIERTA // no hay nada escrito que proponer (escalado pendiente)
+}
+
+enum InterviewQuestionStatus {
+  PENDIENTE
+  RESPONDIDA
+  SALTEADA
+  SIN_RESPONDER // se repreguntó y la segunda respuesta tampoco alcanzó
+}
+
+enum InterviewCandidateStatus {
+  PENDIENTE
+  APROBADO
+  DESCARTADO
+  FALLIDO // el job no pudo redactar la ficha; la respuesta cruda sigue ahí
+}
+
+// Pausar no es un estado: es dejar de contestar. EN_CURSO con lastActivityAt
+// viejo ya dice todo lo que hace falta (spec 010, data-model.md).
+model InterviewSession {
+  id     String          @id @default(uuid())
+  status InterviewStatus @default(PREPARANDO)
+
+  // El área. Se guardan los dos: el sector es a quién le corresponde, el
+  // agente es dónde va a quedar el conocimiento. Hoy se derivan uno del otro,
+  // pero el sector puede cambiar de agente y las sesiones viejas no deben
+  // moverse.
+  sectorId  String
+  sector    Sector    @relation(fields: [sectorId], references: [id])
+  agentType AgentType
+
+  openedById String
+  openedBy   Employee @relation("EntrevistasAbiertas", fields: [openedById], references: [id])
+
+  // De qué corrida salieron las preguntas, cuando salieron de una. Null = la
+  // sesión se armó con las señales de respaldo (FR-013).
+  coverageScanId String?
+  coverageScan   CoverageScan? @relation(fields: [coverageScanId], references: [id])
+
+  // Por qué falló, cuando FALLIDA. Se muestra: una sesión que no arranca sin
+  // decir por qué es indistinguible de una que se colgó.
+  failureReason String?
+
+  questions  InterviewQuestion[]
+  candidates InterviewCandidate[]
+
+  lastActivityAt DateTime  @default(now())
+  closedAt       DateTime?
+  createdAt      DateTime  @default(now())
+
+  // Una sola sesión sin cerrar por persona y área (FR-003). No es un
+  // @@unique: Prisma no tiene índices únicos parciales y la regla solo aplica
+  // a los estados abiertos — se resuelve en el servicio.
+  @@index([openedById, sectorId, status])
+  @@index([status, lastActivityAt])
+}
+
+model InterviewQuestion {
+  id        String           @id @default(uuid())
+  sessionId String
+  session   InterviewSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  order  Int
+  origin InterviewQuestionOrigin
+  kind   InterviewQuestionKind
+  status InterviewQuestionStatus @default(PENDIENTE)
+
+  /// El texto ya redactado al abrir la sesión (FR-006a). No se regenera.
+  text String
+
+  // --- Material copiado al abrir, según el origen ---
+
+  /// Etiqueta del tema de cobertura, o null si vino de un escalado.
+  themeLabel         String?
+  /// Las mismas queryEventIds del CoverageTheme de origen (spec 009). Permite
+  /// reconocer, en la PRÓXIMA sesión de esta área, que un tema ya se preguntó
+  /// — por solapamiento, igual que la spec 009 identifica un tema reincidente.
+  /// La etiqueta no sirve para esto: se regenera distinta cada corrida
+  /// (FR-006c).
+  themeQueryEventIds String[] @default([])
+  /// Consultas reales del tema, ya anonimizadas por la spec 009 (FR-012).
+  quotes             String[]
+  /// La resolución del caso, cuando kind = GENERALIZAR. Es lo que se muestra
+  /// para que la persona confirme una versión general — NUNCA lo que se
+  /// ingesta (FR-013b): está escrito para un cliente concreto.
+  resolutionText     String?
+
+  /// El documento a corregir, con la versión que tenía al abrir. La versión
+  /// permite detectar que cambió mientras la entrevista estaba abierta
+  /// (FR-030) en vez de pisarlo a ciegas.
+  documentId      String?
+  document        KnowledgeDocument? @relation("EntrevistaCorrige", fields: [documentId], references: [id])
+  documentVersion Int?
+
+  /// De qué caso salió, cuando el origen es un escalado. Permite cerrar el
+  /// círculo: el caso pendiente que se contestó acá deja de estar huérfano
+  /// (FR-035a).
+  escalationId String?
+  escalation   Escalation? @relation(fields: [escalationId], references: [id])
+
+  /// Las opciones de respuesta propuestas al abrir la sesión (spec 012,
+  /// FR-004/FR-012). Se redactan en la MISMA pasada que `text` y quedan
+  /// congeladas: una sesión que se pausa y se retoma muestra estas mismas,
+  /// sin volver a llamar al modelo (FR-011).
+  ///
+  /// Vacío es un estado normal y esperado, no una falla: si el modelo no
+  /// propuso nada razonable, la pregunta se contesta solo con texto libre
+  /// (FR-006). El texto libre nunca depende de esto.
+  ///
+  /// Son texto suelto, sin id: lo que se guarda al responder es el texto
+  /// resultante, no una referencia a la opción — una opción editada deja de
+  /// coincidir con la que se propuso, y esa distinción es la que FR-009
+  /// necesita poder hacer.
+  options String[] @default([])
+
+  answers   InterviewAnswer[]
+  candidate InterviewCandidate?
+
+  @@unique([sessionId, order])
+  @@index([sessionId, status])
+}
+
+// Una fila por intento. Hay dos cuando se repreguntó (FR-018): la primera es
+// la que explica por qué se repreguntó.
+model InterviewAnswer {
+  id         String            @id @default(uuid())
+  questionId String
+  question   InterviewQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  /// Lo que la persona escribió, tal cual (FR-035). Fuente para rehacer una
+  /// ficha que el modelo redactó mal o no pudo redactar.
+  text        String
+  attempt     Int     @default(1)
+  /// true si el sistema la consideró vacía y repreguntó (FR-018a).
+  flaggedThin Boolean @default(false)
+
+  createdAt DateTime @default(now())
+
+  @@unique([questionId, attempt])
+}
+
+model InterviewCandidate {
+  id         String            @id @default(uuid())
+  sessionId  String
+  session    InterviewSession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  questionId String            @unique
+  question   InterviewQuestion @relation(fields: [questionId], references: [id], onDelete: Cascade)
+
+  status InterviewCandidateStatus @default(PENDIENTE)
+
+  title           String
+  /// `KnowledgeDocument.category` es obligatoria al ingestar (spec 5A) y
+  /// ningún otro camino de esta feature la deriva sola. Se prellena con la
+  /// etiqueta del tema cuando la pregunta vino de cobertura, y es editable
+  /// como el resto de la ficha.
+  category        String
+  /// Lo que redactó el modelo. Se conserva aunque se edite, para poder
+  /// comparar qué cambió la persona.
+  proposedContent String
+  /// Lo que la persona dejó. Null = no la tocó. Lo que se ingesta es
+  /// editedContent ?? proposedContent (FR-028).
+  editedContent   String?
+  audience        Audience @default(INTERNO)
+
+  /// Cuando corrige, a qué documento y desde qué versión. Se copian de la
+  /// pregunta pero viven acá también: la persona puede cambiar un candidato
+  /// nuevo a corrección desde el aviso de parecido (FR-029), y esa decisión
+  /// es del candidato, no de la pregunta. candidateKind (NUEVO/CORRECCION,
+  /// en el contrato de la API) se deriva de targetDocumentId — no se guarda
+  /// aparte, para no desincronizarse de la fuente real.
+  targetDocumentId String?
+  targetDocument   KnowledgeDocument? @relation("EntrevistaCorrigeCandidato", fields: [targetDocumentId], references: [id])
+  targetVersion    Int?
+
+  /// Solo cuando corrige: si el contenido se SUMA al del documento o lo pisa.
+  /// Default AGREGAR porque la pregunta fue "qué le falta", y la ficha que
+  /// redacta el modelo responde solo eso — nunca ve el documento original, así
+  /// que no puede reescribirlo entero. Editable antes de aprobar.
+  applyMode CandidateApplyMode @default(AGREGAR)
+
+  /// El documento que produjo al aprobarse.
+  resultDocumentId String?
+  resultDocument   KnowledgeDocument? @relation("EntrevistaProdujo", fields: [resultDocumentId], references: [id])
+
+  /// Por qué falló, cuando FALLIDO o cuando la aprobación se rechazó.
+  failureReason String?
+
+  resolvedById String?
+  resolvedBy   Employee? @relation("CandidatosResueltos", fields: [resolvedById], references: [id])
+  resolvedAt   DateTime?
+  createdAt    DateTime  @default(now())
+
+  @@index([sessionId, status])
+}
+
+// ============================================================================
+// Spec 011 — Una sola pantalla para mejorar el conocimiento
+// ============================================================================
+
+enum DocReviewStatus {
+  RUNNING
+  READY
+  FAILED
+}
+
+/// De qué fuente salió un ítem de la lista (FR-004, FR-020).
+///
+/// Nombra lo mismo que `InterviewQuestionOrigin` pero con otras palabras,
+/// porque son dos ejes distintos: acá importa POR QUÉ el ítem está en la
+/// lista, allá QUÉ forma toma la pregunta. El mapeo es:
+///
+///   CONSULTA_FALLIDA     ↔ TEMA_COBERTURA
+///   ESCALADO             ↔ ESCALADO_SIN_CAPITALIZAR | ESCALADO_PENDIENTE
+///   DOCUMENTO_INCONCLUSO ↔ DOCUMENTO_INCONCLUSO
+///
+/// El ESCALADO se abre en dos del lado de la entrevista a propósito: uno ya
+/// tiene resolución escrita (se generaliza) y el otro no (se pregunta abierto).
+enum ImprovementSource {
+  CONSULTA_FALLIDA // tema del resumen de cobertura (spec 009)
+  ESCALADO // caso escalado sin capitalizar (spec 010)
+  DOCUMENTO_INCONCLUSO // señalamiento del detector (esta spec)
+}
+
+/// Una corrida del detector sobre los documentos de un área.
+model DocumentReview {
+  id     String          @id @default(uuid())
+  status DocReviewStatus @default(RUNNING)
+
+  /// El área revisada. Se guardan los dos por el mismo motivo que en la spec
+  /// 010: el sector dice a quién le corresponde, el agente dice qué documentos
+  /// entran — y un sector puede cambiar de agente sin que las corridas viejas
+  /// se muevan.
+  ///
+  /// Qué documentos entran: los del `agentType` MÁS los transversales
+  /// (`agentType` nulo), que son 15 de los 75 activos. Sin ellos, un quinto
+  /// del corpus no lo revisaría nadie nunca. Se analizan una vez —el
+  /// incremental hace que la segunda área los saltee— pero sus señalamientos
+  /// solo se MUESTRAN a quien es responsable de todas las áreas: es quien
+  /// puede corregirlos, y un ítem que quien lo ve no puede tocar es ruido.
+  sectorId  String
+  sector    Sector    @relation(fields: [sectorId], references: [id])
+  agentType AgentType
+
+  startedById String
+  startedBy   Employee @relation("DocReviewStartedBy", fields: [startedById], references: [id])
+
+  /// Cuántos se miraron de verdad y cuántos se saltearon por no haber
+  /// cambiado (FR-013a). Los dos hacen falta para el resumen de una línea
+  /// (FR-006): "20 sin cambios, 2 revisados" explica por qué tardó 8s.
+  documentsAnalyzed Int @default(0)
+  documentsSkipped  Int @default(0)
+  findingsFound     Int @default(0)
+
+  /// El corte de severidad vigente al correr. Guardado con la corrida por el
+  /// mismo motivo que `HygieneScan.threshold`: si alguien recalibra, las
+  /// corridas viejas se explican con el número que usaron.
+  severityCut Int
+
+  failureReason String?
+
+  findings DocumentFinding[]
+
+  createdAt  DateTime  @default(now())
+  finishedAt DateTime?
+
+  @@index([sectorId, status, createdAt])
+}
+
+/// El señalamiento del detector sobre UN documento.
+///
+/// La lista se arma con el último señalamiento VIGENTE de cada documento, no
+/// con los de la última corrida: con el incremental (FR-013a) una corrida que
+/// saltea 20 documentos y analiza 2 produce 2 findings, pero los otros 20
+/// siguen siendo verdad. Vigente = `documentVersion` coincide con la `version`
+/// actual del documento.
+model DocumentFinding {
+  id       String         @id @default(uuid())
+  reviewId String
+  review   DocumentReview @relation(fields: [reviewId], references: [id], onDelete: Cascade)
+
+  documentId      String
+  document        KnowledgeDocument @relation("DocFinding", fields: [documentId], references: [id], onDelete: Cascade)
+  /// La versión sobre la que se juzgó (FR-019). Hace tres trabajos: saltear el
+  /// documento en la próxima corrida si no cambió (FR-013a), decidir si un
+  /// descarte sigue valiendo (FR-026) y decidir si el señalamiento vigente.
+  documentVersion Int
+
+  /// 0-100 (D1/D2). NO es confianza: el modelo devuelve confianza alta para
+  /// todo lo que marca (53 de 53 en la medición), así que no cortaba nada.
+  /// Esto mide cuánto DUELE la carencia, que sí discrimina.
+  ///
+  /// Viene cuantizada: el modelo usa 85/75/65/55/45/20/15 y casi nunca valores
+  /// intermedios. Cualquier corte entre 76 y 85 se comporta igual.
+  severity Int
+
+  /// Las preguntas concretas que el documento deja abiertas (FR-014). Nunca
+  /// vacío: un señalamiento sin preguntas no habilita ninguna acción y no se
+  /// persiste. Medido: 2,8 por señalamiento, ninguno vino vacío.
+  unansweredQuestions String[]
+  reason              String
+
+  createdAt DateTime @default(now())
+
+  @@unique([reviewId, documentId])
+  @@index([reviewId, severity])
+  /// Para resolver "el señalamiento VIGENTE de este documento" sin pasar por
+  /// la corrida que lo produjo.
+  @@index([documentId, documentVersion])
+}
+
+/// El descarte, para las tres fuentes. Reemplaza a `CoverageThemeMark`, que
+/// solo servía para una (FR-024a).
+model ImprovementDismissal {
+  id     String            @id @default(uuid())
+  source ImprovementSource
+
+  /// A qué apunta, según la fuente. Uno solo está lleno:
+  ///  - CONSULTA_FALLIDA     → themeQueryEventIds (identidad por solape, spec 009 D6)
+  ///  - ESCALADO             → escalationId
+  ///  - DOCUMENTO_INCONCLUSO → documentId + documentVersion
+  ///
+  /// Sin FK a CoverageTheme a propósito: el tema es una fila por corrida y
+  /// desaparece en la siguiente. La identidad estable son sus consultas —
+  /// el mismo criterio que la spec 009 ya usa para reconocer un reincidente.
+  themeQueryEventIds String[] @default([])
+
+  escalationId String?
+  escalation   Escalation? @relation(fields: [escalationId], references: [id])
+
+  documentId      String?
+  document        KnowledgeDocument? @relation("DocDismissal", fields: [documentId], references: [id], onDelete: Cascade)
+  /// Solo para documentos: el descarte muere si el documento cambia (FR-026).
+  /// Para las otras dos fuentes es null y el descarte rige hasta que aparezca
+  /// evidencia nueva (FR-026a).
+  documentVersion Int?
+
+  sectorId String
+  sector   Sector @relation(fields: [sectorId], references: [id])
+
+  dismissedById String
+  dismissedBy   Employee @relation("ImprovementDismissedBy", fields: [dismissedById], references: [id])
+  dismissedAt   DateTime @default(now())
+  note          String?
+
+  @@index([sectorId, source])
+  @@index([documentId, documentVersion])
 }

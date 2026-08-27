@@ -12,6 +12,16 @@ const NO_CONTEXT_REASON =
   'No hay información cargada sobre este tema con confianza suficiente. ' +
   'Redactá la respuesta y marcá «enseñar al agente» para incorporarla.';
 
+/**
+ * Lo que se le dice cuando SÍ se redactó, pero con material por debajo del
+ * umbral del agente. No es una advertencia genérica: nombra el hecho de que
+ * este texto se apoya en lo mismo que al agente no le alcanzó.
+ */
+const RESPALDO_DEBIL_REASON =
+  'Esta propuesta se redactó con material por debajo del umbral del agente: ' +
+  'es justo lo que no le alcanzó para responder solo. Revisá contra las ' +
+  'fuentes antes de enviarla.';
+
 const SUGGESTION_PROMPT =
   'Sos un asistente que le propone a un supervisor de una empresa comercial argentina ' +
   'cómo responder una consulta que el sistema no pudo resolver solo. ' +
@@ -36,6 +46,18 @@ export interface SuggestionResult {
   sources: SuggestionSource[];
   /** Se devuelve para que la audiencia usada sea visible, no implícita. */
   audienceUsed: Audience;
+  /**
+   * La propuesta se apoya en material que NO le habría alcanzado al agente
+   * (entre `SUGGESTION_CONFIDENCE_THRESHOLD` y `RAG_CONFIDENCE_THRESHOLD`).
+   *
+   * Va como campo aparte y no como un matiz de `hasContext` porque son dos
+   * preguntas distintas: `hasContext` dice si hay algo que leer, esto dice
+   * cuánto pesa. Sin él, bajar el umbral sería exactamente lo que el Principio
+   * II prohíbe — una propuesta floja indistinguible de una fundada.
+   */
+  respaldoDebil: boolean;
+  /** El score del mejor fragmento, 0-100, como lo muestra el panel. */
+  confidence: number;
 }
 
 /**
@@ -54,7 +76,10 @@ export interface SuggestionResult {
 @Injectable()
 export class EscalationSuggestionService {
   private readonly log = new Logger(EscalationSuggestionService.name);
-  private readonly confidenceThreshold: number;
+  /** Desde dónde se redacta (bajo). */
+  private readonly suggestionThreshold: number;
+  /** Desde dónde el agente habría contestado solo (alto). Marca el respaldo. */
+  private readonly agentThreshold: number;
 
   constructor(
     private readonly prisma: PrismaService,
@@ -63,11 +88,30 @@ export class EscalationSuggestionService {
     private readonly logger: OrchestrationLogger,
     config: ConfigService,
   ) {
-    // Mismo umbral que usan los agentes para decidir si escalan. Si acá fuera
-    // más permisivo, el sistema propondría con un contexto que él mismo
-    // consideró insuficiente para responder — la contradicción exacta que
-    // originó la escalación.
-    this.confidenceThreshold = config.get<number>('RAG_CONFIDENCE_THRESHOLD')!;
+    // Dos umbrales, y el de acá es el BAJO.
+    //
+    // Durante mucho tiempo fue uno solo, el del agente, con este argumento:
+    // "si acá fuera más permisivo, el sistema propondría con un contexto que
+    // él mismo consideró insuficiente". El argumento sonaba bien y dejaba el
+    // botón muerto. Un caso de «confianza insuficiente» escaló *porque* midió
+    // por debajo del umbral, y esta búsqueda es la MISMA —misma consulta, misma
+    // audiencia, mismo agente, mismo k— así que volvía a dar lo mismo y no
+    // redactaba nunca. Encontrado el 2026-08-26 probando el panel: 8 de los 10
+    // casos abiertos eran de ese tipo.
+    //
+    // Lo que fallaba era equiparar dos decisiones distintas. El agente le
+    // responde al cliente SOLO: ahí el umbral es lo único que separa una
+    // respuesta buena de una inventada. La propuesta la lee, la corrige y la
+    // manda un supervisor — la red de seguridad es la persona. Lo que el
+    // Principio II exige no es negarse a redactar, es que el respaldo flojo se
+    // VEA: por eso `respaldoDebil` y `confidence` viajan en la respuesta.
+    //
+    // El umbral del agente se sigue leyendo, ya no para decidir si se redacta
+    // sino para saber cuándo avisar.
+    this.suggestionThreshold = config.get<number>(
+      'SUGGESTION_CONFIDENCE_THRESHOLD',
+    )!;
+    this.agentThreshold = config.get<number>('RAG_CONFIDENCE_THRESHOLD')!;
   }
 
   async suggest(escalationId: string): Promise<SuggestionResult> {
@@ -83,6 +127,7 @@ export class EscalationSuggestionService {
     const audience = audienceFor(conversation.userType);
     const query = await this.buildQuery(
       escalation.conversationId,
+      escalation.createdAt,
       escalation.reason,
     );
 
@@ -109,9 +154,15 @@ export class EscalationSuggestionService {
     // habría mostrado `hasContext: true` con un cuadro en blanco: el
     // supervisor sin saber si el sistema falló o si no hay nada que decir.
     const suggestion =
-      confidence >= this.confidenceThreshold
+      confidence >= this.suggestionThreshold
         ? await this.draft(query, hits)
         : '';
+
+    // Por debajo del umbral del AGENTE, aunque se haya redactado. El caso
+    // típico es justamente éste: el material que no le alcanzó al agente para
+    // contestar solo sí alcanza para que una persona lo revise y lo mande.
+    const respaldoDebil = confidence < this.agentThreshold;
+    const confidencePct = Number((confidence * 100).toFixed(1));
 
     if (!suggestion) {
       // Deliberado: NO se devuelve un texto redactado sin respaldo. Una
@@ -120,13 +171,26 @@ export class EscalationSuggestionService {
       this.log.log(
         `Sin propuesta para la escalación ${escalationId} (confianza=${confidence.toFixed(2)})`,
       );
-      await this.logEvent(escalation.conversationId, false, audience, sources);
+      await this.logEvent(
+        escalation.conversationId,
+        false,
+        audience,
+        sources,
+        respaldoDebil,
+        confidencePct,
+      );
+      // `sources` SÍ va, aunque no haya propuesta. Antes se devolvía vacío y
+      // eso borraba el único dato útil de un caso sin respuesta: qué fue lo más
+      // cercano y por cuánto no llegó. "No hay nada sobre este tema" y "lo hay
+      // al 48%" piden trabajo distinto — cargar de cero o corregir lo que está.
       return {
         suggestion: null,
         hasContext: false,
         reason: NO_CONTEXT_REASON,
-        sources: [],
+        sources,
         audienceUsed: audience,
+        respaldoDebil,
+        confidence: confidencePct,
       };
     }
 
@@ -137,27 +201,70 @@ export class EscalationSuggestionService {
       data: { suggestedResponse: suggestion, suggestedAt: new Date() },
     });
 
-    await this.logEvent(escalation.conversationId, true, audience, sources);
+    if (respaldoDebil) {
+      this.log.log(
+        `Propuesta con respaldo débil para la escalación ${escalationId} ` +
+          `(confianza=${confidence.toFixed(2)}, umbral del agente=${this.agentThreshold})`,
+      );
+    }
 
-    return { suggestion, hasContext: true, sources, audienceUsed: audience };
+    await this.logEvent(
+      escalation.conversationId,
+      true,
+      audience,
+      sources,
+      respaldoDebil,
+      confidencePct,
+    );
+
+    return {
+      suggestion,
+      hasContext: true,
+      sources,
+      audienceUsed: audience,
+      respaldoDebil,
+      confidence: confidencePct,
+      ...(respaldoDebil ? { reason: RESPALDO_DEBIL_REASON } : {}),
+    };
   }
 
   /**
-   * La consulta a buscar es el último mensaje del usuario, no el `reason` de
-   * la escalación: el motivo lo escribió el agente ("baja confianza"), y
-   * buscar eso recuperaría cualquier cosa. Si no hay mensaje, se cae al
-   * motivo antes que fallar.
+   * La consulta a buscar es el mensaje del usuario **que provocó el escalado**.
+   *
+   * Dos precisiones, y las dos costaron un defecto:
+   *
+   * 1. **No es el `reason`.** El motivo lo escribió el agente ("baja
+   *    confianza"), y buscar eso recuperaría cualquier cosa.
+   *
+   * 2. **No es el último mensaje de la conversación** (defecto encontrado el
+   *    2026-08-26). El escalado deja la conversación en `WAITING_HUMAN`, no
+   *    cerrada: el cliente sigue escribiendo mientras espera. Para cuando el
+   *    supervisor abre el caso, "el último mensaje" ya es otra consulta, y la
+   *    propuesta se redactaba —o no— sobre un tema que nadie escaló.
+   *
+   *    El fallo era silencioso: la pantalla decía "no hay información cargada
+   *    sobre este tema" cuando sí la había. Medido en el caso real, la consulta
+   *    que escaló daba 71.2% y la que se buscaba 62.4%, contra un umbral de
+   *    65% — nunca tan bajo como para parecer un bug.
+   *
+   *    Por eso se acota por `createdAt <= escalatedAt`: el último mensaje del
+   *    usuario ANTERIOR al caso es exactamente el turno que no alcanzó el
+   *    umbral.
+   *
+   * Si no hay ninguno (casos viejos, o creados a mano), se cae al motivo antes
+   * que fallar.
    */
   private async buildQuery(
     conversationId: string,
+    escalatedAt: Date,
     fallback: string,
   ): Promise<string> {
-    const lastUserMessage = await this.prisma.message.findFirst({
-      where: { conversationId, role: 'USER' },
+    const escalatingMessage = await this.prisma.message.findFirst({
+      where: { conversationId, role: 'USER', createdAt: { lte: escalatedAt } },
       orderBy: { createdAt: 'desc' },
       select: { content: true },
     });
-    return lastUserMessage?.content ?? fallback;
+    return escalatingMessage?.content ?? fallback;
   }
 
   private async draft(query: string, hits: SearchHit[]): Promise<string> {
@@ -176,6 +283,8 @@ export class EscalationSuggestionService {
     hasContext: boolean,
     audienceUsed: Audience,
     sources: SuggestionSource[],
+    respaldoDebil: boolean,
+    confidence: number,
   ): Promise<void> {
     await this.logger.logEvent({
       conversationId,
@@ -183,9 +292,16 @@ export class EscalationSuggestionService {
       // `audienceUsed` queda en el evento y no solo en la respuesta HTTP: es
       // lo que permite auditar después con qué audiencia se redactó cada
       // propuesta (OE-11).
+      //
+      // `respaldoDebil` y `confidence` también: bajar el umbral solo es
+      // defendible si después se puede responder "¿con cuánto respaldo se
+      // redactó lo que se le mandó al cliente?". Sin esto en el evento, esa
+      // pregunta no tiene dónde contestarse.
       payload: {
         hasContext,
         audienceUsed,
+        respaldoDebil,
+        confidence,
         sourceIds: sources.map((s) => s.documentId),
       },
     });

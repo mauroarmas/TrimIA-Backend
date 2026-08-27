@@ -69,17 +69,29 @@ function buildProcessor(
     { name: 'PDF', supports: (m: string) => m === 'application/pdf', extract },
   ];
 
+  // Spec 007, FR-022: se registran los parecidos hallados al procesar un
+  // archivo. Estos tests no lo ejercitan salvo donde se indique.
+  const orchestrationLogger = { logEvent: jest.fn() };
+
   const processor = new KnowledgeIngestionProcessor(
     prisma as never,
     knowledge as never,
     storage as never,
     extractors as never,
+    orchestrationLogger as never,
   );
   Object.assign(processor, {
     logger: { log: jest.fn(), warn: jest.fn(), error: jest.fn() },
   });
 
-  return { processor, prisma, knowledge, storage, extract };
+  return {
+    processor,
+    prisma,
+    knowledge,
+    storage,
+    extract,
+    orchestrationLogger,
+  };
 }
 
 describe('KnowledgeIngestionProcessor — un fallo no deja documento (FR-005)', () => {
@@ -193,6 +205,102 @@ describe('KnowledgeIngestionProcessor — camino feliz', () => {
       expect.any(Buffer),
       'application/pdf',
       '/storage/knowledge/uuid.pdf',
+    );
+  });
+
+  /**
+   * Spec 007, US4 — el texto extraído resulta idéntico a un documento que ya
+   * existe. Nadie está mirando esta pantalla: el archivo tiene que quedar
+   * READY apuntando al documento existente, no fallar.
+   */
+  describe('duplicado exacto al procesar un archivo (spec 007)', () => {
+    it('no crea un segundo documento: el archivo queda READY apuntando al existente', async () => {
+      const { processor, prisma, knowledge } = buildProcessor();
+      const existing = { id: 'doc-ya-existia', title: 'Garantía' };
+      const { ConflictException } = jest.requireActual('@nestjs/common');
+      knowledge.ingest.mockRejectedValue(
+        new ConflictException({ reason: 'DUPLICATE_DOCUMENT', existing }),
+      );
+
+      await processor.process(buildJob());
+
+      const data = prisma.knowledgeFile.update.mock.calls[0][0].data;
+      expect(data.status).toBe('READY');
+      expect(data.documentId).toBe('doc-ya-existia');
+    });
+
+    it('el job NO falla ni se reintenta', async () => {
+      const { processor, knowledge } = buildProcessor();
+      const { ConflictException } = jest.requireActual('@nestjs/common');
+      knowledge.ingest.mockRejectedValue(
+        new ConflictException({
+          reason: 'DUPLICATE_DOCUMENT',
+          existing: { id: 'doc-ya-existia', title: 'Garantía' },
+        }),
+      );
+
+      await expect(processor.process(buildJob())).resolves.toBeUndefined();
+    });
+  });
+
+  /**
+   * Spec 007, FR-022 — parecidos (no idénticos) hallados en un camino
+   * automático. Quedan como evento consultable, no se pierden.
+   */
+  it('registra un evento cuando el documento creado se parece a otro existente', async () => {
+    const { processor, knowledge, orchestrationLogger } = buildProcessor();
+    knowledge.ingest.mockResolvedValue({
+      documentId: 'doc-uuid',
+      chunks: 2,
+      similarDocuments: [
+        {
+          documentId: 'doc-parecido',
+          title: 'Parecido',
+          score: 0.8,
+          audienciaDistinta: false,
+        },
+      ],
+    });
+
+    await processor.process(buildJob());
+
+    expect(orchestrationLogger.logEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: 'knowledge_similar_on_ingest',
+        payload: expect.objectContaining({ documentId: 'doc-uuid' }),
+      }),
+    );
+  });
+
+  it('sin parecidos, no registra ningún evento', async () => {
+    const { processor, orchestrationLogger } = buildProcessor();
+
+    await processor.process(buildJob());
+
+    expect(orchestrationLogger.logEvent).not.toHaveBeenCalled();
+  });
+
+  /**
+   * FR-024/FR-025 — un fallo del servicio de comparación no puede tumbar un
+   * procesamiento que ya terminó bien.
+   */
+  it('si falla el registro del evento, el archivo igual queda READY', async () => {
+    const { processor, prisma, knowledge, orchestrationLogger } =
+      buildProcessor();
+    knowledge.ingest.mockResolvedValue({
+      documentId: 'doc-uuid',
+      chunks: 2,
+      similarDocuments: [
+        { documentId: 'x', title: 'Y', score: 0.8, audienciaDistinta: false },
+      ],
+    });
+    orchestrationLogger.logEvent.mockRejectedValue(new Error('DB caída'));
+
+    await expect(processor.process(buildJob())).resolves.toBeUndefined();
+    expect(prisma.knowledgeFile.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ status: 'READY' }),
+      }),
     );
   });
 });

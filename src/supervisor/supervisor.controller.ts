@@ -31,6 +31,7 @@ import { ResolveEscalationDto } from '../escalations/dto/resolve-escalation.dto'
 import { DelegateEscalationDto } from '../escalations/dto/delegate-escalation.dto';
 import { SaveUnsentDto } from '../escalations/dto/save-unsent.dto';
 import { DiscardEscalationDto } from '../escalations/dto/discard-escalation.dto';
+import { CorrectionPreviewDto } from '../escalations/dto/correction-preview.dto';
 import { ManualReplyDto } from '../conversations/dto/manual-reply.dto';
 import { CreateInternalNoteDto } from '../conversations/dto/create-internal-note.dto';
 import { RealtimeService } from '../realtime/realtime.service';
@@ -334,15 +335,34 @@ export class SupervisorController {
   @ApiQuery({ name: 'status', enum: EscalationStatus, required: false })
   @ApiQuery({ name: 'page', type: Number, required: false })
   @ApiQuery({ name: 'limit', type: Number, required: false })
+  // Spec 013: la cola prioriza lo del área de quien mira — primero lo propio,
+  // después lo que no es de nadie, después lo ajeno. No oculta nada: ver lo de
+  // otras áreas hace falta para no dejar sin cobertura las que no tienen
+  // responsable activo, y para saber a quién derivar.
+  @ApiQuery({
+    name: 'soloMios',
+    type: Boolean,
+    required: false,
+    description:
+      'Restringe a lo propio: las áreas de quien consulta, lo derivado a esa ' +
+      'persona y los casos sin área. Por defecto `false` — el defecto es la ' +
+      'cola completa, priorizada pero sin filtrar.',
+  })
   getEscalations(
+    @Req() req: AuthenticatedRequest,
     @Query('status') status?: EscalationStatus,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
+    @Query('soloMios') soloMios?: string,
   ) {
     return this.escalations.listPending({
       status,
       page: page ? parseInt(page, 10) : undefined,
       limit: limit ? parseInt(limit, 10) : undefined,
+      // Del token, no de un query param: un `?empleadoId=` dejaría pedir la
+      // cola de otro.
+      empleadoId: req.user.id,
+      soloMios: soloMios === 'true',
     });
   }
 
@@ -351,8 +371,78 @@ export class SupervisorController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('SUPERVISOR')
   @ApiOperation({ summary: 'Detalle de un caso escalado' })
-  getEscalation(@Param('id') id: string) {
-    return this.escalations.findById(id);
+  getEscalation(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+    // Spec 013: el detalle NO se restringe por área (FR-023) — se le suma la
+    // pertenencia para que el panel pueda avisar antes de responder (FR-018).
+    return this.escalations.findById(id, req.user.id);
+  }
+
+  /**
+   * GET /supervisor/escalations/:id/knowledge-candidates — qué documentos se
+   * consultaron en este caso y no alcanzaron (spec 007, US1).
+   *
+   * Lista **vacía es una respuesta normal**: el caso escaló sin recuperar nada,
+   * así que no hay nada que corregir y corresponde crear un documento nuevo.
+   *
+   * Los de otras áreas se listan igual, marcados como no corregibles y con el
+   * motivo: ver lo ajeno es justo lo que evita duplicarlo ("ver no es editar",
+   * spec 005). Lo que se bloquea es modificarlo.
+   */
+  @Get('escalations/:id/knowledge-candidates')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('SUPERVISOR')
+  @ApiOperation({
+    summary: 'Documentos que quedaron cortos en un caso, para corregir uno',
+  })
+  getKnowledgeCandidates(
+    @Param('id') id: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.escalations.knowledgeCandidates(id, req.user.id);
+  }
+
+  /**
+   * GET /supervisor/escalations/:id/hygiene-warning — si los documentos
+   * consultados en este caso se compiten entre sí (spec 008, US3).
+   *
+   * No re-detecta nada: cruza contra la última corrida `READY` de la
+   * higiene del corpus. `pairs: []` si no compiten, o si nunca se corrió un
+   * barrido — en los dos casos es una respuesta normal, no un error.
+   */
+  @Get('escalations/:id/hygiene-warning')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('SUPERVISOR')
+  @ApiOperation({
+    summary: 'Si los documentos consultados en el caso compiten entre sí',
+  })
+  getHygieneWarning(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
+    return this.escalations.hygieneWarning(id, req.user.id);
+  }
+
+  /**
+   * POST /supervisor/escalations/:id/correction-preview — cómo quedaría un
+   * documento si se le incorpora la respuesta (spec 007, US1).
+   *
+   * **No persiste nada.** Se aprueba después, mandando el texto en
+   * `correctKnowledge` al resolver el caso. Que sean dos pasos es lo que hace
+   * que "nunca se aplica sin aprobación" sea imposible de violar por descuido
+   * (Principio III), en vez de una regla que alguien tiene que recordar.
+   *
+   * POST y no GET aunque no escriba: lleva body, cuesta una llamada a Gemini y
+   * no es cacheable — igual que `POST /knowledge/:id/ai-edit/preview`.
+   */
+  @Post('escalations/:id/correction-preview')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('SUPERVISOR')
+  @ApiOperation({
+    summary: 'Propone el documento corregido con la respuesta (no guarda nada)',
+  })
+  previewCorrection(
+    @Param('id') id: string,
+    @Body() dto: CorrectionPreviewDto,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.escalations.correctionPreview(id, dto, req.user.id);
   }
 
   /** POST /supervisor/escalations/:id/resolve — responde el caso al usuario. */
@@ -374,6 +464,11 @@ export class SupervisorController {
    * No resuelve nada: el caso sigue PENDING y la propuesta se guarda solo para
    * auditoría. Mirar `audienceUsed` en la respuesta — sale del `userType` de
    * la conversación escalada, no del supervisor que consulta (research §12).
+   *
+   * Y mirar `respaldoDebil`: redacta desde `SUGGESTION_CONFIDENCE_THRESHOLD`,
+   * más bajo que el del agente, así que una propuesta puede venir apoyada en
+   * material que al agente no le alcanzó. El panel tiene que mostrarlo, no
+   * presentarla como una respuesta fundada más.
    */
   @Get('escalations/:id/suggestion')
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -382,7 +477,11 @@ export class SupervisorController {
     summary: 'Redacta una propuesta con el conocimiento cargado (FR-034)',
     description:
       'Devuelve `suggestion: null` con `hasContext: false` cuando no hay ' +
-      'contexto suficiente, en vez de redactar sin respaldo (FR-035).',
+      'contexto suficiente, en vez de redactar sin respaldo (FR-035). ' +
+      'Con `respaldoDebil: true` la propuesta existe pero se apoya en material ' +
+      'por debajo del umbral del agente: hay que revisarla contra `sources`. ' +
+      '`sources` viaja también cuando no hubo propuesta, para saber qué quedó ' +
+      'cerca y por cuánto no llegó.',
   })
   suggestEscalationResponse(@Param('id') id: string) {
     return this.suggestions.suggest(id);
@@ -434,12 +533,22 @@ export class SupervisorController {
 
   /**
    * GET /supervisor/agents/status
-   * Estado de los 5 agentes: conversaciones, confianza RAG promedio y escalados.
+   * Estado de los 5 agentes: conversaciones, cobertura RAG y escalados, sobre
+   * una ventana temporal (spec 009, US2). `coverage`/`marginPoints` vienen
+   * `null` mientras `hasData` sea `false` — NO es lo mismo que `coverage: 0`.
    */
   @Get('agents/status')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('SUPERVISOR')
-  @ApiOperation({ summary: 'Estado y confianza promedio de cada agente' })
+  @ApiOperation({
+    summary:
+      'Estado, cobertura y margen de cada agente sobre la ventana vigente',
+    description:
+      '`coverage` (0-1) y `marginPoints` (puntos respecto del umbral, con ' +
+      'signo) vienen `null` cuando `hasData` es `false` — sampleSize y ' +
+      'minimumSample viajan siempre para poder decir "N de M" en vez de "sin ' +
+      'datos" a secas.',
+  })
   getAgentsStatus() {
     return this.supervisor.getAgentsStatus();
   }

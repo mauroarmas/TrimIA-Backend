@@ -26,7 +26,12 @@ describe('SupervisorService', () => {
       orchestrationEvent: { findMany: jest.fn(), count: jest.fn() },
       $queryRaw: jest.fn(),
     };
-    config = { get: jest.fn().mockReturnValue(0.65) };
+    const configValues: Record<string, number> = {
+      RAG_CONFIDENCE_THRESHOLD: 0.65,
+      COVERAGE_MIN_SAMPLE: 10,
+      COVERAGE_WINDOW_DAYS: 30,
+    };
+    config = { get: jest.fn((key: string) => configValues[key]) };
 
     service = new SupervisorService(
       prisma as unknown as PrismaService,
@@ -57,15 +62,25 @@ describe('SupervisorService', () => {
           { currentAgent: 'SALES', _count: { _all: 2 } },
         ]);
 
-      // eventStats (raw): SALES con confianza y un escalado; ADMIN sin escalados.
+      // eventStats (raw): SALES cruza el mínimo de muestra (12 >= 10), ADMIN
+      // no (2 < 10) — la misma corrida deja a un agente con número y al otro
+      // sin él, que es justo la distinción que la spec 009 (US2) vino a hacer
+      // explícita.
       prisma.$queryRaw.mockResolvedValueOnce([
         {
           agentType: 'SALES',
-          avgConfidence: 0.7777,
+          avgConfidence: 0.7183,
           escalations: 1n,
-          routed: 4n,
+          covered: 9n,
+          routed: 12n,
         },
-        { agentType: 'ADMIN', avgConfidence: 0.9, escalations: 0n, routed: 2n },
+        {
+          agentType: 'ADMIN',
+          avgConfidence: 0.9,
+          escalations: 0n,
+          covered: 2n,
+          routed: 2n,
+        },
       ]);
 
       const result = await service.getAgentsStatus();
@@ -78,19 +93,32 @@ describe('SupervisorService', () => {
       expect(sales.totalConversations).toBe(3);
       expect(sales.activeConversations).toBe(2);
       expect(sales.lastActivityAt).toEqual(lastActivity);
-      expect(sales.routedTurns).toBe(4);
-      expect(sales.avgConfidence).toBe(0.778); // redondeado a 3 decimales
+      expect(sales.routedTurns).toBe(12);
+      expect(sales.sampleSize).toBe(12);
+      expect(sales.hasData).toBe(true); // 12 >= COVERAGE_MIN_SAMPLE (10)
+      expect(sales.coverage).toBeCloseTo(0.75); // 9/12
+      expect(sales.marginPoints).toBeCloseTo(6.8); // (71.83 - 65), redondeado
       expect(sales.escalations).toBe(1);
-      expect(sales.escalationRate).toBeCloseTo(0.25);
+      expect(sales.escalationRate).toBeCloseTo(1 / 12);
+      expect(sales.minimumSample).toBe(10);
+      expect(sales.windowFrom).toBeInstanceOf(Date);
+      expect(sales.windowTo).toBeInstanceOf(Date);
 
       const admin = result.agents.find((a) => a.agentType === 'ADMIN')!;
       // Tiene conversaciones pero ninguna ACTIVE → idle.
       expect(admin.status).toBe('idle');
       expect(admin.activeConversations).toBe(0);
+      // Tuvo turnos y confianza alta (0.9) pero no llega al mínimo de
+      // muestra: NO se publica coverage/marginPoints, y NO comparte el
+      // `null` con "nunca recibió nada" (comprobado abajo con DEPOSITS).
+      expect(admin.routedTurns).toBe(2);
+      expect(admin.hasData).toBe(false);
+      expect(admin.coverage).toBeNull();
+      expect(admin.marginPoints).toBeNull();
       expect(admin.escalationRate).toBe(0);
     });
 
-    it('un agente sin datos aparece idle, en cero y con avgConfidence null', async () => {
+    it('un agente sin datos aparece idle, en cero, y sin coverage/marginPoints — no comparte el null con uno que sí recibió turnos', async () => {
       prisma.conversation.groupBy
         .mockResolvedValueOnce([])
         .mockResolvedValueOnce([]);
@@ -101,10 +129,33 @@ describe('SupervisorService', () => {
       const deposits = result.agents.find((a) => a.agentType === 'DEPOSITS')!;
       expect(deposits.status).toBe('idle');
       expect(deposits.totalConversations).toBe(0);
-      expect(deposits.avgConfidence).toBeNull();
       expect(deposits.routedTurns).toBe(0);
+      expect(deposits.sampleSize).toBe(0);
+      expect(deposits.hasData).toBe(false);
+      expect(deposits.coverage).toBeNull();
+      expect(deposits.marginPoints).toBeNull();
+      expect(deposits.minimumSample).toBe(10);
       expect(deposits.escalationRate).toBe(0);
       expect(deposits.lastActivityAt).toBeNull();
+    });
+
+    it('calcula la ventana a partir de COVERAGE_WINDOW_DAYS, sin default en código', async () => {
+      prisma.conversation.groupBy
+        .mockResolvedValueOnce([])
+        .mockResolvedValueOnce([]);
+      prisma.$queryRaw.mockResolvedValueOnce([]);
+
+      const before = Date.now();
+      const result = await service.getAgentsStatus();
+      const after = Date.now();
+
+      const sales = result.agents.find((a) => a.agentType === 'SALES')!;
+      const spanDays =
+        (sales.windowTo.getTime() - sales.windowFrom.getTime()) /
+        (24 * 60 * 60 * 1000);
+      expect(spanDays).toBeCloseTo(30, 5); // COVERAGE_WINDOW_DAYS mockeado en 30
+      expect(sales.windowTo.getTime()).toBeGreaterThanOrEqual(before);
+      expect(sales.windowTo.getTime()).toBeLessThanOrEqual(after);
     });
   });
 

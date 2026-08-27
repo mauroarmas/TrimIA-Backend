@@ -39,6 +39,78 @@ import * as Joi from 'joi';
 
         RAG_CONFIDENCE_THRESHOLD: Joi.number().min(0).max(1).default(0.65),
 
+        // Umbral de «Proponer respuesta con la base de conocimiento», MÁS BAJO
+        // que el del agente a propósito.
+        //
+        // Compartían valor, y eso dejaba el botón sin salida: el caso escaló
+        // *porque* el agente midió por debajo de RAG_CONFIDENCE_THRESHOLD, y la
+        // propuesta rehace la misma búsqueda —misma consulta, misma audiencia,
+        // mismo agente, mismo k— así que volvía a medir lo mismo y se negaba a
+        // redactar SIEMPRE. Medido el 2026-08-26 sobre la cola real: 8 de 10
+        // casos abiertos eran «confianza insuficiente», o sea el botón no podía
+        // servir en ninguno.
+        //
+        // Bajarlo no contradice el umbral del agente porque no son la misma
+        // decisión: el agente le responde al cliente SOLO, y la propuesta la lee
+        // y edita un supervisor antes de que salga. La red de seguridad es la
+        // persona, no el número. Lo que no se negocia es que el respaldo flojo
+        // se VEA: la respuesta trae `respaldoDebil` y los scores, así que quien
+        // decide enviar sabe sobre qué está parado (Principio II).
+        //
+        // 0.50 y no menos: el piso de ruido del corpus está en ~54% (medido en
+        // la spec 006), así que por debajo de eso no hay material que evaluar,
+        // solo texto que se parece a cualquier cosa.
+        SUGGESTION_CONFIDENCE_THRESHOLD: Joi.number()
+          .min(0)
+          .max(1)
+          .default(0.5),
+
+        // Spec 007: a partir de qué parecido se avisa "ya hay un documento sobre
+        // esto" al cargar conocimiento.
+        //
+        // ⚠️ NO es el mismo umbral que RAG_CONFIDENCE_THRESHOLD y no se puede
+        // heredar de él. Aquél mide cuán bien una CONSULTA CORTA encuentra un
+        // fragmento (ruido 54%, señal 78%, medido en la spec 006). Éste compara
+        // DOS DOCUMENTOS ENTEROS, que es otra distribución y más alta: dos textos
+        // largos del mismo dominio se parecen entre sí bastante más de lo que una
+        // consulta se parece a cualquiera de ellos.
+        //
+        // Medido con scripts/calibrar-parecido.ts sobre el corpus real
+        // (specs/007-duplicados-al-escribir/calibracion-parecido.txt):
+        //
+        //   73.1%  «Envios» ↔ «Monto mínimo»          NO son duplicados
+        //   ────── 75.0% ← acá
+        //   76.3%  «Garantia» ↔ «Devoluciones»        sí se solapan
+        //   77.6%  «Sobre Nosotros» ↔ «Qué es Credimisión»  el duplicado real
+        //
+        // ⚠️ El margen es de 3.2 puntos. Comparar documentos enteros apenas
+        // distingue "duplicado" de "mismo dominio, tema distinto", así que va a
+        // haber falsos positivos cerca del borde. Es parte de por qué el aviso
+        // NO bloquea (FR-015): con este margen, bloquear sería insufrible.
+        //
+        // Si entra un dominio nuevo al corpus, recalibrar: el margen es
+        // demasiado angosto para asumir que se sostiene solo.
+        KNOWLEDGE_SIMILARITY_THRESHOLD: Joi.number()
+          .min(0)
+          .max(1)
+          .default(0.75),
+
+        // Higiene del corpus (spec 008, FR-001b): a partir de qué solapamiento
+        // dos documentos se proponen para FUSIONAR. NO es el mismo umbral que
+        // KNOWLEDGE_SIMILARITY_THRESHOLD de arriba, aunque comparan documento
+        // contra documento igual que aquél — responden preguntas distintas:
+        //
+        //   KNOWLEDGE_SIMILARITY_THRESHOLD  un documento nuevo contra el
+        //                                   corpus, mostrando los 4 mejores.
+        //   KNOWLEDGE_MERGE_THRESHOLD       TODAS las parejas del corpus, sin
+        //                                   límite de cuántas se muestran.
+        //
+        // Medido (scripts/calibrar-fusion.ts, specs/008-higiene-corpus/
+        // calibracion-fusion.txt): con 0.75 (el de arriba) el barrido marca
+        // 141 de 343 parejas — inservible, se aprueba a ciegas. Con 0.85 marca
+        // 10, revisable de una sentada (SC-006).
+        KNOWLEDGE_MERGE_THRESHOLD: Joi.number().min(0).max(1).default(0.85),
+
         // Carga de archivos a la base de conocimiento (Sprint 5A).
         // Hay DOS techos, no uno, y la diferencia no es arbitraria:
         //  - MAX_FILE: lo que se acepta subir, para cualquier formato.
@@ -66,6 +138,71 @@ import * as Joi from 'joi';
         SSE_IDLE_TIMEOUT_MS: Joi.number().min(10000).default(1800000),
 
         JWT_SECRET: Joi.string().min(32).required(),
+
+        // Spec 009 — qué falta para responder mejor. Ninguno de los cortes
+        // es default en código: son medidos (research.md) o de partida
+        // deliberada, y hay que poder recalibrarlos sin tocar el código.
+        COVERAGE_WINDOW_DAYS: Joi.number().min(1).default(30),
+        // Turnos POR AGENTE para publicar cobertura en el panel (US2,
+        // FR-015). Distinto de COVERAGE_SCAN_MIN_QUERIES de abajo: cuentan
+        // poblaciones distintas (data-model.md#variables-de-entorno-nuevas).
+        COVERAGE_MIN_SAMPLE: Joi.number().min(1).default(10),
+        // Consultas de LOS CINCO AGENTES JUNTOS en la ventana para correr y
+        // mostrar temas (US1, FR-003a). Arranca en el mismo valor que
+        // COVERAGE_MIN_SAMPLE por coincidencia, no porque sea lo mismo.
+        COVERAGE_SCAN_MIN_QUERIES: Joi.number().min(1).default(10),
+        // Piso de ruido medido en la spec 006 (52.2-54.3%, research.md).
+        COVERAGE_NOISE_FLOOR: Joi.number().min(0).max(100).default(54.3),
+        // Puntos sobre RAG_CONFIDENCE_THRESHOLD que se consideran "contestada
+        // al límite" (US3, FR-022) — aviso temprano antes de que escale.
+        COVERAGE_MARGINAL_BAND: Joi.number().min(0).default(5),
+        // Mínimo de consultas para que un grupo se reporte como tema (FR-003).
+        COVERAGE_MIN_QUERIES_PER_THEME: Joi.number().min(1).default(2),
+        // Tope de consultas por corrida, las más recientes de la ventana
+        // (FR-024) — evita que el agrupador reciba un lote sin límite.
+        COVERAGE_MAX_QUERIES_PER_SCAN: Joi.number().min(1).default(300),
+        // Solape de queryEventIds para reconocer el mismo tema entre corridas
+        // (FR-028, D6): el nombre del tema puede cambiar, el conjunto de
+        // consultas que lo forman es lo estable.
+        COVERAGE_THEME_OVERLAP: Joi.number().min(0).max(1).default(0.5),
+        // Citas textuales por tema en el resumen (FR-008).
+        COVERAGE_MAX_QUOTES_PER_THEME: Joi.number().min(0).default(3),
+
+        // Spec 010 — entrevista desde el tráfico real. KNOWLEDGE_SIMILARITY_THRESHOLD
+        // y COVERAGE_THEME_OVERLAP (arriba) se reusan tal cual: mismo juicio de
+        // parecido y de identidad de tema que ya existen, no un segundo criterio.
+        INTERVIEW_MAX_QUESTIONS: Joi.number().min(1).default(7),
+        INTERVIEW_MAX_QUOTES_PER_QUESTION: Joi.number().min(1).default(2),
+        INTERVIEW_ABANDON_DAYS: Joi.number().min(1).default(7),
+        INTERVIEW_MAX_ESCALATIONS_FALLBACK: Joi.number().min(1).default(10),
+
+        // Spec 011 — una sola pantalla para mejorar. COVERAGE_THEME_OVERLAP
+        // (arriba) se reusa tal cual para reconocer un tema descartado entre
+        // corridas: es la misma identidad por solape que la spec 009 midió.
+        //
+        // El corte de severidad NO es confianza del modelo: medido sobre los
+        // 75 documentos reales, devuelve confianza alta para todo lo que marca
+        // (53 de 53) y no corta nada. La severidad sí discrimina, y viene
+        // cuantizada (85/75/65/55/45/20/15), así que mover el corte de 80 a 78
+        // no cambia nada — recalibrar significa moverse de banda.
+        DOC_REVIEW_SEVERITY_CUT: Joi.number().min(0).max(100).default(80),
+        DOC_REVIEW_MAX_FINDINGS: Joi.number().min(1).default(10),
+        IMPROVEMENT_MAX_ITEMS: Joi.number().min(1).default(15),
+        // Cuánto puede durar una revisión antes de darla por muerta. Un job
+        // que el worker perdió —reinicio, o un lock vencido porque el
+        // proveedor tardó más que `lockDuration`— deja la fila en RUNNING
+        // para siempre, y como el refresh se ENGANCHA a lo que está
+        // corriendo, esa área queda bloqueada. Pasó en la validación en vivo.
+        DOC_REVIEW_STALE_MINUTES: Joi.number().min(1).default(30),
+        // El mismo problema que arriba, en el barrido de cobertura (spec
+        // 009). Ahí es peor porque ese barrido es GLOBAL: un scan colgado
+        // dejaba el botón "Actualizar" muerto en las CINCO áreas. Visto en la
+        // pantalla, no deducido.
+        COVERAGE_SCAN_STALE_MINUTES: Joi.number().min(1).default(20),
+        // Spec 008, la tercera aparición del mismo defecto: un barrido de
+        // higiene colgado dejaba el botón "Analizar" muerto. El encontrado en
+        // vivo llevaba 38 horas en RUNNING.
+        HYGIENE_SCAN_STALE_MINUTES: Joi.number().min(1).default(20),
       }),
       validationOptions: {
         allowUnknown: true,

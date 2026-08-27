@@ -34,10 +34,19 @@ export const agentResponseSchema = z.object({
     .describe(
       'Motivo de la derivación, en una línea. Solo si needsHuman es true',
     ),
+  // Sigue siendo `.optional()` porque con needsHuman=false no corresponde, y un
+  // campo requerido obligaría al modelo a inventar texto en el 95% de los
+  // turnos que no derivan. Lo que cambió es que omitirla con needsHuman=true ya
+  // NO deja el caso mudo: `EscalationsService.create` escribe una nota factual
+  // de respaldo y avisa. El `describe` lo pide igual —una nota escrita por el
+  // agente, que vio la conversación, siempre es mejor que la de respaldo— pero
+  // la garantía no depende de que el modelo obedezca.
   internalNote: z
     .string()
     .optional()
     .describe(
-      'Resumen del caso para el supervisor que lo tome. Nunca lo ve el cliente. Solo si needsHuman es true',
+      'OBLIGATORIO si needsHuman es true: resumen del caso para el supervisor ' +
+        'que lo tome. Nunca lo ve el cliente. Omitirlo deja al supervisor sin ' +
+        'contexto y lo obliga a leer la conversación entera',
     ),
 });

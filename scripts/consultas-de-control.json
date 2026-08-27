@@ -1,0 +1,41 @@
+{
+  "$comentario": [
+    "Consultas de control del arnés de medición del RAG (spec 006, FR-011).",
+    "",
+    "Cada entrada dice de qué DEFECTO REAL salió. Es la regla de la que no conviene",
+    "apartarse: un conjunto de consultas inventadas mide un sistema imaginario.",
+    "",
+    "  `esperado`  regex (case-insensitive) del título del documento correcto.",
+    "              `null` = la consulta es DELIBERADAMENTE irrelevante y sirve para",
+    "              medir el piso de ruido del embedding.",
+    "  `debeFallar` true = se espera que NO cruce el umbral. No es un bug: es un",
+    "              límite conocido de esta spec, anotado para que nadie lo dé por",
+    "              resuelto. Ver la entrada correspondiente.",
+    "",
+    "Al agregar una consulta nueva: que venga de algo que pasó, no de algo que se",
+    "nos ocurrió."
+  ],
+  "consultas": [
+    {
+      "consulta": "arbol",
+      "esperado": null,
+      "nota": "El caso que abrió la spec 006. El 2026-08-22, en 'Probar búsqueda' del panel, una palabra sin ninguna relación con el corpus devolvió 5 resultados entre 52.5% y 53.5%. No era un bug de cálculo: es el piso de ruido del embedding, que no está centrado en 0. Esta consulta existe para vigilar ese piso — si algún día supera el umbral, la separación se rompió."
+    },
+    {
+      "consulta": "qué es Credimisión",
+      "esperado": "qué es credimisión|sobre nosotros",
+      "nota": "Control positivo. Medido en la Fase 0: 75.2% en posición 1 sin título embebido, 78.5% con título. Si esta consulta deja de cruzar el umbral, algo se rompió de verdad."
+    },
+    {
+      "consulta": "que garantia tienen las heladeras?",
+      "esperado": "garantia extendida|devoluciones, cambios y garantía",
+      "nota": "Control positivo sobre una pregunta de cliente típica. Medido en la Fase 0: 75.8% en posición 2. Ojo: 'Financiacion de heladeras' le gana en score sin ser la respuesta — es el mismo fenómeno de documentos que compiten."
+    },
+    {
+      "consulta": "qué sabes sobre la empresa?",
+      "esperado": "qué es credimisión|sobre nosotros",
+      "debeFallar": true,
+      "nota": "EL DEFECTO DEL 2026-08-20, y la consulta más valiosa del conjunto justamente porque falla. Diego preguntó esto y no obtuvo respuesta: el documento correcto quedó en 59.7% (posición 3), por detrás de «Glosario interno de Credimisión» y «Inducción del empleado nuevo», que no son la respuesta. Con el título embebido sube a 61.1% y a posición 1 — mejora el orden, NO cruza el umbral. Su causa es que «Sobre Nosotros» y «Qué es Credimisión» se reparten la señal: dos documentos del mismo tema cargados con 19 minutos de diferencia. Eso lo arreglan las pre-specs 2 y 3 del Sprint 5B, no ésta. Si algún día pasa, será porque la higiene del corpus funcionó."
+    }
+  ]
+}

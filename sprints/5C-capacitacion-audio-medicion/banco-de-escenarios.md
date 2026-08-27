@@ -1,14 +1,58 @@
-# Cuando el prompt no alcanza — insumo para una spec futura
+# Pre-spec — Banco de escenarios
 
-**Detectado**: a lo largo del 2026-08-20 al 2026-08-22, probando el panel a mano.
-**Estado**: anotado, **sin implementar**. No hay rama ni tareas.
+**Sprint** 5C · **Orden** sin asignar (el corte del 5C se hace al arrancarlo) · **Tareas del plan** 5C.11–5C.13
+**Depende de** el Sprint 5B entero (necesita un corpus estable) · **Estado** sin spec · **Spec** —
+**Origen** futura del 2026-08-20 al 2026-08-22, probando el panel a mano
 
-> Esto **no es una spec**: es el registro de un patrón que apareció cuatro veces en
-> tres días. Sigue el criterio de [higiene-base-de-conocimiento.md](higiene-base-de-conocimiento.md).
+## Qué se quiere
+
+Un **banco de escenarios**: conversaciones fijas con lo que tiene que pasar, que se
+puedan correr contra el sistema real y digan cuántas pasaron. Hoy el comportamiento del
+asistente se define en prompts y **no hay ninguna forma de saber si un prompt se está
+cumpliendo** salvo abrir el panel y conversar a mano.
+
+No es un test unitario ni reemplaza a los que hay: mide **el comportamiento del
+modelo**, que es no determinístico, así que la unidad de medida no es "pasa/falla" sino
+**"pasó N de M veces"**.
+
+## Alcance
+
+- **Entra:** un corpus fijo de prueba; los 8 escenarios sacados de defectos reales;
+  N corridas por escenario; y un comando aparte de `npm test`.
+- **No entra:** medir autorización, ruteo y audiencia — eso ya lo fijan mejor y más
+  barato los tests unitarios que existen.
+
+## Decisiones al especificar
+
+1. **Cuántas corridas por escenario.** Una sola no dice nada: el mismo escenario dio
+   respuestas distintas en corridas seguidas —en una tanda de cuatro, tres ofrecieron
+   consultar y una perdió el hilo—. Sin repetición no se distingue "se rompió" de "esta
+   vez salió distinto".
+2. **Cómo se evalúa cada respuesta.** Tres caminos con costos muy distintos: por
+   patrones (barato y frágil), con un modelo de juez (caro y hay que validarlo), o a
+   mano sobre una muestra (no escala pero es el único fiable de entrada). Se puede
+   empezar por patrones sobre lo que **no** puede aparecer —"¿querés que lo consulte?"
+   con la conversación congelada es detectable con una expresión regular—, que es donde
+   estuvieron los defectos reales.
+3. **Cuánto cuesta correrlo.** Cada escenario son varias llamadas a Gemini. Ocho por
+   cinco corridas es un número que hay que mirar antes de prometer que corre en cada
+   commit.
+4. **Contra qué corpus.** Los resultados dependen de qué documentos hay cargados; con
+   la base cambiando, dos corridas no son comparables. Choca con que hoy los tests
+   corren contra la base real.
+5. **Dónde vive.** No puede ser `npm test`: eso corre en cada cambio y no puede depender
+   de la red ni gastar tokens.
+
+## Riesgo principal
+
+Un escenario que falla 1 de 5 veces es **información, no un semáforo rojo**. Si esto se
+convierte en algo que bloquea el desarrollo, se termina apagando.
 
 ---
 
-## El problema, en una frase
+## Material de respaldo
+
+### El problema, en una frase
 
 El comportamiento del asistente se define en prompts, y **no hay ninguna forma de
 saber si un prompt se está cumpliendo** salvo abrir el panel y conversar a mano.
@@ -48,16 +92,9 @@ Dos patrones que vale separar, porque piden remedios distintos:
 
 ---
 
-## Qué haría falta
+## Los ocho escenarios, ya escritos
 
-Un **banco de escenarios**: conversaciones fijas con lo que tiene que pasar, que se
-puedan correr contra el sistema real y digan cuántas pasaron.
-
-No es un test unitario ni reemplaza a los que hay. Es otra cosa: mide **el
-comportamiento del modelo**, que es no determinístico, así que la unidad de medida no
-es "pasa/falla" sino "pasó N de M veces".
-
-Escenarios que ya existen escritos, sacados de los defectos reales:
+Sacados de defectos reales, todos ocurridos:
 
 | Escenario | Qué tiene que pasar |
 |---|---|
@@ -71,33 +108,6 @@ Escenarios que ya existen escritos, sacados de los defectos reales:
 | Supervisor con consulta sin respuesta confiable | Informe con documentos y score; **cero** casos nuevos en la cola |
 
 Los ocho salieron de romperse en producción. Son el mejor punto de partida que hay.
-
-## Decisiones a tomar al escribir la spec
-
-**1. Cuántas corridas por escenario.** Una sola no dice nada: el mismo escenario dio
-respuestas distintas en corridas seguidas —en una tanda de cuatro, tres ofrecieron
-consultar y una perdió el hilo—. Sin repetición no se distingue "se rompió" de "esta
-vez salió distinto".
-
-**2. Cómo se evalúa cada respuesta.** Tres caminos con costos muy distintos:
-por patrones (barato y frágil), con un modelo de juez (caro y hay que validarlo), o
-a mano sobre una muestra (no escala pero es el único fiable de entrada). Se puede
-empezar por patrones sobre las cosas que **no** pueden aparecer —"¿querés que lo
-consulte?" con la conversación congelada es detectable con una expresión regular—,
-que es donde estuvieron los defectos reales.
-
-**3. Cuánto cuesta correrlo.** Cada escenario son varias llamadas a Gemini. Ocho
-escenarios por cinco corridas es un número que hay que mirar antes de prometer que
-corre en cada commit.
-
-**4. Contra qué corpus.** Los resultados dependen de qué documentos hay cargados. Con
-la base cambiando todo el tiempo, dos corridas no son comparables. Hace falta un
-corpus fijo de prueba, y eso choca con que hoy los tests corren contra la base real.
-
-**5. Dónde vive.** No puede ser `npm test`: eso corre en cada cambio, no puede
-depender de la red ni gastar tokens. Es otro comando, otro momento.
-
----
 
 ## Lo que NO debería hacer
 

@@ -385,6 +385,84 @@ mintiendo.
 > un documento que pasa a `INTERNO` seguiría siendo recuperable por un cliente.
 > Es un agujero de confidencialidad, no una desprolijidad.
 
+**`SYNCED` garantiza que hay un vector válido por cada fragmento** (spec 006).
+No era así: `embedDocuments` de `@langchain/google-genai` **no lanza** cuando un
+lote falla — usa `Promise.allSettled` y devuelve `Array(n).fill([])`. Esos
+vectores vacíos se escribían en Chroma y el documento quedaba `SYNCED` a
+continuación: el panel lo mostraba sano, el documento dejaba de ser recuperable,
+y nada lo delataba. En una corrida sobre el corpus real aparecieron **98 vectores
+vacíos** sin un solo error en consola. Hoy `vectorizar()` valida antes de
+escribir, y en `reindex()` **la validación va antes del borrado**: un fallo deja
+al documento con su versión anterior, no sin fragmentos.
+
+**El título forma parte del texto que se vectoriza, no del que se devuelve**
+(spec 006). El vector se calcula sobre `` `${title}\n\n${chunk}` `` pero
+`SearchHit.content` sigue siendo el fragmento solo — es lo que lee el asistente
+y no cambió. Que los dos dejen de coincidir es deliberado: mejora el recall sin
+tocar lo que el agente responde.
+
+> ⚠️ **El nivel gratuito de Gemini limita a 100 RPM en embeddings.** El corpus
+> son ~101 fragmentos, así que cualquier reindexado masivo tiene que espaciarse
+> (`prisma/reindex-corpus.ts --intervalo`). No es una precaución teórica: es el
+> límite que se alcanzó midiendo, y el que produjo los 98 vectores vacíos.
+
+**El `checksum` de cada documento se lee, por fin** (spec 007). Se calculaba desde
+el Sprint 5A y nunca se consultaba: `buscarDuplicadoExacto` lo usa para cortar
+contenido idéntico **antes** de vectorizar — 409 con el documento previo
+identificado, `force: true` para insistir. Es la misma convención que ya regía
+para archivos repetidos (`assertNotDuplicate`), no un mecanismo nuevo.
+
+**Hay un segundo umbral, distinto del de confianza del RAG** (spec 007,
+`KNOWLEDGE_SIMILARITY_THRESHOLD`). `RAG_CONFIDENCE_THRESHOLD` mide cuán bien una
+**consulta corta** encuentra un fragmento; éste compara **dos documentos
+enteros** entre sí, para avisar al cargar que ya existe algo parecido — sin
+bloquear nada. No son intercambiables: comparar documentos da valores mucho más
+altos (medido: piso de ruido ~54% para consultas, ~73% para documentos), y el
+margen entre "mismo dominio" y "duplicado real" resultó de solo 3.2 puntos
+(`scripts/calibrar-parecido.ts`, resultado en
+`specs/007-duplicados-al-escribir/calibracion-parecido.txt`).
+
+**Corregir un documento existente es una forma más de cerrar un caso escalado**
+(spec 007, `Escalation.resolvedWithAction`: `CORRECTED` | `REUSED`). Cuando el
+supervisor resuelve un caso eligiendo mejorar el documento que quedó corto en
+vez de crear uno nuevo, reusa `KnowledgeAiEditService` tal cual (`preview()` no
+persiste, `apply()`/`update()` guarda el texto aprobado) y queda enlazado por
+`KnowledgeChange.escalationId` — la bitácora del documento sabe de qué caso
+salió cada cambio, no solo el caso sabe qué documento tocó.
+
+**Higiene del corpus** (spec 008): un barrido bajo demanda (`POST
+/knowledge/hygiene/scan`, cola `hygiene-scan`) encuentra parejas de documentos
+activos que se solapan y ofrece fusionarlas con aprobación humana
+(`KnowledgeHygieneService` detecta y descarta, `KnowledgeMergeService` hace el
+`preview`/`apply`, mismo patrón de dos endpoints que "editar con la IA"). Son
+~78 llamadas de `search()` (una por documento) prefiltradas por
+`(agentType, audience)` — el mismo criterio de confidencialidad del Principio
+I, que de paso poda 3003 parejas candidatas a 343 — y corre en un worker, nunca
+dentro del request (100 RPM del nivel gratuito de Gemini).
+
+**Hay un TERCER umbral**, `KNOWLEDGE_MERGE_THRESHOLD`, que tampoco es
+intercambiable con los otros dos: `RAG_CONFIDENCE_THRESHOLD` mide una consulta
+corta contra un fragmento, `KNOWLEDGE_SIMILARITY_THRESHOLD` compara UN
+documento nuevo contra el corpus mostrando los 4 mejores, y éste barre TODAS
+las parejas del corpus sin límite de cuántas se muestran. Con el 0.75 de
+`KNOWLEDGE_SIMILARITY_THRESHOLD` el barrido marca 141 de 343 parejas —
+inservible, se aprueba a ciegas—; medido con `scripts/calibrar-fusion.ts`, 0.85
+lo deja en el orden de diez, revisable de una sentada
+(`specs/008-higiene-corpus/calibracion-fusion.txt`).
+
+**La fusión no tiene ruta de escritura propia**: `apply()` termina en
+`KnowledgeService.update()` (sube versión, escribe `KnowledgeChange` con
+`mergedFromDocumentId`) y `setActive(false)` sobre el absorbido — las dos ya
+aplican `assertPuedeEscribir`, sin una tercera puerta. ⚠️ **Una fusión SIEMPRE
+versiona y queda en la bitácora, aunque el documento absorbido sea
+byte-idéntico al que sobrevive** (el caso más común: duplicados exactos como
+los del E2E). Se descubrió en vivo contra el corpus real: `update()` tenía un
+atajo que devolvía sin escribir nada cuando ningún campo cambiaba de valor, y
+una fusión de contenido idéntico no cambia ningún valor — la aprobación
+desaparecía de la bitácora en silencio. `mergedFromDocumentId` en el input
+fuerza el camino de escritura aunque el texto coincida (`knowledge.service.ts`,
+`update()`).
+
 **Audio.** Se transcribe en n8n (el token de Meta vive solo ahí) y el backend
 recibe **texto**. El binario no se persiste en ningún lado (FR-011) — eso se
 garantiza con variables de instancia en `docker-compose.yml`, no con los
@@ -392,6 +470,272 @@ settings del workflow, que son advisory (ver `n8n/README.md`). Cuando la
 transcripción falla, n8n manda `__AUDIO_NO_TRANSCRIBIBLE__` y el orquestador
 pide reformulación **sin llamar al LLM y sin escalar**; ese atajo corre
 **antes** del sticky, a diferencia del de saludos.
+
+**Qué falta para responder mejor** (spec 009): el resumen de cobertura del
+corpus, agrupado por tema. Cada turno `ROUTED_TO_AGENT` ahora lleva
+`candidates` en su payload —`documentId`/`score`/`rank` de `state.retrievedDocs`,
+`null` si no hubo retrieval (trivial/audio/greeting), `[]` si se buscó y no vino
+nada— porque `KnowledgeRetrieval` guarda `conversationId` y no un turno: sin
+esto, con más de un turno por conversación no hay forma de saber qué candidatos
+trajo *cuál* consulta.
+
+Un `POST /knowledge/coverage/scan` (cola `coverage-scan`, mismo patrón
+job-fuera-del-request que higiene) junta las consultas de la ventana que no
+alcanzaron el umbral o lo rozaron, las agrupa con **un solo pase de chat**
+(`KnowledgeCoverageGroupingService`, no embeddings + clustering: los vectores
+de las consultas no están persistidos, y igual haría falta el LLM para nombrar
+los grupos) y clasifica cada una en una de cuatro causas —función **pura**,
+`knowledge-coverage-causes.ts`, sin acceso a red— más una quinta,
+`INDETERMINADA`, para turnos históricos sin `candidates`.
+
+⚠️ **"Se compiten" no se deriva de la brecha del top-k.** Medido: en la base
+real esa brecha va de 0.2 a 4.6 puntos y es *más chica* en el turno mejor
+contestado — dispararía casi siempre. Se resuelve cruzando contra la última
+corrida `READY` de higiene (spec 008): si el documento que "quedó corto"
+integra una `HygienePair` abierta, la causa pasa a `SE_COMPITEN` y deriva a esa
+pantalla en vez de proponer corregir. Y estar bajo el piso de ruido tampoco es
+"falta cargar" por sí solo: el discriminador es si la consulta se sostiene sola
+como pregunta de conocimiento (lo dice el mismo pase de LLM que agrupa) — el
+caso real que lo probó fue un `"si por favor"` respondiendo al agente, no un
+hueco del corpus. La garantía dura del módulo: `action === 'CARGAR'` implica
+`documents.length === 0` siempre (ningún camino puede violarlo).
+
+**Atendido y reaparición** (`CoverageThemeMark`) se resuelve por **solape de
+`queryEventIds`**, nunca por nombre — el LLM no repite el mismo texto de tema
+entre corridas. Un tema marcado se oculta en la corrida siguiente mientras no
+tenga consultas posteriores a la marca; con tráfico nuevo reaparece señalado
+`recurring: true`, resuelto en `getLatest` contra marcas de *cualquier* corrida
+anterior (la marca queda en la fila vieja, que ya no se muestra — buscarla por
+overlap es lo único que conecta el tema nuevo con la marca).
+
+`GET /supervisor/agents/status` cambió de contrato: `avgConfidence` (promedio
+sin ventana ni mínimo, sobre toda la historia) desapareció. Ahora `coverage`
+(0-1) y `marginPoints` (`avg(confidence) − umbral`, en puntos y con signo)
+vienen `null` mientras `hasData` sea `false` — `COVERAGE_MIN_SAMPLE` por
+agente, distinto de `COVERAGE_SCAN_MIN_QUERIES` de la corrida (los cinco
+agentes juntos): arrancan en el mismo valor por coincidencia, no porque midan
+lo mismo. `sampleSize`/`minimumSample` viajan siempre, incluso sin datos.
+
+**Entrevista desde el tráfico real** (spec 010, RF11, módulo `src/interviews/`):
+las preguntas salen del resumen de cobertura de arriba, no de un cuestionario a
+ciegas por área — es el consumidor que spec 009 dejó anticipado. Dos jobs
+enmarcan un bucle sincrónico (colas `interview-open`/`interview-close`):
+**abrir** resuelve el material (Prisma, sin LLM — puede devolver `422` en el
+mismo request si no hay con qué) y redacta las N preguntas en **una sola**
+llamada de chat; **contestar/saltear** no llaman al modelo, las preguntas ya
+están escritas; **cerrar** redacta una ficha por respuesta útil, también en
+llamadas separadas. No es una `Conversation`: sus turnos meterían ruido en
+`ROUTED_TO_AGENT`, contaminando la misma medición de cobertura de la que salen
+sus preguntas.
+
+La defensa contra duplicados (el riesgo que la pre-spec marcó como principal)
+es una sola regla aplicada en tres lugares: si el material trae un documento,
+la pregunta pide corregirlo, nunca escribir uno nuevo al lado
+(`interviews-questions.ts`, `elegirForma`). Un tema `AL_LIMITE` no trae causa
+—banda y causa son ejes distintos en la spec 009— pero si tiene documento va
+igual por `CORREGIR`: la regla mira `documents.length`, no la causa, así que
+no necesita un caso especial para el único tipo de tema que hoy existe en la
+base real. Y `KnowledgeService.buscarParecidos()` (spec 007) pasó de privado a
+público con `excluirId` opcional, para poder avisar del parecido **antes** de
+escribir el candidato — avisar después de guardar informa el duplicado en vez
+de evitarlo.
+
+⚠️ **Ese mismo criterio corrigió a la spec 009 hacia atrás.** `deriveAction` y
+`classifyQuery` devolvían `NINGUNA` para toda la banda `AL_LIMITE` ("se
+contestó por encima del umbral"), así que el panel decía *no hagas nada* sobre
+el mismo tema que la entrevista mandaba a corregir — dos partes del sistema con
+veredictos opuestos, visible en pantalla. La de la 009 era la equivocada:
+contestar por 3 puntos con un documento detrás es la definición de frágil, y
+anticiparse a eso es el propósito del sprint. Hoy `AL_LIMITE` **con documento**
+da `CORREGIR_DOCUMENTO` en los dos lados; sin documento sigue en `NINGUNA`
+(no hay qué corregir). La banda no cambió: sigue siendo un aviso temprano, no
+un fallo.
+
+~~**El panel y la entrevista no se solapan, se encadenan.**~~ ⚠️ **Retirado por
+la spec 011.** Este párrafo describía la división de trabajo entre "¿Qué me
+falta?" y "Entrevista", y correr el flujo completo en el panel mostró que eran
+**una sola cosa partida en dos**: la primera se miraba y se pasaba a la
+segunda. Hoy son una pantalla; ver abajo.
+
+**Un tema no se vuelve a preguntar entre sesiones** (hallazgo del
+`/speckit-analyze`, no de la spec original): cada `InterviewQuestion` copia los
+`queryEventIds` de su tema, y `resolverMaterial` los compara contra los de
+sesiones previas no `FALLIDA` del área con el mismo `overlap()` de
+`knowledge-coverage-identity.ts` (spec 009) — la etiqueta no sirve porque el
+LLM la regenera distinta cada corrida. Un escalado se excluye por id.
+
+**El respaldo cuando no hay temas** (US3) tiene dos piernas — escalados
+`PENDING` (pregunta abierta, sin texto propuesto) y `RESOLVED` sin capitalizar
+(se muestra la resolución y se pide confirmar una versión general, nunca el
+texto tal cual: contiene nombre y datos del caso puntual) — y ninguna pareja
+de higiene: es el mismo caso que ya excluyen los temas que compiten, y
+proponerlo ahí agregaría un tercer documento al conflicto. "Sin capitalizar" se
+decide por tres señales, no una: `resolvedWithDocumentId` (corrección, spec
+007), un `KnowledgeDocument{sourceType: ESCALADO}` (enseñado, spec 005), o un
+`InterviewCandidate` ya aprobado sobre ese mismo caso — mirar solo la primera
+dejaba pasar como "sin capitalizar" un escalado que esta misma feature ya
+había cerrado. Aprobar un candidato de escalado pendiente cierra ese caso
+(`Escalation.status = RESOLVED`) sin mandarle nada al usuario original —
+aprobar una entrevista no es responderle al cliente.
+
+⚠️ **Aprobar una corrección AGREGA al documento, no lo pisa** (`applyMode`,
+default `AGREGAR`). Es el defecto más caro que encontró el uso real: la
+pregunta que origina una corrección es *"¿qué le **falta** a este
+documento?"*, y quien redacta la ficha —el modelo— **no ve el documento
+original**, solo la respuesta. Escribir esa ficha como contenido entero borra
+todo lo que el documento decía. Pasó con «Sobre Nosotros», que después de una
+entrevista sobre facturación quedó hablando **solo de facturas**.
+
+Ningún test lo veía porque todos miraban el *resultado* de aprobar (`ok:
+true`), no **qué se escribió**. Quien aprueba puede elegir `REEMPLAZAR`, y el
+panel le muestra antes lo que el documento dice hoy — pero es una decisión, no
+el default.
+
+⚠️ **`KnowledgeChange` no guarda el contenido anterior.** Registra que
+`content` cambió y quién lo hizo, pero no el texto que había, así que un
+reemplazo indebido **no se puede deshacer** ni auditar de verdad. Se descubrió
+buscando cómo recuperar «Sobre Nosotros»: Chroma ya estaba reindexado con lo
+nuevo y no quedaba copia en ningún lado. Es una carencia real de OE-11 y
+conviene atenderla antes de que el corpus tenga valor de producción.
+
+Dos bugs de integración, encontrados corriendo el flujo contra los servicios
+reales (ninguno lo veía un test con mocks): la heurística de "respuesta vacía"
+no reconocía `"no se"` — el patrón real más común — porque `"se"` no estaba en
+la lista de muletillas; y el documento creado al aprobar guardaba
+`sourceId = candidate.id` en vez de `sourceId = session.id` (contradice el
+comentario de `schema.prisma` sobre `KnowledgeSourceType.ENTREVISTA`, ahí desde
+el Sprint 5A). Los dos con test de regresión.
+
+**Una sola pantalla para mejorar** (spec 011, módulo `src/improvements/`): las
+dos features de arriba eran **un solo trabajo partido en dos** — "¿Qué me
+falta?" decía qué estaba flojo y "Entrevista" lo arreglaba, y en uso real la
+primera era un desvío. Hoy son una: `GET /improvements?sectorId=` devuelve la
+lista ya unificada, ordenada, deduplicada y filtrada, y cada ítem entra a la
+entrevista. `POST /improvements/refresh` dispara **los dos** análisis con una
+sola acción. Se retiraron los cuatro endpoints de `/knowledge/coverage/*`; el
+`KnowledgeCoverageService` **no** se retiró: sigue siendo la primera fuente.
+
+La dependencia entre módulos va en **una sola dirección**: `InterviewsService`
+consume `ImprovementsService`, nunca al revés. Lo que `improvements` necesita
+saber de la entrevista —qué se preguntó ya— lo lee de `InterviewQuestion` por
+Prisma. Sin eso hay ciclo, y `resolverMaterialDeRespaldo` desapareció de
+`interviews.service.ts`: los escalados dejaron de ser respaldo condicionado a
+que no hubiera temas y pasaron a fuente de primera.
+
+**La tercera fuente es lo nuevo**: un detector que lee **un documento a la vez**
+y pregunta si se basta a sí mismo. Es distinto de la higiene (spec 008), que
+compara documentos **entre sí**: un documento puede ser único en su tema y aun
+así dejar sin responder la mitad de lo que le preguntan. Encontró, por ejemplo,
+que *"Situación: producto dañado detectado al momento de la entrega"* habla de
+daños en el título y solo cubre retrasos en el cuerpo — una contradicción
+interna que ningún tráfico había revelado.
+
+⚠️ **El detector NO mide confianza del modelo, mide severidad.** La spec
+apostaba a filtrar por confianza alta; medido sobre los 75 documentos reales,
+el modelo devolvió `ALTA` en los 53 que señaló y `MEDIA`/`BAJA` en **ninguno**:
+el filtro dejaba el 71% del corpus en la lista. La causa no es el modelo sino
+la pregunta — casi todo documento *está* incompleto en algún sentido, y un
+sí/no obtiene un sí honesto y sin valor. Con una severidad 0-100 y una barra de
+calibración explícita en el prompt, el corte en `DOC_REVIEW_SEVERITY_CUT` (80)
+deja ~12%. La severidad viene **cuantizada** (85/75/65/55/45/20/15): recalibrar
+significa moverse de banda, no de a un punto.
+
+El análisis es **secuencial** (medido: lotes de 5 en paralelo tardaron 5,7 s por
+documento contra 3,7 s secuencial) e **incremental** (un documento se reanaliza
+solo si su `version` cambió). Dos consecuencias que no son obvias:
+
+- **Se persiste todo señalamiento, no solo los que pasan el corte**, y el corte
+  se aplica al leer. La fila `DocumentFinding` es el registro de "este
+  documento, en esta versión, ya se analizó": si solo se guardaran los que
+  pasan, los ~66 que quedan por debajo se reanalizarían en cada corrida y el
+  incremental no incrementaría nada. De regalo, recalibrar el corte deja de
+  exigir reanalizar el corpus.
+- **La lista se arma con los señalamientos vigentes por documento, no con los
+  de la última corrida.** Una corrida incremental que saltea 20 documentos y
+  analiza 2 produce 2 findings; los otros 20 siguen siendo verdad. Leer "los de
+  la última revisión" vaciaba la pantalla en la segunda corrida (lo encontró el
+  `/speckit-analyze`, antes de que llegara al código).
+
+**Los documentos transversales** (`agentType` nulo) son 15 de los 75 activos.
+Entran en la revisión de cualquier área —dejarlos afuera los volvería el único
+pedazo del corpus que nadie mira nunca— pero sus señalamientos se **muestran**
+solo a quien es responsable de todas las áreas: es la misma regla que gobierna
+la escritura del corpus, y un ítem que quien lo ve no puede corregir es ruido.
+Esto subió el peor caso de la primera corrida a ~137 s.
+
+**El descarte es uno solo para las tres fuentes** (`ImprovementDismissal`), y
+absorbió el "marcar como atendido" de la spec 009. `CoverageThemeMark` **deja
+de escribirse pero se sigue leyendo**: borrar esa lectura obligaría a la gente
+a volver a descartar lo que ya descartó. ⚠️ Y una marca no filtra para siempre:
+filtra **hasta que llegue tráfico posterior** a su fecha — es lo que hace
+visible a un reincidente, y leerla como un booleano rompería esa regla *en
+silencio*, porque nadie nota lo que no aparece. Para un documento la evidencia
+nueva es otra: la versión.
+
+⚠️ **Una revisión puede quedar `RUNNING` sin que nadie la esté ejecutando.** Si
+el worker se reinicia a mitad de la corrida —o si el proveedor tarda más que el
+`lockDuration` de BullMQ— el job se marca `stalled` y muere **sin pasar por el
+`catch`** que deja la fila en `FAILED`. Como `startReview` se *engancha* a lo
+que está corriendo, esa área quedaba **bloqueada para siempre**. Lo encontró la
+validación en vivo, después de un hot reload; ningún test con mocks lo veía
+porque en un test el worker no se muere. Hoy `cerrarSiQuedoColgada` cierra como
+`FAILED` (con motivo, no en silencio) toda revisión más vieja que
+`DOC_REVIEW_STALE_MINUTES` y arranca una nueva.
+
+**El mismo agujero apareció después en el barrido de cobertura** (`startScan`
+lanzaba `409` eterno) y ahí era peor, porque ese barrido es global: bloqueaba las
+cinco áreas, no una. Hoy el criterio vive en `src/common/stale-job.ts`
+(`estaColgado` / `motivoColgado`) y lo usan los tres: revisión de documentos,
+cobertura e higiene.
+
+**La latencia del proveedor no es estable.** La Fase 0 midió 3,7 s por
+documento; durante la validación en vivo una llamada suelta —sin reintentos—
+tardó **43 s**, y la corrida completa de Ventas (36 documentos analizados, 1
+salteado por el incremental) tardó 409 s, o sea ~11 s por documento. Los
+objetivos de tiempo de la spec valen contra la latencia medida, no contra
+cualquier latencia; el incremental es lo que hace que eso importe una sola vez
+por documento.
+
+**La entrevista se contesta como se dibujó** (spec 012): el prototipo la diseñó
+como una conversación y era un formulario de a una pregunta por vez. Dos
+agregados sobre el módulo que ya existía, sin endpoints nuevos.
+
+- **El historial viaja en el envelope.** `GET /interviews/:id` suma `history[]`
+  junto a `current`, y **excluye la pregunta actual**: concatenar los dos da la
+  conversación sin duplicados. No hizo falta guardar nada nuevo — sale de las
+  preguntas y respuestas que la spec 010 ya persistía, y por eso sobrevive a
+  una pausa. De una pregunta repreguntada se muestra el intento **final**.
+  ⚠️ Los tres finales no son intercambiables: `SALTEADA` no tiene nada que la
+  persona haya puesto, `SIN_RESPONDER` **sí** (contestó, no alcanzó, pero el
+  texto es suyo) — aplastarlos en "sin respuesta" tira información real.
+- **Las opciones no agregan una llamada al modelo.** Viajan dentro del mismo
+  `withStructuredOutput` que ya redactaba las preguntas, como un campo más del
+  schema, y se persisten congeladas en `InterviewQuestion.options` (único
+  cambio de esquema de la spec). Una sesión sigue costando **1 + N**.
+
+⚠️ **La degradación es asimétrica, y es la decisión que sostiene la feature.**
+Si falta el *texto* de una pregunta, la sesión entera queda `FALLIDA` — sin
+pregunta no hay entrevista. Si faltan las *opciones*, esa pregunta va con texto
+libre y la sesión sigue: `options: []` es un estado **normal**, no una falla. El
+riesgo real no era quedarse sin opciones sino tenerlas malas — una opción
+genérica se elige por comodidad y llena el corpus de respuestas plausibles que
+nadie dijo. Por eso el prompt prohíbe lo genérico y ordena preferir ninguna
+antes que una de relleno.
+
+**`InterviewAnswer` no cambió, y eso es deliberado.** Una respuesta elegida de
+una tarjeta y una escrita a mano son la misma fila: el cierre, la redacción de
+fichas y la revisión no se enteran de esta spec. La contracara es que **no se
+registra cuál opción se eligió** — una opción editada deja de coincidir con la
+propuesta, así que lo único que se guarda es el texto final.
+
+⚠️ **Una opción enviada tal cual nunca dispara la repregunta** (`esOpcionSinEditar`,
+en `interviews-chosen-option.ts`): el sistema no puede proponer un texto y
+después objetar que lo elijan. Envuelve a `esAsentimientoVacio` **sin
+modificarla** — que `interviews-thin-answer.spec.ts` siga verde sin tocarse es
+la prueba de que la envolvió en vez de romperla. La comparación es exacta:
+normaliza espacios pero **no** mayúsculas ni tildes, porque editar la
+acentuación *es* editar, y normalizar de más desactivaría la repregunta justo
+donde corresponde.
 
 ---
 
