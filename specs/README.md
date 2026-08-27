@@ -8,10 +8,11 @@ cambió alguna spec posterior.
 Las reglas de producto viven en [`.specify/memory/constitution.md`](../.specify/memory/constitution.md);
 el plan por sprints, en [`docs/plan_de_trabajo.md`](../docs/plan_de_trabajo.md).
 
-**Antes de una spec hay dos paradas**: [`specs/futuras/`](futuras/) (bandeja de entrada,
-lo que se anota sobre la marcha) y [`sprints/`](../sprints/) (las **pre-specs**: el corte
-de un sprint en las specs que lo componen, en orden). Cada paso mueve el tema, no lo
-copia — así un tema vive en un solo lugar y ese lugar dice en qué etapa está.
+**Antes de una spec hay dos paradas**: [`specs/futuras/`](futuras/) (solo dos cosas:
+ideas escritas ya como pre-spec, y fixes pendientes) y [`sprints/`](../sprints/) (las
+**pre-specs** del sprint: su corte en las specs que lo componen, en orden). Cada paso
+mueve el tema, no lo copia, y el último lo borra: con la spec escrita, la pre-spec deja
+de existir. Así un tema vive en un solo lugar y ese lugar dice en qué etapa está.
 
 **Estados**: ✅ implementada y probada · 📝 especificada, sin implementar.
 

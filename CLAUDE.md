@@ -34,6 +34,7 @@ curl http://localhost:3000/health
 - Patrón de agente: `<agente>.graph.ts` (flujo) + `<agente>.prompt.ts` (personalidad) sobre `buildRagAgentGraph`.
 - Integraciones externas (Paljet, Riesgo Online, CRM) detrás de puertos/adaptadores (interfaces + mocks), no acopladas directo a un agente.
 - Estilo: Prettier (`singleQuote`, `trailingComma: all`) + ESLint (`plugin:@typescript-eslint/recommended`). El código nuevo se lee como el existente.
+- **Un mock que simplifica de más no falla: pasa.** Los defectos encontrados hasta hoy salieron de usar el panel, no de leer código, y varios los tapaba el mock (el worker nunca se muere, el config devuelve el mismo número para toda clave, el `createMany` siempre resuelve). Cuando un test no encuentra un defecto que existe, la pregunta es qué decidió su mock que nunca pasa.
 - Commits: Conventional Commits en español (`tipo(scope): mensaje`, ej. `feat(collections): ...`, `fix(docker): ...`, `docs(spec-002): ...`).
 - Confidencialidad: la autorización de agentes por `userType` vive únicamente en `allowedAgentsFor` (`src/ai/agents/agent-domains.ts`); la audiencia del RAG (`INTERNO`/`PUBLICO`) se aplica en `knowledge.search()`. No se replica esa lógica en otro lado.
 - Ninguna decisión financiera/contractual se cierra sola: verificación de pagos, aprobación de crédito y cierre de venta financiada siempre pasan por un `SUPERVISOR`.
@@ -63,22 +64,29 @@ error iguales pueden pedir acciones distintas.
 Una spec no se escribe de la nada. Hay dos paradas antes:
 
 ```
-specs/futuras/    lo que se me ocurre a mitad de otra cosa: se anota por encima y sigo
-      ↓           (bandeja de entrada; se llena sola, se vacía a propósito)
-sprints/NNN-.../  al ARRANCAR un sprint, lo que le toca se mueve acá como PRE-SPEC:
+specs/futuras/    lo que vale la pena y no toca ahora, escrito YA como PRE-SPEC
+      ↓           (o un fix pendiente, anotado corto)
+sprints/NNN-.../  al ARRANCAR un sprint, lo que le toca se mueve acá:
       ↓           todas juntas, en orden, sin detalle. Es la entrada de specify
 specs/NNN-nombre/ /speckit-specify → plan → tasks → implement
 ```
 
-**Cada paso mueve, no copia**: un tema vive en un solo lugar a la vez, y ese lugar dice
-en qué etapa está.
+**`specs/futuras/` tiene exactamente dos cosas: pre-specs de lo que se quiere construir
+y fixes que hay que atender. Nada más** — ni notas de lo resuelto, ni registros de lo
+que se fue, ni tablas de estado.
 
-**Los defectos de lo ya entregado no recorren ese flujo**: se anotan en `specs/futuras/`
-(para dejar registro de cómo se encontraron) y **se arreglan directo, con test de
-regresión, sin spec**. Una spec decide qué construir; en un defecto no hay nada que
-decidir. La excepción es cuando el arreglo cambia el modelo de datos o el alcance —
-ahí es trabajo nuevo y va como pre-spec. La convención completa —qué lleva una pre-spec, el tope de una
-página, cuándo se congela— está en `sprints/README.md`.
+**Cada paso mueve, no copia, y el último borra**: un tema vive en un solo lugar a la vez.
+Cuando `/speckit-specify` convierte una pre-spec en spec, **la pre-spec se borra**; cuando
+un fix se arregla, **su nota se borra**. Lo hecho lo cuentan el código, sus tests y git.
+
+**La vara es alta y se aplica antes de escribir**: se anota solo lo que, si se olvida,
+cuesta. Lo menor no se anota, y un defecto que se arregla en el momento no necesita nota.
+
+**Los defectos de lo ya entregado no recorren el flujo de arriba**: **se arreglan directo,
+con test de regresión, sin spec**. Una spec decide qué construir; en un defecto no hay nada
+que decidir. La excepción es cuando el arreglo cambia el modelo de datos o el alcance — ahí
+es trabajo nuevo y va como pre-spec. La convención completa —qué lleva una pre-spec, el tope
+de una página, hasta cuándo vive— está en `sprints/README.md`.
 
 Lo primero al arrancar un sprint es escribir sus pre-specs. Recién después se especifica
 la primera.

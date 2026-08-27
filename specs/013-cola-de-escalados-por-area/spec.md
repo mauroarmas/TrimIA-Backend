@@ -6,7 +6,7 @@
 
 **Status**: Draft
 
-**Input**: Pre-spec 9 del Sprint 5B — [`sprints/5B-conocimiento-confiable/9-cola-de-escalados-por-area.md`](../../sprints/5B-conocimiento-confiable/9-cola-de-escalados-por-area.md). La spec 005 hizo que cada responsable escriba solo en sus áreas, pero la cola de casos escalados le sigue mostrando a todos los supervisores todos los casos. Que la cola distinga lo que le toca a cada quien.
+**Input**: Pre-spec 9 del Sprint 5B, «Cola de escalados por área» (ya borrada: manda esta spec). La spec 005 hizo que cada responsable escriba solo en sus áreas, pero la cola de casos escalados le sigue mostrando a todos los supervisores todos los casos. Que la cola distinga lo que le toca a cada quien.
 
 ---
 

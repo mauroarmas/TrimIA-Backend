@@ -34,6 +34,15 @@ export class ListKnowledgeQueryDto {
 
   @ApiProperty({
     required: false,
+    example: 'garantía',
+    description: 'Texto libre: busca en título o contenido (case-insensitive).',
+  })
+  @IsString()
+  @IsOptional()
+  search?: string;
+
+  @ApiProperty({
+    required: false,
     description: 'Omitir para traer activos e inactivos.',
   })
   // Llega como string en la query (?isActive=false); sin esto, "false" sería

@@ -203,6 +203,32 @@ export class ConversationsService {
     });
   }
 
+  /**
+   * Los últimos `limite` mensajes **hasta** una fecha, en orden cronológico.
+   *
+   * El gemelo de `getMessagesAfter`, para mirar hacia atrás: qué se venía
+   * hablando antes de que pasara algo. Tres diferencias con aquél, y las tres
+   * importan:
+   *
+   *  - trae los **dos** roles, no solo `USER`: el contexto de una consulta es
+   *    el ida y vuelta, y leer solo las preguntas del cliente sin lo que el
+   *    agente le fue contestando cuenta media historia;
+   *  - `lte` y no `lt`: el mensaje que provocó el corte comparte timestamp con
+   *    él bastante seguido, y es justamente el que más hace falta ver;
+   *  - se ordena **desc** para quedarse con los últimos y se da vuelta después.
+   *    Con `asc` + `take` se traerían los primeros de la conversación, que es
+   *    lo contrario de lo que se busca.
+   */
+  async getMessagesBefore(conversationId: string, hasta: Date, limite: number) {
+    const ultimos = await this.prisma.message.findMany({
+      where: { conversationId, createdAt: { lte: hasta } },
+      orderBy: { createdAt: 'desc' },
+      take: limite,
+      select: { id: true, role: true, content: true, createdAt: true },
+    });
+    return ultimos.reverse();
+  }
+
   /** Fija el agente sticky de la conversación tras resolver un mensaje. */
   async setCurrentAgent(conversationId: string, agent: AgentType) {
     return this.prisma.conversation.update({

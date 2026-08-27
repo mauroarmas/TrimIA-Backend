@@ -53,6 +53,10 @@ function buildService(documentos: ReturnType<typeof doc>[]) {
     },
     hygieneScan: {
       findFirst: jest.fn().mockResolvedValue(null),
+      // Lo usa `latestScan` para releer una corrida que acaba de cerrar por
+      // colgada. Sin él, el fake no puede representar el paso de RUNNING a
+      // FAILED que ocurre DENTRO de la lectura.
+      findUnique: jest.fn().mockResolvedValue(null),
       create: jest
         .fn()
         .mockImplementation(({ data }) =>
@@ -112,8 +116,22 @@ function buildService(documentos: ReturnType<typeof doc>[]) {
     forDocuments: jest.fn().mockResolvedValue(new Map()),
   };
 
+  /**
+   * ⚠️ Distingue por CLAVE, y no es cosmética.
+   *
+   * Devolvía `THRESHOLD` (0.85) para todas, así que
+   * `HYGIENE_SCAN_STALE_MINUTES` valía 0.85 **minutos**: cualquier barrido de
+   * más de 51 segundos daba colgado. Con ese stub, un test de "una corrida
+   * recién arrancada no se toca" no puede escribirse — pasa a rojo aunque el
+   * código esté bien, y el borde de matar una corrida viva queda sin cubrir.
+   *
+   * Un mock que simplifica de más no falla: pasa, y decide en silencio qué
+   * preguntas puede hacerse el archivo.
+   */
   const config = {
-    get: jest.fn().mockReturnValue(THRESHOLD),
+    get: jest.fn((clave: string) =>
+      clave === 'HYGIENE_SCAN_STALE_MINUTES' ? 20 : THRESHOLD,
+    ),
   };
 
   const queue = { add: jest.fn().mockResolvedValue({}) };
@@ -406,6 +424,140 @@ describe('startScan — 409 si ya hay un barrido corriendo', () => {
         data: expect.objectContaining({ status: 'FAILED' }),
       }),
     );
+  });
+});
+
+/**
+ * ⭐ Cuarta aparición del mismo defecto, por otra puerta (2026-08-27).
+ *
+ * `startScan` ya cerraba las corridas colgadas. Pero eso destrabó el 409, no la
+ * PANTALLA: el panel deshabilita el botón mientras el estado sea `RUNNING`, así
+ * que una corrida muerta dejaba la única salida detrás de la puerta que ella
+ * misma trababa. Quien miraba la pantalla no podía apretar nada, y el poll —lo
+ * único que seguía corriendo— no reparaba nada.
+ *
+ * Encontrado en vivo: un `docker compose restart` mató el worker a los 20
+ * segundos de un barrido de ~85, y la pantalla quedó en "Analizando…" para
+ * siempre.
+ *
+ * La lección es la de las tres veces anteriores con un agregado: no alcanza con
+ * que exista la recuperación, tiene que estar en un camino que quien está
+ * trabado pueda recorrer.
+ */
+describe('⭐ latestScan — la lectura también destraba un barrido colgado', () => {
+  function zombiDe(minutosDeVida: number) {
+    return {
+      id: 'scan-zombi',
+      status: 'RUNNING',
+      threshold: 75,
+      documentsScanned: 0,
+      pairsFound: 0,
+      failureReason: null,
+      createdAt: new Date(Date.now() - minutosDeVida * 60_000),
+      finishedAt: null,
+    };
+  }
+
+  it('un RUNNING vencido pasa a FAILED sin que nadie apriete nada', async () => {
+    const { service, prisma } = buildService([]);
+    const hygieneScan = prisma.hygieneScan as {
+      findFirst: jest.Mock;
+      findUnique: jest.Mock;
+      update: jest.Mock;
+    };
+    hygieneScan.findFirst
+      .mockResolvedValueOnce(zombiDe(60)) // la última corrida: colgada
+      .mockResolvedValueOnce(null); // no hubo ninguna READY antes
+    hygieneScan.findUnique.mockResolvedValue({
+      ...zombiDe(60),
+      status: 'FAILED',
+      failureReason: 'La corrida quedó sin terminar más de 20 minutos.',
+    });
+
+    const res = await service.latestScan('emp-1');
+
+    // Lo que importa: el panel deja de ver RUNNING, así que el botón revive.
+    expect(res.status).toBe('FAILED');
+    expect(hygieneScan.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'scan-zombi' },
+        data: expect.objectContaining({ status: 'FAILED' }),
+      }),
+    );
+  });
+
+  it('y el motivo dice qué pasó, en vez de desaparecer sin explicación', async () => {
+    const { service, prisma } = buildService([]);
+    const hygieneScan = prisma.hygieneScan as {
+      findFirst: jest.Mock;
+      findUnique: jest.Mock;
+      update: jest.Mock;
+    };
+    hygieneScan.findFirst
+      .mockResolvedValueOnce(zombiDe(60))
+      .mockResolvedValueOnce(null);
+    hygieneScan.findUnique.mockResolvedValue({
+      ...zombiDe(60),
+      status: 'FAILED',
+      failureReason: 'La corrida quedó sin terminar más de 20 minutos.',
+    });
+
+    const res = await service.latestScan('emp-1');
+
+    expect((res as { failureReason?: string }).failureReason).toMatch(
+      /sin terminar más de \d+ minutos/,
+    );
+  });
+
+  it('un RUNNING reciente NO se toca: sigue corriendo de verdad', async () => {
+    // El borde que no se puede pasar por alto: matar una corrida viva por leer
+    // la pantalla sería peor que el defecto que se está arreglando.
+    const { service, prisma } = buildService([]);
+    const hygieneScan = prisma.hygieneScan as {
+      findFirst: jest.Mock;
+      update: jest.Mock;
+    };
+    hygieneScan.findFirst
+      .mockResolvedValueOnce(zombiDe(1)) // un minuto: recién arrancada
+      .mockResolvedValueOnce(null);
+
+    const res = await service.latestScan('emp-1');
+
+    expect(res.status).toBe('RUNNING');
+    expect(hygieneScan.update).not.toHaveBeenCalled();
+  });
+
+  it('mientras corre, dice CUÁNTOS documentos está mirando', async () => {
+    // Lo devolvía solo `startScan`, así que al recargar la pantalla mostraba
+    // «Analizando el corpus (~ documentos)», con el hueco a la vista.
+    const { service, prisma } = buildService([]);
+    (prisma.knowledgeDocument as { count: jest.Mock }).count.mockResolvedValue(
+      74,
+    );
+    (prisma.hygieneScan as { findFirst: jest.Mock }).findFirst
+      .mockResolvedValueOnce(zombiDe(1))
+      .mockResolvedValueOnce(null);
+
+    const res = await service.latestScan('emp-1');
+
+    expect((res as { documentsToScan?: number }).documentsToScan).toBe(74);
+  });
+
+  it('en FAILED no se informa cuántos quedan: ya no queda nada corriendo', async () => {
+    const { service, prisma } = buildService([]);
+    (prisma.hygieneScan as { findFirst: jest.Mock }).findFirst
+      .mockResolvedValueOnce({
+        ...zombiDe(60),
+        status: 'FAILED',
+        failureReason: 'Gemini devolvió 429',
+      })
+      .mockResolvedValueOnce(null);
+
+    const res = await service.latestScan('emp-1');
+
+    expect(
+      (res as { documentsToScan?: number }).documentsToScan,
+    ).toBeUndefined();
   });
 });
 

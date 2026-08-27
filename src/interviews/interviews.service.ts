@@ -28,6 +28,7 @@ import {
 } from './interviews-questions';
 import { esAsentimientoVacio } from './interviews-thin-answer';
 import { esOpcionSinEditar } from './interviews-chosen-option';
+import { ConversationsService } from '../conversations/conversations.service';
 
 /**
  * Por qué una sesión no tiene con qué preguntar.
@@ -42,6 +43,16 @@ import { esOpcionSinEditar } from './interviews-chosen-option';
  * encontró clickeando el salto entre pantallas, no por API.
  */
 type MotivoSinMaterial = 'TODO_CUBIERTO' | 'YA_ENTREVISTADO';
+
+/**
+ * Cuántos mensajes del caso escalado acompañan a una pregunta.
+ *
+ * Seis y no cuatro: los mensajes alternan cliente/agente, así que cuatro son
+ * dos idas y vueltas — apenas el turno que escaló y el anterior. Seis dan tres,
+ * que es donde suele estar de qué se venía hablando. Es un tope, no un mínimo:
+ * una conversación más corta trae los que tenga y está bien.
+ */
+const MENSAJES_DE_CONTEXTO = 6;
 
 const ESTADOS_SIN_CERRAR: InterviewStatus[] = [
   InterviewStatus.PREPARANDO,
@@ -74,6 +85,10 @@ export class InterviewsService {
     private readonly coverage: KnowledgeCoverageService,
     private readonly drafting: InterviewsDraftingService,
     private readonly improvements: ImprovementsService,
+    // Spec 010 + este cambio: el contexto del caso escalado del que salió una
+    // pregunta. Se consulta el servicio que ya sabe leer una conversación en
+    // vez de repetir acá el `findMany` de mensajes.
+    private readonly conversations: ConversationsService,
   ) {}
 
   // ==========================================================================
@@ -702,6 +717,7 @@ export class InterviewsService {
     options: string[];
     resolutionText: string | null;
     documentId: string | null;
+    escalationId: string | null;
   }) {
     const document = pregunta.documentId
       ? await this.prisma.knowledgeDocument.findUnique({
@@ -728,7 +744,89 @@ export class InterviewsService {
       document,
       resolutionText: pregunta.resolutionText,
       retried: retried != null,
+      escalation: await this.contextoDelEscalado(pregunta.escalationId),
     };
+  }
+
+  /**
+   * El caso escalado del que salió la pregunta, con lo necesario para
+   * entenderlo sin abrirlo en otra pantalla.
+   *
+   * `quotes` sola no alcanzaba. Una consulta suelta —«y qué documentación
+   * necesito?»— no dice de qué se venía hablando, y sin eso la respuesta sale
+   * genérica o directamente equivocada: en ese ejemplo, "documentación" quiere
+   * decir una cosa si el turno anterior fue sobre un crédito y otra si fue
+   * sobre una devolución. La entrevista pide conocimiento reutilizable, así que
+   * lo que se conteste sin contexto se ingesta igual de mal.
+   *
+   * Van el ida y vuelta previo **y la nota interna**. La nota es lo que el
+   * agente escribió sabiendo por qué no pudo seguir solo: es el único texto del
+   * caso redactado para que otro lo entienda.
+   *
+   * `null` es normal y frecuente: las preguntas que salen de un tema de
+   * cobertura (spec 009) no vienen de ningún caso. Y que esto falle no puede
+   * tumbar la entrevista — es contexto de más, no la pregunta.
+   */
+  private async contextoDelEscalado(escalationId: string | null) {
+    if (!escalationId) return null;
+
+    try {
+      const caso = await this.prisma.escalation.findUnique({
+        where: { id: escalationId },
+        select: {
+          id: true,
+          reason: true,
+          status: true,
+          createdAt: true,
+          conversationId: true,
+        },
+      });
+      if (!caso) return null;
+
+      const [mensajes, notas] = await Promise.all([
+        this.conversations.getMessagesBefore(
+          caso.conversationId,
+          caso.createdAt,
+          MENSAJES_DE_CONTEXTO,
+        ),
+        this.prisma.internalNote.findMany({
+          where: { conversationId: caso.conversationId },
+          orderBy: { createdAt: 'asc' },
+          select: {
+            id: true,
+            content: true,
+            createdAt: true,
+            authorAgentType: true,
+            author: { select: { name: true } },
+          },
+        }),
+      ]);
+
+      return {
+        id: caso.id,
+        reason: caso.reason,
+        status: caso.status,
+        createdAt: caso.createdAt,
+        messages: mensajes,
+        // Se distingue quién la escribió: la del agente explica por qué escaló,
+        // la de una persona puede ser una decisión ya tomada sobre el caso.
+        // Aplastarlas haría leer como automática una nota que alguien escribió.
+        internalNotes: notas.map((n) => ({
+          id: n.id,
+          content: n.content,
+          createdAt: n.createdAt,
+          authorAgentType: n.authorAgentType,
+          authorName: n.author?.name ?? null,
+        })),
+      };
+    } catch (err) {
+      this.logger.warn(
+        `No se pudo traer el contexto del caso ${escalationId}: ${
+          err instanceof Error ? err.message : err
+        }`,
+      );
+      return null;
+    }
   }
 }
 

@@ -39,6 +39,32 @@ import * as Joi from 'joi';
 
         RAG_CONFIDENCE_THRESHOLD: Joi.number().min(0).max(1).default(0.65),
 
+        // Umbral de «Proponer respuesta con la base de conocimiento», MÁS BAJO
+        // que el del agente a propósito.
+        //
+        // Compartían valor, y eso dejaba el botón sin salida: el caso escaló
+        // *porque* el agente midió por debajo de RAG_CONFIDENCE_THRESHOLD, y la
+        // propuesta rehace la misma búsqueda —misma consulta, misma audiencia,
+        // mismo agente, mismo k— así que volvía a medir lo mismo y se negaba a
+        // redactar SIEMPRE. Medido el 2026-08-26 sobre la cola real: 8 de 10
+        // casos abiertos eran «confianza insuficiente», o sea el botón no podía
+        // servir en ninguno.
+        //
+        // Bajarlo no contradice el umbral del agente porque no son la misma
+        // decisión: el agente le responde al cliente SOLO, y la propuesta la lee
+        // y edita un supervisor antes de que salga. La red de seguridad es la
+        // persona, no el número. Lo que no se negocia es que el respaldo flojo
+        // se VEA: la respuesta trae `respaldoDebil` y los scores, así que quien
+        // decide enviar sabe sobre qué está parado (Principio II).
+        //
+        // 0.50 y no menos: el piso de ruido del corpus está en ~54% (medido en
+        // la spec 006), así que por debajo de eso no hay material que evaluar,
+        // solo texto que se parece a cualquier cosa.
+        SUGGESTION_CONFIDENCE_THRESHOLD: Joi.number()
+          .min(0)
+          .max(1)
+          .default(0.5),
+
         // Spec 007: a partir de qué parecido se avisa "ya hay un documento sobre
         // esto" al cargar conocimiento.
         //

@@ -8,18 +8,21 @@ Plan: [`docs/plan_de_trabajo.md`](../../docs/plan_de_trabajo.md) §Sprint 5B (ta
 
 ## El corte
 
-**Las 9 implementadas.** El sprint está cerrado.
+**Las 9 implementadas.** El sprint está cerrado, y por eso **las pre-specs ya no
+están**: cada una se borró al convertirse en spec (ver
+[`sprints/README.md`](../README.md#hasta-cuándo-vive)). Esta tabla queda como el corte
+del sprint; el contenido de cada tema vive en su spec.
 
-| # | Pre-spec | Tareas | Depende de | Estado |
+| # | Tema | Tareas | Depende de | Spec |
 |---|---|---|---|---|
-| 1 | [Base de la búsqueda](1-base-de-la-busqueda.md) | 5B.1–5B.3 | — | ✅ **spec [006](../../specs/006-calidad-busqueda-rag/)** |
-| 2 | [Duplicados al escribir](2-duplicados-al-escribir.md) | 5B.4–5B.5 | 1 | ✅ **spec [007](../../specs/007-duplicados-al-escribir/)** |
-| 3 | [Higiene del corpus](3-higiene-del-corpus.md) | 5B.6–5B.8 | 1, 2 | ✅ **spec [008](../../specs/008-higiene-corpus/)** |
-| 4 | [Qué falta para responder mejor](4-que-falta-para-responder-mejor.md) | 5B.9–5B.10 | 1 | ✅ **spec [009](../../specs/009-que-falta-para-responder-mejor/)** — su pantalla la absorbió la 011 |
-| 5 | [Entrevista desde el tráfico real](5-entrevista-desde-el-trafico-real.md) | 5B.11–5B.13 | 2, 4 | ✅ **spec [010](../../specs/010-entrevista-desde-el-trafico-real/)** |
-| 7 | [Una sola pantalla para mejorar](7-una-sola-pantalla-para-mejorar.md) | — (corrige 5B.9–5B.13) | 4, 5 | ✅ **spec [011](../../specs/011-una-sola-pantalla-para-mejorar/)** |
-| 8 | [La entrevista como la dibujamos](8-la-entrevista-como-la-dibujamos.md) | — (completa 5B.11–5B.13) | 5 | ✅ **spec [012](../../specs/012-entrevista-como-conversacion/)** |
-| 9 | [Cola de escalados por área](9-cola-de-escalados-por-area.md) | 5B.15 | — (usa la spec 005) | ✅ **spec [013](../../specs/013-cola-de-escalados-por-area/)** |
+| 1 | Base de la búsqueda | 5B.1–5B.3 | — | ✅ **spec [006](../../specs/006-calidad-busqueda-rag/)** |
+| 2 | Duplicados al escribir | 5B.4–5B.5 | 1 | ✅ **spec [007](../../specs/007-duplicados-al-escribir/)** |
+| 3 | Higiene del corpus | 5B.6–5B.8 | 1, 2 | ✅ **spec [008](../../specs/008-higiene-corpus/)** |
+| 4 | Qué falta para responder mejor | 5B.9–5B.10 | 1 | ✅ **spec [009](../../specs/009-que-falta-para-responder-mejor/)** — su pantalla la absorbió la 011 |
+| 5 | Entrevista desde el tráfico real | 5B.11–5B.13 | 2, 4 | ✅ **spec [010](../../specs/010-entrevista-desde-el-trafico-real/)** |
+| 7 | Una sola pantalla para mejorar | — (corrige 5B.9–5B.13) | 4, 5 | ✅ **spec [011](../../specs/011-una-sola-pantalla-para-mejorar/)** |
+| 8 | La entrevista como la dibujamos | — (completa 5B.11–5B.13) | 5 | ✅ **spec [012](../../specs/012-entrevista-como-conversacion/)** |
+| 9 | Cola de escalados por área | 5B.15 | — (usa la spec 005) | ✅ **spec [013](../../specs/013-cola-de-escalados-por-area/)** |
 
 > **La 9 era la 6.** Se renumeró el 2026-08-25 sin tocar su contenido: el sprint creció
 > con pre-specs que encadenan con el corpus y ésta no depende de ninguna, así que tenerla
@@ -68,8 +71,9 @@ graph LR
 
 1. **La higiene (pre-spec 3) rompe la convención del panel como banco de pruebas.**
    Una propuesta de fusión que no se lee comparativamente se aprueba a ciegas, y ahí el
-   Principio III pasa de garantía a trámite. Está desarrollado en la pre-spec; conviene
-   decidirlo al especificar, no al final.
+   Principio III pasa de garantía a trámite. Era el punto que la pre-spec dejaba abierto
+   para decidir al especificar; lo que se decidió está en la
+   [spec 008](../../specs/008-higiene-corpus/).
 2. ~~**El cambio de embeddings de la pre-spec 1 se valida a mano.**~~ **Resuelto**: la
    spec 006 dejó un arnés repetible (`scripts/medir-umbral.ts`) con consultas de control
    sacadas de defectos reales, más la línea de base y la medición posterior en

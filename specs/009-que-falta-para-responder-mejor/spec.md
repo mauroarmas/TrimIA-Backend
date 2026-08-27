@@ -8,7 +8,7 @@
 
 **Input**: User description: "Que el supervisor pueda preguntar «¿cómo mejoro esto?» y reciba, a partir de las consultas que el agente realmente recibió, un resumen por tema de lo que no pudo contestar — con qué le falta a cada uno. Incluye arreglar la métrica de confianza del panel (ventana temporal y mínimo de muestra)."
 
-**Pre-spec**: [`sprints/5B-conocimiento-confiable/4-que-falta-para-responder-mejor.md`](../../sprints/5B-conocimiento-confiable/4-que-falta-para-responder-mejor.md) — 4 de 6 del Sprint 5B.
+**Pre-spec**: «Qué falta para responder mejor», 4 de 6 del Sprint 5B (ya borrada: manda esta spec).
 
 **Depende de**: spec [006](../006-calidad-busqueda-rag/) (implementada). Medir antes del cambio
 de embeddings no servía: la 006 movió todos los scores y dejó medidos el piso de ruido (54.1%),

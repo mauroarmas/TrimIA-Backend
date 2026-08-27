@@ -122,7 +122,7 @@ prisma/schema.prisma                     # 3 modelos, 2 enums, relaciones invers
 FR-002 elige es el que el prototipo ya dibujaba, y la pantalla "qué me falta" que se retira
 no existía en ningún prototipo. Lo que el prototipo pide y todavía falta —historial visible
 y opciones predefinidas— es de **cómo se contesta** la entrevista, no de dónde salen sus
-ítems: quedó como [pre-spec 8](../../sprints/5B-conocimiento-confiable/8-la-entrevista-como-la-dibujamos.md).
+ítems: quedó como pre-spec 8 del Sprint 5B, hoy [spec 012](../../specs/012-entrevista-como-conversacion/).
 
 **Structure Decision**: módulo propio, como manda el Principio V. `improvements-list.ts`
 sale como funciones puras por el mismo motivo que en las specs 009 y 010: el orden, la

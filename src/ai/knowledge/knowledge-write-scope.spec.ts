@@ -363,6 +363,20 @@ describe('⭐ ver no se restringe por área (FR-013)', () => {
     // consultado al empleado para saber cuáles son.
     expect(employees.findById).not.toHaveBeenCalled();
   });
+
+  it('el buscador de texto filtra por título o contenido, sin distinguir mayúsculas', async () => {
+    const { service, prisma } = buildService();
+
+    await service.list({ search: 'Garantía' });
+
+    const [{ where }] = prisma.knowledgeDocument.findMany.mock.calls[0];
+    expect(where).toEqual({
+      OR: [
+        { title: { contains: 'Garantía', mode: 'insensitive' } },
+        { content: { contains: 'Garantía', mode: 'insensitive' } },
+      ],
+    });
+  });
 });
 
 /**

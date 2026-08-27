@@ -6,7 +6,7 @@
 
 **Status**: Draft
 
-**Input**: Pre-spec 7 del Sprint 5B — [`sprints/5B-conocimiento-confiable/7-una-sola-pantalla-para-mejorar.md`](../../sprints/5B-conocimiento-confiable/7-una-sola-pantalla-para-mejorar.md). Unificar "¿Qué me falta?" (spec 009) y "Entrevista" (spec 010) en una sola pantalla, y sumar una fuente que no dependa de tráfico reciente: documentos que el modelo detecta inconclusos o ambiguos.
+**Input**: Pre-spec 7 del Sprint 5B, «Una sola pantalla para mejorar» (ya borrada: manda esta spec). Unificar "¿Qué me falta?" (spec 009) y "Entrevista" (spec 010) en una sola pantalla, y sumar una fuente que no dependa de tráfico reciente: documentos que el modelo detecta inconclusos o ambiguos.
 
 ---
 

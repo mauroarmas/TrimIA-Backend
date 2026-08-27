@@ -1,5 +1,5 @@
 import { ApiProperty } from '@nestjs/swagger';
-import { AgentType, Audience } from '@prisma/client';
+import { AgentType, Audience, CandidateApplyMode } from '@prisma/client';
 import { Type } from 'class-transformer';
 import {
   IsBoolean,
@@ -42,13 +42,27 @@ export class CorrectKnowledgeDto {
 
   @ApiProperty({
     description:
-      'El texto FINAL del documento, tal como quedó aprobado. Puede venir ' +
-      'editado a mano después de ver la propuesta: se guarda esto y nunca se ' +
-      'regenera con el modelo, porque eso metería contenido que nadie aprobó.',
+      'El texto aprobado por el supervisor. Qué se hace con él lo decide ' +
+      '`applyMode`: con REEMPLAZAR (default) es el contenido FINAL del ' +
+      'documento; con AGREGAR es el bloque que se suma al final de lo que el ' +
+      'documento ya dice. En los dos casos se guarda esto y nunca se regenera ' +
+      'con el modelo, porque eso metería contenido que nadie aprobó.',
   })
   @IsString()
   @IsNotEmpty()
   content: string;
+
+  @ApiProperty({
+    required: false,
+    enum: CandidateApplyMode,
+    description:
+      'AGREGAR suma `content` al final del documento; REEMPLAZAR lo pisa ' +
+      'entero. Mismo par que ya usan las fichas de entrevista, y la misma ' +
+      'regla de composición.',
+  })
+  @IsEnum(CandidateApplyMode)
+  @IsOptional()
+  applyMode?: CandidateApplyMode;
 }
 
 export class ResolveEscalationDto {

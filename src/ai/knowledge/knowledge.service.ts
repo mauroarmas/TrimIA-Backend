@@ -90,6 +90,21 @@ export interface SearchHit {
   title: string;
   content: string;
   score: number; // 1 - distancia coseno (1 = idéntico, 0 = sin relación)
+  /**
+   * La versión del documento **con la que se vectorizó este fragmento**, según
+   * la metadata del chunk.
+   *
+   * Ojo: NO es la versión vigente del documento. Que sean distintas significa
+   * que el vector quedó atrás — el agente está buscando contra un texto viejo
+   * aunque el panel muestre el nuevo. Es un estado que hasta ahora no se podía
+   * ver desde ningún lado: en el defecto del 2026-08-27 el título del vector
+   * decía «Horarios de atención y contacto» y el del documento «Horarios de
+   * atención, feriados y contacto», y nada lo delataba.
+   *
+   * Opcional porque los chunks anteriores al Sprint 5A no la traen; ausente
+   * significa "no se sabe", no "cero".
+   */
+  version?: number;
 }
 
 /** Filtros del listado del panel (Sprint 5A). */
@@ -97,6 +112,8 @@ export interface ListFilter {
   agentType?: AgentType;
   category?: string;
   isActive?: boolean;
+  /** Texto libre: busca en título o contenido, sin distinguir mayúsculas (fix buscador de documentos). */
+  search?: string;
   page?: number;
   limit?: number;
 }
@@ -722,9 +739,64 @@ export class KnowledgeService implements OnModuleInit {
       const meta = (metas[i] ?? {}) as Record<string, unknown>;
       return {
         documentId: String(meta.documentId ?? ''),
+        // Sale de la METADATA del chunk y no de Postgres, a propósito: es el
+        // título con el que este fragmento se vectorizó. Leerlo de Postgres
+        // taparía justamente el desfase que interesa poder ver.
         title: String(meta.title ?? ''),
         content: content ?? '',
         score: 1 - (dists[i] ?? 1),
+        ...(typeof meta.version === 'number' ? { version: meta.version } : {}),
+      };
+    });
+  }
+
+  /**
+   * Le agrega a cada resultado lo que el documento dice **hoy en Postgres**,
+   * para poder comparar contra lo que quedó en el vector.
+   *
+   * Solo lo usa la pantalla «Probar búsqueda», que existe para inspeccionar el
+   * RAG en crudo. `search()` no lo hace por su cuenta porque corre en cada
+   * turno de cada agente y esto es una consulta más a Postgres.
+   *
+   * Un documento que no está en Postgres devuelve `vigente: null`: es un
+   * huérfano de Chroma, y la pantalla tiene que poder decirlo en vez de
+   * mostrarlo como cualquier otro resultado.
+   */
+  async conEstadoDeSincronizacion(hits: SearchHit[]) {
+    if (hits.length === 0) return [];
+
+    const docs = await this.prisma.knowledgeDocument.findMany({
+      where: { id: { in: [...new Set(hits.map((h) => h.documentId))] } },
+      select: { id: true, title: true, version: true, updatedAt: true },
+    });
+    const porId = new Map(docs.map((d) => [d.id, d]));
+
+    return hits.map((hit) => {
+      const doc = porId.get(hit.documentId);
+      return {
+        ...hit,
+        vigente: doc
+          ? {
+              title: doc.title,
+              version: doc.version,
+              updatedAt: doc.updatedAt,
+            }
+          : null,
+        // Se calcula acá y no en el panel: "¿está al día?" es una comparación
+        // con reglas (un chunk viejo sin `version` no es lo mismo que uno
+        // desfasado), y el panel es el único lugar del proyecto sin tests.
+        //
+        //   AL_DIA        el vector refleja lo que dice el documento
+        //   DESFASADO     el documento cambió y el vector quedó atrás
+        //   HUERFANO      el vector existe y el documento no
+        //   SIN_VERSION   chunk anterior al Sprint 5A: no se puede saber
+        desincronizado: !doc
+          ? ('HUERFANO' as const)
+          : hit.version === undefined
+            ? ('SIN_VERSION' as const)
+            : hit.version !== doc.version || hit.title !== doc.title
+              ? ('DESFASADO' as const)
+              : ('AL_DIA' as const),
       };
     });
   }
@@ -743,6 +815,24 @@ export class KnowledgeService implements OnModuleInit {
       ...(filter.agentType ? { agentType: filter.agentType } : {}),
       ...(filter.category ? { category: filter.category } : {}),
       ...(filter.isActive === undefined ? {} : { isActive: filter.isActive }),
+      ...(filter.search
+        ? {
+            OR: [
+              {
+                title: {
+                  contains: filter.search,
+                  mode: 'insensitive' as const,
+                },
+              },
+              {
+                content: {
+                  contains: filter.search,
+                  mode: 'insensitive' as const,
+                },
+              },
+            ],
+          }
+        : {}),
     };
 
     const [rows, total] = await Promise.all([
@@ -927,8 +1017,25 @@ export class KnowledgeService implements OnModuleInit {
     // mismo: si no, un documento que pasa a INTERNO seguiría siendo
     // recuperable por un cliente. Es un agujero de confidencialidad, no una
     // desprolijidad (Principio I).
+    //
+    // ⭐ **El título también, y desde la spec 006 no es opcional.** Antes de
+    // esa spec el título era decorado: viajaba en la metadata y no participaba
+    // de la similitud, así que renombrar no cambiaba nada de la búsqueda. La
+    // spec 006 lo metió DENTRO del texto que se vectoriza (`textoAVectorizar`)
+    // justamente porque lleva señal — y esta lista quedó como estaba.
+    //
+    // El resultado era un renombre que no servía para nada y no avisaba:
+    // «Horarios de atención y contacto» pasó a «Horarios de atención, feriados
+    // y contacto» y la consulta «atienden feriados» siguió midiendo 0.631,
+    // contra un umbral de 0.65. El log decía «editado (title) → sin
+    // reindexar»; la pantalla, nada.
+    //
+    // No alcanza con parchear la metadata (`updateChunkMetadata`): el título
+    // está en el VECTOR, así que hay que volver a embeber. Es más caro, y es
+    // el precio de que el título cuente.
     const needsReindex =
       contentChanged ||
+      changedFields.includes('title') ||
       changedFields.includes('audience') ||
       changedFields.includes('agentType');
 

@@ -8,7 +8,7 @@
 
 **Input**: User description: "Avisar al momento de cargar conocimiento cuando ya existe un documento parecido o idéntico, leyendo el checksum que ya se calcula para cortar duplicados exactos y corriendo una búsqueda con el contenido nuevo para mostrar lo parecido, en los tres caminos de ingesta: alta manual, archivo subido y escalado resuelto enseñándole a la IA."
 
-**Pre-spec**: [`sprints/5B-conocimiento-confiable/2-duplicados-al-escribir.md`](../../sprints/5B-conocimiento-confiable/2-duplicados-al-escribir.md) — 2 de 5 del Sprint 5B.
+**Pre-spec**: «Duplicados al escribir», 2 de 5 del Sprint 5B (ya borrada: manda esta spec).
 
 **Depende de**: [spec 006](../006-calidad-busqueda-rag/) (implementada). Los scores con
 los que se decide "esto se parece" son los que dejó esa spec.
@@ -145,7 +145,7 @@ verificar que el parecido queda registrado sin haber interrumpido el procesamien
 - ¿Qué pasa si el documento que quedó corto es de **otra área**? El supervisor no puede
   modificarlo (regla de escritura de la spec 005). No se le ofrece, y el camino es
   derivar. **Esto puede ocurrir hoy**: la cola de escalados no filtra por área — ver
-  [`specs/futuras/cola-de-escalados-por-area.md`](../../sprints/5B-conocimiento-confiable/9-cola-de-escalados-por-area.md).
+  la [spec 013](../../specs/013-cola-de-escalados-por-area/).
 - ¿Qué pasa si el documento cercano **no es del tema**, y solo se parecía por casualidad?
   La elección es del supervisor: el sistema ofrece, no decide.
 - ¿Qué pasa si **otra persona edita** el documento entre que se propone la corrección y

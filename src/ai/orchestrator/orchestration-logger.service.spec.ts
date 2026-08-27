@@ -16,16 +16,33 @@ const DOCS: RetrievedDoc[] = [
   { documentId: 'doc-2', title: 'Glosario interno', score: 61.2, rank: 1 },
 ];
 
-function build() {
+/**
+ * `enPostgres` = qué documentos tienen fila en `KnowledgeDocument`.
+ *
+ * Por defecto, todos los que se le pasen: es el caso sano. Acotarlo simula un
+ * vector huérfano en Chroma —un documento borrado del corpus cuyos chunks
+ * sobrevivieron— que es lo que rompía la tanda entera.
+ */
+function build(enPostgres?: string[]) {
   const createMany = jest.fn().mockResolvedValue({ count: DOCS.length });
+  const findMany = jest.fn().mockImplementation((args: any) => {
+    const pedidos = (args?.where?.id?.in ?? []) as string[];
+    const existen = enPostgres ?? pedidos;
+    return Promise.resolve(
+      pedidos.filter((id) => existen.includes(id)).map((id) => ({ id })),
+    );
+  });
   const logger = Object.create(
     OrchestrationLogger.prototype,
   ) as OrchestrationLogger;
   Object.assign(logger, {
-    prisma: { knowledgeRetrieval: { createMany } },
+    prisma: {
+      knowledgeRetrieval: { createMany },
+      knowledgeDocument: { findMany },
+    },
     logger: new Logger('test'),
   });
-  return { logger, createMany };
+  return { logger, createMany, findMany };
 }
 
 describe('trackRetrievals — enlace con el caso escalado', () => {
@@ -96,5 +113,68 @@ describe('trackRetrievals — enlace con el caso escalado', () => {
         escalationId: 'esc-1',
       }),
     ).resolves.toBeUndefined();
+  });
+});
+
+/**
+ * ⭐ Regresión del defecto del 2026-08-26: un vector huérfano se llevaba puesta
+ * la tanda entera.
+ *
+ * `createMany` es todo-o-nada. Un `documentId` que está en Chroma pero ya no en
+ * Postgres viola el FK y hace fallar la inserción COMPLETA, incluidos los
+ * documentos válidos del mismo turno. Envuelto en el `try` de telemetría, el
+ * turno seguía normal y el caso quedaba sin candidatos — la pantalla decía "no
+ * hay documentos cercanos" cuando en realidad no se habían podido guardar.
+ *
+ * Medido en la base real: 3 huérfanos («Prueba QA spec 007» ×2 y una nota de
+ * envíos) dejaban 3 de 8 casos abiertos sin un solo candidato.
+ */
+describe('⭐ trackRetrievals — un huérfano no se lleva puesto el turno', () => {
+  it('guarda los documentos válidos y descarta solo el que no existe', async () => {
+    const { logger, createMany } = build(['doc-1']); // doc-2 quedó huérfano
+
+    await logger.trackRetrievals({
+      conversationId: 'conv-1',
+      outcome: 'ESCALATED',
+      docs: DOCS,
+      escalationId: 'esc-1',
+    });
+
+    const filas = createMany.mock.calls[0][0].data as Record<string, unknown>[];
+    expect(filas).toHaveLength(1);
+    expect(filas[0].documentId).toBe('doc-1');
+    // Lo que importa de verdad: el caso NO se queda sin candidatos.
+    expect(filas[0].escalationId).toBe('esc-1');
+  });
+
+  it('avisa qué ids son huérfanos, en vez de descartarlos en silencio', async () => {
+    // Un huérfano significa que la búsqueda le devuelve al agente un documento
+    // que el panel ya no muestra y que nadie puede corregir. Sin el aviso, eso
+    // solo se descubre auditando Chroma contra Postgres a mano.
+    const { logger } = build(['doc-1']);
+    const warn = jest.fn();
+    Object.assign(logger, { logger: { warn, log: jest.fn() } });
+
+    await logger.trackRetrievals({
+      conversationId: 'conv-1',
+      outcome: 'ESCALATED',
+      docs: DOCS,
+      escalationId: 'esc-1',
+    });
+
+    expect(warn).toHaveBeenCalledWith(expect.stringContaining('doc-2'));
+  });
+
+  it('si TODOS son huérfanos no intenta insertar nada', async () => {
+    const { logger, createMany } = build([]);
+
+    await logger.trackRetrievals({
+      conversationId: 'conv-1',
+      outcome: 'ESCALATED',
+      docs: DOCS,
+      escalationId: 'esc-1',
+    });
+
+    expect(createMany).not.toHaveBeenCalled();
   });
 });

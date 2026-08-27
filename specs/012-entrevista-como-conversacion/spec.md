@@ -6,7 +6,7 @@
 
 **Status**: Draft
 
-**Input**: Pre-spec 8 del Sprint 5B — [`sprints/5B-conocimiento-confiable/8-la-entrevista-como-la-dibujamos.md`](../../sprints/5B-conocimiento-confiable/8-la-entrevista-como-la-dibujamos.md). La entrevista (spec 010) funciona, pero se contesta distinto de como la dibujó el prototipo (Figura 14): hoy es un formulario de a una pregunta por vez, sin historial visible y sin opciones para elegir — solo texto libre.
+**Input**: Pre-spec 8 del Sprint 5B, «La entrevista como la dibujamos» (ya borrada: manda esta spec). La entrevista (spec 010) funciona, pero se contesta distinto de como la dibujó el prototipo (Figura 14): hoy es un formulario de a una pregunta por vez, sin historial visible y sin opciones para elegir — solo texto libre.
 
 ---
 

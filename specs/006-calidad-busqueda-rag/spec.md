@@ -8,7 +8,7 @@
 
 **Input**: User description: "Base de la búsqueda RAG: pasar taskType (RETRIEVAL_DOCUMENT/RETRIEVAL_QUERY) a los embeddings de Gemini al indexar y al buscar, reindexar el corpus existente con los vectores nuevos, y remedir el umbral de confianza sobre el piso de ruido real, para que la búsqueda separe mejor lo relevante del ruido antes de decidir si el agente contesta o deriva a un humano."
 
-**Pre-spec**: [`sprints/5B-conocimiento-confiable/1-base-de-la-busqueda.md`](../../sprints/5B-conocimiento-confiable/1-base-de-la-busqueda.md) — 1 de 5 del Sprint 5B, sin dependencias previas.
+**Pre-spec**: «Base de la búsqueda», 1 de 5 del Sprint 5B, sin dependencias previas (ya borrada: manda esta spec).
 
 > [!IMPORTANT]
 > **Reformulada el 2026-08-22, después de la Fase 0.** La spec original proponía

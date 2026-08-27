@@ -682,9 +682,11 @@ porque en un test el worker no se muere. Hoy `cerrarSiQuedoColgada` cierra como
 `FAILED` (con motivo, no en silencio) toda revisión más vieja que
 `DOC_REVIEW_STALE_MINUTES` y arranca una nueva.
 
-**El mismo agujero sigue abierto en el barrido de cobertura** (`startScan`
-lanza `409` eterno) y ahí es peor, porque ese barrido es global: bloquearía las
-cinco áreas, no una. Anotado en `specs/futuras/barrido-de-cobertura-colgado.md`.
+**El mismo agujero apareció después en el barrido de cobertura** (`startScan`
+lanzaba `409` eterno) y ahí era peor, porque ese barrido es global: bloqueaba las
+cinco áreas, no una. Hoy el criterio vive en `src/common/stale-job.ts`
+(`estaColgado` / `motivoColgado`) y lo usan los tres: revisión de documentos,
+cobertura e higiene.
 
 **La latencia del proveedor no es estable.** La Fase 0 midió 3,7 s por
 documento; durante la validación en vivo una llamada suelta —sin reintentos—

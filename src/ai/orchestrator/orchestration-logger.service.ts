@@ -63,6 +63,24 @@ export class OrchestrationLogger {
    * `skipDuplicates` cubre el caso de un documento que aparece dos veces en
    * el mismo top-k por tener dos chunks parecidos: interesa que el documento
    * se recuperó, no cuántos de sus pedazos entraron.
+   *
+   * ⚠️ **Se filtran los documentos que ya no existen en Postgres antes de
+   * insertar** (defecto del 2026-08-26). `createMany` es todo-o-nada: un solo
+   * `documentId` sin fila en `KnowledgeDocument` viola el FK y tira la tanda
+   * ENTERA, incluidos los documentos válidos del mismo turno. Y como esto es
+   * telemetría envuelta en un `try`, el turno seguía normal y no quedaba
+   * rastro visible.
+   *
+   * El daño no era "una métrica perdida": si el turno escaló, esas filas son
+   * las que después le muestran al supervisor **qué documentos quedaron
+   * cortos**. Tres vectores huérfanos en Chroma —documentos borrados de
+   * Postgres cuyos chunks sobrevivieron— dejaban casos enteros sin candidatos,
+   * y la pantalla decía "no hay" en vez de "no se pudo guardar".
+   *
+   * Limpiar los huérfanos arregla el caso conocido; filtrar acá arregla la
+   * clase entera. Las dos cosas: el corpus y Chroma pueden desincronizarse de
+   * más de una manera, y ninguna de ellas debería costar la telemetría del
+   * turno completo.
    */
   async trackRetrievals(params: {
     conversationId?: string | null;
@@ -84,8 +102,32 @@ export class OrchestrationLogger {
     // usuario y esto es telemetría. Reintentar el job por una métrica
     // perdida le mandaría el mensaje dos veces.
     try {
+      const existentes = await this.prisma.knowledgeDocument.findMany({
+        where: { id: { in: params.docs.map((d) => d.documentId) } },
+        select: { id: true },
+      });
+      const conFila = new Set(existentes.map((d) => d.id));
+      const guardables = params.docs.filter((d) => conFila.has(d.documentId));
+
+      // Un huérfano no es un detalle de implementación: significa que la
+      // búsqueda le está devolviendo al agente un documento que el panel ya no
+      // muestra y que nadie puede corregir. Se avisa con los ids para que se
+      // pueda ir a limpiarlos, en vez de dejarlo pasar en silencio.
+      if (guardables.length < params.docs.length) {
+        const huerfanos = params.docs
+          .filter((d) => !conFila.has(d.documentId))
+          .map((d) => d.documentId);
+        this.logger.warn(
+          `${huerfanos.length} documento(s) recuperado(s) no existen en Postgres ` +
+            `y se excluyen del registro: ${huerfanos.join(', ')}. ` +
+            `Están en Chroma pero no en el corpus — hay que limpiar esos vectores.`,
+        );
+      }
+
+      if (guardables.length === 0) return;
+
       await this.prisma.knowledgeRetrieval.createMany({
-        data: params.docs.map((d) => ({
+        data: guardables.map((d) => ({
           documentId: d.documentId,
           conversationId: params.conversationId ?? null,
           escalationId: params.escalationId ?? null,

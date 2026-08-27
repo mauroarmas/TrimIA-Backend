@@ -169,6 +169,87 @@ describe('EscalationsService', () => {
       expect(prisma.escalation.create).not.toHaveBeenCalled();
       expect(conversations.setStatus).not.toHaveBeenCalled();
     });
+
+    /**
+     * ⭐ Un caso nuevo SIEMPRE queda con nota interna (2026-08-27).
+     *
+     * El agujero estaba abierto por dos lados: `escalate_by_agent` toma la nota
+     * de la salida estructurada del modelo, donde `internalNote` es opcional, y
+     * `collections.escalateClient` nunca pasó ninguna. En los dos casos el
+     * supervisor recibía un `reason` de una línea y a leer la conversación
+     * entera. La regla vive en `create()` y no en cada camino justamente para
+     * que valga también para los caminos que todavía no existen.
+     */
+    describe('⭐ la nota interna está garantizada', () => {
+      beforeEach(() => {
+        prisma.escalation.findFirst.mockResolvedValue(null);
+        prisma.escalation.create.mockResolvedValue({
+          id: 'esc-1',
+          conversationId: 'conv-1',
+          status: 'PENDING',
+        });
+      });
+
+      it('con nota del agente, se guarda esa', async () => {
+        await service.create({
+          conversationId: 'conv-1',
+          reason: '[SALES] el cliente pidió hablar con alguien',
+          agentType: 'SALES',
+          internalNote: 'Pidió una cotización especial por 40 heladeras.',
+        });
+
+        expect(conversations.addAgentNote).toHaveBeenCalledWith(
+          'conv-1',
+          'SALES',
+          'Pidió una cotización especial por 40 heladeras.',
+        );
+      });
+
+      it('sin nota del agente, igual queda una con lo que sí se sabe', async () => {
+        conversations.getLastUserMessage.mockResolvedValue({
+          content: '¿me pueden facturar a nombre de la empresa?',
+        });
+
+        await service.create({
+          conversationId: 'conv-1',
+          reason: '[ADMIN] derivado a mano',
+          agentType: 'ADMIN',
+        });
+
+        const [, agente, nota] = conversations.addAgentNote.mock.calls[0];
+        expect(agente).toBe('ADMIN');
+        // Dice de frente que el agente no la escribió: un texto de respaldo que
+        // se hiciera pasar por resumen del agente sería peor que no tenerlo.
+        expect(nota).toMatch(/no dejó resumen/i);
+        expect(nota).toContain('[ADMIN] derivado a mano');
+        expect(nota).toContain('¿me pueden facturar a nombre de la empresa?');
+      });
+
+      it('sin nota Y sin mensajes previos, tampoco se rompe', async () => {
+        // `escalateClient` (Cobranzas) abre casos sobre conversaciones que
+        // pueden no tener ni un mensaje del cliente todavía.
+        conversations.getLastUserMessage.mockResolvedValue(null);
+
+        await service.create({
+          conversationId: 'conv-1',
+          reason: 'escalado a mano desde Cobranzas',
+        });
+
+        const [, , nota] = conversations.addAgentNote.mock.calls[0];
+        expect(nota).toContain('(ninguna registrada)');
+      });
+
+      it('no se pide la última consulta si el agente sí dejó nota', async () => {
+        // La consulta extra solo la paga el camino de respaldo.
+        await service.create({
+          conversationId: 'conv-1',
+          reason: 'x',
+          internalNote: 'Resumen del agente.',
+        });
+
+        expect(conversations.getLastUserMessage).not.toHaveBeenCalled();
+      });
+    });
   });
 
   /**
@@ -776,6 +857,78 @@ describe('EscalationsService', () => {
         ).rejects.toThrow(ConflictException);
 
         expect(sender.send).not.toHaveBeenCalled();
+      });
+
+      /**
+       * ⭐ `applyMode` — sumar al documento o pisarlo (2026-08-27).
+       *
+       * El par ya existía para las fichas de entrevista (spec 010) y acá se
+       * reusa con la MISMA regla de composición, no con una copia. El default
+       * es `REEMPLAZAR` porque es lo que este campo significaba antes de que el
+       * modo existiera: el texto que llega es el documento entero.
+       */
+      describe('⭐ applyMode: sumar o pisar', () => {
+        beforeEach(() => {
+          // El contenido vigente, que AGREGAR necesita leer y REEMPLAZAR no.
+          prisma.knowledgeDocument.findUnique.mockResolvedValue({
+            id: 'doc-a',
+            agentType: 'SALES',
+            content: 'Lo que el documento decía antes.',
+          });
+        });
+
+        it('AGREGAR suma el texto al final, sin perder lo anterior', async () => {
+          await service.resolve(
+            'esc-1',
+            {
+              message: 'Sí.',
+              correctKnowledge: {
+                ...correccion,
+                content: 'Dato nuevo que faltaba.',
+                applyMode: 'AGREGAR' as never,
+              },
+            },
+            'employee-1',
+          );
+
+          const [, data] = (knowledge.update as jest.Mock).mock.calls[0];
+          expect(data.content).toBe(
+            'Lo que el documento decía antes.\n\nDato nuevo que faltaba.',
+          );
+        });
+
+        it('REEMPLAZAR pisa el documento entero', async () => {
+          await service.resolve(
+            'esc-1',
+            {
+              message: 'Sí.',
+              correctKnowledge: {
+                ...correccion,
+                content: 'Texto nuevo y nada más.',
+                applyMode: 'REEMPLAZAR' as never,
+              },
+            },
+            'employee-1',
+          );
+
+          const [, data] = (knowledge.update as jest.Mock).mock.calls[0];
+          expect(data.content).toBe('Texto nuevo y nada más.');
+        });
+
+        it('sin applyMode se comporta como REEMPLAZAR (lo de antes)', async () => {
+          // Compatibilidad: el camino de la propuesta de la IA manda el
+          // documento entero ya redactado y no pasa `applyMode`. Si el default
+          // fuera AGREGAR, ese camino duplicaría el documento dentro de sí
+          // mismo.
+          await service.resolve(
+            'esc-1',
+            { message: 'Sí.', correctKnowledge: correccion },
+            'employee-1',
+          );
+
+          const [, data] = (knowledge.update as jest.Mock).mock.calls[0];
+          expect(data.content).toBe(correccion.content);
+        });
       });
     });
 

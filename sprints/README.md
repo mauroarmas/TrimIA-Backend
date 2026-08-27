@@ -10,24 +10,27 @@ hacer. Es la **entrada** de `/speckit-specify`, no su reemplazo.
 ## El flujo
 
 ```
-specs/futuras/          se me ocurre algo a mitad de otra cosa → lo anoto y sigo
-      ↓                 (bandeja de entrada: se llena sola, se vacía a propósito)
-sprints/5B-.../         al arrancar el sprint, lo que le toca se mueve acá
-      ↓                 como pre-spec, en orden
+specs/futuras/          se me ocurre algo que vale la pena → lo escribo YA como
+      ↓                 pre-spec y sigo con lo que estaba haciendo
+sprints/5B-.../         al arrancar el sprint, lo que le toca se MUEVE acá,
+      ↓                 numerado y en orden
 specs/NNN-nombre/       /speckit-specify → plan → tasks → implement
+                        ↳ con la spec escrita, la pre-spec se BORRA
 ```
 
-Cada paso **mueve**, no copia. Un tema vive en un solo lugar a la vez, y ese lugar
-dice en qué etapa está.
+Cada paso **mueve**, no copia, y el último **borra**: una vez que hay spec, la pre-spec
+no tiene nada que aportar y sí puede divergir. Un tema vive en un solo lugar a la vez,
+y ese lugar dice en qué etapa está.
 
 ### El atajo de los defectos
 
 Ese flujo es para **funcionalidad**. Un **defecto de lo ya entregado** no lo recorre:
 
 ```
-specs/futuras/          se anota igual (el registro de CÓMO se encontró no se
-      ↓                 reconstruye después)
+specs/futuras/          se anota solo si no se arregla en el momento
+      ↓                 (corto: qué falla y cómo se detectó)
       └──────────────►  se arregla directo, con test de regresión. Sin spec.
+                        ↳ arreglado, la nota se BORRA
 ```
 
 Una spec sirve para decidir **qué construir**; en un defecto no hay nada que decidir:
@@ -37,8 +40,9 @@ tiene una feature "completa" que falla.
 **La excepción**: si el arreglo cambia el **modelo de datos** o el **alcance**, deja de
 ser un arreglo y pasa a ser trabajo nuevo — ahí sí, pre-spec.
 
-Los defectos viven en [`specs/futuras/`](../specs/futuras/#defectos-de-lo-ya-entregado),
-en su propia sección y con su propia tabla de estado.
+Los defectos viven en [`specs/futuras/`](../specs/futuras/) **mientras esperan
+arreglo, y no más**: cuando el fix entra, el archivo se borra. El registro de lo que
+pasó son el test de regresión y el commit, no una nota que sobrevive al problema.
 
 ## Cómo se arranca un sprint
 
@@ -56,7 +60,7 @@ en su propia sección y con su propia tabla de estado.
 
 ## Qué lleva una pre-spec
 
-Encabezado de tres líneas y cinco secciones. **La parte normativa entra en una
+Encabezado de dos líneas y cinco secciones. **La parte normativa entra en una
 página**: si no entra, la señal no es escribir más, es que **esa spec hay que
 partirla en dos**.
 
@@ -64,8 +68,7 @@ partirla en dos**.
 # Pre-spec N — <título>
 
 **Sprint** 5B · **Orden** N de M · **Tareas del plan** 5B.x–5B.y
-**Depende de** <pre-specs previas, o —> · **Estado** sin spec · **Spec** —
-**Origen** <de dónde salió y cuándo>
+**Depende de** <pre-specs previas, o —> · **Origen** <de dónde salió y cuándo>
 
 ## Qué se quiere
 Dos o tres frases. Qué cambia para quien lo usa.
@@ -92,15 +95,15 @@ La evidencia con la que se detectó. Puede ser larga: no cuenta para la página.
 —números, capturas, análisis previo— va debajo del separador y no se recorta: es lo
 que evita volver a investigar lo mismo dentro de seis semanas.
 
-## Estados
+## Hasta cuándo vive
 
-| Estado | Qué significa |
-|---|---|
-| `sin spec` | escrita, todavía no pasó por `/speckit-specify` |
-| `spec 006` | ya tiene spec formal → **la pre-spec se congela**, manda la spec |
+Una pre-spec existe **solo mientras no tiene spec**. En cuanto `/speckit-specify` la
+convierte, el archivo se borra: la spec es la verdad y dos documentos sobre lo mismo
+solo pueden divergir. Lo que se pensaba antes de escribirla ya quedó en el historial
+de git; no hace falta una copia viva que confunda al que abra la carpeta.
 
-Una pre-spec **no se edita después de tener spec**. Si divergen, la spec es la
-verdad; la pre-spec queda como registro de lo que se pensaba antes de escribirla.
+Por eso una pre-spec conviene que sea **barata de tirar**: es un plan, no un
+compromiso ni un archivo histórico.
 
 ## Sprints
 

@@ -13,6 +13,7 @@ import {
 } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
 import { KnowledgeService } from '../ai/knowledge/knowledge.service';
+import { componerContenido } from '../ai/knowledge/apply-mode';
 import { InterviewsDraftingService } from './interviews-drafting.service';
 
 type ApproveResult =
@@ -480,10 +481,13 @@ export class InterviewsCandidatesService {
       return { ok: false, code: 'DOCUMENTO_AUSENTE' };
     }
 
-    const contenidoFinal =
-      candidate.applyMode === CandidateApplyMode.AGREGAR
-        ? `${doc.content.trimEnd()}\n\n${contenido.trimStart()}`
-        : contenido;
+    // La regla se consulta, no se escribe acá: `componerContenido` es el punto
+    // único, y la resolución de un caso escalado (spec 007) usa el mismo.
+    const contenidoFinal = componerContenido(
+      candidate.applyMode,
+      doc.content,
+      contenido,
+    );
 
     try {
       await this.knowledge.update(

@@ -194,6 +194,13 @@ function buildFakePrisma() {
     },
     escalation: {
       findMany: jest.fn().mockResolvedValue([]),
+      // El contexto que acompaña a una pregunta salida de un escalado. Devuelve
+      // `null` por defecto: una pregunta de tema de cobertura no viene de
+      // ningún caso, y ése es el camino normal.
+      findUnique: jest.fn().mockResolvedValue(null),
+    },
+    internalNote: {
+      findMany: jest.fn().mockResolvedValue([]),
     },
     knowledgeDocument: {
       findMany: jest.fn().mockResolvedValue([]),
@@ -289,6 +296,7 @@ function buildService(overrides: {
   knowledge?: any;
   openQueue?: any;
   closeQueue?: any;
+  conversations?: any;
 }) {
   const openQueue = overrides.openQueue ?? buildQueue();
   const closeQueue = overrides.closeQueue ?? buildQueue();
@@ -301,6 +309,12 @@ function buildService(overrides: {
     (overrides.coverage ?? coverageStub) as any,
     (overrides.drafting ?? draftingStubOk()) as any,
     (overrides.improvements ?? improvementsStubConTemas()) as any,
+    // Solo lo usa el contexto del caso escalado. El default devuelve vacío: una
+    // pregunta que no viene de un escalado no lo llama, y una que sí viene lo
+    // fija su propio test.
+    (overrides.conversations ?? {
+      getMessagesBefore: jest.fn().mockResolvedValue([]),
+    }) as any,
   );
   return { service, openQueue, closeQueue };
 }
@@ -1096,5 +1110,204 @@ describe('InterviewsService — opciones de respuesta (spec 012, US2/US3)', () =
 
     expect(res.retry).toBe(false);
     expect(res.next!.order).toBe(2);
+  });
+});
+
+/**
+ * ⭐ El contexto del caso escalado que acompaña a la pregunta (2026-08-27).
+ *
+ * `quotes` sola no alcanzaba. Una consulta suelta —«y qué documentación
+ * necesito?»— no dice de qué se venía hablando, y sin eso lo que se conteste
+ * sale genérico o directamente equivocado: "documentación" quiere decir una
+ * cosa si el turno anterior fue sobre un crédito y otra si fue sobre una
+ * devolución. Como la entrevista ingesta lo que se responda, una respuesta
+ * contestada sin contexto se convierte en conocimiento malo.
+ */
+describe('⭐ InterviewsService — contexto del caso escalado', () => {
+  const CASO = {
+    id: 'esc-1',
+    reason: '[COLLECTIONS] confianza insuficiente (0.62)',
+    status: 'PENDING',
+    createdAt: new Date('2026-08-27T01:06:58Z'),
+    conversationId: 'conv-1',
+  };
+
+  const MENSAJES = [
+    {
+      id: 'm1',
+      role: 'USER',
+      content: 'tengo una duda para comprar una heladera',
+      createdAt: new Date(),
+    },
+    {
+      id: 'm2',
+      role: 'ASSISTANT',
+      content: 'Contame qué andás buscando.',
+      createdAt: new Date(),
+    },
+    {
+      id: 'm3',
+      role: 'USER',
+      content: 'entran con financiación para crédito?',
+      createdAt: new Date(),
+    },
+    {
+      id: 'm4',
+      role: 'ASSISTANT',
+      content: 'Sí, tenemos cuotas fijas.',
+      createdAt: new Date(),
+    },
+    {
+      id: 'm5',
+      role: 'USER',
+      content: 'y qué documentación necesito?',
+      createdAt: new Date(),
+    },
+  ];
+
+  const NOTAS = [
+    {
+      id: 'n1',
+      content:
+        'Escalado automático: la base no tenía respuesta con confianza suficiente.',
+      createdAt: new Date(),
+      authorAgentType: 'COLLECTIONS',
+      author: null,
+    },
+    {
+      id: 'n2',
+      content: 'Llamé al cliente, quedó en mandar el recibo de sueldo.',
+      createdAt: new Date(),
+      authorAgentType: null,
+      author: { name: 'Silvia Ríos' },
+    },
+  ];
+
+  async function sesionDeEscalado(opts: { conversations?: any } = {}) {
+    const { prisma } = buildFakePrisma();
+    prisma.escalation.findUnique.mockResolvedValue(CASO);
+    prisma.internalNote.findMany.mockResolvedValue(NOTAS);
+
+    const conversations = opts.conversations ?? {
+      getMessagesBefore: jest.fn().mockResolvedValue(MENSAJES),
+    };
+
+    const { service } = buildService({
+      prisma,
+      conversations,
+      improvements: {
+        materialParaEntrevista: jest.fn().mockResolvedValue({
+          material: [
+            {
+              origin: 'ESCALADO_PENDIENTE',
+              escalationId: 'esc-1',
+              quotes: ['y qué documentación necesito?'],
+            },
+          ],
+          huboItems: true,
+        }),
+      },
+    });
+
+    const session = await service.open('sector-ventas', 'emp-1');
+    await service.runOpen(session.id, [
+      {
+        origin: 'ESCALADO_PENDIENTE',
+        escalationId: 'esc-1',
+        quotes: ['y qué documentación necesito?'],
+      },
+    ] as any);
+
+    return { service, session, prisma, conversations };
+  }
+
+  it('la pregunta viaja con los mensajes del caso, no solo con la consulta suelta', async () => {
+    const { service, session } = await sesionDeEscalado();
+
+    const estado = await service.get(session.id, 'emp-1');
+
+    expect(estado.current!.escalation).not.toBeNull();
+    expect(estado.current!.escalation!.messages).toHaveLength(5);
+    // El ida y vuelta completo, no solo lo que preguntó el cliente: sin las
+    // respuestas del agente falta la mitad de la historia.
+    expect(
+      estado.current!.escalation!.messages.map((m: any) => m.role),
+    ).toEqual(['USER', 'ASSISTANT', 'USER', 'ASSISTANT', 'USER']);
+  });
+
+  it('y con la nota interna, que es lo único escrito para que otro entienda', async () => {
+    const { service, session } = await sesionDeEscalado();
+
+    const estado = await service.get(session.id, 'emp-1');
+
+    const notas = estado.current!.escalation!.internalNotes;
+    expect(notas).toHaveLength(2);
+    // Se distingue quién la escribió: aplastarlas haría leer como automática
+    // una nota que una persona dejó sobre el caso.
+    expect(notas[0].authorAgentType).toBe('COLLECTIONS');
+    expect(notas[0].authorName).toBeNull();
+    expect(notas[1].authorAgentType).toBeNull();
+    expect(notas[1].authorName).toBe('Silvia Ríos');
+  });
+
+  it('los mensajes se piden ACOTADOS a la fecha del caso y con tope', async () => {
+    // Lo posterior al escalado ya es otra conversación: el cliente siguió
+    // escribiendo mientras esperaba. Mostrarlo como contexto del caso haría
+    // contestar sobre un tema que nadie escaló.
+    const { service, session, conversations } = await sesionDeEscalado();
+
+    await service.get(session.id, 'emp-1');
+
+    expect(conversations.getMessagesBefore).toHaveBeenCalledWith(
+      'conv-1',
+      CASO.createdAt,
+      expect.any(Number),
+    );
+    const [, , tope] = conversations.getMessagesBefore.mock.calls[0];
+    // Cuatro son dos idas y vueltas: apenas el turno que escaló y el anterior.
+    expect(tope).toBeGreaterThanOrEqual(4);
+  });
+
+  it('una pregunta que NO viene de un escalado trae escalation: null', async () => {
+    // El camino normal (tema de cobertura). `null` y no un objeto vacío: "no
+    // hay caso detrás" es distinto de "hay uno sin mensajes".
+    const { prisma } = buildFakePrisma();
+    const { service } = buildService({ prisma });
+    const session = await service.open('sector-ventas', 'emp-1');
+    await service.runOpen(session.id, [
+      {
+        origin: 'TEMA_COBERTURA',
+        themeId: 't1',
+        label: 'Tema 1',
+        agentType: 'SALES',
+        band: 'SIN_RESPUESTA',
+        cause: 'NO_HAY_NADA',
+        queryEventIds: ['ev-1'],
+        quotes: ['consulta'],
+        queryCount: 3,
+        documents: [],
+      },
+    ] as any);
+
+    const estado = await service.get(session.id, 'emp-1');
+
+    expect(estado.current!.escalation).toBeNull();
+    expect(prisma.escalation.findUnique).not.toHaveBeenCalled();
+  });
+
+  it('si traer el contexto falla, la entrevista sigue funcionando', async () => {
+    // Es contexto de más, no la pregunta. Que se caiga la consulta no puede
+    // dejar sin entrevistar — mismo criterio que los candidatos de la spec 007.
+    const { service, session } = await sesionDeEscalado({
+      conversations: {
+        getMessagesBefore: jest.fn().mockRejectedValue(new Error('DB caída')),
+      },
+    });
+
+    const estado = await service.get(session.id, 'emp-1');
+
+    expect(estado.current).not.toBeNull();
+    expect(estado.current!.text).toBeTruthy();
+    expect(estado.current!.escalation).toBeNull();
   });
 });

@@ -7,6 +7,7 @@ import {
 import {
   AgentType,
   Audience,
+  CandidateApplyMode,
   ConvStatus,
   EscalationStatus,
   EscalationKnowledgeAction,
@@ -21,6 +22,7 @@ import { ConversationsService } from '../conversations/conversations.service';
 import { WhatsappSenderService } from '../messaging/whatsapp-sender.service';
 import { OrchestrationLogger } from '../ai/orchestrator/orchestration-logger.service';
 import { KnowledgeService } from '../ai/knowledge/knowledge.service';
+import { componerContenido } from '../ai/knowledge/apply-mode';
 import { KnowledgeAiEditService } from '../ai/knowledge/knowledge-ai-edit.service';
 import { EmployeesService } from '../employees/employees.service';
 
@@ -67,6 +69,18 @@ export interface ResolveEscalationInput {
     documentId: string;
     baseVersion: number;
     content: string;
+    /**
+     * Qué hacer con `content`. Default `REEMPLAZAR`, que es lo que este campo
+     * significaba antes de existir: el texto que llega ES el documento final.
+     *
+     * El default va al revés que en las fichas de entrevista —allá es
+     * `AGREGAR`— y la diferencia no es un descuido. Allá la pregunta que
+     * originó el texto fue "¿qué le FALTA a este documento?", así que el texto
+     * es por construcción un pedazo; acá el camino que ya existía —la propuesta
+     * de la IA— entrega el documento entero ya redactado, y pisarlo es lo
+     * correcto. Cada default es el que no sorprende en su contexto.
+     */
+    applyMode?: CandidateApplyMode;
   };
 }
 
@@ -111,13 +125,22 @@ export class EscalationsService {
    * Si ya existe una PENDING para la misma conversación, la devuelve tal
    * cual en vez de duplicarla (regla de aplicación, no constraint de DB —
    * ver data-model.md).
+   *
+   * ⭐ **Un caso nuevo SIEMPRE queda con nota interna.** Es la regla, y vive
+   * acá y no en cada camino de escalado a propósito: es lo único que hace que
+   * valga para los que todavía no existen.
    */
   async create(params: {
     conversationId: string;
     reason: string;
     /** Agente que escaló; queda como autor de la nota interna. */
     agentType?: AgentType;
-    /** Resumen del caso para el supervisor que lo tome. */
+    /**
+     * Resumen del caso para el supervisor que lo tome.
+     *
+     * Opcional en la firma, **no** en el resultado: si no viene, se escribe una
+     * nota factual con lo que sí se sabe. Ver `notaDeRespaldo`.
+     */
     internalNote?: string;
   }) {
     const existing = await this.prisma.escalation.findFirst({
@@ -130,13 +153,12 @@ export class EscalationsService {
       data: { conversationId: params.conversationId, reason: params.reason },
     });
 
-    if (params.internalNote) {
-      await this.conversations.addAgentNote(
-        params.conversationId,
-        params.agentType ?? null,
-        params.internalNote,
-      );
-    }
+    await this.conversations.addAgentNote(
+      params.conversationId,
+      params.agentType ?? null,
+      params.internalNote ??
+        (await this.notaDeRespaldo(params.conversationId, params.reason)),
+    );
 
     await this.conversations.setStatus(params.conversationId, 'WAITING_HUMAN');
 
@@ -147,6 +169,43 @@ export class EscalationsService {
     });
 
     return escalation;
+  }
+
+  /**
+   * La nota de un caso que llegó sin resumen del agente.
+   *
+   * **Existía el agujero y estaba abierto por dos lados.** `escalate_by_agent`
+   * toma la nota de la salida estructurada del modelo, donde `internalNote` es
+   * `.optional()`: un turno en que el modelo la omite abría un caso mudo. Y
+   * `collections.escalateClient` nunca pasó ninguna. En los dos casos el
+   * supervisor recibía un caso con un `reason` de una línea y nada más — a leer
+   * la conversación entera para saber qué pasó.
+   *
+   * No se inventa un resumen: se escribe lo que **sí** se sabe con certeza (el
+   * motivo registrado y la última consulta del cliente) y se dice de frente que
+   * el agente no dejó resumen. Un texto redactado por las dudas sería
+   * indistinguible de uno que el agente escribió de verdad, y el supervisor lo
+   * leería como tal.
+   *
+   * El `warn` no es decorativo: si esto aparece seguido para un mismo agente,
+   * lo que hay que arreglar es su prompt, no la nota.
+   */
+  private async notaDeRespaldo(
+    conversationId: string,
+    reason: string,
+  ): Promise<string> {
+    this.log.warn(
+      `Caso abierto sin nota del agente (${reason}): se deja una factual de respaldo`,
+    );
+
+    const ultima = await this.conversations.getLastUserMessage(conversationId);
+
+    return (
+      `El agente no dejó resumen de este caso. Lo que quedó registrado:\n` +
+      `Motivo: ${reason}\n` +
+      `Última consulta del cliente: ` +
+      (ultima?.content ? `«${ultima.content}»` : '(ninguna registrada)')
+    );
   }
 
   /**
@@ -414,6 +473,35 @@ export class EscalationsService {
   }
 
   /**
+   * El contenido final de una corrección, según su `applyMode`.
+   *
+   * `REEMPLAZAR` no necesita leer nada: el texto aprobado ES el documento. Solo
+   * `AGREGAR` consulta el contenido vigente, y por eso la lectura está adentro
+   * del `if` y no antes — el camino que ya existía no paga una query que no usa.
+   *
+   * Si el documento desapareció entre la validación y acá, se deja pasar el
+   * texto tal cual: quien resuelve es `knowledge.update`, que tira el 404 con
+   * el mensaje correcto. Adivinar acá un error distinto solo agregaría una
+   * segunda forma de contar la misma falla.
+   */
+  private async componerCorreccion(correccion: {
+    documentId: string;
+    content: string;
+    applyMode?: CandidateApplyMode;
+  }): Promise<string> {
+    const modo = correccion.applyMode ?? CandidateApplyMode.REEMPLAZAR;
+    if (modo === CandidateApplyMode.REEMPLAZAR) return correccion.content;
+
+    const doc = await this.prisma.knowledgeDocument.findUnique({
+      where: { id: correccion.documentId },
+      select: { content: true },
+    });
+    if (!doc) return correccion.content;
+
+    return componerContenido(modo, doc.content, correccion.content);
+  }
+
+  /**
    * Los documentos que se consultaron en este caso y **no alcanzaron**
    * (spec 007, US1 / FR-001, FR-002, FR-006).
    *
@@ -632,10 +720,19 @@ export class EscalationsService {
     let corregido: string | null = null;
     if (input.correctKnowledge) {
       try {
+        // Con AGREGAR hay que leer lo que el documento dice HOY para poder
+        // sumarle el bloque nuevo. Se lee acá y no en la validación de arriba a
+        // propósito: entre las dos hay un `send()` al cliente, y componer con
+        // un contenido leído antes de eso agrandaría la ventana en la que otro
+        // supervisor puede haber guardado. El `expectedVersion` de más abajo
+        // sigue siendo la garantía real —si cambió, esto tira 409 y no se
+        // pisa— pero no tiene sentido armar el texto sobre una base ya vieja.
+        const contenido = await this.componerCorreccion(input.correctKnowledge);
+
         await this.knowledge.update(
           input.correctKnowledge.documentId,
           {
-            content: input.correctKnowledge.content,
+            content: contenido,
             origin: KnowledgeChangeOrigin.AI_ACCEPTED,
             // La versión base viaja para que un cambio ajeno hecho mientras
             // tanto no se pise en silencio: `update()` ya devuelve 409.

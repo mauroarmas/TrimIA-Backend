@@ -6,7 +6,7 @@
 
 **Status**: Draft
 
-**Input**: Pre-spec 5 del Sprint 5B — [`sprints/5B-conocimiento-confiable/5-entrevista-desde-el-trafico-real.md`](../../sprints/5B-conocimiento-confiable/5-entrevista-desde-el-trafico-real.md). La entrevista de capacitación por chat (RF11): el sistema le pregunta al responsable de un área y lo que responde se convierte en conocimiento con su aprobación. Las preguntas salen de lo que el agente **realmente no pudo contestar** (spec 009), no de un cuestionario a ciegas.
+**Input**: Pre-spec 5 del Sprint 5B, «Entrevista desde el tráfico real» (ya borrada: manda esta spec). La entrevista de capacitación por chat (RF11): el sistema le pregunta al responsable de un área y lo que responde se convierte en conocimiento con su aprobación. Las preguntas salen de lo que el agente **realmente no pudo contestar** (spec 009), no de un cuestionario a ciegas.
 
 ---
 

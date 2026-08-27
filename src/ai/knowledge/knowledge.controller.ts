@@ -122,9 +122,28 @@ export class KnowledgeController {
     return this.knowledge.ingest(body);
   }
 
-  /** Busca conocimiento. body: { query, audience, agentType?, k? } */
+  /**
+   * Busca conocimiento. body: { query, audience, agentType?, k? }
+   *
+   * Cada resultado viene con `vigente`: el título y la versión que el documento
+   * tiene **hoy en Postgres**, al lado del título y la versión con los que el
+   * fragmento se **vectorizó**. Si no coinciden, el agente está buscando contra
+   * un texto viejo aunque el panel muestre el nuevo.
+   *
+   * Ese desfase no se podía ver desde ningún lado, y por eso duró: el 2026-08-27
+   * un documento renombrado a «Horarios de atención, feriados y contacto» siguió
+   * buscándose como «Horarios de atención y contacto» —el título está DENTRO del
+   * vector desde la spec 006— y la consulta «atienden feriados» no cruzaba el
+   * umbral. Esta pantalla existe para inspeccionar el RAG en crudo; que no
+   * mostrara esto era el hueco.
+   *
+   * El enriquecimiento vive acá y **no** en `KnowledgeService.search`, que es el
+   * camino de cada turno de cada agente: una consulta más a Postgres por
+   * búsqueda es barata en una pantalla de diagnóstico y no en el camino
+   * caliente.
+   */
   @Post('search')
-  search(
+  async search(
     @Body()
     body: {
       query: string;
@@ -133,11 +152,12 @@ export class KnowledgeController {
       k?: number;
     },
   ) {
-    return this.knowledge.search(body.query, {
+    const hits = await this.knowledge.search(body.query, {
       audience: body.audience,
       agentType: body.agentType,
       k: body.k,
     });
+    return this.knowledge.conEstadoDeSincronizacion(hits);
   }
 
   // === Gestión (Sprint 5A) ===

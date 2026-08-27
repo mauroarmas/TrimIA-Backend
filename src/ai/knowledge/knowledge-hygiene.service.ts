@@ -64,6 +64,17 @@ export type ScanEnvelope =
       status: HygieneScanStatus;
       threshold?: number;
       documentsScanned?: number;
+      /**
+       * Cuántos documentos activos hay para analizar, mientras `RUNNING`.
+       *
+       * Lo devolvía solo `startScan`, así que la pantalla mostraba el número
+       * únicamente a quien apretó el botón: al recargar —o entrando cuando el
+       * barrido ya estaba corriendo— quedaba «Analizando el corpus (~
+       * documentos)», con el hueco a la vista. Se recalcula acá en vez de
+       * guardarse en la fila porque es una estimación en vivo, no un dato de la
+       * corrida: `documentsScanned` es lo que la corrida realmente miró.
+       */
+      documentsToScan?: number;
       pairsFound?: number;
       failureReason?: string | null;
       createdAt: Date;
@@ -143,9 +154,7 @@ export class KnowledgeHygieneService {
       });
     }
 
-    const documentsToScan = await this.prisma.knowledgeDocument.count({
-      where: { isActive: true },
-    });
+    const documentsToScan = await this.contarDocumentosActivos();
 
     const scan = await this.prisma.hygieneScan.create({
       data: {
@@ -174,11 +183,35 @@ export class KnowledgeHygieneService {
    * nuevo corre ~55 s.
    */
   async latestScan(employeeId: string): Promise<ScanEnvelope> {
-    const ultima = await this.prisma.hygieneScan.findFirst({
+    let ultima = await this.prisma.hygieneScan.findFirst({
       orderBy: { createdAt: 'desc' },
     });
 
     if (!ultima) return { scanId: null, status: 'NEVER_RUN', pairs: [] };
+
+    // ⚠️ La recuperación también tiene que estar ACÁ, en la lectura.
+    //
+    // `startScan` ya cerraba las corridas colgadas, pero eso resolvía el 409 y
+    // no la pantalla: el panel deshabilita el botón mientras el estado sea
+    // `RUNNING`, así que un barrido muerto dejaba la única salida detrás de la
+    // puerta que él mismo trababa. Quien miraba la pantalla no podía apretar
+    // nada, y el poll —que es lo único que seguía corriendo— no reparaba nada.
+    //
+    // Con esto, el propio poll lo destraba: la corrida muerta pasa a `FAILED`
+    // con su motivo y el botón vuelve a habilitarse solo. No se arranca una
+    // nueva desde una lectura: eso lo decide la persona apretando.
+    //
+    // Mutar durante un GET es deliberado y no es nuevo acá: `InterviewsService.get`
+    // marca abandonada una sesión vencida por el mismo motivo — un estado que
+    // venció es incorrecto ya, y devolverlo tal cual propaga la mentira.
+    if (
+      ultima.status === HygieneScanStatus.RUNNING &&
+      (await this.cerrarSiQuedoColgado(ultima))
+    ) {
+      ultima = (await this.prisma.hygieneScan.findUnique({
+        where: { id: ultima.id },
+      }))!;
+    }
 
     if (ultima.status === HygieneScanStatus.READY) {
       return {
@@ -204,6 +237,11 @@ export class KnowledgeHygieneService {
       status: ultima.status,
       threshold: ultima.threshold,
       documentsScanned: ultima.documentsScanned,
+      // Solo mientras corre: en un `FAILED` ya no hay nada por analizar, y
+      // mostrar "quedan ~74" sobre una corrida muerta sería decir que sigue.
+      ...(ultima.status === HygieneScanStatus.RUNNING
+        ? { documentsToScan: await this.contarDocumentosActivos() }
+        : {}),
       pairsFound: ultima.pairsFound,
       failureReason: ultima.failureReason,
       createdAt: ultima.createdAt,
@@ -212,6 +250,11 @@ export class KnowledgeHygieneService {
         ? await this.pairsDeCorrida(ultimaLista.id, employeeId)
         : [],
     };
+  }
+
+  /** Cuántos documentos entran en un barrido. Lo miden `startScan` y la lectura. */
+  private contarDocumentosActivos(): Promise<number> {
+    return this.prisma.knowledgeDocument.count({ where: { isActive: true } });
   }
 
   private async pairsDeCorrida(

@@ -464,6 +464,11 @@ export class SupervisorController {
    * No resuelve nada: el caso sigue PENDING y la propuesta se guarda solo para
    * auditoría. Mirar `audienceUsed` en la respuesta — sale del `userType` de
    * la conversación escalada, no del supervisor que consulta (research §12).
+   *
+   * Y mirar `respaldoDebil`: redacta desde `SUGGESTION_CONFIDENCE_THRESHOLD`,
+   * más bajo que el del agente, así que una propuesta puede venir apoyada en
+   * material que al agente no le alcanzó. El panel tiene que mostrarlo, no
+   * presentarla como una respuesta fundada más.
    */
   @Get('escalations/:id/suggestion')
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -472,7 +477,11 @@ export class SupervisorController {
     summary: 'Redacta una propuesta con el conocimiento cargado (FR-034)',
     description:
       'Devuelve `suggestion: null` con `hasContext: false` cuando no hay ' +
-      'contexto suficiente, en vez de redactar sin respaldo (FR-035).',
+      'contexto suficiente, en vez de redactar sin respaldo (FR-035). ' +
+      'Con `respaldoDebil: true` la propuesta existe pero se apoya en material ' +
+      'por debajo del umbral del agente: hay que revisarla contra `sources`. ' +
+      '`sources` viaja también cuando no hubo propuesta, para saber qué quedó ' +
+      'cerca y por cuánto no llegó.',
   })
   suggestEscalationResponse(@Param('id') id: string) {
     return this.suggestions.suggest(id);

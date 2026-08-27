@@ -8,7 +8,7 @@
 
 **Input**: User description: "Higiene del corpus: detectar documentos del RAG que se compiten entre sí y proponer fusionarlos con aprobación humana"
 
-**Pre-spec**: [`sprints/5B-conocimiento-confiable/3-higiene-del-corpus.md`](../../sprints/5B-conocimiento-confiable/3-higiene-del-corpus.md) — 3 de 6 del Sprint 5B.
+**Pre-spec**: «Higiene del corpus», 3 de 6 del Sprint 5B (ya borrada: manda esta spec).
 
 **Depende de**: spec [006](../006-calidad-busqueda-rag/) y spec [007](../007-duplicados-al-escribir/)
 (ambas implementadas). La 007 evita que se sigan creando duplicados al escribir; esta
