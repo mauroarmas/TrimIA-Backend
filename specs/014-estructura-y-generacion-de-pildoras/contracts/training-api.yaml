@@ -1,0 +1,343 @@
+openapi: 3.0.3
+info:
+  title: TrimIA Training Module API
+  version: 1.0.0
+  description: Endpoints para la estructura de capacitación, generación asistida de píldoras y seguimiento de progreso de empleados.
+paths:
+  /training/modules:
+    get:
+      summary: Listar módulos disponibles para el empleado autenticado
+      description: Devuelve los módulos activos asociados al sector del empleado y transversales generales, con el progreso calculado.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Lista de módulos y píldoras publicadas
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/EmployeeModuleDto'
+
+    post:
+      summary: Crear un nuevo módulo formativo (Solo Supervisores)
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateModuleDto'
+      responses:
+        '201':
+          description: Módulo creado exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TrainingModuleDto'
+        '403':
+          description: No autorizado para el sector indicado
+
+  /training/supervisor/modules:
+    get:
+      summary: Listar todos los módulos y píldoras (incluidos borradores) para supervisión
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Lista completa de módulos para el supervisor
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SupervisorModuleDto'
+
+  /training/pills/generate:
+    post:
+      summary: Generar propuesta de píldora asistida con IA (Solo Supervisores)
+      description: Consulta el RAG y entrevistas del sector y genera una píldora estructurada en estado DRAFT.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GeneratePillDto'
+      responses:
+        '201':
+          description: Píldora generada en estado DRAFT
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PillDetailDto'
+        '400':
+          description: Contexto RAG insuficiente para generar procedimiento veraz
+        '403':
+          description: Supervisor sin permisos para el sector del módulo
+
+  /training/pills/{id}:
+    get:
+      summary: Obtener detalle y contenido de una píldora
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Contenido de la píldora (si es empleado, las respuestas correctas se ocultan)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PillDetailDto'
+        '403':
+          description: Píldora bloqueada o no accesible para el empleado
+        '404':
+          description: Píldora no encontrada
+
+    put:
+      summary: Editar borrador de píldora (Solo Supervisores)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdatePillDto'
+      responses:
+        '200':
+          description: Píldora actualizada exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PillDetailDto'
+
+  /training/pills/{id}/publish:
+    post:
+      summary: Aprobar y publicar píldora (Solo Supervisores)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                indexInKnowledge:
+                  type: boolean
+                  default: false
+                  description: Si es true, añade la píldora a la base de conocimiento general pasando por deduplicación
+      responses:
+        '200':
+          description: Píldora publicada
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PillDetailDto'
+
+  /training/pills/{id}/verify:
+    post:
+      summary: Enviar respuestas de autoevaluación (Empleado)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - answers
+              properties:
+                answers:
+                  type: array
+                  items:
+                    type: integer
+                  description: Índices seleccionados para las 2 preguntas (ej. [2, 0])
+      responses:
+        '200':
+          description: Resultado de la evaluación
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/QuizVerificationResultDto'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    CreateModuleDto:
+      type: object
+      required:
+        - title
+      properties:
+        title:
+          type: string
+        description:
+          type: string
+        sectorId:
+          type: string
+          nullable: true
+        orderIndex:
+          type: integer
+          default: 0
+
+    GeneratePillDto:
+      type: object
+      required:
+        - moduleId
+        - topic
+      properties:
+        moduleId:
+          type: string
+        topic:
+          type: string
+          description: Tema o procedimiento a redactar (ej. "Recepción y validación de transferencias")
+        additionalNotes:
+          type: string
+
+    UpdatePillDto:
+      type: object
+      properties:
+        title:
+          type: string
+        objective:
+          type: string
+        content:
+          type: string
+        quiz:
+          type: array
+          items:
+            $ref: '#/components/schemas/QuizQuestionDto'
+        orderIndex:
+          type: integer
+
+    QuizQuestionDto:
+      type: object
+      required:
+        - id
+        - question
+        - options
+        - correctOptionIndex
+        - explanation
+      properties:
+        id:
+          type: integer
+        question:
+          type: string
+        options:
+          type: array
+          items:
+            type: string
+        correctOptionIndex:
+          type: integer
+        explanation:
+          type: string
+
+    QuizVerificationResultDto:
+      type: object
+      properties:
+        passed:
+          type: boolean
+        failedIndices:
+          type: array
+          items:
+            type: integer
+        explanations:
+          type: array
+          items:
+            type: string
+        nextPillId:
+          type: string
+          nullable: true
+
+    PillDetailDto:
+      type: object
+      properties:
+        id:
+          type: string
+        moduleId:
+          type: string
+        title:
+          type: string
+        objective:
+          type: string
+        content:
+          type: string
+        status:
+          type: string
+          enum: [DRAFT, PUBLISHED, ARCHIVED]
+        orderIndex:
+          type: integer
+        quiz:
+          type: array
+          items:
+            $ref: '#/components/schemas/QuizQuestionDto'
+        isCompleted:
+          type: boolean
+        isLocked:
+          type: boolean
+
+    EmployeeModuleDto:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        description:
+          type: string
+        pillsCount:
+          type: integer
+        completedPillsCount:
+          type: integer
+        pills:
+          type: array
+          items:
+            $ref: '#/components/schemas/PillDetailDto'
+
+    SupervisorModuleDto:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        sectorId:
+          type: string
+          nullable: true
+        pills:
+          type: array
+          items:
+            $ref: '#/components/schemas/PillDetailDto'

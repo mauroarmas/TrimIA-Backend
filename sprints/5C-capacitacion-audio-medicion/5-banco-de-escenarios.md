@@ -1,7 +1,7 @@
-# Pre-spec — Banco de escenarios
+# Pre-spec 5 — Banco de escenarios y medición de calidad
 
-**Sprint** 5C · **Orden** sin asignar (el corte del 5C se hace al arrancarlo) · **Tareas del plan** 5C.11–5C.13
-**Depende de** el Sprint 5B entero (necesita un corpus estable) · **Estado** sin spec · **Spec** —
+**Sprint** 5C · **Orden** 5 de 5 · **Tareas del plan** 5C.11–5C.14
+**Depende de** Sprint 5B entero (corpus estable) y Sprint 5C · **Estado** sin spec · **Spec** —
 **Origen** futura del 2026-08-20 al 2026-08-22, probando el panel a mano
 
 ## Qué se quiere
@@ -17,17 +17,27 @@ modelo**, que es no determinístico, así que la unidad de medida no es "pasa/fa
 
 ## Alcance
 
-- **Entra:** un corpus fijo de prueba; los 8 escenarios sacados de defectos reales;
-  N corridas por escenario; y un comando aparte de `npm test`.
+- **Entra:** un corpus fijo de prueba (`test/fixtures/corpus-evaluacion/`); los 8 escenarios sacados de defectos reales;
+  $N$ corridas por escenario; aserciones basadas en patrones negativos y positivos; y un comando de evaluación independiente en `package.json` (`npm run test:escenarios`).
 - **No entra:** medir autorización, ruteo y audiencia — eso ya lo fijan mejor y más
   barato los tests unitarios que existen.
+- **No entra en `npm test`:** no puede bloquear el CI diario ni consumir tokens en cada commit.
+
+## Lo que ya existe y hay que reusar
+
+| Necesidad | Ya está | Dónde |
+|---|---|---|
+| Medición previa de umbral y arnés repetible | Script de control con consultas reales | `scripts/medir-umbral.ts` |
+| Orquestador conversacional | `OrchestratorService` | `src/ai/orchestrator/orchestrator.service.ts` |
+| Búsqueda de conocimiento | `KnowledgeService.search()` | `src/ai/knowledge/knowledge.service.ts` |
+| Detección de interlocutor | `Caller` y reglas | `src/ai/orchestrator/caller.ts` |
 
 ## Decisiones al especificar
 
 1. **Cuántas corridas por escenario.** Una sola no dice nada: el mismo escenario dio
    respuestas distintas en corridas seguidas —en una tanda de cuatro, tres ofrecieron
    consultar y una perdió el hilo—. Sin repetición no se distingue "se rompió" de "esta
-   vez salió distinto".
+   vez salió distinto" (recomendado: 3 a 5 corridas).
 2. **Cómo se evalúa cada respuesta.** Tres caminos con costos muy distintos: por
    patrones (barato y frágil), con un modelo de juez (caro y hay que validarlo), o a
    mano sobre una muestra (no escala pero es el único fiable de entrada). Se puede

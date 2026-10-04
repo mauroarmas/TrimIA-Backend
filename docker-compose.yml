@@ -59,7 +59,7 @@ services:
       # WEBHOOK_URL es la URL que n8n usa para construir los webhooks hacia el exterior
       # En dev: localhost para que las URLs sean accesibles desde browser/Postman
       # En prod: reemplazar por la URL pública (ej. https://n8n.tudominio.com/)
-      WEBHOOK_URL: http://localhost:5678/
+      WEBHOOK_URL: https://barmaid-clavicle-irritant.ngrok-free.dev/
       GENERIC_TIMEZONE: America/Argentina/Buenos_Aires
       # La usa el nodo "Transcribir audio (Gemini)" de RecepcionMensaje-A
       # (Sprint 5A, US5): n8n transcribe las notas de voz porque el token de
