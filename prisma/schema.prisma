@@ -169,6 +169,9 @@ model Sector {
   // Spec 011 — una sola pantalla para mejorar
   documentReviews DocumentReview[]
   dismissals      ImprovementDismissal[]
+
+  // Spec 014 — Capacitación
+  trainingModules TrainingModule[]
 }
 
 // Empleado/supervisor autorizado. Determina userType al recibir un mensaje.
@@ -235,6 +238,11 @@ model Employee {
   // Spec 011 — una sola pantalla para mejorar
   docReviewsStarted DocumentReview[]       @relation("DocReviewStartedBy")
   dismissalsMade    ImprovementDismissal[] @relation("ImprovementDismissedBy")
+
+  // Spec 014 — Capacitación
+  createdPills     Pill[]             @relation("PillCreatedBy")
+  publishedPills   Pill[]             @relation("PillPublishedBy")
+  trainingProgress EmployeeProgress[]
 
   @@index([phone])
   @@index([email])
@@ -1465,4 +1473,79 @@ model ImprovementDismissal {
 
   @@index([sectorId, source])
   @@index([documentId, documentVersion])
+}
+
+
+// ============================================================================
+// Spec 014 — Estructura de capacitación y generación de píldoras
+// ============================================================================
+
+enum PillStatus {
+  DRAFT
+  PUBLISHED
+  ARCHIVED
+}
+
+enum TrainingProgressStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  COMPLETED
+}
+
+model TrainingModule {
+  id          String   @id @default(uuid())
+  title       String
+  description String?
+  sectorId    String?
+  orderIndex  Int      @default(0)
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  sector Sector? @relation(fields: [sectorId], references: [id])
+  pills  Pill[]
+
+  @@map("training_modules")
+}
+
+model Pill {
+  id          String     @id @default(uuid())
+  moduleId    String
+  title       String
+  objective   String
+  content     String     @db.Text
+  quiz        Json
+  status      PillStatus @default(DRAFT)
+  orderIndex  Int        @default(0)
+
+  createdById   String?
+  publishedById String?
+  publishedAt   DateTime?
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  module      TrainingModule     @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  createdBy   Employee?          @relation("PillCreatedBy", fields: [createdById], references: [id])
+  publishedBy Employee?          @relation("PillPublishedBy", fields: [publishedById], references: [id])
+  progress    EmployeeProgress[]
+
+  @@map("pills")
+}
+
+model EmployeeProgress {
+  id          String                 @id @default(uuid())
+  employeeId  String
+  pillId      String
+  status      TrainingProgressStatus @default(NOT_STARTED)
+  attempts    Int                    @default(0)
+  lastAnswers Json?
+  completedAt DateTime?
+  createdAt   DateTime               @default(now())
+  updatedAt   DateTime               @updatedAt
+
+  employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  pill     Pill     @relation(fields: [pillId], references: [id], onDelete: Cascade)
+
+  @@unique([employeeId, pillId])
+  @@map("employee_progress")
 }
