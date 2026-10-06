@@ -1,3 +1,5 @@
+import { TrainingProgressStatus } from '@prisma/client';
+
 export interface EmployeeQuizQuestion {
   id: number;
   question: string;
@@ -11,6 +13,8 @@ export interface EmployeePillSummaryDto {
   orderIndex: number;
   isCompleted: boolean;
   isLocked: boolean;
+  status?: TrainingProgressStatus;
+  isExempted?: boolean;
 }
 
 export interface EmployeePillDetailDto {
@@ -22,6 +26,8 @@ export interface EmployeePillDetailDto {
   orderIndex: number;
   isCompleted: boolean;
   isLocked: boolean;
+  status?: TrainingProgressStatus;
+  isExempted?: boolean;
   quiz: EmployeeQuizQuestion[];
 }
 

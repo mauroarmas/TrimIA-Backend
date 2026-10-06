@@ -16,6 +16,7 @@ import { CreateModuleDto } from './dto/create-module.dto';
 import { GeneratePillDto } from './dto/generate-pill.dto';
 import { UpdatePillDto } from './dto/update-pill.dto';
 import { PublishPillDto } from './dto/publish-pill.dto';
+import { SupervisorDiagnosticDetailResponseDto } from './dto/supervisor-diagnostic.dto';
 
 interface AuthenticatedRequest {
   user: { id: string; email?: string; role?: string };
@@ -92,5 +93,33 @@ export class TrainingSupervisorController {
     @Param('id') id: string,
   ) {
     return this.trainingService.archivePill(req.user.id, id);
+  }
+
+  @Get('supervisor/diagnostic/:employeeId')
+  @ApiOperation({ summary: 'Obtener historial y resultado del diagnóstico de un empleado' })
+  @ApiResponse({
+    status: 200,
+    description: 'Detalle del diagnóstico del empleado',
+    type: SupervisorDiagnosticDetailResponseDto,
+  })
+  @ApiResponse({ status: 403, description: 'No autorizado para el sector del empleado' })
+  @ApiResponse({ status: 404, description: 'Empleado o diagnóstico no encontrado' })
+  async getEmployeeDiagnostic(
+    @Req() req: AuthenticatedRequest,
+    @Param('employeeId') employeeId: string,
+  ) {
+    return this.trainingService.getSupervisorEmployeeDiagnostic(req.user.id, employeeId);
+  }
+
+  @Post('supervisor/diagnostic/:employeeId/reset')
+  @ApiOperation({ summary: 'Reiniciar el diagnóstico de un empleado' })
+  @ApiResponse({ status: 200, description: 'Diagnóstico reiniciado exitosamente' })
+  @ApiResponse({ status: 403, description: 'No autorizado para el sector del empleado' })
+  @ApiResponse({ status: 404, description: 'Empleado o sesión diagnóstica no encontrada' })
+  async resetEmployeeDiagnostic(
+    @Req() req: AuthenticatedRequest,
+    @Param('employeeId') employeeId: string,
+  ) {
+    return this.trainingService.resetEmployeeDiagnostic(req.user.id, employeeId);
   }
 }

@@ -24,6 +24,7 @@ import { SalesModule } from './sales/sales.module';
 import { DevToolsModule } from './dev-tools/dev-tools.module';
 import { InterviewsModule } from './interviews/interviews.module';
 import { ImprovementsModule } from './improvements/improvements.module';
+import { TrainingModule } from './training/training.module';
 import { ConfigService } from '@nestjs/config';
 
 @Module({
@@ -79,8 +80,7 @@ import { ConfigService } from '@nestjs/config';
     SalesModule,
     DevToolsModule,
     InterviewsModule,
-    ImprovementsModule,
-  ],
+    ImprovementsModule,    TrainingModule,  ],
   providers: [
     {
       provide: APP_GUARD,

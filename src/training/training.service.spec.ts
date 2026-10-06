@@ -20,6 +20,7 @@ describe('TrainingService', () => {
         findMany: jest.fn().mockResolvedValue([]),
         findUnique: jest.fn().mockResolvedValue(null),
         upsert: jest.fn().mockImplementation(({ create }) => Promise.resolve({ id: 'prog-1', ...create })),
+        updateMany: jest.fn().mockResolvedValue({ count: 2 }),
       },
       trainingModule: {
         findUnique: jest.fn().mockResolvedValue({
@@ -34,7 +35,13 @@ describe('TrainingService', () => {
       sector: {
         findUnique: jest.fn().mockResolvedValue({ id: 'sector-cobranzas', agentType: AgentType.COLLECTIONS }),
       },
+      diagnosticSession: {
+        findFirst: jest.fn().mockResolvedValue(null),
+        create: jest.fn().mockImplementation(({ data }) => Promise.resolve({ id: 'session-1', ...data })),
+        update: jest.fn().mockImplementation(({ data }) => Promise.resolve({ id: 'session-1', ...data })),
+      },
       pill: {
+        findMany: jest.fn().mockResolvedValue([]),
         findFirst: jest.fn().mockResolvedValue(null),
         create: jest.fn().mockImplementation(({ data }) => Promise.resolve({ id: 'pill-1', ...data })),
         findUnique: jest.fn().mockResolvedValue({
@@ -302,4 +309,223 @@ describe('TrainingService', () => {
       );
     });
   });
+
+  describe('Diagnóstico Inicial - US1: getDiagnosticQuestions', () => {
+    it('debe generar entre 5 y 8 preguntas sanitizadas sin correctOptionIndex ni explanation', async () => {
+      mockPrisma.trainingModule.findMany.mockResolvedValueOnce([
+        {
+          id: 'mod-1',
+          title: 'Módulo Cobranzas',
+          pills: [
+            {
+              id: 'pill-1',
+              title: 'Píldora 1',
+              quiz: [
+                { id: 1, question: '¿Q1?', options: ['A', 'B'], correctOptionIndex: 0, explanation: 'Exp 1' },
+                { id: 2, question: '¿Q2?', options: ['A', 'B'], correctOptionIndex: 1, explanation: 'Exp 2' },
+              ],
+            },
+          ],
+        },
+        {
+          id: 'mod-2',
+          title: 'Módulo General',
+          pills: [
+            {
+              id: 'pill-2',
+              title: 'Píldora 2',
+              quiz: [
+                { id: 1, question: '¿Q3?', options: ['A', 'B'], correctOptionIndex: 0, explanation: 'Exp 3' },
+              ],
+            },
+          ],
+        },
+      ]);
+
+      const result = await service.getDiagnosticQuestions('emp-1');
+
+      expect(result.totalQuestions).toBe(3);
+      expect(result.estimatedMinutes).toBe(5);
+      expect(result.questions).toHaveLength(3);
+
+      for (const q of result.questions) {
+        expect(q).toHaveProperty('questionId');
+        expect(q).toHaveProperty('question');
+        expect(q).toHaveProperty('options');
+        expect((q as any).correctOptionIndex).toBeUndefined();
+        expect((q as any).explanation).toBeUndefined();
+      }
+    });
+
+    it('debe rechazar si el empleado ya completó un diagnóstico activo (isReset: false)', async () => {
+      mockPrisma.diagnosticSession.findFirst.mockResolvedValueOnce({
+        id: 'session-prev',
+        isReset: false,
+      });
+
+      await expect(service.getDiagnosticQuestions('emp-1')).rejects.toThrow(BadRequestException);
+    });
+  });
+
+  describe('Diagnóstico Inicial - US2: submitDiagnostic', () => {
+    it('debe calificar respuestas y otorgar EXEMPTED_BY_DIAGNOSTIC si acierta el 100% de un módulo', async () => {
+      mockPrisma.pill.findMany.mockImplementation(({ where }) => {
+        if (where.id && where.id.in) {
+          return Promise.resolve([
+            {
+              id: 'pill-1',
+              moduleId: 'mod-1',
+              title: 'Píldora 1',
+              module: { title: 'Módulo 1' },
+              quiz: [
+                { id: 1, question: 'Q1', options: ['A', 'B'], correctOptionIndex: 0 },
+              ],
+            },
+            {
+              id: 'pill-2',
+              moduleId: 'mod-2',
+              title: 'Píldora 2',
+              module: { title: 'Módulo 2' },
+              quiz: [
+                { id: 1, question: 'Q2', options: ['A', 'B'], correctOptionIndex: 1 },
+              ],
+            },
+          ]);
+        }
+        if (where.moduleId === 'mod-1') {
+          return Promise.resolve([{ id: 'pill-1' }]);
+        }
+        return Promise.resolve([]);
+      });
+
+      const submission = {
+        answers: [
+          { pillId: 'pill-1', questionId: 1, selectedOptionIndex: 0 }, // Correcto (100% en mod-1)
+          { pillId: 'pill-2', questionId: 1, selectedOptionIndex: 0 }, // Incorrecto (0% en mod-2)
+        ],
+      };
+
+      const result = await service.submitDiagnostic('emp-1', submission);
+
+      expect(result.score).toBe(50);
+      expect(result.totalQuestions).toBe(2);
+      expect(result.correctAnswers).toBe(1);
+      expect(result.exemptedModules).toEqual([{ id: 'mod-1', title: 'Módulo 1' }]);
+      expect(result.pendingModules).toEqual([{ id: 'mod-2', title: 'Módulo 2' }]);
+
+      expect(mockPrisma.employeeProgress.upsert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          create: expect.objectContaining({
+            status: TrainingProgressStatus.EXEMPTED_BY_DIAGNOSTIC,
+          }),
+        }),
+      );
+      expect(mockPrisma.diagnosticSession.create).toHaveBeenCalled();
+    });
+  });
+
+  describe('Diagnóstico Inicial - US3: Progresión con candados y revisión voluntaria', () => {
+    it('debe desbloquear la lección siguiente si la anterior está EXEMPTED_BY_DIAGNOSTIC', async () => {
+      mockPrisma.trainingModule.findMany.mockResolvedValueOnce([
+        {
+          id: 'mod-1',
+          title: 'Módulo 1',
+          pills: [
+            { id: 'pill-1', title: 'P1', orderIndex: 0 },
+            { id: 'pill-2', title: 'P2', orderIndex: 1 },
+          ],
+        },
+      ]);
+      mockPrisma.employeeProgress.findMany.mockResolvedValueOnce([
+        { pillId: 'pill-1', status: TrainingProgressStatus.EXEMPTED_BY_DIAGNOSTIC },
+      ]);
+
+      const modules = await service.getEmployeeModules('emp-1');
+      const pills = modules[0].pills;
+
+      expect(pills[0].isCompleted).toBe(true);
+      expect(pills[0].isExempted).toBe(true);
+      expect(pills[1].isLocked).toBe(false); // Desbloqueada gracias a la exención
+    });
+
+    it('debe permitir lectura libre de píldora EXEMPTED_BY_DIAGNOSTIC sin alterarla', async () => {
+      mockPrisma.pill.findUnique.mockResolvedValueOnce({
+        id: 'pill-1',
+        moduleId: 'mod-1',
+        title: 'Píldora Eximida',
+        objective: 'Objetivo',
+        content: 'Procedimiento operativo...',
+        status: PillStatus.PUBLISHED,
+        orderIndex: 0,
+        quiz: [{ id: 1, question: 'Q', options: ['A', 'B'], correctOptionIndex: 0, explanation: 'Exp' }],
+        module: { sectorId: 'sector-cobranzas' },
+      });
+      mockPrisma.employeeProgress.findUnique.mockResolvedValueOnce({
+        status: TrainingProgressStatus.EXEMPTED_BY_DIAGNOSTIC,
+      });
+
+      const pill = await service.getEmployeePill('emp-1', 'pill-1');
+
+      expect(pill.isExempted).toBe(true);
+      expect(pill.isCompleted).toBe(true);
+      expect(pill.isLocked).toBe(false);
+      expect(pill.content).toBe('Procedimiento operativo...');
+    });
+  });
+
+  describe('Diagnóstico Inicial - US4: Supervisión y reinicio', () => {
+    it('debe obtener detalle del diagnóstico del empleado validando assertPuedeEscribir', async () => {
+      mockPrisma.employee.findUnique.mockResolvedValueOnce({
+        id: 'emp-1',
+        name: 'Roberto Sosa',
+        sector: { name: 'Cobranzas', agentType: AgentType.COLLECTIONS },
+      });
+      mockPrisma.diagnosticSession.findFirst.mockResolvedValueOnce({
+        id: 'session-1',
+        score: 100,
+        completedAt: new Date(),
+        totalQuestions: 5,
+        correctAnswers: 5,
+        exemptedModuleIds: ['mod-1'],
+        isReset: false,
+      });
+
+      const detail = await service.getSupervisorEmployeeDiagnostic('sup-1', 'emp-1');
+
+      expect(mockKnowledge.assertPuedeEscribir).toHaveBeenCalledWith('sup-1', AgentType.COLLECTIONS);
+      expect(detail.employeeName).toBe('Roberto Sosa');
+      expect(detail.hasCompletedDiagnostic).toBe(true);
+      expect(detail.lastSession?.score).toBe(100);
+    });
+
+    it('debe reiniciar diagnóstico, marcar isReset=true y revertir píldoras eximidas a NOT_STARTED', async () => {
+      mockPrisma.employee.findUnique.mockResolvedValueOnce({
+        id: 'emp-1',
+        name: 'Roberto Sosa',
+        sector: { agentType: AgentType.COLLECTIONS },
+      });
+      mockPrisma.diagnosticSession.findFirst.mockResolvedValueOnce({
+        id: 'session-1',
+        isReset: false,
+      });
+
+      const res = await service.resetEmployeeDiagnostic('sup-1', 'emp-1');
+
+      expect(mockKnowledge.assertPuedeEscribir).toHaveBeenCalledWith('sup-1', AgentType.COLLECTIONS);
+      expect(mockPrisma.diagnosticSession.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { id: 'session-1' },
+          data: expect.objectContaining({ isReset: true, resetById: 'sup-1' }),
+        }),
+      );
+      expect(mockPrisma.employeeProgress.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { employeeId: 'emp-1', status: TrainingProgressStatus.EXEMPTED_BY_DIAGNOSTIC },
+          data: expect.objectContaining({ status: TrainingProgressStatus.NOT_STARTED }),
+        }),
+      );
+      expect(res.success).toBe(true);
+    });
+  });
+
 });

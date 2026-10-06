@@ -1,0 +1,241 @@
+openapi: 3.0.3
+info:
+  title: API de Diagnóstico Inicial y Progresión Formativa
+  description: Endpoints para la evaluación diagnóstica ágil de empleados y gobernanza de exenciones en TrimIA.
+  version: 1.0.0
+servers:
+  - url: http://localhost:3000
+    description: Servidor de desarrollo local
+
+paths:
+  /training/diagnostic:
+    get:
+      tags:
+        - Diagnóstico - Empleados
+      summary: Obtener el cuestionario de evaluación diagnóstica inicial para el empleado
+      description: Retorna de 5 a 8 preguntas representativas seleccionadas de las píldoras publicadas de su sector y generales, ocultando opciones correctas y explicaciones.
+      security:
+        - bearerAuth: []
+      responses:
+        '200':
+          description: Cuestionario generado con éxito
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DiagnosticQuizResponse'
+        '400':
+          description: El empleado ya ha completado su diagnóstico y no ha sido reiniciado
+        '401':
+          description: No autenticado
+
+  /training/diagnostic/submit:
+    post:
+      tags:
+        - Diagnóstico - Empleados
+      summary: Enviar respuestas de la evaluación diagnóstica inicial
+      description: Califica el examen, aplica exenciones automáticas para módulos con 100% de aciertos y actualiza la progresión formativa.
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubmitDiagnosticDto'
+      responses:
+        '200':
+          description: Diagnóstico evaluado y procesado exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DiagnosticResultResponse'
+        '400':
+          description: Cuestionario ya completado o respuestas inválidas
+        '401':
+          description: No autenticado
+
+  /training/supervisor/diagnostic/{employeeId}:
+    get:
+      tags:
+        - Diagnóstico - Supervisión
+      summary: Obtener el historial y resultado del diagnóstico de un empleado
+      description: Permite al supervisor ver el desempeño diagnóstico de un empleado de su sector.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: employeeId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Detalle del diagnóstico del empleado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SupervisorDiagnosticDetailResponse'
+        '403':
+          description: No autorizado para supervisar el sector de este empleado
+        '404':
+          description: Diagnóstico o empleado no encontrado
+
+  /training/supervisor/diagnostic/{employeeId}/reset:
+    post:
+      tags:
+        - Diagnóstico - Supervisión
+      summary: Reiniciar el diagnóstico de un empleado
+      description: Archiva el diagnóstico previo y remueve exenciones para permitir que el empleado rinda nuevamente.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: employeeId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Diagnóstico reiniciado exitosamente
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  success:
+                    type: boolean
+                  message:
+                    type: string
+        '403':
+          description: No autorizado para el sector del empleado
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    DiagnosticQuestion:
+      type: object
+      properties:
+        moduleId:
+          type: string
+        moduleTitle:
+          type: string
+        pillId:
+          type: string
+        pillTitle:
+          type: string
+        questionId:
+          type: integer
+        question:
+          type: string
+        options:
+          type: array
+          items:
+            type: string
+
+    DiagnosticQuizResponse:
+      type: object
+      properties:
+        totalQuestions:
+          type: integer
+        estimatedMinutes:
+          type: integer
+          example: 5
+        questions:
+          type: array
+          items:
+            $ref: '#/components/schemas/DiagnosticQuestion'
+
+    DiagnosticAnswerItem:
+      type: object
+      required:
+        - pillId
+        - questionId
+        - selectedOptionIndex
+      properties:
+        pillId:
+          type: string
+        questionId:
+          type: integer
+        selectedOptionIndex:
+          type: integer
+
+    SubmitDiagnosticDto:
+      type: object
+      required:
+        - answers
+      properties:
+        answers:
+          type: array
+          items:
+            $ref: '#/components/schemas/DiagnosticAnswerItem'
+
+    ExemptedModuleItem:
+      type: object
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+
+    DiagnosticResultResponse:
+      type: object
+      properties:
+        sessionId:
+          type: string
+        score:
+          type: number
+          example: 85.7
+        totalQuestions:
+          type: integer
+        correctAnswers:
+          type: integer
+        exemptedModules:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExemptedModuleItem'
+        pendingModules:
+          type: array
+          items:
+            $ref: '#/components/schemas/ExemptedModuleItem'
+        message:
+          type: string
+
+    SupervisorDiagnosticDetailResponse:
+      type: object
+      properties:
+        employeeId:
+          type: string
+        employeeName:
+          type: string
+        sectorName:
+          type: string
+        hasCompletedDiagnostic:
+          type: boolean
+        lastSession:
+          type: object
+          nullable: true
+          properties:
+            sessionId:
+              type: string
+            score:
+              type: number
+            completedAt:
+              type: string
+              format: date-time
+            totalQuestions:
+              type: integer
+            correctAnswers:
+              type: integer
+            exemptedModuleIds:
+              type: array
+              items:
+                type: string
+            isReset:
+              type: boolean

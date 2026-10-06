@@ -244,6 +244,10 @@ model Employee {
   publishedPills   Pill[]             @relation("PillPublishedBy")
   trainingProgress EmployeeProgress[]
 
+  // Spec 015 — Diagnóstico Inicial
+  diagnosticSessions DiagnosticSession[] @relation("EmployeeDiagnostics")
+  diagnosticsReset   DiagnosticSession[] @relation("DiagnosticResetBy")
+
   @@index([phone])
   @@index([email])
   @@index([sectorId])
@@ -1490,6 +1494,7 @@ enum TrainingProgressStatus {
   NOT_STARTED
   IN_PROGRESS
   COMPLETED
+  EXEMPTED_BY_DIAGNOSTIC
 }
 
 model TrainingModule {
@@ -1548,4 +1553,33 @@ model EmployeeProgress {
 
   @@unique([employeeId, pillId])
   @@map("employee_progress")
+}
+
+// ============================================================================
+// Spec 015 — Diagnóstico Inicial y Progresión por Puesto
+// ============================================================================
+
+/// Registro de la sesión de diagnóstico inicial rendida por un empleado.
+model DiagnosticSession {
+  id                String    @id @default(uuid())
+  employeeId        String
+  score             Float     // Porcentaje total de aciertos (0.0 a 100.0)
+  totalQuestions    Int
+  correctAnswers    Int
+  exemptedModuleIds String[]  @default([]) // IDs de los TrainingModule eximidos con 100% de aciertos
+  answers           Json      // Detalle de respuestas enviadas [{ pillId, questionId, selectedOptionIndex, isCorrect }]
+
+  // Auditoría y Reinicio por Supervisor (Principio III)
+  isReset           Boolean   @default(false)
+  resetById         String?
+  resetBy           Employee? @relation("DiagnosticResetBy", fields: [resetById], references: [id])
+  resetAt           DateTime?
+
+  completedAt       DateTime  @default(now())
+  createdAt         DateTime  @default(now())
+
+  employee          Employee  @relation("EmployeeDiagnostics", fields: [employeeId], references: [id], onDelete: Cascade)
+
+  @@index([employeeId, isReset])
+  @@map("diagnostic_sessions")
 }
