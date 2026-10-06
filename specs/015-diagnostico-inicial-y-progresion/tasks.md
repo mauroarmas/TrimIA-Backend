@@ -128,11 +128,11 @@ Tareas de frontend al final corresponden al repositorio hermano `trimIA-frontend
 
 **Purpose**: Enumerar las tareas necesarias para ejercitar estos endpoints desde el frontend de pruebas, cumpliendo con la regla constitucional de cierre de spec. *(Estas tareas se enumeran para el backlog del panel y se implementan posteriormente)*.
 
-- [ ] T031 [Panel] Implementar métodos de diagnóstico en `training.service.ts` de `trimIA-frontend` (`getDiagnosticQuiz`, `submitDiagnostic`, `getSupervisorEmployeeDiagnostic`, `resetEmployeeDiagnostic`)
-- [ ] T032 [Panel] Diseñar e implementar pantalla de Evaluación Diagnóstica Inicial (`DiagnosticQuizView`) para empleados mostrando las 5-8 preguntas con opciones de selección única y barra de avance de 5 minutos
-- [ ] T033 [Panel] Implementar vista/modal de Resultados del Diagnóstico (`DiagnosticResultModal`) mostrando porcentaje obtenido, desglose de módulos eximidos vs pendientes y botón para ir a la ruta de aprendizaje
-- [ ] T034 [Panel] Actualizar vista de Inicio de Capacitación (`TrainingHomeView`) para reflejar visualmente las píldoras y módulos eximidos con badge verde "Eximido por diagnóstico" y candados abiertos
-- [ ] T035 [Panel] Agregar sección en el panel de supervisión (`SupervisorEmployeeDetailView`) para ver el diagnóstico del empleado y botón "Reiniciar Diagnóstico" con confirmación modal
+- [X] T031 [Panel] Implementar métodos de diagnóstico en `training.service.ts` de `trimIA-frontend` (`getDiagnosticQuiz`, `submitDiagnostic`, `getSupervisorEmployeeDiagnostic`, `resetEmployeeDiagnostic`)
+- [X] T032 [Panel] Diseñar e implementar pantalla de Evaluación Diagnóstica Inicial (`DiagnosticQuizView`) para empleados mostrando las 5-8 preguntas con opciones de selección única y barra de avance de 5 minutos
+- [X] T033 [Panel] Implementar vista/modal de Resultados del Diagnóstico (`DiagnosticResultModal`) mostrando porcentaje obtenido, desglose de módulos eximidos vs pendientes y botón para ir a la ruta de aprendizaje
+- [X] T034 [Panel] Actualizar vista de Inicio de Capacitación (`TrainingHomeView`) para reflejar visualmente las píldoras y módulos eximidos con badge verde "Eximido por diagnóstico" y candados abiertos
+- [X] T035 [Panel] Agregar sección en el panel de supervisión (`SupervisorEmployeeDetailView`) para ver el diagnóstico del empleado y botón "Reiniciar Diagnóstico" con confirmación modal
 
 ---
 
@@ -186,4 +186,5 @@ graph TD
 | 8 — Cierre: Tareas de Panel | T031–T035 | Backlog de UI en `trimIA-frontend` (Constitución) |
 
 **Total de tareas**: 35 tareas (30 tareas de backend ejecutables + 5 tareas de panel enumeradas para backlog).
+
 
