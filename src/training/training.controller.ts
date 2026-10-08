@@ -1,4 +1,4 @@
-﻿import {
+import {
   Body,
   Controller,
   Get,
@@ -30,11 +30,11 @@ interface AuthenticatedRequest {
 
 @ApiTags('Capacitación - Empleados')
 @ApiBearerAuth()
-@UseGuards(JwtAuthGuard)
 @Controller('training')
 export class TrainingController {
   constructor(private readonly trainingService: TrainingService) {}
 
+  @UseGuards(JwtAuthGuard)
   @Get('diagnostic')
   @ApiOperation({ summary: 'Obtener cuestionario diagnóstico inicial sanitizado para el empleado' })
   @ApiResponse({ status: 200, description: 'Cuestionario generado con éxito', type: DiagnosticQuizResponseDto })
@@ -43,6 +43,7 @@ export class TrainingController {
     return this.trainingService.getDiagnosticQuestions(req.user.id);
   }
 
+  @UseGuards(JwtAuthGuard)
   @Post('diagnostic/submit')
   @ApiOperation({ summary: 'Enviar respuestas del diagnóstico inicial y calcular exenciones automáticas' })
   @ApiResponse({ status: 200, description: 'Diagnóstico evaluado y procesado exitosamente', type: DiagnosticResultDto })
@@ -54,12 +55,14 @@ export class TrainingController {
     return this.trainingService.submitDiagnostic(req.user.id, dto);
   }
 
+  @UseGuards(JwtAuthGuard)
   @Get('modules')
   @ApiOperation({ summary: 'Listar módulos y píldoras disponibles para el empleado autenticado con candados adaptativos' })
   async getMyModules(@Req() req: AuthenticatedRequest) {
     return this.trainingService.getEmployeeModules(req.user.id);
   }
 
+  @UseGuards(JwtAuthGuard)
   @Get('pills/:id')
   @ApiOperation({ summary: 'Obtener contenido de una lección teórica (ocultando respuestas correctas)' })
   async getPill(
@@ -69,6 +72,7 @@ export class TrainingController {
     return this.trainingService.getEmployeePill(req.user.id, id);
   }
 
+  @UseGuards(JwtAuthGuard)
   @Post('pills/:id/verify')
   @ApiOperation({ summary: 'Enviar respuestas al cuestionario de autoevaluación formativa' })
   async verifyQuiz(
@@ -126,6 +130,7 @@ export class TrainingController {
     streamResult.stream.pipe(res);
   }
 
+  @UseGuards(JwtAuthGuard)
   @Post('pills/:id/playback-progress')
   @ApiOperation({ summary: 'Reportar avance de reproducción de audio y verificar umbral del 80%' })
   @ApiResponse({ status: 200, description: 'Progreso registrado y evaluado', type: PlaybackProgressResponseDto })
