@@ -81,7 +81,18 @@ export class AudioStorageService {
     }
 
     const totalSize = meta.size;
-    const contentType = 'audio/mpeg';
+    let contentType = 'audio/mpeg';
+    try {
+      const headerBuffer = Buffer.alloc(4);
+      const fd = await fs.promises.open(meta.path, 'r');
+      await fd.read(headerBuffer, 0, 4, 0);
+      await fd.close();
+      if (headerBuffer.toString('ascii') === 'RIFF') {
+        contentType = 'audio/wav';
+      }
+    } catch {
+      // fallback a audio/mpeg
+    }
 
     if (!rangeHeader) {
       return {

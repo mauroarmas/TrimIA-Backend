@@ -50,24 +50,61 @@ export class TtsService {
       Math.ceil((totalWordCount / 140) * 60),
     );
 
-    const sampleBytesPerSecond = 16000;
-    const targetSize = Math.max(8192, computedDuration * sampleBytesPerSecond);
-    const buffer = Buffer.alloc(targetSize);
+    // Generar archivo WAV PCM de 16-bit mono 8000Hz estándar totalmente audible
+    const sampleRate = 8000;
+    const totalSamples = computedDuration * sampleRate;
+    const dataSize = totalSamples * 2; // 2 bytes por muestra (16 bits)
+    const buffer = Buffer.alloc(44 + dataSize);
 
-    const id3Header = Buffer.from([0x49, 0x44, 0x33, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
-    id3Header.copy(buffer, 0);
+    // RIFF identifier
+    buffer.write('RIFF', 0);
+    buffer.writeUInt32LE(36 + dataSize, 4);
+    buffer.write('WAVE', 8);
 
-    const frameHeader = Buffer.from([0xff, 0xfb, 0x90, 0x64]);
-    for (let offset = 128; offset < targetSize - 4; offset += 417) {
-      frameHeader.copy(buffer, offset);
+    // 'fmt ' chunk
+    buffer.write('fmt ', 12);
+    buffer.writeUInt32LE(16, 16); // Subchunk1Size (16 para PCM)
+    buffer.writeUInt16LE(1, 20);  // AudioFormat (1 para PCM lineal)
+    buffer.writeUInt16LE(1, 22);  // NumChannels (1 canal, mono)
+    buffer.writeUInt32LE(sampleRate, 24); // SampleRate
+    buffer.writeUInt32LE(sampleRate * 2, 28); // ByteRate (SampleRate * NumChannels * BitsPerSample/8)
+    buffer.writeUInt16LE(2, 32);  // BlockAlign (NumChannels * BitsPerSample/8)
+    buffer.writeUInt16LE(16, 34); // BitsPerSample (16 bits)
+
+    // 'data' chunk
+    buffer.write('data', 36);
+    buffer.writeUInt32LE(dataSize, 40);
+
+    // Generar tono musical suave con pausas audibles
+    // Frecuencia diferente según el locutor (Voz 1: 440 Hz / La, Voz 2: 554 Hz / Do#)
+    const dialogueCount = Math.max(1, script.dialogue.length);
+    const segmentDuration = computedDuration / dialogueCount;
+
+    for (let i = 0; i < totalSamples; i++) {
+      const t = i / sampleRate;
+      const segmentIndex = Math.min(dialogueCount - 1, Math.floor(t / segmentDuration));
+      const line = script.dialogue[segmentIndex];
+      const isSpeaker1 = line ? line.speaker === SpeakerRole.SPEAKER_1 : true;
+      const freq = isSpeaker1 ? 440 : 554;
+
+      // Breve pausa de silencio de 0.4s al final de cada turno de diálogo
+      const timeInSegment = t % segmentDuration;
+      let sample = 0;
+      if (timeInSegment < segmentDuration - 0.4) {
+        // Onda senoidal con decaimiento suave para sonar agradable
+        const envelope = Math.sin((Math.PI * (timeInSegment / (segmentDuration - 0.4))));
+        sample = Math.floor(3000 * envelope * Math.sin(2 * Math.PI * freq * t));
+      }
+
+      buffer.writeInt16LE(sample, 44 + i * 2);
     }
 
-    this.logger.log('Audio sintetico generado: duracion ' + computedDuration + 's, tamano ' + buffer.length + ' bytes');
+    this.logger.log('Audio sintetico WAV PCM generado: duracion ' + computedDuration + 's, tamano ' + buffer.length + ' bytes');
 
     return {
       audioBuffer: buffer,
       durationSeconds: computedDuration,
-      mimeType: 'audio/mpeg',
+      mimeType: 'audio/wav',
     };
   }
 }
