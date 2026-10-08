@@ -1,4 +1,4 @@
-﻿# Tasks: 016 — Pipeline de Audio: Guion a 2 Voces y Síntesis TTS
+# Tasks: 016 — Pipeline de Audio: Guion a 2 Voces y Síntesis TTS
 
 **Input**: Documentos de diseño en `specs/016-pipeline-audio-guion-tts/`  
 **Prerequisites**: [plan.md](./plan.md), [spec.md](./spec.md), [research.md](./research.md), [data-model.md](./data-model.md), [contracts/audio-api.yaml](./contracts/audio-api.yaml), [quickstart.md](./quickstart.md)
@@ -132,11 +132,11 @@ Tareas de frontend al final corresponden al repositorio hermano `trimIA-frontend
 
 **Purpose**: Enumerar las tareas necesarias para ejercitar estos endpoints desde el frontend de pruebas, cumpliendo con la regla constitucional de cierre de spec. *(Estas tareas se enumeran para el backlog del panel y se implementan posteriormente)*.
 
-- [ ] T035 [Panel] Implementar métodos de audio en `api.js` de `trimIA-frontend` (`generateAudioScript`, `updateAudioScript`, `enqueueAudioGeneration`, `getAudioStatus`, `reportPlaybackProgress`)
-- [ ] T036 [Panel] Diseñar e implementar modal de revisión y edición del guion a 2 voces para el supervisor (`AudioScriptModal.jsx`) con previsualización de personajes
-- [ ] T037 [Panel] Integrar reproductor de podcast en `PillStudyModal.jsx` con controles de reproducción, barra de avance, streaming de audio y visualización del diálogo sincronizado
-- [ ] T038 [Panel] Implementar reporte periódico de progreso de reproducción en el reproductor web con indicador de desbloqueo al alcanzar el 80%
-- [ ] T039 [Panel] Agregar en `TrainingPanel.jsx` indicador de estado del audio (`AUDIO_GENERATING`, `AUDIO_READY`, `AUDIO_FAILED`) y botón de reintento para supervisores
+- [X] T035 [Panel] Implementar métodos de audio en `api.js` de `trimIA-frontend` (`generateAudioScript`, `updateAudioScript`, `enqueueAudioGeneration`, `getAudioStatus`, `reportPlaybackProgress`)
+- [X] T036 [Panel] Diseñar e implementar modal de revisión y edición del guion a 2 voces para el supervisor (`AudioScriptModal.jsx`) con previsualización de personajes
+- [X] T037 [Panel] Integrar reproductor de podcast en `PillStudyModal.jsx` con controles de reproducción, barra de avance, streaming de audio y visualización del diálogo sincronizado
+- [X] T038 [Panel] Implementar reporte periódico de progreso de reproducción en el reproductor web con indicador de desbloqueo al alcanzar el 80%
+- [X] T039 [Panel] Agregar en `TrainingPanel.jsx` indicador de estado del audio (`AUDIO_GENERATING`, `AUDIO_READY`, `AUDIO_FAILED`) y botón de reintento para supervisores
 
 ---
 
