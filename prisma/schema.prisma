@@ -1490,6 +1490,15 @@ enum PillStatus {
   ARCHIVED
 }
 
+enum AudioStatus {
+  NOT_REQUESTED
+  SCRIPT_GENERATED
+  AUDIO_PENDING
+  AUDIO_GENERATING
+  AUDIO_READY
+  AUDIO_FAILED
+}
+
 enum TrainingProgressStatus {
   NOT_STARTED
   IN_PROGRESS
@@ -1523,6 +1532,14 @@ model Pill {
   status      PillStatus @default(DRAFT)
   orderIndex  Int        @default(0)
 
+  // Spec 016 — Pipeline de Audio y TTS
+  audioStatus          AudioStatus @default(NOT_REQUESTED)
+  audioScript          Json?
+  audioUrl             String?
+  audioDurationSeconds Int?
+  audioError           String?
+  audioGeneratedAt     DateTime?
+
   createdById   String?
   publishedById String?
   publishedAt   DateTime?
@@ -1545,6 +1562,12 @@ model EmployeeProgress {
   attempts    Int                    @default(0)
   lastAnswers Json?
   completedAt DateTime?
+
+  // Spec 016 — Progreso de Escucha de Audio
+  playbackProgressSeconds Int       @default(0)
+  isAudioCompleted        Boolean   @default(false)
+  lastPlaybackReportAt    DateTime?
+
   createdAt   DateTime               @default(now())
   updatedAt   DateTime               @updatedAt
 

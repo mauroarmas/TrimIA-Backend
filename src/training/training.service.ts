@@ -5,7 +5,13 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common';
-import { Audience, PillStatus, TrainingProgressStatus } from '@prisma/client';
+import { Audience, AudioStatus, PillStatus, TrainingProgressStatus } from '@prisma/client';
+import { InjectQueue } from '@nestjs/bullmq';
+import { Queue } from 'bullmq';
+import { AudioStorageService, AudioStreamResult } from './services/audio-storage.service';
+import { AudioScriptDto, UpdateAudioScriptDto } from './dto/audio-script.dto';
+import { AudioStatusResponseDto } from './dto/audio-status.dto';
+import { PlaybackProgressResponseDto, ReportPlaybackProgressDto } from './dto/playback-progress.dto';
 import { PrismaService } from '../database/prisma.service';
 import { KnowledgeService } from '../ai/knowledge/knowledge.service';
 import { TrainingGeneratorService } from './training-generator.service';
@@ -36,6 +42,8 @@ export class TrainingService {
     private readonly prisma: PrismaService,
     private readonly knowledge: KnowledgeService,
     private readonly generator: TrainingGeneratorService,
+    private readonly audioStorageService: AudioStorageService,
+    @InjectQueue('training-audio') private readonly audioQueue: Queue,
   ) {}
 
   private extractQuizQuestions(rawQuiz: any): VerificationQuestion[] {
@@ -396,6 +404,12 @@ export class TrainingService {
       status: currentProgress?.status ?? TrainingProgressStatus.NOT_STARTED,
       isLocked: false,
       quiz: safeQuiz,
+      audioStatus: pill.audioStatus,
+      audioDurationSeconds: pill.audioDurationSeconds,
+      hasAudio: pill.audioStatus === AudioStatus.AUDIO_READY,
+      isAudioCompleted: currentProgress?.isAudioCompleted ?? false,
+      playbackProgressSeconds: currentProgress?.playbackProgressSeconds ?? 0,
+      streamUrl: pill.audioStatus === AudioStatus.AUDIO_READY ? ('/training/pills/' + pill.id + '/audio') : null,
     };
   }
 
@@ -831,4 +845,289 @@ export class TrainingService {
     };
   }
 
+
+  // ==========================================================================
+  // Spec 016 - Pipeline de Audio: Guion, Sintesis TTS y Streaming
+  // ==========================================================================
+
+  async generatePillAudioScript(supervisorId: string, pillId: string): Promise<AudioScriptDto> {
+    const pill = await this.prisma.pill.findUnique({
+      where: { id: pillId },
+      include: { module: { include: { sector: true } } },
+    });
+
+    if (!pill) {
+      throw new NotFoundException('Pildora ' + pillId + ' no encontrada');
+    }
+
+    await this.knowledge.assertPuedeEscribir(
+      supervisorId,
+      pill.module.sector?.agentType ?? null,
+    );
+
+    const generatedScript = await this.generator.generateAudioScript({
+      title: pill.title,
+      objective: pill.objective,
+      content: pill.content,
+    });
+
+    await this.prisma.pill.update({
+      where: { id: pillId },
+      data: {
+        audioScript: generatedScript as any,
+        audioStatus: AudioStatus.SCRIPT_GENERATED,
+        audioError: null,
+      },
+    });
+
+    this.logger.log('Guion de audio generado para pildora ' + pillId + ' por supervisor ' + supervisorId);
+    return generatedScript;
+  }
+
+  async updatePillAudioScript(
+    supervisorId: string,
+    pillId: string,
+    dto: UpdateAudioScriptDto,
+  ): Promise<AudioScriptDto> {
+    const pill = await this.prisma.pill.findUnique({
+      where: { id: pillId },
+      include: { module: { include: { sector: true } } },
+    });
+
+    if (!pill) {
+      throw new NotFoundException('Pildora ' + pillId + ' no encontrada');
+    }
+
+    await this.knowledge.assertPuedeEscribir(
+      supervisorId,
+      pill.module.sector?.agentType ?? null,
+    );
+
+    if (!dto.dialogue || dto.dialogue.length === 0) {
+      throw new BadRequestException('El guion debe contener al menos una linea de dialogo');
+    }
+
+    const estimatedDurationSeconds = dto.estimatedDurationSeconds || 90;
+
+    const updatedScript: AudioScriptDto = {
+      title: dto.title || pill.title,
+      estimatedDurationSeconds,
+      dialogue: dto.dialogue,
+    };
+
+    await this.prisma.pill.update({
+      where: { id: pillId },
+      data: {
+        audioScript: updatedScript as any,
+        audioStatus: AudioStatus.SCRIPT_GENERATED,
+        audioError: null,
+      },
+    });
+
+    this.logger.log('Guion de audio actualizado para pildora ' + pillId + ' por supervisor ' + supervisorId);
+    return updatedScript;
+  }
+
+  async getPillAudioScript(pillId: string): Promise<AudioScriptDto> {
+    const pill = await this.prisma.pill.findUnique({
+      where: { id: pillId },
+      select: { audioScript: true, title: true },
+    });
+
+    if (!pill) {
+      throw new NotFoundException('Pildora ' + pillId + ' no encontrada');
+    }
+
+    if (!pill.audioScript) {
+      throw new NotFoundException('La pildora ' + pillId + ' no posee un guion de audio generado');
+    }
+
+    return pill.audioScript as unknown as AudioScriptDto;
+  }
+
+  async enqueueAudioGeneration(
+    supervisorId: string,
+    pillId: string,
+  ): Promise<AudioStatusResponseDto> {
+    const pill = await this.prisma.pill.findUnique({
+      where: { id: pillId },
+      include: { module: { include: { sector: true } } },
+    });
+
+    if (!pill) {
+      throw new NotFoundException('Pildora ' + pillId + ' no encontrada');
+    }
+
+    await this.knowledge.assertPuedeEscribir(
+      supervisorId,
+      pill.module.sector?.agentType ?? null,
+    );
+
+    if (!pill.audioScript) {
+      throw new BadRequestException('Debe generar o cargar un guion antes de iniciar la sintesis de audio');
+    }
+
+    if (
+      pill.audioStatus === AudioStatus.AUDIO_PENDING ||
+      pill.audioStatus === AudioStatus.AUDIO_GENERATING
+    ) {
+      throw new BadRequestException('La sintesis de audio para esta pildora ya se encuentra en proceso');
+    }
+
+    await this.prisma.pill.update({
+      where: { id: pillId },
+      data: {
+        audioStatus: AudioStatus.AUDIO_PENDING,
+        audioError: null,
+      },
+    });
+
+    await this.audioQueue.add(
+      'generate-audio',
+      { pillId },
+      {
+        jobId: 'audio-' + pillId + '-' + Date.now(),
+      },
+    );
+
+    this.logger.log('Sintesis de audio encolada para pildora ' + pillId + ' por supervisor ' + supervisorId);
+
+    return {
+      pillId: pill.id,
+      status: AudioStatus.AUDIO_PENDING,
+      hasScript: true,
+      hasAudio: false,
+      durationSeconds: pill.audioDurationSeconds,
+      error: null,
+      streamUrl: '/training/pills/' + pill.id + '/audio',
+    };
+  }
+
+  async getAudioStatus(pillId: string): Promise<AudioStatusResponseDto> {
+    const pill = await this.prisma.pill.findUnique({
+      where: { id: pillId },
+      select: {
+        id: true,
+        audioStatus: true,
+        audioScript: true,
+        audioDurationSeconds: true,
+        audioError: true,
+      },
+    });
+
+    if (!pill) {
+      throw new NotFoundException('Pildora ' + pillId + ' no encontrada');
+    }
+
+    return {
+      pillId: pill.id,
+      status: pill.audioStatus,
+      hasScript: !!pill.audioScript,
+      hasAudio: pill.audioStatus === AudioStatus.AUDIO_READY,
+      durationSeconds: pill.audioDurationSeconds,
+      error: pill.audioError,
+      streamUrl: pill.audioStatus === AudioStatus.AUDIO_READY ? ('/training/pills/' + pill.id + '/audio') : null,
+    };
+  }
+
+  async getAudioStream(pillId: string, rangeHeader?: string): Promise<AudioStreamResult> {
+    const pill = await this.prisma.pill.findUnique({
+      where: { id: pillId },
+      select: { id: true, audioStatus: true },
+    });
+
+    if (!pill) {
+      throw new NotFoundException('Pildora ' + pillId + ' no encontrada');
+    }
+
+    if (pill.audioStatus !== AudioStatus.AUDIO_READY) {
+      throw new NotFoundException('El archivo de audio no se encuentra listo para reproduccion');
+    }
+
+    return this.audioStorageService.createAudioStream(pillId, rangeHeader);
+  }
+
+  async recordPlaybackProgress(
+    employeeId: string,
+    pillId: string,
+    dto: ReportPlaybackProgressDto,
+  ): Promise<PlaybackProgressResponseDto> {
+    const pill = await this.prisma.pill.findUnique({
+      where: { id: pillId },
+      select: { id: true, audioDurationSeconds: true, audioStatus: true },
+    });
+
+    if (!pill) {
+      throw new NotFoundException('Pildora ' + pillId + ' no encontrada');
+    }
+
+    const totalDurationSeconds = pill.audioDurationSeconds || 90;
+    const now = new Date();
+
+    const currentProgress = await this.prisma.employeeProgress.findUnique({
+      where: { employeeId_pillId: { employeeId, pillId } },
+    });
+
+    const previousProgressSeconds = currentProgress?.playbackProgressSeconds || 0;
+    const lastReportAt = currentProgress?.lastPlaybackReportAt;
+
+    let computedSeconds = dto.currentSeconds;
+
+    if (lastReportAt) {
+      const elapsedRealSeconds = Math.max(0, Math.floor((now.getTime() - new Date(lastReportAt).getTime()) / 1000));
+      const maxAllowedJump = previousProgressSeconds + elapsedRealSeconds + 5;
+
+      if (dto.currentSeconds > maxAllowedJump) {
+        this.logger.warn(
+          'Salto sospechoso en reproduccion detectado para empleado ' + employeeId + ' en pildora ' + pillId + ': reporto ' + dto.currentSeconds + 's vs max permitido ' + maxAllowedJump + 's',
+        );
+        computedSeconds = Math.min(dto.currentSeconds, maxAllowedJump);
+      }
+    }
+
+    const newProgressSeconds = Math.min(
+      totalDurationSeconds,
+      Math.max(previousProgressSeconds, computedSeconds),
+    );
+
+    const required80Seconds = Math.floor(totalDurationSeconds * 0.8);
+    const hasCompleted80 = newProgressSeconds >= required80Seconds;
+    const isAudioCompleted = (currentProgress?.isAudioCompleted || hasCompleted80);
+
+    await this.prisma.employeeProgress.upsert({
+      where: { employeeId_pillId: { employeeId, pillId } },
+      create: {
+        employeeId,
+        pillId,
+        playbackProgressSeconds: newProgressSeconds,
+        isAudioCompleted,
+        lastPlaybackReportAt: now,
+        status: isAudioCompleted && currentProgress?.status === TrainingProgressStatus.NOT_STARTED
+          ? TrainingProgressStatus.IN_PROGRESS
+          : TrainingProgressStatus.NOT_STARTED,
+      },
+      update: {
+        playbackProgressSeconds: newProgressSeconds,
+        isAudioCompleted,
+        lastPlaybackReportAt: now,
+        status: isAudioCompleted && currentProgress?.status === TrainingProgressStatus.NOT_STARTED
+          ? TrainingProgressStatus.IN_PROGRESS
+          : undefined,
+      },
+    });
+
+    const percentage = Number(((newProgressSeconds / totalDurationSeconds) * 100).toFixed(2));
+    const message = isAudioCompleted
+      ? 'Audio completado exitosamente (umbral 80% alcanzado).'
+      : 'Progreso de reproduccion registrado correctamente.';
+
+    return {
+      pillId,
+      playbackProgressSeconds: newProgressSeconds,
+      totalDurationSeconds,
+      percentage,
+      isAudioCompleted,
+      message,
+    };
+  }
 }

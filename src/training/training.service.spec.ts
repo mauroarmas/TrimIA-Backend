@@ -72,7 +72,8 @@ describe('TrainingService', () => {
     };
 
     mockGenerator = {
-      generatePillProposal: jest.fn().mockResolvedValue({
+          generateAudioScript: jest.fn().mockResolvedValue({ title: 'test', estimatedDurationSeconds: 60, dialogue: [] }),
+    generatePillProposal: jest.fn().mockResolvedValue({
         title: 'Gestión de Mora Temprana',
         objective: 'Contactar al cliente antes del vencimiento',
         content: '### Paso 1: Revisar cuota',
@@ -83,7 +84,10 @@ describe('TrainingService', () => {
       }),
     };
 
-    service = new TrainingService(mockPrisma, mockKnowledge, mockGenerator);
+    
+    const mockAudioStorage = { saveAudio: jest.fn(), getAudioMetadata: jest.fn(), createAudioStream: jest.fn() } as any;
+    const mockAudioQueue = { add: jest.fn() } as any;
+    service = new TrainingService(mockPrisma, mockKnowledge, mockGenerator, mockAudioStorage, mockAudioQueue);
   });
 
   describe('generatePillDraft (US1)', () => {
@@ -525,6 +529,59 @@ describe('TrainingService', () => {
         }),
       );
       expect(res.success).toBe(true);
+    });
+  });
+
+
+  
+  describe('aspectos de audio (Spec 016)', () => {
+    it('debe generar el guion a dos voces con permisos del supervisor', async () => {
+      mockPrisma.pill.findUnique = jest.fn().mockResolvedValue({
+        id: 'pill-1',
+        title: 'Píldora Audio',
+        objective: 'Objetivo de prueba',
+        content: 'Contenido del procedimiento',
+        module: { sector: { agentType: AgentType.COLLECTIONS } },
+      } as any);
+      await service.generatePillAudioScript('supervisor-1', 'pill-1');
+      expect(mockKnowledge.assertPuedeEscribir).toHaveBeenCalledWith('supervisor-1', AgentType.COLLECTIONS);
+      expect(mockPrisma.pill.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            audioStatus: 'SCRIPT_GENERATED',
+          }),
+        }),
+      );
+    });
+
+    it('debe encolar la séntesis de audio en BullMQ previo guion agregado', async () => {
+      mockPrisma.pill.findUnique = jest.fn().mockResolvedValue({
+        id: 'pill-1',
+        audioScript: {},
+        audioStatus: 'SCRIPT_GENERATED',
+        module: { sector: { agentType: AgentType.COLLECTIONS } },
+      } as any);
+      const status = await service.enqueueAudioGeneration('sup-1', 'pill-1');
+      expect(status.status).toBe('AUDIO_PENDING');
+      expect(mockPrisma.pill.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ audioStatus: 'AUDIO_PENDING' }) }),
+      );
+    });
+
+    it('debe desbloquear isAudioCompleted al alcanzar el 80% y validar antifraude', async () => {
+      mockPrisma.pill.findUnique = jest.fn().mockResolvedValue({
+        id: 'pill-1',
+        audioDurationSeconds: 100,
+        audioStatus: 'AUDIO_READY',
+      } as any);
+      mockPrisma.employeeProgress.findUnique = jest.fn().mockResolvedValue({
+        playbackProgressSeconds: 0,
+        isAudioCompleted: false,
+        lastPlaybackReportAt: null,
+      } as any);
+      const res = await service.recordPlaybackProgress('emp-1', 'pill-1', { currentSeconds: 85 });
+      expect(res.isAudioCompleted).toBe(true);
+      expect(res.playbackProgressSeconds).toBe(85);
     });
   });
 

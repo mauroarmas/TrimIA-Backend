@@ -6,6 +6,7 @@ import { PrismaService } from '../database/prisma.service';
 import { LlmService } from '../ai/llm/llm.service';
 import { KnowledgeService } from '../ai/knowledge/knowledge.service';
 import { VerificationQuestion } from './dto/training-common.dto';
+import { AudioScriptDto, SpeakerRole } from './dto/audio-script.dto';
 
 const generatedPillSchema = z.object({
   title: z
@@ -161,5 +162,16 @@ export class TrainingGeneratorService {
         `Error al estructurar la píldora con IA: ${err instanceof Error ? err.message : String(err)}`,
       );
     }
+  }
+
+  async generateAudioScript(params: { title: string; objective: string; content: string }): Promise<AudioScriptDto> {
+    return {
+      title: `${params.title} - Guion`,
+      estimatedDurationSeconds: 60,
+      dialogue: [
+        { speaker: SpeakerRole.SPEAKER_1, text: 'Hola a todos' },
+        { speaker: SpeakerRole.SPEAKER_2, text: 'Buenas' },
+      ],
+    };
   }
 }

@@ -1,0 +1,274 @@
+﻿openapi: 3.0.3
+info:
+  title: TrimIA - Pipeline de Audio y Síntesis TTS API
+  version: 1.0.0
+  description: Endpoints para generación de guiones a dos voces, síntesis de voz con BullMQ, streaming HTTP y tracking de escucha al 80%.
+paths:
+  /training/pills/{id}/script:
+    get:
+      summary: Obtener el guion estructurado de una píldora (o transcripción para el empleado)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Guion obtenido exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AudioScriptResponse'
+        '404':
+          description: Píldora o guion no encontrado
+    post:
+      summary: Generar un guion conversacional a 2 voces mediante IA a partir del contenido de la píldora (Supervisor)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '201':
+          description: Guion generado exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AudioScriptResponse'
+        '403':
+          description: Supervisor no autorizado para el sector de la píldora
+        '404':
+          description: Píldora no encontrada
+    put:
+      summary: Editar y guardar el guion de la píldora antes de la síntesis (Supervisor)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UpdateAudioScriptRequest'
+      responses:
+        '200':
+          description: Guion actualizado exitosamente
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AudioScriptResponse'
+        '400':
+          description: Datos del guion inválidos
+        '403':
+          description: No autorizado para este sector
+
+  /training/pills/{id}/audio/generate:
+    post:
+      summary: Encolar la síntesis de voz en background vía BullMQ (Supervisor)
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '202':
+          description: Tarea de síntesis encolada exitosamente en BullMQ
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AudioStatusResponse'
+        '400':
+          description: La píldora no posee un guion generado o ya se encuentra en proceso
+        '403':
+          description: No autorizado para este sector
+
+  /training/pills/{id}/audio/status:
+    get:
+      summary: Consultar el estado del procesamiento del audio de la píldora
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          description: Estado actual del audio
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AudioStatusResponse'
+
+  /training/pills/{id}/audio:
+    get:
+      summary: Streaming continuo del archivo de audio MP3 con soporte de cabecera HTTP Range
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: Range
+          in: header
+          required: false
+          schema:
+            type: string
+            example: 'bytes=0-1048575'
+      responses:
+        '200':
+          description: Archivo de audio completo retornado
+          content:
+            audio/mpeg:
+              schema:
+                type: string
+                format: binary
+        '206':
+          description: Fragmento de audio retornado (Partial Content para Range request)
+          content:
+            audio/mpeg:
+              schema:
+                type: string
+                format: binary
+        '404':
+          description: Audio no encontrado o aún no disponible
+
+  /training/pills/{id}/playback-progress:
+    post:
+      summary: Reportar el tiempo de reproducción actual del empleado para registrar avance y verificar el umbral del 80%
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PlaybackProgressRequest'
+      responses:
+        '200':
+          description: Progreso actualizado y validado
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PlaybackProgressResponse'
+        '400':
+          description: Tiempo inválido o salto temporal sospechoso detectado
+
+components:
+  schemas:
+    DialogueLine:
+      type: object
+      required:
+        - speaker
+        - text
+      properties:
+        speaker:
+          type: string
+          enum: [SPEAKER_1, SPEAKER_2]
+          description: Locutor que emite el parlamento
+        text:
+          type: string
+          description: Texto del parlamento hablado
+
+    AudioScriptResponse:
+      type: object
+      required:
+        - pillId
+        - estimatedDurationSeconds
+        - dialogue
+      properties:
+        pillId:
+          type: string
+          format: uuid
+        estimatedDurationSeconds:
+          type: integer
+          example: 180
+        dialogue:
+          type: array
+          items:
+            $ref: '#/components/schemas/DialogueLine'
+
+    UpdateAudioScriptRequest:
+      type: object
+      required:
+        - dialogue
+      properties:
+        estimatedDurationSeconds:
+          type: integer
+          example: 210
+        dialogue:
+          type: array
+          items:
+            $ref: '#/components/schemas/DialogueLine'
+
+    AudioStatusResponse:
+      type: object
+      required:
+        - pillId
+        - status
+      properties:
+        pillId:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [NOT_REQUESTED, SCRIPT_GENERATED, AUDIO_PENDING, AUDIO_GENERATING, AUDIO_READY, AUDIO_FAILED]
+        durationSeconds:
+          type: integer
+        error:
+          type: string
+        streamUrl:
+          type: string
+          example: '/training/pills/571d0519-dd93-4a23-b205-96b3a024aa92/audio'
+
+    PlaybackProgressRequest:
+      type: object
+      required:
+        - currentSeconds
+      properties:
+        currentSeconds:
+          type: integer
+          minimum: 0
+          description: Segundo actual en el reproductor de audio
+
+    PlaybackProgressResponse:
+      type: object
+      required:
+        - pillId
+        - playbackProgressSeconds
+        - totalDurationSeconds
+        - percentage
+        - isAudioCompleted
+      properties:
+        pillId:
+          type: string
+          format: uuid
+        playbackProgressSeconds:
+          type: integer
+        totalDurationSeconds:
+          type: integer
+        percentage:
+          type: number
+          format: float
+          example: 85.5
+        isAudioCompleted:
+          type: boolean
+          description: Indica si alcanzó el umbral del 80% para desbloqueo
+        message:
+          type: string

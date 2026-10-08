@@ -1,4 +1,4 @@
-import { TrainingProgressStatus } from '@prisma/client';
+﻿import { AudioStatus, TrainingProgressStatus } from '@prisma/client';
 
 export interface EmployeeQuizQuestion {
   id: number;
@@ -29,6 +29,14 @@ export interface EmployeePillDetailDto {
   status?: TrainingProgressStatus;
   isExempted?: boolean;
   quiz: EmployeeQuizQuestion[];
+
+  // Spec 016 — Pipeline de audio y streaming
+  audioStatus?: AudioStatus;
+  audioDurationSeconds?: number | null;
+  hasAudio?: boolean;
+  isAudioCompleted?: boolean;
+  playbackProgressSeconds?: number;
+  streamUrl?: string | null;
 }
 
 export interface EmployeeModuleSummaryDto {

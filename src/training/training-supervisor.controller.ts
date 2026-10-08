@@ -1,7 +1,9 @@
-import {
+﻿import {
   Body,
   Controller,
   Get,
+  HttpCode,
+  HttpStatus,
   Param,
   Post,
   Put,
@@ -17,6 +19,8 @@ import { GeneratePillDto } from './dto/generate-pill.dto';
 import { UpdatePillDto } from './dto/update-pill.dto';
 import { PublishPillDto } from './dto/publish-pill.dto';
 import { SupervisorDiagnosticDetailResponseDto } from './dto/supervisor-diagnostic.dto';
+import { AudioScriptDto, UpdateAudioScriptDto } from './dto/audio-script.dto';
+import { AudioStatusResponseDto } from './dto/audio-status.dto';
 
 interface AuthenticatedRequest {
   user: { id: string; email?: string; role?: string };
@@ -121,5 +125,49 @@ export class TrainingSupervisorController {
     @Param('employeeId') employeeId: string,
   ) {
     return this.trainingService.resetEmployeeDiagnostic(req.user.id, employeeId);
+  }
+
+  // ==========================================================================
+  // Spec 016 — Pipeline de Audio: Guion y Síntesis TTS (Supervisión)
+  // ==========================================================================
+
+  @Post('pills/:id/script')
+  @ApiOperation({ summary: 'Generar guion a 2 voces conversacional mediante IA para la píldora' })
+  @ApiResponse({ status: 201, description: 'Guion generado exitosamente', type: AudioScriptDto })
+  @ApiResponse({ status: 403, description: 'No autorizado para el sector del módulo' })
+  @ApiResponse({ status: 404, description: 'Píldora no encontrada' })
+  async generateScript(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string,
+  ) {
+    return this.trainingService.generatePillAudioScript(req.user.id, id);
+  }
+
+  @Put('pills/:id/script')
+  @ApiOperation({ summary: 'Editar y guardar el guion conversacional de la píldora' })
+  @ApiResponse({ status: 200, description: 'Guion editado y actualizado exitosamente', type: AudioScriptDto })
+  @ApiResponse({ status: 400, description: 'Datos del guion inválidos' })
+  @ApiResponse({ status: 403, description: 'No autorizado para el sector del módulo' })
+  @ApiResponse({ status: 404, description: 'Píldora no encontrada' })
+  async updateScript(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() dto: UpdateAudioScriptDto,
+  ) {
+    return this.trainingService.updatePillAudioScript(req.user.id, id, dto);
+  }
+
+  @Post('pills/:id/audio/generate')
+  @HttpCode(HttpStatus.ACCEPTED)
+  @ApiOperation({ summary: 'Encolar la síntesis de voz en background vía BullMQ' })
+  @ApiResponse({ status: 202, description: 'Síntesis encolada exitosamente', type: AudioStatusResponseDto })
+  @ApiResponse({ status: 400, description: 'La píldora no posee guion o ya se encuentra en proceso' })
+  @ApiResponse({ status: 403, description: 'No autorizado para el sector del módulo' })
+  @ApiResponse({ status: 404, description: 'Píldora no encontrada' })
+  async generateAudio(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string,
+  ) {
+    return this.trainingService.enqueueAudioGeneration(req.user.id, id);
   }
 }

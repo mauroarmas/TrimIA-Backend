@@ -2,7 +2,7 @@
 
 export class SupervisorDiagnosticLastSessionDto {
   @ApiProperty({ description: 'ID de la sesión diagnóstica' })
-  id: string;
+  sessionId: string;
 
   @ApiProperty({ description: 'Puntaje porcentual obtenido', example: 75 })
   score: number;
@@ -18,6 +18,9 @@ export class SupervisorDiagnosticLastSessionDto {
 
   @ApiProperty({ description: 'Fecha y hora de finalización' })
   completedAt: Date;
+
+  @ApiProperty({ description: 'Indica si la sesión fue reseteada' })
+  isReset: boolean;
 }
 
 export class SupervisorDiagnosticDetailResponseDto {
@@ -30,8 +33,8 @@ export class SupervisorDiagnosticDetailResponseDto {
   @ApiProperty({ description: 'Sector al que pertenece el empleado' })
   sectorName: string;
 
-  @ApiProperty({ description: 'Indica si tiene evaluación diagnóstica activa' })
-  hasActiveDiagnostic: boolean;
+  @ApiProperty({ description: 'Indica si ha completado la evaluación diagnóstica' })
+  hasCompletedDiagnostic: boolean;
 
   @ApiProperty({ description: 'Detalle de la última sesión diagnóstica', required: false, nullable: true })
   lastSession: SupervisorDiagnosticLastSessionDto | null;
