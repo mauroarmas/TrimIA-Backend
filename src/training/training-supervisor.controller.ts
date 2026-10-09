@@ -1,4 +1,4 @@
-﻿import {
+import {
   Body,
   Controller,
   Get,
@@ -19,7 +19,7 @@ import { GeneratePillDto } from './dto/generate-pill.dto';
 import { UpdatePillDto } from './dto/update-pill.dto';
 import { PublishPillDto } from './dto/publish-pill.dto';
 import { SupervisorDiagnosticDetailResponseDto } from './dto/supervisor-diagnostic.dto';
-import { AudioScriptDto, UpdateAudioScriptDto } from './dto/audio-script.dto';
+import { AudioScriptDto, GenerateAudioScriptDto, UpdateAudioScriptDto } from './dto/audio-script.dto';
 import { AudioStatusResponseDto } from './dto/audio-status.dto';
 
 interface AuthenticatedRequest {
@@ -139,8 +139,9 @@ export class TrainingSupervisorController {
   async generateScript(
     @Req() req: AuthenticatedRequest,
     @Param('id') id: string,
+    @Body() dto?: GenerateAudioScriptDto,
   ) {
-    return this.trainingService.generatePillAudioScript(req.user.id, id);
+    return this.trainingService.generatePillAudioScript(req.user.id, id, dto?.targetDurationSeconds);
   }
 
   @Put('pills/:id/script')

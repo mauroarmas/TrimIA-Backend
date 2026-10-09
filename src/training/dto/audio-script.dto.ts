@@ -1,4 +1,4 @@
-﻿import { ApiProperty } from '@nestjs/swagger';
+import { ApiProperty } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
 import {
   IsArray,
@@ -89,4 +89,16 @@ export class UpdateAudioScriptDto {
   @ValidateNested({ each: true })
   @Type(() => DialogueLineDto)
   dialogue: DialogueLineDto[];
+}
+
+export class GenerateAudioScriptDto {
+  @ApiProperty({
+    description: 'Duración objetivo deseada para el audio en segundos (ej. 60, 90, 120, 180)',
+    example: 90,
+    required: false,
+  })
+  @IsInt()
+  @Min(30)
+  @IsOptional()
+  targetDurationSeconds?: number;
 }

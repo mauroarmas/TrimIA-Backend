@@ -208,7 +208,15 @@ export class TrainingGeneratorService {
     objective: string;
     content: string;
     sectorId?: string | null;
+    targetDurationSeconds?: number;
   }): Promise<AudioScriptDto> {
+    const targetSeconds = params.targetDurationSeconds
+      ? Math.max(30, Math.min(600, Math.round(params.targetDurationSeconds)))
+      : 90;
+    const targetWords = Math.round((targetSeconds / 60) * 140);
+    const minTurns = Math.max(4, Math.floor(targetWords / 35));
+    const maxTurns = Math.max(minTurns + 2, Math.ceil(targetWords / 18));
+
     // 1. Búsqueda en la base de conocimiento con RAG semántico (audiencia INTERNO)
     const query = `${params.title} ${params.objective}`;
     let hits: any[] = [];
@@ -259,6 +267,11 @@ export class TrainingGeneratorService {
       `LECCIÓN A EXPLICAR:\n` +
       `Título: ${params.title}\n` +
       `Objetivo pedagógico: ${params.objective}\n\n` +
+      `DURACIÓN SOLICITADA POR EL SUPERVISOR:\n` +
+      `- Tiempo objetivo: ${targetSeconds} segundos (${(targetSeconds / 60).toFixed(1)} minutos).\n` +
+      `- Extensión requerida: Aproximadamente ${targetWords} palabras habladas en total entre ambos locutores.\n` +
+      `- Turnos recomendados: Entre ${minTurns} y ${maxTurns} turnos de diálogo alternados.\n` +
+      `- REGLA DE CALIBRACIÓN: Adaptá el nivel de detalle y la cantidad de turnos al tiempo solicitado. No agregues relleno, pero asegurate de cubrir los puntos críticos y cumplir el tiempo pedido.\n\n` +
       `PROCEDIMIENTO OPERATIVO (CONTENIDO DE LA PÍLDORA):\n` +
       `${params.content}\n\n` +
       (knowledgeContext
@@ -295,7 +308,7 @@ export class TrainingGeneratorService {
       };
     } catch (err) {
       this.logger.error(`Error generando guion con IA para "${params.title}": ${err}`);
-      return this.generateFallbackScript(params);
+      return this.generateFallbackScript({ ...params, targetDurationSeconds: targetSeconds });
     }
   }
 
@@ -303,6 +316,7 @@ export class TrainingGeneratorService {
     title: string;
     objective: string;
     content: string;
+    targetDurationSeconds?: number;
   }): AudioScriptDto {
     const rawSteps = params.content
       .split('\n\n')
@@ -351,7 +365,8 @@ export class TrainingGeneratorService {
 
     return {
       title: `${params.title} - Guion a 2 Voces`,
-      estimatedDurationSeconds: Math.max(30, Math.ceil((totalWords / 140) * 60)),
+      estimatedDurationSeconds:
+        params.targetDurationSeconds || Math.max(30, Math.ceil((totalWords / 140) * 60)),
       dialogue: fallbackDialogue,
     };
   }

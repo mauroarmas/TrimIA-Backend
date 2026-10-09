@@ -850,7 +850,11 @@ export class TrainingService {
   // Spec 016 - Pipeline de Audio: Guion, Sintesis TTS y Streaming
   // ==========================================================================
 
-  async generatePillAudioScript(supervisorId: string, pillId: string): Promise<AudioScriptDto> {
+  async generatePillAudioScript(
+    supervisorId: string,
+    pillId: string,
+    targetDurationSeconds?: number,
+  ): Promise<AudioScriptDto> {
     const pill = await this.prisma.pill.findUnique({
       where: { id: pillId },
       include: { module: { include: { sector: true } } },
@@ -870,6 +874,7 @@ export class TrainingService {
       objective: pill.objective,
       content: pill.content,
       sectorId: pill.module.sectorId,
+      targetDurationSeconds,
     });
 
     await this.prisma.pill.update({

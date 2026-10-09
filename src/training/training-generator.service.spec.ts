@@ -150,4 +150,29 @@ describe('TrainingGeneratorService', () => {
     expect(script.dialogue[0].text).toContain('Recopilación de Datos');
     expect(script.dialogue.some((d) => d.text.includes('Verificar cliente'))).toBe(true);
   });
+
+  it('debe calibrar el guion a la duración en segundos solicitada por el supervisor', async () => {
+    mockStructuredModel.invoke.mockResolvedValueOnce({
+      title: 'Procedimiento Express',
+      dialogue: [
+        { speaker: 'SPEAKER_1', text: 'Breve repaso express de cobranzas.' },
+        { speaker: 'SPEAKER_2', text: '¿Cuál es el punto central a recordar?' },
+        { speaker: 'SPEAKER_1', text: 'Validar siempre el código de operación bancario.' },
+        { speaker: 'SPEAKER_2', text: 'Impecable, breve y claro.' },
+      ],
+    });
+
+    const script = await service.generateAudioScript({
+      title: 'Procedimiento Express',
+      objective: 'Cotejo rápido',
+      content: '### Paso 1: Cotejo rápido',
+      targetDurationSeconds: 45,
+    });
+
+    expect(mockStructuredModel.invoke).toHaveBeenCalled();
+    const promptPassed = mockStructuredModel.invoke.mock.calls[0][0][1].content;
+    expect(promptPassed).toContain('DURACIÓN SOLICITADA POR EL SUPERVISOR:');
+    expect(promptPassed).toContain('45 segundos');
+    expect(script.dialogue).toHaveLength(4);
+  });
 });
