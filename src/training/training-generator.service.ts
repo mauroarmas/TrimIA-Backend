@@ -57,6 +57,45 @@ REGLAS ESTRICTAS (Principio II - Cero Alucinación):
 4. Generá EXACTAMENTE 2 preguntas de autoevaluación con sus opciones, el índice correcto y una justificación pedagógica clara.
 5. El tono debe ser profesional, didáctico y adaptado al contexto operativo de Argentina.`;
 
+const generatedAudioScriptSchema = z.object({
+  title: z
+    .string()
+    .describe('Título conciso y atractivo del guion del episodio formativo'),
+  dialogue: z
+    .array(
+      z.object({
+        speaker: z
+          .enum(['SPEAKER_1', 'SPEAKER_2'])
+          .describe(
+            'Rol del locutor: SPEAKER_1 (Conductor/a o instructor/a principal) o SPEAKER_2 (Colega que hace preguntas, reflexiones y síntesis)',
+          ),
+        text: z
+          .string()
+          .describe(
+            'Intervención hablada natural en español rioplatense (Argentina), pedagógica, concisa y basada estrictamente en el contenido provisto',
+          ),
+      }),
+    )
+    .min(4)
+    .max(14)
+    .describe('Diálogo conversacional dinámico y alternado entre SPEAKER_1 y SPEAKER_2'),
+});
+
+const AUDIO_SCRIPT_SYSTEM_PROMPT = `Sos un pedagogo y guionista experto en capacitación operativa para Credimisión S.R.L. (Misiones, Argentina).
+Tu objetivo es transformar el procedimiento y la base de conocimiento en un podcast conversacional a DOS VOCES (SPEAKER_1 y SPEAKER_2).
+
+REGLAS ESTRICTAS DE CONTENIDO (Principio II - Cero Alucinación):
+1. Basate EXCLUSIVAMENTE en el procedimiento y la documentación de la base de conocimiento suministrados.
+2. NO inventes pasos, plazos, tasas de interés, montos ni requisitos que no estén en los textos dados.
+3. El diálogo debe explicar con total claridad el procedimiento paso a paso, destacando qué debe hacer el empleado, los errores comunes a evitar y los tips prácticos.
+
+ROLES Y DINÁMICA DE CONVERSACIÓN:
+- SPEAKER_1 (Conductor/a / Guía): Introduce el tema brevemente, explica la lógica de los pasos operativos y aclara los puntos críticos.
+- SPEAKER_2 (Colega / Copresentador/a): Formula las dudas típicas del día a día, pide aclaraciones ("¿Y qué pasa si...?", "¿Dónde chequeo eso?", "O sea que primero..."), y sintetiza las conclusiones.
+- Modismos: Español rioplatense profesional y amigable (ej. "fijate", "tené en cuenta", "dale", "impecable").
+- Cada intervención debe tener entre 1 y 3 oraciones (15 a 45 palabras) para que la locución oral suene fluida y espontánea.
+- Alternar constantemente entre SPEAKER_1 y SPEAKER_2 (mínimo 4 y máximo 14 turnos).`;
+
 @Injectable()
 export class TrainingGeneratorService {
   private readonly logger = new Logger(TrainingGeneratorService.name);
@@ -164,14 +203,156 @@ export class TrainingGeneratorService {
     }
   }
 
-  async generateAudioScript(params: { title: string; objective: string; content: string }): Promise<AudioScriptDto> {
+  async generateAudioScript(params: {
+    title: string;
+    objective: string;
+    content: string;
+    sectorId?: string | null;
+  }): Promise<AudioScriptDto> {
+    // 1. Búsqueda en la base de conocimiento con RAG semántico (audiencia INTERNO)
+    const query = `${params.title} ${params.objective}`;
+    let hits: any[] = [];
+    try {
+      hits = await this.knowledge.search(query, {
+        audience: Audience.INTERNO,
+        k: 4,
+      });
+    } catch (e) {
+      this.logger.warn(`Error buscando en base de conocimiento para guion de audio: ${e}`);
+    }
+
+    // 2. Búsqueda de entrevistas previas del sector si corresponde
+    let interviewContext = '';
+    if (params.sectorId) {
+      try {
+        const interviewQuestions = await this.prisma.interviewQuestion.findMany({
+          where: {
+            session: { sectorId: params.sectorId },
+            answers: { some: {} },
+          },
+          take: 3,
+          select: {
+            text: true,
+            answers: {
+              select: { text: true },
+              take: 1,
+              orderBy: { attempt: 'desc' },
+            },
+          },
+        });
+        if (interviewQuestions.length > 0) {
+          interviewContext = interviewQuestions
+            .filter((iq) => iq.answers.length > 0)
+            .map((iq) => `Pregunta: ${iq.text}\nRespuesta de referencia: ${iq.answers[0].text}`)
+            .join('\n\n');
+        }
+      } catch (e) {
+        this.logger.warn(`Error buscando entrevistas del sector ${params.sectorId}: ${e}`);
+      }
+    }
+
+    const knowledgeContext = (hits || [])
+      .map((h, i) => `[Doc ${i + 1}: ${h.title}]\n${h.content}`)
+      .join('\n\n');
+
+    const promptContext =
+      `LECCIÓN A EXPLICAR:\n` +
+      `Título: ${params.title}\n` +
+      `Objetivo pedagógico: ${params.objective}\n\n` +
+      `PROCEDIMIENTO OPERATIVO (CONTENIDO DE LA PÍLDORA):\n` +
+      `${params.content}\n\n` +
+      (knowledgeContext
+        ? `DOCUMENTACIÓN DE LA BASE DE CONOCIMIENTO:\n${knowledgeContext}\n\n`
+        : '') +
+      (interviewContext
+        ? `REFERENCIAS DE ENTREVISTAS DEL SECTOR:\n${interviewContext}\n\n`
+        : '');
+
+    // 3. Invocación a Gemini con Structured Output
+    const structuredModel = this.llm.chat.withStructuredOutput(generatedAudioScriptSchema, {
+      name: 'generate_audio_script',
+    });
+
+    try {
+      const result = (await structuredModel.invoke([
+        new SystemMessage(AUDIO_SCRIPT_SYSTEM_PROMPT),
+        new HumanMessage(promptContext),
+      ])) as z.infer<typeof generatedAudioScriptSchema>;
+
+      const totalWords = result.dialogue.reduce(
+        (acc, line) => acc + line.text.trim().split(/\s+/).filter(Boolean).length,
+        0,
+      );
+      const computedDuration = Math.max(30, Math.ceil((totalWords / 140) * 60));
+
+      return {
+        title: result.title || `${params.title} - Guion a 2 Voces`,
+        estimatedDurationSeconds: computedDuration,
+        dialogue: result.dialogue.map((d) => ({
+          speaker: d.speaker === 'SPEAKER_2' ? SpeakerRole.SPEAKER_2 : SpeakerRole.SPEAKER_1,
+          text: d.text,
+        })),
+      };
+    } catch (err) {
+      this.logger.error(`Error generando guion con IA para "${params.title}": ${err}`);
+      return this.generateFallbackScript(params);
+    }
+  }
+
+  private generateFallbackScript(params: {
+    title: string;
+    objective: string;
+    content: string;
+  }): AudioScriptDto {
+    const rawSteps = params.content
+      .split('\n\n')
+      .map((s) => s.trim())
+      .filter((s) => s.length > 0);
+
+    const fallbackDialogue: { speaker: SpeakerRole; text: string }[] = [
+      {
+        speaker: SpeakerRole.SPEAKER_1,
+        text: `Hola a todos. Hoy vamos a repasar "${params.title}". Nuestro objetivo central es ${params.objective.toLowerCase().replace(/\.$/, '')}.`,
+      },
+      {
+        speaker: SpeakerRole.SPEAKER_2,
+        text: '¡Hola! Es un procedimiento clave para nuestra operatoria en Credimisión. ¿Cuál es el primer paso?',
+      },
+    ];
+
+    for (let i = 0; i < Math.min(rawSteps.length, 4); i++) {
+      const cleanStep = rawSteps[i].replace(/^###\s+/, '').replace(/\*\*/g, '');
+      if (i % 2 === 0) {
+        fallbackDialogue.push({
+          speaker: SpeakerRole.SPEAKER_1,
+          text: `En primer lugar: ${cleanStep}. Es crucial prestar atención a cada detalle aquí.`,
+        });
+      } else {
+        fallbackDialogue.push({
+          speaker: SpeakerRole.SPEAKER_2,
+          text: `Perfecto. Y sobre ${cleanStep}, ¿qué recomendación debemos tener en cuenta?`,
+        });
+      }
+    }
+
+    fallbackDialogue.push({
+      speaker: SpeakerRole.SPEAKER_1,
+      text: 'Siempre recordar verificar el sistema corporativo y consultar con el supervisor ante cualquier discrepancia.',
+    });
+    fallbackDialogue.push({
+      speaker: SpeakerRole.SPEAKER_2,
+      text: 'Excelente, con estos pasos claros ya estamos listos para aplicarlo en el día a día.',
+    });
+
+    const totalWords = fallbackDialogue.reduce(
+      (acc, l) => acc + l.text.split(/\s+/).filter(Boolean).length,
+      0,
+    );
+
     return {
-      title: `${params.title} - Guion`,
-      estimatedDurationSeconds: 60,
-      dialogue: [
-        { speaker: SpeakerRole.SPEAKER_1, text: 'Hola a todos' },
-        { speaker: SpeakerRole.SPEAKER_2, text: 'Buenas' },
-      ],
+      title: `${params.title} - Guion a 2 Voces`,
+      estimatedDurationSeconds: Math.max(30, Math.ceil((totalWords / 140) * 60)),
+      dialogue: fallbackDialogue,
     };
   }
 }

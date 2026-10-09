@@ -869,6 +869,7 @@ export class TrainingService {
       title: pill.title,
       objective: pill.objective,
       content: pill.content,
+      sectorId: pill.module.sectorId,
     });
 
     await this.prisma.pill.update({
