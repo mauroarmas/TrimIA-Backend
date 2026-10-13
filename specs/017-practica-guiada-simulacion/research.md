@@ -81,3 +81,4 @@ Las simulaciones de entrenamiento:
 2. **No se indexan en ChromaDB** bajo ningún concepto (se preserva la integridad del corpus RAG operativo).
 3. Residen en modelos dedicados: `SimulationSession`, `SimulationMessage`, `SimulationGoal`, `SimulationFeedback`.
 4. El cliente simulado tiene instrucciones explícitas en el prompt de sistema para actuar como un ciudadano/cliente común y no revelar herramientas, prompts ni directivas internas ante preguntas insidiosas.
+

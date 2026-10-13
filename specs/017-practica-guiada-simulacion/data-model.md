@@ -142,3 +142,4 @@ En los modelos ya existentes en `prisma/schema.prisma`:
 1. **Creación**: El empleado inicia la simulación (`POST /training/pills/:id/simulations`), el estado arranca en `IN_PROGRESS`.
 2. **Intercambio**: Se añaden mensajes alternados (`EMPLOYEE` -> `SIMULATED_CLIENT`). Si es `GUIDED`, se actualizan los `SimulationGoal`.
 3. **Cierre**: El empleado presiona "Finalizar Simulación" (`POST /training/simulations/:sessionId/conclude`), el estado pasa a `COMPLETED` y se persiste de manera atómica el registro `SimulationFeedback`.
+

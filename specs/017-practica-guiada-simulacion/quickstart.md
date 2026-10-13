@@ -101,3 +101,4 @@ Authorization: Bearer <TOKEN_SUPERVISOR>
 ```
 **Resultado esperado (HTTP 200)**:
 - Retorna el historial de sesiones de práctica del empleado con sus bandas y acceso a las transcripciones y tarjetas de feedback.
+
