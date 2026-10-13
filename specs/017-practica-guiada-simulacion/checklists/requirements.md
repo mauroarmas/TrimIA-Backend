@@ -32,3 +32,4 @@
 ## Notes
 
 - Feature spec ready for planning phase (`/speckit-plan`).
+

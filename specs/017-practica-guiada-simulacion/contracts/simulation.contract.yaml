@@ -1,0 +1,260 @@
+openapi: 3.0.3
+info:
+  title: TrimIA - API de Práctica Guiada y Simulación Libre
+  version: 1.0.0
+  description: Endpoints para roleplay con cliente simulado por IA, checklist interactivo y devolución formativa en 3 tarjetas.
+paths:
+  /training/pills/{pillId}/simulations:
+    post:
+      summary: Iniciar una nueva sesión de simulación (Guiada o Libre)
+      description: Genera el perfil de cliente y objetivos del caso a partir de la píldora.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: pillId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - mode
+              properties:
+                mode:
+                  type: string
+                  enum: [GUIDED, FREE]
+      responses:
+        '201':
+          description: Sesión iniciada exitosamente.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SimulationSessionDetail'
+
+  /training/simulations/{sessionId}/messages:
+    post:
+      summary: Enviar un mensaje como empleado y recibir réplica del cliente simulado
+      description: En modo GUIDED evalúa en vivo qué objetivos del checklist se cumplieron.
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+                - content
+              properties:
+                content:
+                  type: string
+                  minLength: 2
+      responses:
+        '200':
+          description: Respuesta del cliente simulado y actualización de objetivos.
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  employeeMessage:
+                    $ref: '#/components/schemas/SimulationMessage'
+                  clientMessage:
+                    $ref: '#/components/schemas/SimulationMessage'
+                  updatedGoals:
+                    type: array
+                    items:
+                      $ref: '#/components/schemas/SimulationGoal'
+                  allGoalsCompleted:
+                    type: boolean
+
+  /training/simulations/{sessionId}:
+    get:
+      summary: Obtener el estado actual y transcripción de una sesión de simulación
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Detalle completo de la sesión.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SimulationSessionDetail'
+
+  /training/simulations/{sessionId}/conclude:
+    post:
+      summary: Concluir la sesión y generar la devolución en 3 tarjetas cualitativas
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: sessionId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Sesión completada con evaluación en 3 tarjetas.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/SimulationFeedback'
+
+  /training/supervisor/employees/{employeeId}/simulations:
+    get:
+      summary: Auditar historial de simulaciones de un empleado (Solo supervisores)
+      security:
+        - bearerAuth: []
+      parameters:
+        - name: employeeId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          description: Lista de simulaciones del empleado con sus evaluaciones.
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/SimulationSessionSummary'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    SimulationSessionDetail:
+      type: object
+      properties:
+        id:
+          type: string
+        pillId:
+          type: string
+        employeeId:
+          type: string
+        mode:
+          type: string
+          enum: [GUIDED, FREE]
+        status:
+          type: string
+          enum: [IN_PROGRESS, COMPLETED, ABANDONED]
+        scenarioTitle:
+          type: string
+        customerName:
+          type: string
+        customerProfile:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+        goals:
+          type: array
+          items:
+            $ref: '#/components/schemas/SimulationGoal'
+        messages:
+          type: array
+          items:
+            $ref: '#/components/schemas/SimulationMessage'
+        feedback:
+          $ref: '#/components/schemas/SimulationFeedback'
+
+    SimulationMessage:
+      type: object
+      properties:
+        id:
+          type: string
+        sender:
+          type: string
+          enum: [EMPLOYEE, SIMULATED_CLIENT]
+        content:
+          type: string
+        turnIndex:
+          type: integer
+        emotion:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    SimulationGoal:
+      type: object
+      properties:
+        id:
+          type: string
+        description:
+          type: string
+        order:
+          type: integer
+        isCompleted:
+          type: boolean
+        completedAtTurn:
+          type: integer
+          nullable: true
+        evidence:
+          type: string
+          nullable: true
+
+    SimulationFeedback:
+      type: object
+      properties:
+        id:
+          type: string
+        band:
+          type: string
+          enum: [ACHIEVED, NEEDS_IMPROVEMENT, NOT_ACHIEVED]
+        whatWentWell:
+          type: string
+        toImprove:
+          type: string
+        businessRules:
+          type: string
+        summary:
+          type: string
+        createdAt:
+          type: string
+          format: date-time
+
+    SimulationSessionSummary:
+      type: object
+      properties:
+        id:
+          type: string
+        pillId:
+          type: string
+        pillTitle:
+          type: string
+        mode:
+          type: string
+          enum: [GUIDED, FREE]
+        status:
+          type: string
+        band:
+          type: string
+          enum: [ACHIEVED, NEEDS_IMPROVEMENT, NOT_ACHIEVED]
+          nullable: true
+        createdAt:
+          type: string
+          format: date-time
