@@ -10,9 +10,9 @@
 
 **Purpose**: Estructura de código en el módulo de capacitación y persistencia de base de datos.
 
-- [ ] T001 Crear estructura de directorios en `src/training/simulation/` (`dto/`, `interfaces/`, `services/`)
-- [ ] T002 Actualizar `prisma/schema.prisma` agregando los modelos `SimulationSession`, `SimulationMessage`, `SimulationGoal`, `SimulationFeedback` y los enums `SimulationMode`, `SimulationStatus`, `PerformanceBand`, `SimulationSender`
-- [ ] T003 Ejecutar migración de Prisma con `npx prisma migrate dev --name add_simulation_models` y regenerar `@prisma/client`
+- [X] T001 Crear estructura de directorios en `src/training/simulation/` (`dto/`, `interfaces/`, `services/`)
+- [X] T002 Actualizar `prisma/schema.prisma` agregando los modelos `SimulationSession`, `SimulationMessage`, `SimulationGoal`, `SimulationFeedback` y los enums `SimulationMode`, `SimulationStatus`, `PerformanceBand`, `SimulationSender`
+- [X] T003 Ejecutar migración de Prisma con `npx prisma migrate dev --name add_simulation_models` y regenerar `@prisma/client`
 
 ---
 
@@ -20,10 +20,10 @@
 
 **Purpose**: DTOs, interfaces de IA y servicios base requeridos por todas las historias de usuario.
 
-- [ ] T004 [P] Crear DTOs de solicitud y respuesta (`StartSimulationDto`, `SendSimulationMessageDto`, `ConcludeSimulationDto`) en `src/training/simulation/dto/`
-- [ ] T005 [P] Definir interfaces y esquemas JSON de Structured Output para Gemini en `src/training/simulation/interfaces/simulation-ai.interface.ts`
-- [ ] T006 Implementar cliente de inferencia con Structured Output en `src/training/simulation/services/simulation-ai.service.ts` para roleplay del cliente y evaluación
-- [ ] T007 Implementar servicio base `SimulationService` con gestión transaccional de sesiones y mensajes en `src/training/simulation/services/simulation.service.ts`
+- [X] T004 [P] Crear DTOs de solicitud y respuesta (`StartSimulationDto`, `SendSimulationMessageDto`, `ConcludeSimulationDto`) en `src/training/simulation/dto/`
+- [X] T005 [P] Definir interfaces y esquemas JSON de Structured Output para Gemini en `src/training/simulation/interfaces/simulation-ai.interface.ts`
+- [X] T006 Implementar cliente de inferencia con Structured Output en `src/training/simulation/services/simulation-ai.service.ts` para roleplay del cliente y evaluación
+- [X] T007 Implementar servicio base `SimulationService` con gestión transaccional de sesiones y mensajes en `src/training/simulation/services/simulation.service.ts`
 
 **Checkpoint**: Base de datos, DTOs y servicio de IA listos para conectar historias de usuario.
 
@@ -37,11 +37,11 @@
 
 ### Implementation for User Story 1
 
-- [ ] T008 [US1] Implementar en `SimulationService` la generación del caso y checklist de 3 a 5 objetivos derivados de la píldora al iniciar sesión `GUIDED` en `src/training/simulation/services/simulation.service.ts`
-- [ ] T009 [US1] Implementar en `SimulationAiService` la evaluación turno a turno del checklist mediante Structured Output en una única llamada en `src/training/simulation/services/simulation-ai.service.ts`
-- [ ] T010 [US1] Implementar endpoint `POST /training/pills/:id/simulations` para iniciar sesión en `src/training/simulation/simulation.controller.ts`
-- [ ] T011 [US1] Implementar endpoint `POST /training/simulations/:sessionId/messages` para intercambio de mensajes y actualización de objetivos en `src/training/simulation/simulation.controller.ts`
-- [ ] T012 [US1] Implementar endpoint `GET /training/simulations/:sessionId` para consultar estado, transcripción y objetivos en `src/training/simulation/simulation.controller.ts`
+- [X] T008 [US1] Implementar en `SimulationService` la generación del caso y checklist de 3 a 5 objetivos derivados de la píldora al iniciar sesión `GUIDED` en `src/training/simulation/services/simulation.service.ts`
+- [X] T009 [US1] Implementar en `SimulationAiService` la evaluación turno a turno del checklist mediante Structured Output en una única llamada en `src/training/simulation/services/simulation-ai.service.ts`
+- [X] T010 [US1] Implementar endpoint `POST /training/pills/:id/simulations` para iniciar sesión en `src/training/simulation/simulation.controller.ts`
+- [X] T011 [US1] Implementar endpoint `POST /training/simulations/:sessionId/messages` para intercambio de mensajes y actualización de objetivos en `src/training/simulation/simulation.controller.ts`
+- [X] T012 [US1] Implementar endpoint `GET /training/simulations/:sessionId` para consultar estado, transcripción y objetivos en `src/training/simulation/simulation.controller.ts`
 
 **Checkpoint**: User Story 1 (Práctica Guiada) completamente funcional y verificable como MVP.
 
@@ -55,8 +55,8 @@
 
 ### Implementation for User Story 2
 
-- [ ] T013 [US2] Adaptar `SimulationService` y `SimulationAiService` para omitir la evaluación de checklist por turno cuando `mode === 'FREE'` en `src/training/simulation/services/simulation.service.ts`
-- [ ] T014 [US2] Soportar el inicio y conversación fluida de sesiones libres en los controladores de `src/training/simulation/simulation.controller.ts`
+- [X] T013 [US2] Adaptar `SimulationService` y `SimulationAiService` para omitir la evaluación de checklist por turno cuando `mode === 'FREE'` en `src/training/simulation/services/simulation.service.ts`
+- [X] T014 [US2] Soportar el inicio y conversación fluida de sesiones libres en los controladores de `src/training/simulation/simulation.controller.ts`
 
 **Checkpoint**: User Stories 1 y 2 funcionan independientemente.
 
@@ -70,10 +70,10 @@
 
 ### Implementation for User Story 3
 
-- [ ] T015 [US3] Implementar en `SimulationAiService` el análisis de la transcripción y generación de las 3 tarjetas cualitativas y banda de desempeño en `src/training/simulation/services/simulation-ai.service.ts`
-- [ ] T016 [US3] Implementar endpoint `POST /training/simulations/:sessionId/conclude` en `src/training/simulation/simulation.controller.ts` para persistir `SimulationFeedback` y marcar sesión `COMPLETED`
-- [ ] T017 [US3] Implementar endpoint de supervisión `GET /training/supervisor/employees/:employeeId/simulations` en `src/training/simulation/simulation-supervisor.controller.ts`
-- [ ] T018 [US3] Registrar controladores y servicios de simulación en `src/training/training.module.ts`
+- [X] T015 [US3] Implementar en `SimulationAiService` el análisis de la transcripción y generación de las 3 tarjetas cualitativas y banda de desempeño en `src/training/simulation/services/simulation-ai.service.ts`
+- [X] T016 [US3] Implementar endpoint `POST /training/simulations/:sessionId/conclude` en `src/training/simulation/simulation.controller.ts` para persistir `SimulationFeedback` y marcar sesión `COMPLETED`
+- [X] T017 [US3] Implementar endpoint de supervisión `GET /training/supervisor/employees/:employeeId/simulations` en `src/training/simulation/simulation-supervisor.controller.ts`
+- [X] T018 [US3] Registrar controladores y servicios de simulación en `src/training/training.module.ts`
 
 **Checkpoint**: Flujo completo de evaluación cualitativa y auditoría de supervisor operativo.
 
@@ -83,8 +83,8 @@
 
 **Purpose**: Verificación de calidad, pruebas e2e automatizadas y validación de escenarios.
 
-- [ ] T019 [P] Crear script de prueba e2e `test-e2e-simulations.js` para validar inicio guiado, turnos con checklist, cierre con 3 tarjetas y modo libre
-- [ ] T020 Ejecutar validación completa de escenarios descritos en `specs/017-practica-guiada-simulacion/quickstart.md`
+- [X] T019 [P] Crear script de prueba e2e `test-e2e-simulations.js` para validar inicio guiado, turnos con checklist, cierre con 3 tarjetas y modo libre
+- [X] T020 Ejecutar validación completa de escenarios descritos en `specs/017-practica-guiada-simulacion/quickstart.md`
 
 ---
 
@@ -92,11 +92,11 @@
 
 **Purpose**: Tareas del panel web para ejercitar y consumir los endpoints de simulación desde la interfaz de usuario.
 
-- [ ] T021 [Panel] Implementar métodos en `src/api.js` de `trimia-frontend` (`startSimulation`, `sendSimulationMessage`, `getSimulation`, `concludeSimulation`, `getEmployeeSimulations`)
-- [ ] T022 [Panel] Diseñar e implementar modal de Práctica Guiada (`GuidedSimulationModal.jsx`) con chat interactivo y panel lateral de checklist con tildes en vivo
-- [ ] T023 [Panel] Diseñar e implementar modal de Simulación Libre (`FreeSimulationModal.jsx`) con interfaz limpia y botón de finalización
-- [ ] T024 [Panel] Diseñar e implementar componente de Devolución Cualitativa (`SimulationFeedbackModal.jsx`) con las 3 tarjetas pedagógicas y badge de banda
-- [ ] T025 [Panel] Conectar los botones de inicio de práctica guiada y libre en las píldoras de `TrainingPanel.jsx` y visor de auditoría en la vista de supervisor
+- [X] T021 [Panel] Implementar métodos en `src/api.js` de `trimia-frontend` (`startSimulation`, `sendSimulationMessage`, `getSimulation`, `concludeSimulation`, `getEmployeeSimulations`)
+- [X] T022 [Panel] Diseñar e implementar modal de Práctica Guiada (`GuidedSimulationModal.jsx` / `SimulationModal.jsx`) con chat interactivo y panel lateral de checklist con tildes en vivo
+- [X] T023 [Panel] Diseñar e implementar modal de Simulación Libre (`FreeSimulationModal.jsx` / `SimulationModal.jsx`) con interfaz limpia y botón de finalización
+- [X] T024 [Panel] Diseñar e implementar componente de Devolución Cualitativa (`SimulationModal.jsx` vista feedback y `SupervisorSimulationsModal.jsx`) con las 3 tarjetas pedagógicas y badge de banda
+- [X] T025 [Panel] Conectar los botones de inicio de práctica guiada y libre en las píldoras de `TrainingPanel.jsx` y visor de auditoría en la vista de supervisor (`EmployeesPanel.jsx` y `SupervisorSimulationsModal.jsx`)
 
 ---
 

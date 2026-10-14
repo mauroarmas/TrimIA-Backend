@@ -248,6 +248,9 @@ model Employee {
   diagnosticSessions DiagnosticSession[] @relation("EmployeeDiagnostics")
   diagnosticsReset   DiagnosticSession[] @relation("DiagnosticResetBy")
 
+  // Spec 017 — Simulación y Práctica
+  simulations        SimulationSession[]
+
   @@index([phone])
   @@index([email])
   @@index([sectorId])
@@ -1550,6 +1553,7 @@ model Pill {
   createdBy   Employee?          @relation("PillCreatedBy", fields: [createdById], references: [id])
   publishedBy Employee?          @relation("PillPublishedBy", fields: [publishedById], references: [id])
   progress    EmployeeProgress[]
+  simulations SimulationSession[]
 
   @@map("pills")
 }
@@ -1606,3 +1610,99 @@ model DiagnosticSession {
   @@index([employeeId, isReset])
   @@map("diagnostic_sessions")
 }
+
+// ============================================================================
+// Spec 017 — Práctica Guiada, Simulación Libre y Devolución Cualitativa
+// ============================================================================
+
+enum SimulationMode {
+  GUIDED
+  FREE
+}
+
+enum SimulationStatus {
+  IN_PROGRESS
+  COMPLETED
+  ABANDONED
+}
+
+enum PerformanceBand {
+  ACHIEVED
+  NEEDS_IMPROVEMENT
+  NOT_ACHIEVED
+}
+
+enum SimulationSender {
+  EMPLOYEE
+  SIMULATED_CLIENT
+}
+
+model SimulationSession {
+  id              String             @id @default(uuid())
+  employeeId      String
+  pillId          String
+  mode            SimulationMode
+  status          SimulationStatus   @default(IN_PROGRESS)
+  scenarioTitle   String
+  customerName    String
+  customerProfile String             @db.Text
+  createdAt       DateTime           @default(now())
+  completedAt     DateTime?
+
+  employee        Employee           @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  pill            Pill               @relation(fields: [pillId], references: [id], onDelete: Cascade)
+  messages        SimulationMessage[]
+  goals           SimulationGoal[]
+  feedback        SimulationFeedback?
+
+  @@index([employeeId, pillId])
+  @@index([status])
+  @@map("simulation_sessions")
+}
+
+model SimulationMessage {
+  id               String            @id @default(uuid())
+  sessionId        String
+  sender           SimulationSender
+  content          String            @db.Text
+  turnIndex        Int
+  completedGoalIds Json?
+  emotion          String?
+  createdAt        DateTime          @default(now())
+
+  session          SimulationSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, turnIndex])
+  @@map("simulation_messages")
+}
+
+model SimulationGoal {
+  id              String            @id @default(uuid())
+  sessionId       String
+  description     String
+  order           Int
+  isCompleted     Boolean           @default(false)
+  completedAtTurn Int?
+  evidence        String?
+
+  session         SimulationSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@index([sessionId, order])
+  @@map("simulation_goals")
+}
+
+model SimulationFeedback {
+  id            String            @id @default(uuid())
+  sessionId     String            @unique
+  band          PerformanceBand
+  whatWentWell  String            @db.Text
+  toImprove     String            @db.Text
+  businessRules String            @db.Text
+  summary       String            @db.Text
+  createdAt     DateTime          @default(now())
+
+  session       SimulationSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+
+  @@map("simulation_feedbacks")
+}
+

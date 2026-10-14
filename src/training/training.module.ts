@@ -1,4 +1,4 @@
-﻿import { Module } from '@nestjs/common';
+import { Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
 import { PrismaModule } from '../database/prisma.module';
 import { KnowledgeModule } from '../ai/knowledge/knowledge.module';
@@ -10,6 +10,10 @@ import { TrainingController } from './training.controller';
 import { AudioStorageService } from './services/audio-storage.service';
 import { TtsService } from './services/tts.service';
 import { AudioGenerationProcessor } from './processors/audio-generation.processor';
+import { SimulationService } from './simulation/services/simulation.service';
+import { SimulationAiService } from './simulation/services/simulation-ai.service';
+import { SimulationController } from './simulation/simulation.controller';
+import { SimulationSupervisorController } from './simulation/simulation-supervisor.controller';
 
 @Module({
   imports: [
@@ -28,14 +32,28 @@ import { AudioGenerationProcessor } from './processors/audio-generation.processo
       },
     }),
   ],
-  controllers: [TrainingSupervisorController, TrainingController],
+  controllers: [
+    TrainingSupervisorController,
+    TrainingController,
+    SimulationController,
+    SimulationSupervisorController,
+  ],
   providers: [
     TrainingGeneratorService,
     TrainingService,
     AudioStorageService,
     TtsService,
     AudioGenerationProcessor,
+    SimulationService,
+    SimulationAiService,
   ],
-  exports: [TrainingService, TrainingGeneratorService, AudioStorageService, TtsService],
+  exports: [
+    TrainingService,
+    TrainingGeneratorService,
+    AudioStorageService,
+    TtsService,
+    SimulationService,
+    SimulationAiService,
+  ],
 })
 export class TrainingModule {}
