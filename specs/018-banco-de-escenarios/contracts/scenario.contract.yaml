@@ -94,3 +94,4 @@ components:
               status:
                 type: string
                 enum: [PASS, WARN, FAIL]
+

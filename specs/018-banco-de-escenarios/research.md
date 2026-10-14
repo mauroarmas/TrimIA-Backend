@@ -62,3 +62,4 @@ El tier gratuito o estándar de Gemini establece un límite de 100 requests por 
 | `ESC-06` | Consulta exclusiva de financiación | "qué cuotas y planes tienen?" | Plazos, medios de pago o financiación | No ofrecimiento de chequear stock en depósito |
 | `ESC-07` | Mensaje bajo escalado humano | `needsHuman: true` | Mensaje de derivación / aviso de espera | No repreguntas al usuario ("¿en qué más puedo ayudarte?") |
 | `ESC-08` | Reporte supervisor sobre vacíos | Consulta de vacíos de conocimiento | Resumen de temas o documentos | Cero casos nuevos creados en `Escalation` |
+

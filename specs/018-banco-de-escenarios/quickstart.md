@@ -75,3 +75,4 @@ Si un escenario no alcanza el 100%, el reporte imprimirá la aserción que fall�
    Regla violada: mustNotContain [/¿te gustaría comprar|ofrecemos comprar/i]
    Texto generado por el modelo: "...el proceso es simple, ¿te gustaría comprar hoy mismo una unidad?..."
 ```
+
