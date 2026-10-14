@@ -125,3 +125,4 @@ Como desarrollador del equipo, quiero contar con un comando independiente de eva
 - **Supuesto 1**: El modelo generativo subyacente para los agentes es el especificado en la configuración de entorno (`gemini-3.5-flash-lite` o similar).
 - **Supuesto 2**: El arnés utiliza el motor de orquestación y ruteo existente (`OrchestratorService` y agentes especializados) para reflejar con fidelidad el comportamiento real del sistema.
 - **Fuera de alcance**: El banco de escenarios no busca sustituir los tests unitarios de seguridad, autenticación JWT ni control de acceso por roles. Tampoco implementa un evaluador LLM-as-a-judge en esta primera versión, privilegiando aserciones determinísticas rápidas y económicas sobre patrones de texto.
+

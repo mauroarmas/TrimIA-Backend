@@ -33,3 +33,4 @@
 
 - All checklist criteria passed on initial validation check.
 - Feature spec is complete and ready for planning (`/speckit-plan`).
+

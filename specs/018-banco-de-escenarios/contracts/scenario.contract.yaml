@@ -1,0 +1,96 @@
+openapi: 3.0.3
+info:
+  title: Scenario Evaluation Harness Contract
+  version: 1.0.0
+  description: Contrato de estructura de escenarios y reportes para el banco de pruebas de TrimIA.
+paths:
+  /evaluation/run:
+    post:
+      summary: Disparar ejecución del banco de escenarios programáticamente
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                runsPerScenario:
+                  type: integer
+                  default: 3
+                  minimum: 1
+                  maximum: 10
+                scenarioFilter:
+                  type: string
+                  description: ID opcional de escenario o patrón de nombre
+      responses:
+        '200':
+          description: Reporte consolidado de evaluación
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EvaluationReport'
+
+components:
+  schemas:
+    ScenarioDefinition:
+      type: object
+      required:
+        - id
+        - title
+        - userMessage
+        - assertions
+      properties:
+        id:
+          type: string
+        title:
+          type: string
+        userMessage:
+          type: string
+        context:
+          type: object
+          properties:
+            userType:
+              type: string
+              enum: [CLIENTE, EMPLEADO]
+            employeeRole:
+              type: string
+              enum: [EMPLEADO, SUPERVISOR]
+        assertions:
+          type: object
+          properties:
+            mustContain:
+              type: array
+              items:
+                type: string
+            mustNotContain:
+              type: array
+              items:
+                type: string
+            expectedAgent:
+              type: string
+
+    EvaluationReport:
+      type: object
+      properties:
+        timestamp:
+          type: string
+          format: date-time
+        totalScenarios:
+          type: integer
+        totalRuns:
+          type: integer
+        overallPassRate:
+          type: number
+        scenarioSummaries:
+          type: array
+          items:
+            type: object
+            properties:
+              scenarioId:
+                type: string
+              title:
+                type: string
+              passRate:
+                type: number
+              status:
+                type: string
+                enum: [PASS, WARN, FAIL]
