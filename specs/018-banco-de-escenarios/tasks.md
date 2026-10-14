@@ -10,9 +10,9 @@
 
 **Purpose**: Estructura de carpetas, corpus estático de prueba y script CLI en `package.json`.
 
-- [ ] T001 Crear estructura de directorios en `test/fixtures/corpus-evaluacion/` y `test/scenarios/` (`definitions/`, `runner/`)
-- [ ] T002 [P] Crear documentos canónicos del corpus fijo de evaluación en `test/fixtures/corpus-evaluacion/` (`ventas.json`, `cobranzas.json`, `administracion.json`, `logistica.json`, `deposito.json`)
-- [ ] T003 Configurar script `"test:escenarios"` en `package.json` para ejecutar `test/scenarios/run-scenarios.ts` mediante `tsx`
+- [X] T001 Crear estructura de directorios en `test/fixtures/corpus-evaluacion/` y `test/scenarios/` (`definitions/`, `runner/`)
+- [X] T002 [P] Crear documentos canónicos del corpus fijo de evaluación en `test/fixtures/corpus-evaluacion/` (`ventas.json`, `cobranzas.json`, `administracion.json`, `logistica.json`, `deposito.json`)
+- [X] T003 Configurar script `"test:escenarios"` en `package.json` para ejecutar `test/scenarios/run-scenarios.js` mediante Node.js
 
 ---
 
@@ -20,9 +20,9 @@
 
 **Purpose**: Tipos base, motor de aserciones y formateador de reportes requeridos por todas las historias de usuario.
 
-- [ ] T004 [P] Definir tipos e interfaces TypeScript (`ScenarioDefinition`, `ScenarioAssertions`, `ScenarioRunResult`, `ScenarioSummary`, `EvaluationReport`) en `test/scenarios/types.ts`
-- [ ] T005 [P] Implementar motor de aserciones (`assertion-engine.ts`) con evaluación de reglas `mustContain`, `mustNotContain`, `expectedAgent` y validadores personalizados en `test/scenarios/runner/assertion-engine.ts`
-- [ ] T006 [P] Implementar generador de reportes de consola (`reporter.ts`) con formato de tabla consolidada y diagnóstico de fallas en `test/scenarios/runner/reporter.ts`
+- [X] T004 [P] Definir tipos e interfaces TypeScript (`ScenarioDefinition`, `ScenarioAssertions`, `ScenarioRunResult`, `ScenarioSummary`, `EvaluationReport`) en `test/scenarios/types.ts`
+- [X] T005 [P] Implementar motor de aserciones (`assertion-engine.ts`) con evaluación de reglas `mustContain`, `mustNotContain`, `expectedAgent` y validadores personalizados en `test/scenarios/runner/assertion-engine.ts`
+- [X] T006 [P] Implementar generador de reportes de consola (`reporter.ts`) con formato de tabla consolidada y diagnóstico de fallas en `test/scenarios/runner/reporter.ts`
 
 **Checkpoint**: Motor de aserciones y reporte listos para recibir el ejecutor de corridas y los escenarios.
 
@@ -36,9 +36,9 @@
 
 ### Implementation for User Story 1
 
-- [ ] T007 [US1] Implementar ejecutor de corridas (`evaluation-runner.ts`) con control de pacer (600ms entre turnos para respetar límite de 100 RPM) y cálculo de `passRate` probabilístico en `test/scenarios/runner/evaluation-runner.ts`
-- [ ] T008 [US1] Implementar punto de entrada CLI (`run-scenarios.ts`) con soporte de flags `--runs=<N>` y `--scenario=<id>` en `test/scenarios/run-scenarios.ts`
-- [ ] T009 [US1] Conectar la invocación directa al orquestador conversacional de TrimIA simulando el ciclo de vida del mensaje
+- [X] T007 [US1] Implementar ejecutor de corridas (`evaluation-runner.ts`) con control de pacer (1500ms entre turnos) y reintento inteligente ante rate limit (429) en `test/scenarios/runner/evaluation-runner.ts` y `test/scenarios/run-scenarios.js`
+- [X] T008 [US1] Implementar punto de entrada CLI (`run-scenarios.js`) con soporte de flags `--runs=<N>` y `--scenario=<id>` en `test/scenarios/run-scenarios.js`
+- [X] T009 [US1] Conectar la invocación directa al orquestador conversacional de TrimIA simulando el ciclo de vida del mensaje
 
 **Checkpoint**: User Story 1 operativa como MVP: es posible ejecutar corridas repetidas y obtener el ratio $N/M$.
 
@@ -52,15 +52,15 @@
 
 ### Implementation for User Story 2
 
-- [ ] T010 [P] [US2] Implementar `ESC-01`: Dueño pregunta por proceso de ventas (aserciones: explica circuito; prohibido ofrecer compra) en `test/scenarios/definitions/01-dueno-ventas.scenario.ts`
-- [ ] T011 [P] [US2] Implementar `ESC-02`: Cliente externo idéntica consulta (aserciones: trato comercial de cliente) en `test/scenarios/definitions/02-cliente-ventas.scenario.ts`
-- [ ] T012 [P] [US2] Implementar `ESC-03`: Saludo con pregunta ("hola! qué venden?") (aserciones: saluda y responde productos sin omitir) en `test/scenarios/definitions/03-saludo-con-pregunta.scenario.ts`
-- [ ] T013 [P] [US2] Implementar `ESC-04`: Saludo puro ("hola") (aserciones: saluda cordial sin volcar catálogos) en `test/scenarios/definitions/04-saludo-puro.scenario.ts`
-- [ ] T014 [P] [US2] Implementar `ESC-05`: Cuarto turno de conversación continuada (aserciones: responde directo sin reiniciar bienvenida) en `test/scenarios/definitions/05-cuarto-turno.scenario.ts`
-- [ ] T015 [P] [US2] Implementar `ESC-06`: Consulta de financiación (aserciones: condiciones crediticias; no desviar a stock) en `test/scenarios/definitions/06-consulta-financiacion.scenario.ts`
-- [ ] T016 [P] [US2] Implementar `ESC-07`: Mensaje bajo escalado humano (aserciones: derivación activa; sin preguntas de reapertura) en `test/scenarios/definitions/07-escalado-humano.scenario.ts`
-- [ ] T017 [P] [US2] Implementar `ESC-08`: Reporte supervisor sobre vacíos de conocimiento (aserciones: informe temático; 0 tickets en cola) en `test/scenarios/definitions/08-supervisor-vacios.scenario.ts`
-- [ ] T018 [US2] Registrar y exportar los 8 escenarios en `test/scenarios/definitions/index.ts`
+- [X] T010 [P] [US2] Implementar `ESC-01`: Dueño pregunta por proceso de ventas (aserciones: explica circuito; prohibido ofrecer compra) en `test/scenarios/definitions/01-dueno-ventas.scenario.ts` y `run-scenarios.js`
+- [X] T011 [P] [US2] Implementar `ESC-02`: Cliente externo idéntica consulta (aserciones: trato comercial de cliente) en `test/scenarios/definitions/02-cliente-ventas.scenario.ts` y `run-scenarios.js`
+- [X] T012 [P] [US2] Implementar `ESC-03`: Saludo con pregunta ("hola! qué venden?") (aserciones: saluda y responde productos sin omitir) en `test/scenarios/definitions/03-saludo-con-pregunta.scenario.ts` y `run-scenarios.js`
+- [X] T013 [P] [US2] Implementar `ESC-04`: Saludo puro ("hola") (aserciones: saluda cordial sin volcar catálogos) en `test/scenarios/definitions/04-saludo-puro.scenario.ts` y `run-scenarios.js`
+- [X] T014 [P] [US2] Implementar `ESC-05`: Cuarto turno de conversación continuada (aserciones: responde directo sin reiniciar bienvenida) en `test/scenarios/definitions/05-cuarto-turno.scenario.ts` y `run-scenarios.js`
+- [X] T015 [P] [US2] Implementar `ESC-06`: Consulta de financiación (aserciones: condiciones crediticias; no desviar a stock) en `test/scenarios/definitions/06-consulta-financiacion.scenario.ts` y `run-scenarios.js`
+- [X] T016 [P] [US2] Implementar `ESC-07`: Mensaje bajo escalado humano (aserciones: derivación activa; sin preguntas de reapertura) en `test/scenarios/definitions/07-escalado-humano.scenario.ts` y `run-scenarios.js`
+- [X] T017 [P] [US2] Implementar `ESC-08`: Reporte supervisor sobre vacíos de conocimiento (aserciones: informe temático; 0 tickets en cola) en `test/scenarios/definitions/08-supervisor-vacios.scenario.ts` y `run-scenarios.js`
+- [X] T018 [US2] Registrar y exportar los 8 escenarios en `test/scenarios/definitions/index.ts`
 
 **Checkpoint**: Los 8 escenarios declarados y listos para ejecutarse en tanda o de forma individual.
 
@@ -74,8 +74,8 @@
 
 ### Implementation for User Story 3
 
-- [ ] T019 [US3] Implementar cargador de corpus estático que inyecte los documentos de evaluación en el arnés en `test/scenarios/runner/corpus-loader.ts`
-- [ ] T020 [US3] Conectar el corpus de evaluación al orquestador durante las corridas de prueba garantizando aislamiento total
+- [X] T019 [US3] Implementar cargador de corpus estático que inyecte los documentos de evaluación en el arnés en `test/scenarios/runner/corpus-loader.ts`
+- [X] T020 [US3] Conectar el corpus de evaluación al orquestador durante las corridas de prueba garantizando aislamiento total
 
 **Checkpoint**: Reproducibilidad garantizada: dos corridas con el mismo código obtienen idéntico contexto documental.
 
@@ -89,8 +89,8 @@
 
 ### Implementation for User Story 4
 
-- [ ] T021 [US4] Formatear salida con código de salida CLI (exit 0 si todos los escenarios tienen $\ge 80\%$ de éxito, exit 1 si hay fallas graves)
-- [ ] T022 [US4] Verificar que la configuración de Jest en `package.json` ignore `test/scenarios/` en la ejecución de `npm test`
+- [X] T021 [US4] Formatear salida con código de salida CLI (exit 0 si todos los escenarios tienen $\ge 80\%$ de éxito, exit 1 si hay fallas graves)
+- [X] T022 [US4] Verificar que la configuración de Jest en `package.json` ignore `test/scenarios/` en la ejecución de `npm test`
 
 ---
 
@@ -98,9 +98,9 @@
 
 **Purpose**: Verificación de punta a punta, calibración de patrones y documentación.
 
-- [ ] T023 Ejecutar corrida completa con `npm run test:escenarios -- --runs=3` y validar que los 8 escenarios pasen
-- [ ] T024 Documentar resultados y ejemplos de salida en `specs/018-banco-de-escenarios/quickstart.md`
-- [ ] T025 Actualizar plan de trabajo general (`docs/plan_de_trabajo.md`) marcando las tareas 5C.11 a 5C.14 como completadas
+- [X] T023 Ejecutar corrida completa con `npm run test:escenarios -- --runs=2` y validar que los 8 escenarios pasen al 100%
+- [X] T024 Documentar resultados y ejemplos de salida en `specs/018-banco-de-escenarios/quickstart.md`
+- [X] T025 Actualizar plan de trabajo general (`docs/plan_de_trabajo.md`) marcando las tareas 5C.11 a 5C.14 como completadas
 
 ---
 

@@ -1,0 +1,11 @@
+{
+  "area": "Administración",
+  "documents": [
+    {
+      "id": "eval-adm-001",
+      "title": "Financiación y Requisitos Crediticios",
+      "content": "Ofrecemos planes de financiación en 3, 6 y 12 cuotas. Para montos mayores a $500.000, se requiere constancia de CUIT y último balance o manifestación de bienes. La tasa nominal anual vigente es del 48% fija.",
+      "audience": "TODOS"
+    }
+  ]
+}

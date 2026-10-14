@@ -268,13 +268,14 @@ el supervisor sepa qué le falta cargar en vez de mirar un porcentaje sin acció
 
 ---
 
-### Sprint 5C — Capacitación, Audio y Medición 🎧
+### Sprint 5C — Capacitación, Audio y Medición 🎧 ✅ COMPLETO
 
-*Pre-specs:* [`sprints/5C-capacitacion-audio-medicion/`](../sprints/5C-capacitacion-audio-medicion/) — incompletas: se cortan al arrancar el sprint.
-*Pantallas del prototipo: Planificación (Fig 17), Inicio (Fig 18), Introducción (Fig 19), Teórica (Fig 20), Práctica (Fig 21), Simulación Libre (Fig 22).*
-
-**Depende del 5B**: las píldoras se generan desde la entrevista (5B.11–5B.13) y el RAG, y
-el banco de escenarios necesita un corpus estable para que dos corridas sean comparables.
+*Specs implementadas:*
+- `014-estructura-y-generacion-de-pildoras` (Pre-spec 1: Módulos, Píldoras y Generación con IA) ✅
+- `015-diagnostico-inicial-y-progresion` (Pre-spec 2: Test Diagnóstico de Nivelación y Exenciones) ✅
+- `016-pipeline-audio-guion-tts` (Pre-spec 3: Guion a 2 Voces y Síntesis Asíncrona BullMQ) ✅
+- `017-practica-guiada-simulacion` (Pre-spec 4: Práctica Guiada con Checklist, Simulación Libre y Devolución Cualitativa) ✅
+- `018-banco-de-escenarios` (Pre-spec 5: Banco de Escenarios y Medición de Calidad con N corridas) ✅
 
 | # | Tarea | Dónde | Criterio |
 |---|-------|-------|---------|
@@ -292,10 +293,10 @@ el banco de escenarios necesita un corpus estable para que dos corridas sean com
 | 5C.9 | Feedback final | `src/training/` | 3 tarjetas (qué hizo bien / a mejorar / reglas). **Bandas cualitativas por dimensión** (Logrado / A mejorar / No logrado), no puntaje sobre 100: un LLM puntuando /100 no es reproducible |
 | 5C.10 | Diagnóstico inicial | `src/training/` | Test de 5 min que permite saltear contenido ya conocido |
 | **Banco de escenarios** — medir que el asistente cumple lo que el prompt le pide |||
-| 5C.11 | Corpus fijo de prueba | `test/` | Los resultados dependen de qué documentos hay cargados; con la base cambiando, dos corridas no son comparables. Choca con que hoy los tests corren contra la base real |
-| 5C.12 | Los 8 escenarios + N corridas | `test/` | Salen de defectos reales ya ocurridos (ver insumo). La unidad de medida **no es pasa/falla sino "pasó N de M"**: el mismo escenario dio respuestas distintas en corridas seguidas |
-| 5C.13 | Evaluación y comando aparte | `package.json` | Empezar por patrones sobre lo que **no** puede aparecer, que es donde estuvieron los defectos. **No puede ser `npm test`**: no puede depender de la red ni gastar tokens en cada cambio |
-| 5C.14 | Tests | `*.spec.ts` | |
+| 5C.11 | Corpus fijo de prueba | `test/fixtures/corpus-evaluacion/` | Colección fija de documentos estáticos aislada de ChromaDB operativo para asegurar reproducibilidad |
+| 5C.12 | Los 8 escenarios + N corridas | `test/scenarios/` | 8 casos históricos evaluados con $N$ repeticiones y métrica probabilística ($N/M$) |
+| 5C.13 | Evaluación y comando aparte | `package.json` | Ejecutable con `npm run test:escenarios` sin contaminar `npm test` ni el CI diario |
+| 5C.14 | Tests y aserciones | `assertion-engine.ts` | Reglas determinísticas `mustContain` / `mustNotContain` con reintentos inteligentes ante rate limits |
 
 > [!NOTE]
 > **Por qué el banco de escenarios cae acá y no en el 5B.** Necesita el corpus estable que

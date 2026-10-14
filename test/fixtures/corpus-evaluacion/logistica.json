@@ -1,0 +1,11 @@
+{
+  "area": "Logística",
+  "documents": [
+    {
+      "id": "eval-log-001",
+      "title": "Tiempos y Zonas de Entrega",
+      "content": "Realizamos envíos a todo el país. En AMBA la entrega estándar demora entre 24 y 48 horas hábiles. Para el interior del país despachamos por expreso en un plazo de 3 a 5 días hábiles.",
+      "audience": "TODOS"
+    }
+  ]
+}
