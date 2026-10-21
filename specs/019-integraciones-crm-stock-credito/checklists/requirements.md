@@ -33,3 +33,4 @@
 
 - [ ] CHK015 Tests unitarios verifican los puertos y adaptadores aislados sin dependencias externas obligatorias.
 - [ ] CHK016 Si n8n o Google Sheets no responden, el sistema persiste localmente en PostgreSQL sin generar errores 500 al cliente.
+

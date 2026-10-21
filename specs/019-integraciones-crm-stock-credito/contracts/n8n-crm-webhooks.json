@@ -1,0 +1,48 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "N8nCrmWebhooksContract",
+  "description": "Contratos de payload para los webhooks de n8n que sincronizan Google Sheets con TrimIA",
+  "definitions": {
+    "ProspectCreatePayload": {
+      "type": "object",
+      "required": ["fechaContacto", "nombreApellido", "telefono", "productoInteres", "modalidad", "canalOrigen"],
+      "properties": {
+        "fechaContacto": { "type": "string", "description": "Formato DD/MM/YYYY" },
+        "nombreApellido": { "type": "string" },
+        "telefono": { "type": "string" },
+        "dni": { "type": "string" },
+        "comercio": { "type": "string" },
+        "rubro": { "type": "string" },
+        "localidad": { "type": "string" },
+        "productoInteres": { "type": "string" },
+        "modalidad": { "type": "string", "enum": ["CONTADO", "CUOTAS_SEMANALES"] },
+        "montoEstimado": { "type": "number" },
+        "estado": { "type": "string", "default": "NUEVO" },
+        "dictamenCrediticio": { "type": "string" },
+        "vendedorAsignado": { "type": "string" },
+        "canalOrigen": { "type": "string", "enum": ["WHATSAPP", "WEB", "LOCAL"] },
+        "ultimaInteraccion": { "type": "string" },
+        "notasSeguimiento": { "type": "string" },
+        "conversationId": { "type": "string" }
+      }
+    },
+    "ProspectFollowUpPayload": {
+      "type": "object",
+      "required": ["telefono", "nota"],
+      "properties": {
+        "telefono": { "type": "string" },
+        "nota": { "type": "string" },
+        "nuevoEstado": { "type": "string", "enum": ["NUEVO", "EN_CONTACTO", "CALIFICA", "NO_CALIFICA", "VENTA_CERRADA", "PERDIDO"] },
+        "vendedorId": { "type": "string" },
+        "timestamp": { "type": "string", "format": "date-time" }
+      }
+    },
+    "ProspectSearchResponse": {
+      "type": "object",
+      "properties": {
+        "found": { "type": "boolean" },
+        "prospect": { "$ref": "#/definitions/ProspectCreatePayload" }
+      }
+    }
+  }
+}

@@ -122,3 +122,4 @@ Como vendedor que toma un cliente derivado, quiero ver una tarjeta con el resume
 2. Si n8n o la planilla están desconectados, el adaptador de CRM degrada amablemente registrando el prospecto en PostgreSQL local sin arrojar error 500 al cliente.
 3. El vendedor nunca tiene acceso al detalle confidencial de Riesgo Online, cumpliendo OE-10.
 4. El agente de Ventas ofrece un máximo de 4 opciones de productos con stock y links oficiales a la web de Credimisión.
+

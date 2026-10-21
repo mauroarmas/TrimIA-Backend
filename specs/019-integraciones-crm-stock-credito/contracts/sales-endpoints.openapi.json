@@ -1,0 +1,206 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "TrimIA - Sales Integration Endpoints",
+    "version": "1.0.0",
+    "description": "Endpoints para el panel de ventas y las integraciones de stock, CRM y verificación crediticia confidencial."
+  },
+  "paths": {
+    "/sales/stock": {
+      "get": {
+        "summary": "Consulta el catálogo y la disponibilidad de stock en Paljet",
+        "parameters": [
+          {
+            "name": "query",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string" },
+            "description": "Nombre, modelo o SKU a filtrar"
+          },
+          {
+            "name": "category",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "string",
+              "enum": ["BALANZAS", "CORTADORAS", "GASTRONOMIA", "REFRIGERACION", "ACCESORIOS"]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Listado de productos con stock y precios",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/StockItem"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sales/prospects": {
+      "get": {
+        "summary": "Listado de prospectos generados por el bot o cargados en el CRM",
+        "parameters": [
+          {
+            "name": "status",
+            "in": "query",
+            "required": false,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Lista de prospectos ordenados por última interacción",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/CrmProspect"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sales/credit-check": {
+      "post": {
+        "summary": "Verificación crediticia confidencial para ventas (OE-10)",
+        "description": "Ejecuta internamente la evaluación a través de Riesgo Online pero omite los detalles financieros confidenciales retornando únicamente el dictamen y las condiciones comerciales.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["dni"],
+                "properties": {
+                  "dni": { "type": "string", "example": "32123456" },
+                  "amount": { "type": "number", "example": 250000 }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Dictamen crediticio filtrado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CommercialCreditResult"
+                }
+              }
+            }
+          },
+          "400": { "description": "DNI inválido" },
+          "403": { "description": "No autorizado para consultar crédito" }
+        }
+      }
+    },
+    "/sales/close": {
+      "post": {
+        "summary": "Registro de cierre manual de venta",
+        "description": "Asienta la venta como cerrada una vez cargada en el ERP Paljet por el vendedor.",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["finalAmount", "modality"],
+                "properties": {
+                  "prospectId": { "type": "string" },
+                  "purchaseRequestId": { "type": "string" },
+                  "finalAmount": { "type": "number", "example": 180000 },
+                  "modality": { "type": "string", "enum": ["CASH", "FINANCED"] },
+                  "notes": { "type": "string", "example": "Factura A-0001-000123. Se coordinó entrega para el jueves." }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Venta cerrada y auditada exitosamente",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "success": { "type": "boolean" },
+                    "closedAt": { "type": "string", "format": "date-time" },
+                    "closedBy": { "type": "string" }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "StockItem": {
+        "type": "object",
+        "properties": {
+          "sku": { "type": "string" },
+          "name": { "type": "string" },
+          "category": { "type": "string" },
+          "stock": { "type": "integer" },
+          "listPrice": { "type": "number" },
+          "cashPrice": { "type": "number" },
+          "urlCredimision": { "type": "string" },
+          "substituteSkus": {
+            "type": "array",
+            "items": { "type": "string" }
+          },
+          "lastUpdated": { "type": "string", "format": "date-time" }
+        }
+      },
+      "CommercialCreditResult": {
+        "type": "object",
+        "properties": {
+          "verdict": {
+            "type": "string",
+            "enum": ["APPROVED", "APPROVED_WITH_CONDITIONS", "REJECTED", "UNAVAILABLE"]
+          },
+          "commercialCondition": { "type": "string" },
+          "evaluatedAt": { "type": "string", "format": "date-time" }
+        }
+      },
+      "CrmProspect": {
+        "type": "object",
+        "properties": {
+          "fechaContacto": { "type": "string" },
+          "nombreApellido": { "type": "string" },
+          "telefono": { "type": "string" },
+          "dni": { "type": "string" },
+          "comercio": { "type": "string" },
+          "rubro": { "type": "string" },
+          "localidad": { "type": "string" },
+          "productoInteres": { "type": "string" },
+          "modalidad": { "type": "string" },
+          "montoEstimado": { "type": "number" },
+          "estado": { "type": "string" },
+          "dictamenCrediticio": { "type": "string" },
+          "vendedorAsignado": { "type": "string" },
+          "canalOrigen": { "type": "string" },
+          "ultimaInteraccion": { "type": "string" },
+          "notasSeguimiento": { "type": "string" },
+          "conversationId": { "type": "string" }
+        }
+      }
+    }
+  }
+}
