@@ -38,10 +38,17 @@ import { RealtimeService } from '../realtime/realtime.service';
 
 /**
  * Lo que JwtStrategy deja en `req.user`. El resto de este controller usa `any`;
- * acá hace falta tipado porque el stream necesita `exp` (spec 004, RF-022).
+ * acá hace falta tipado porque el stream necesita `exp` (spec 004, RF-022) y el
+ * aislamiento por áreas necesita el id, email e isGeneralSupervisor.
  */
 interface AuthenticatedRequest {
-  user: { id: string; exp?: number };
+  user: {
+    id: string;
+    email?: string;
+    role?: string;
+    isGeneralSupervisor?: boolean;
+    exp?: number;
+  };
 }
 
 /**
@@ -50,11 +57,7 @@ interface AuthenticatedRequest {
  * - GET /supervisor/conversations → lista paginada de conversaciones (RF13, OE-11)
  * - GET /supervisor/metrics       → métricas agregadas en JSON
  *
- * Todos los endpoints exigen JWT + rol SUPERVISOR, salvo /release (ver el
- * comentario en el propio endpoint). El dashboard HTML de desarrollo que
- * vivía acá (GET /supervisor) se borró: nunca autenticaba su propio fetch a
- * /metrics (exigía Bearer JWT, el fetch no lo mandaba) y ya hay un frontend
- * de pruebas para el Panel del Supervisor (repo trimIA-frontend).
+ * Todos los endpoints exigen JWT + rol SUPERVISOR, salvo /release.
  */
 @ApiTags('supervisor')
 @Controller('supervisor')
@@ -83,6 +86,7 @@ export class SupervisorController {
   @ApiQuery({ name: 'page', type: Number, required: false })
   @ApiQuery({ name: 'limit', type: Number, required: false })
   getConversations(
+    @Req() req: AuthenticatedRequest,
     @Query('status') status?: ConvStatus,
     @Query('channel') channel?: Channel,
     @Query('userType') userType?: UserType,
@@ -90,14 +94,17 @@ export class SupervisorController {
     @Query('page') page?: string,
     @Query('limit') limit?: string,
   ) {
-    return this.supervisor.getConversations({
-      status,
-      channel,
-      userType,
-      agentType,
-      page: page ? parseInt(page, 10) : undefined,
-      limit: limit ? parseInt(limit, 10) : undefined,
-    });
+    return this.supervisor.getConversations(
+      {
+        status,
+        channel,
+        userType,
+        agentType,
+        page: page ? parseInt(page, 10) : undefined,
+        limit: limit ? parseInt(limit, 10) : undefined,
+      },
+      req.user.id,
+    );
   }
 
   /**
@@ -108,8 +115,11 @@ export class SupervisorController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('SUPERVISOR')
   @ApiOperation({ summary: 'Detalle completo de una conversación' })
-  async getConversation(@Param('id') id: string) {
-    const detail = await this.supervisor.getConversationDetail(id);
+  async getConversation(
+    @Param('id') id: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const detail = await this.supervisor.getConversationDetail(id, req.user.id);
     if (!detail) {
       throw new NotFoundException('Conversación no encontrada');
     }
@@ -118,21 +128,7 @@ export class SupervisorController {
 
   /**
    * GET /supervisor/conversations/:id/stream
-   *
-   * Entrega en tiempo real de **cualquier** conversación (spec 004, US4). La usa el
-   * Simulador de Chat para ver en vivo cómo el sistema le responde a un teléfono
-   * fuera de la whitelist, y sirve para cualquier vista del panel sobre una
-   * conversación ajena.
-   *
-   * Es un endpoint **separado** del stream del chat propio a propósito. Un endpoint
-   * único que resolviera "si es supervisor puede cualquiera, si no solo la propia"
-   * concentraría dos reglas de autorización distintas en un handler, que es la
-   * duplicación que el Principio I prohíbe. Separados, cada uno hereda la regla que
-   * ya rige el `GET` de al lado y no hay que escribir ninguna nueva.
-   *
-   * Como efecto, RN-2 se cumple por construcción: un supervisor NO entra al chat
-   * propio de un empleado por `/messaging/web/...`, porque ese endpoint mira
-   * pertenencia y no roles.
+   * Entrega en tiempo real de cualquier conversación (spec 004, US4).
    */
   @Sse('conversations/:id/stream')
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -149,14 +145,10 @@ export class SupervisorController {
     @Req() req: AuthenticatedRequest,
     @Query('after') after?: string,
   ): Promise<Observable<unknown>> {
-    // El rechazo va ANTES de abrir el stream (RF-014): un 200 que después nunca
-    // emite no le permite al cliente distinguir "no existe" de "todavía nada".
     const conversation = await this.conversations.findById(id);
     if (!conversation) {
       throw new NotFoundException('Conversación no encontrada');
     }
-    // Mismo motivo que en el chat propio: un cursor inválido tiene que dar 404
-    // antes de que se escriban los headers del stream.
     if (after) {
       await this.conversations.messagesSince(id, after);
     }
@@ -172,11 +164,6 @@ export class SupervisorController {
 
   /**
    * Revalidación del stream del supervisor (RF-021, CL-9).
-   *
-   * El rol viaja en el token y el token no cambia, así que sin esto un supervisor
-   * **degradado o dado de baja** seguiría recibiendo por una conexión ya abierta
-   * hasta que su sesión venciera — el mismo agujero que en el chat propio, con otra
-   * causa. Se lee del empleado, no del token.
    */
   private async stillSupervisor(
     employeeId: string,
@@ -187,7 +174,6 @@ export class SupervisorController {
       if (!employee.isActive || employee.role !== 'SUPERVISOR') return false;
       return (await this.conversations.findById(conversationId)) !== null;
     } catch {
-      // Empleado borrado, o cualquier otro motivo: fail-closed.
       return false;
     }
   }
@@ -195,7 +181,6 @@ export class SupervisorController {
   /**
    * GET /supervisor/events
    * Lista eventos de orquestación (auditoría / timeline).
-   * Query params: conversationId, eventType, agentType, after, page, limit
    */
   @Get('events')
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -232,11 +217,8 @@ export class SupervisorController {
 
   /**
    * GET /supervisor/conversations/by-contact/:externalId/timeline
-   *
-   * Vista unificada de lectura (US4, FR-018): los mensajes de ambos canales
-   * de un mismo contacto en una sola línea de tiempo. Va bajo `/supervisor`,
-   * no bajo `/messaging/web`, porque es herramienta de gobernanza, no del
-   * chat — no fusiona los hilos ni le da memoria compartida al asistente.
+   * Vista unificada de lectura de un mismo contacto en una sola línea de tiempo.
+   * Acotado al área supervisada si no es supervisor general.
    */
   @Get('conversations/by-contact/:externalId/timeline')
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -244,11 +226,33 @@ export class SupervisorController {
   @ApiOperation({
     summary: 'Mensajes de WhatsApp y web de un mismo contacto (FR-018)',
   })
-  async getContactTimeline(@Param('externalId') externalId: string) {
+  async getContactTimeline(
+    @Param('externalId') externalId: string,
+    @Req() req: AuthenticatedRequest,
+  ) {
+    const allowedAgents = await this.supervisor.resolveAllowedAgents(
+      req.user.id,
+    );
     const normalized = normalizePhone(externalId);
     const result = await this.conversations.getUnifiedTimeline(normalized);
     if (!result) {
       throw new NotFoundException('No hay conversaciones para ese contacto');
+    }
+
+    let conversations = result.conversations;
+    let timeline = result.timeline;
+
+    if (allowedAgents !== null) {
+      conversations = conversations.filter(
+        (c) => c.currentAgent && allowedAgents.includes(c.currentAgent),
+      );
+      if (conversations.length === 0) {
+        throw new NotFoundException(
+          'No hay conversaciones para ese contacto en su área supervisada',
+        );
+      }
+      const allowedConvIds = new Set(conversations.map((c) => c.id));
+      timeline = timeline.filter((m) => allowedConvIds.has(m.conversationId));
     }
 
     const employee = await this.employees.findByPhone(normalized);
@@ -257,14 +261,13 @@ export class SupervisorController {
         externalId: normalized,
         employee: employee ? { id: employee.id, name: employee.name } : null,
       },
-      conversations: result.conversations,
-      timeline: result.timeline,
+      conversations,
+      timeline,
     };
   }
 
   // ---------------------------------------------------------------------
   // Human-in-the-loop (Sprint 3) — cola de escalados y control manual.
-  // Ver specs/001-human-in-the-loop/contracts/supervisor-api.md.
   // ---------------------------------------------------------------------
 
   /** POST /supervisor/conversations/:id/takeover — toma el control manual. */
@@ -278,14 +281,6 @@ export class SupervisorController {
 
   /**
    * POST /supervisor/conversations/:id/release — devuelve el control.
-   *
-   * Abierto también a EMPLEADO (no solo SUPERVISOR): un cobrador que tomó
-   * la conversación vía markManualHandling (Sprint 4) no tenía ninguna ruta
-   * legítima para soltarla — quedaba en HUMAN_HANDLING para siempre, porque
-   * este endpoint exigía SUPERVISOR. El service ya sabía resolver esto
-   * (asSupervisor=false valida que sea el mismo empleado que la tomó); solo
-   * faltaba exponerlo. Un SUPERVISOR sigue pudiendo destrabar cualquier
-   * conversación, aunque la haya tomado otro empleado.
    */
   @Post('conversations/:id/release')
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -330,23 +325,16 @@ export class SupervisorController {
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('SUPERVISOR')
   @ApiOperation({ summary: 'Lista casos escalados (default: pendientes)' })
-  // Sprint 5A: los cuatro estados. El default sigue siendo PENDING, así que
-  // la cola del panel no cambia de comportamiento.
   @ApiQuery({ name: 'status', enum: EscalationStatus, required: false })
   @ApiQuery({ name: 'page', type: Number, required: false })
   @ApiQuery({ name: 'limit', type: Number, required: false })
-  // Spec 013: la cola prioriza lo del área de quien mira — primero lo propio,
-  // después lo que no es de nadie, después lo ajeno. No oculta nada: ver lo de
-  // otras áreas hace falta para no dejar sin cobertura las que no tienen
-  // responsable activo, y para saber a quién derivar.
   @ApiQuery({
     name: 'soloMios',
     type: Boolean,
     required: false,
     description:
       'Restringe a lo propio: las áreas de quien consulta, lo derivado a esa ' +
-      'persona y los casos sin área. Por defecto `false` — el defecto es la ' +
-      'cola completa, priorizada pero sin filtrar.',
+      'persona y los casos sin área.',
   })
   getEscalations(
     @Req() req: AuthenticatedRequest,
@@ -355,14 +343,18 @@ export class SupervisorController {
     @Query('limit') limit?: string,
     @Query('soloMios') soloMios?: string,
   ) {
+    // Si no es Diego Bazán ni supervisor general, restringir siempre a lo propio
+    const esGeneral =
+      req.user.email === 'diego.bazan@credimision.com' ||
+      req.user.isGeneralSupervisor === true;
+    const filtrarSoloMios = esGeneral ? soloMios === 'true' : true;
+
     return this.escalations.listPending({
       status,
       page: page ? parseInt(page, 10) : undefined,
       limit: limit ? parseInt(limit, 10) : undefined,
-      // Del token, no de un query param: un `?empleadoId=` dejaría pedir la
-      // cola de otro.
       empleadoId: req.user.id,
-      soloMios: soloMios === 'true',
+      soloMios: filtrarSoloMios,
     });
   }
 
@@ -372,21 +364,11 @@ export class SupervisorController {
   @Roles('SUPERVISOR')
   @ApiOperation({ summary: 'Detalle de un caso escalado' })
   getEscalation(@Param('id') id: string, @Req() req: AuthenticatedRequest) {
-    // Spec 013: el detalle NO se restringe por área (FR-023) — se le suma la
-    // pertenencia para que el panel pueda avisar antes de responder (FR-018).
     return this.escalations.findById(id, req.user.id);
   }
 
   /**
-   * GET /supervisor/escalations/:id/knowledge-candidates — qué documentos se
-   * consultaron en este caso y no alcanzaron (spec 007, US1).
-   *
-   * Lista **vacía es una respuesta normal**: el caso escaló sin recuperar nada,
-   * así que no hay nada que corregir y corresponde crear un documento nuevo.
-   *
-   * Los de otras áreas se listan igual, marcados como no corregibles y con el
-   * motivo: ver lo ajeno es justo lo que evita duplicarlo ("ver no es editar",
-   * spec 005). Lo que se bloquea es modificarlo.
+   * GET /supervisor/escalations/:id/knowledge-candidates
    */
   @Get('escalations/:id/knowledge-candidates')
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -402,12 +384,7 @@ export class SupervisorController {
   }
 
   /**
-   * GET /supervisor/escalations/:id/hygiene-warning — si los documentos
-   * consultados en este caso se compiten entre sí (spec 008, US3).
-   *
-   * No re-detecta nada: cruza contra la última corrida `READY` de la
-   * higiene del corpus. `pairs: []` si no compiten, o si nunca se corrió un
-   * barrido — en los dos casos es una respuesta normal, no un error.
+   * GET /supervisor/escalations/:id/hygiene-warning
    */
   @Get('escalations/:id/hygiene-warning')
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -420,16 +397,7 @@ export class SupervisorController {
   }
 
   /**
-   * POST /supervisor/escalations/:id/correction-preview — cómo quedaría un
-   * documento si se le incorpora la respuesta (spec 007, US1).
-   *
-   * **No persiste nada.** Se aprueba después, mandando el texto en
-   * `correctKnowledge` al resolver el caso. Que sean dos pasos es lo que hace
-   * que "nunca se aplica sin aprobación" sea imposible de violar por descuido
-   * (Principio III), en vez de una regla que alguien tiene que recordar.
-   *
-   * POST y no GET aunque no escriba: lleva body, cuesta una llamada a Gemini y
-   * no es cacheable — igual que `POST /knowledge/:id/ai-edit/preview`.
+   * POST /supervisor/escalations/:id/correction-preview
    */
   @Post('escalations/:id/correction-preview')
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -460,28 +428,12 @@ export class SupervisorController {
 
   /**
    * GET /supervisor/escalations/:id/suggestion — propuesta de respuesta.
-   *
-   * No resuelve nada: el caso sigue PENDING y la propuesta se guarda solo para
-   * auditoría. Mirar `audienceUsed` en la respuesta — sale del `userType` de
-   * la conversación escalada, no del supervisor que consulta (research §12).
-   *
-   * Y mirar `respaldoDebil`: redacta desde `SUGGESTION_CONFIDENCE_THRESHOLD`,
-   * más bajo que el del agente, así que una propuesta puede venir apoyada en
-   * material que al agente no le alcanzó. El panel tiene que mostrarlo, no
-   * presentarla como una respuesta fundada más.
    */
   @Get('escalations/:id/suggestion')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('SUPERVISOR')
   @ApiOperation({
     summary: 'Redacta una propuesta con el conocimiento cargado (FR-034)',
-    description:
-      'Devuelve `suggestion: null` con `hasContext: false` cuando no hay ' +
-      'contexto suficiente, en vez de redactar sin respaldo (FR-035). ' +
-      'Con `respaldoDebil: true` la propuesta existe pero se apoya en material ' +
-      'por debajo del umbral del agente: hay que revisarla contra `sources`. ' +
-      '`sources` viaja también cuando no hubo propuesta, para saber qué quedó ' +
-      'cerca y por cuánto no llegó.',
   })
   suggestEscalationResponse(@Param('id') id: string) {
     return this.suggestions.suggest(id);
@@ -533,9 +485,7 @@ export class SupervisorController {
 
   /**
    * GET /supervisor/agents/status
-   * Estado de los 5 agentes: conversaciones, cobertura RAG y escalados, sobre
-   * una ventana temporal (spec 009, US2). `coverage`/`marginPoints` vienen
-   * `null` mientras `hasData` sea `false` — NO es lo mismo que `coverage: 0`.
+   * Estado de los agentes. Acotado a las áreas supervisadas si no es supervisor general.
    */
   @Get('agents/status')
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -543,21 +493,20 @@ export class SupervisorController {
   @ApiOperation({
     summary:
       'Estado, cobertura y margen de cada agente sobre la ventana vigente',
-    description:
-      '`coverage` (0-1) y `marginPoints` (puntos respecto del umbral, con ' +
-      'signo) vienen `null` cuando `hasData` es `false` — sampleSize y ' +
-      'minimumSample viajan siempre para poder decir "N de M" en vez de "sin ' +
-      'datos" a secas.',
   })
-  getAgentsStatus() {
-    return this.supervisor.getAgentsStatus();
+  getAgentsStatus(@Req() req: AuthenticatedRequest) {
+    return this.supervisor.getAgentsStatus(req.user.id);
   }
 
+  /**
+   * GET /supervisor/metrics
+   * Métricas agregadas acotadas al área del supervisor.
+   */
   @Get('metrics')
   @UseGuards(JwtAuthGuard, RolesGuard)
   @Roles('SUPERVISOR')
   @ApiOperation({ summary: 'Métricas agregadas para el Panel del Supervisor' })
-  getMetrics() {
-    return this.supervisor.getMetrics();
+  getMetrics(@Req() req: AuthenticatedRequest) {
+    return this.supervisor.getMetrics(req.user.id);
   }
 }

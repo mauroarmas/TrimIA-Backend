@@ -806,13 +806,29 @@ export class KnowledgeService implements OnModuleInit {
   // ==========================================================================
 
   /** Listado del panel, filtrado por área/categoría/estado (FR-019). */
-  async list(filter: ListFilter = {}) {
+  async list(filter: ListFilter = {}, callerId?: string) {
     const page = Math.max(1, filter.page ?? 1);
     const limit = Math.min(100, Math.max(1, filter.limit ?? 20));
     const skip = (page - 1) * limit;
 
-    const where = {
-      ...(filter.agentType ? { agentType: filter.agentType } : {}),
+    let allowedAgents: AgentType[] | null = null;
+    if (callerId) {
+      const [totalSectors, employee] = await Promise.all([
+        this.prisma.sector.count(),
+        this.employees.findById(callerId),
+      ]);
+      const areas = employee?.areasSupervisadas ?? [];
+      const esGeneral =
+        employee?.email === 'diego.bazan@credimision.com' ||
+        areas.length >= totalSectors;
+      if (!esGeneral) {
+        allowedAgents = areas
+          .map((a) => a.agentType)
+          .filter((t): t is AgentType => t !== null);
+      }
+    }
+
+    const where: any = {
       ...(filter.category ? { category: filter.category } : {}),
       ...(filter.isActive === undefined ? {} : { isActive: filter.isActive }),
       ...(filter.search
@@ -834,6 +850,19 @@ export class KnowledgeService implements OnModuleInit {
           }
         : {}),
     };
+
+    if (allowedAgents !== null) {
+      if (filter.agentType) {
+        if (!allowedAgents.includes(filter.agentType)) {
+          return { data: [], total: 0, page, limit, hasMore: false };
+        }
+        where.agentType = filter.agentType;
+      } else {
+        where.agentType = { in: allowedAgents };
+      }
+    } else if (filter.agentType) {
+      where.agentType = filter.agentType;
+    }
 
     const [rows, total] = await Promise.all([
       this.prisma.knowledgeDocument.findMany({

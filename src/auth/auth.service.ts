@@ -6,10 +6,13 @@ import { PrismaService } from '../database/prisma.service';
 export interface JwtPayload {
   sub: string; // employee id
   email: string;
+  name?: string;
   role: string; // EMPLEADO | SUPERVISOR
   sectorId: string;
   sectorName: string;
   isController: boolean; // Cobrador Controlador (Sprint 4)
+  isGeneralSupervisor?: boolean; // Acceso total a todas las áreas (Diego Bazán)
+  areasSupervisadas?: { id: string; name: string; agentType: string | null }[];
   /**
    * Vencimiento (segundos epoch). No se firma acá: lo agrega jsonwebtoken a
    * partir de `expiresIn`, y viene en el token que se verifica. Se declara
@@ -30,10 +33,18 @@ export class AuthService {
     email: string,
     password: string,
   ): Promise<{ accessToken: string }> {
-    const employee = await this.prisma.employee.findUnique({
-      where: { email },
-      include: { sector: true },
-    });
+    const [totalSectorsCount, employee] = await Promise.all([
+      this.prisma.sector.count(),
+      this.prisma.employee.findUnique({
+        where: { email },
+        include: {
+          sector: true,
+          areasSupervisadas: {
+            select: { id: true, name: true, agentType: true },
+          },
+        },
+      }),
+    ]);
 
     if (!employee || !employee.isActive) {
       throw new UnauthorizedException('Credenciales inválidas');
@@ -44,13 +55,21 @@ export class AuthService {
       throw new UnauthorizedException('Credenciales inválidas');
     }
 
+    const isGeneralSupervisor =
+      employee.role === 'SUPERVISOR' &&
+      (employee.email === 'diego.bazan@credimision.com' ||
+        (employee.areasSupervisadas?.length ?? 0) >= totalSectorsCount);
+
     const payload: JwtPayload = {
       sub: employee.id,
       email: employee.email,
+      name: employee.name,
       role: employee.role,
       sectorId: employee.sectorId,
       sectorName: employee.sector.name,
       isController: employee.isController,
+      isGeneralSupervisor,
+      areasSupervisadas: employee.areasSupervisadas ?? [],
     };
 
     return {

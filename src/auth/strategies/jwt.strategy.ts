@@ -25,10 +25,13 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
     return {
       id: payload.sub,
       email: payload.email,
+      name: payload.name,
       role: payload.role,
       sectorId: payload.sectorId,
       sectorName: payload.sectorName,
       isController: payload.isController,
+      isGeneralSupervisor: payload.isGeneralSupervisor ?? false,
+      areasSupervisadas: payload.areasSupervisadas ?? [],
       // Lo necesitan los streams del panel para cerrarse cuando la sesión vence
       // (spec 004, RF-022): los guards corren UNA sola vez, al abrir la ruta, y
       // una conexión larga sobreviviría al token sin esto.
