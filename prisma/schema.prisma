@@ -1,5 +1,6 @@
 generator client {
   provider = "prisma-client-js"
+  binaryTargets = ["native", "windows"]
 }
 
 datasource db {
@@ -142,6 +143,12 @@ enum CreditVerdict {
   UNAVAILABLE
 }
 
+enum ProspectSyncStatus {
+  SYNCED
+  PENDING
+  FAILED
+}
+
 enum FinancingStatus {
   ACTIVE
   COMPLETED
@@ -216,6 +223,7 @@ model Employee {
   reviewedPurchaseRequests PurchaseRequest[]  @relation("PurchaseRequestReviewedBy")
   creditAssessments        CreditAssessment[] @relation("CreditAssessmentAssessedBy")
   managedFinancings        Financing[]        @relation("FinancingCollector")
+  prospects                Prospect[]         @relation("ProspectSeller")
 
   // Sprint 5A
   knowledgeUpdated     KnowledgeDocument[] @relation("KnowledgeUpdatedBy")
@@ -1706,3 +1714,34 @@ model SimulationFeedback {
   @@map("simulation_feedbacks")
 }
 
+
+
+// Prospecto comercial sincronizado con CRM / Google Sheets (Sprint 6, Feature 019)
+model Prospect {
+  id              String             @id @default(uuid())
+  phone           String
+  name            String
+  dni             String?
+  comercio        String?
+  rubro           String?
+  localidad       String?
+  productInterest String
+  modality        PaymentModality    @default(CASH)
+  estimatedAmount Decimal?
+  status          String             @default("NUEVO")
+  creditVerdict   CreditVerdict?
+  sellerId        String?
+  seller          Employee?          @relation("ProspectSeller", fields: [sellerId], references: [id])
+  originChannel   Channel            @default(WHATSAPP)
+  conversationId  String?
+  notes           String?
+  syncStatus      ProspectSyncStatus @default(SYNCED)
+  lastSyncedAt    DateTime?
+  createdAt       DateTime           @default(now())
+  updatedAt       DateTime           @updatedAt
+
+  @@index([phone])
+  @@index([status])
+  @@index([sellerId])
+  @@index([syncStatus])
+}

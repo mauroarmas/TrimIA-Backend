@@ -241,3 +241,4 @@ model Prospect {
     "closedBy": "Vendedor Juan Pérez"
   }
   ```
+

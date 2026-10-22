@@ -1,0 +1,91 @@
+{
+  "name": "CRM: Búsqueda de Prospecto por Teléfono",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "GET",
+        "path": "crm-prospect-search",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [-512, 112],
+      "id": "webhook-crm-prospect-search",
+      "name": "Webhook Prospect Search"
+    },
+    {
+      "parameters": {
+        "operation": "read",
+        "documentId": {
+          "__rl": true,
+          "value": "1eU8lXoA6mcSh-s02NElqr8EWl1R2rR3TZAIFX1cENu4",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Prospectos",
+          "mode": "name"
+        },
+        "filters": {
+          "conditions": [
+            {
+              "column": "telefono",
+              "operation": "equals",
+              "value": "={{ $json.query.phone }}"
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [-256, 112],
+      "id": "sheets-crm-prospect-search",
+      "name": "Google Sheets Read",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "PSBd2QQ3ePFjvOeF",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { found: $json.length > 0, prospect: $json[0] || null } }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [0, 112],
+      "id": "respond-crm-prospect-search",
+      "name": "Respond to Webhook"
+    }
+  ],
+  "connections": {
+    "Webhook Prospect Search": {
+      "main": [
+        [
+          {
+            "node": "Google Sheets Read",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Google Sheets Read": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
+

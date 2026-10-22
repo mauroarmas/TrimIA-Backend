@@ -19,9 +19,9 @@
 
 **Purpose**: Inicialización del módulo de integraciones, modelos de datos y dependencias compartidas.
 
-- [ ] T001 Crear la estructura de directorios para arquitectura hexagonal en `src/ai/integrations/` con subcarpetas `ports/`, `adapters/`, `tools/` y `seeds/`
-- [ ] T002 Actualizar el esquema en `prisma/schema.prisma` agregando el enum `ProspectSyncStatus` (`SYNCED`, `PENDING`, `FAILED`) y el modelo `Prospect` con campos `phone` (String), `status` (String default 'NUEVO'), `syncStatus` (ProspectSyncStatus default SYNCED) y ejecutar `npx prisma db push`
-- [ ] T003 [P] Crear el módulo NestJS `IntegrationsModule` en `src/ai/integrations/integrations.module.ts` e importarlo en `src/ai/ai.module.ts` y `src/app.module.ts`
+- [X] T001 Crear la estructura de directorios para arquitectura hexagonal en `src/ai/integrations/` con subcarpetas `ports/`, `adapters/`, `tools/` y `seeds/`
+- [X] T002 Actualizar el esquema en `prisma/schema.prisma` agregando el enum `ProspectSyncStatus` (`SYNCED`, `PENDING`, `FAILED`) y el modelo `Prospect` con campos `phone` (String), `status` (String default 'NUEVO'), `syncStatus` (ProspectSyncStatus default SYNCED) y ejecutar `npx prisma db push`
+- [X] T003 [P] Crear el módulo NestJS `IntegrationsModule` en `src/ai/integrations/integrations.module.ts` e importarlo en `src/ai/ai.module.ts` y `src/app.module.ts`
 
 ---
 
@@ -31,10 +31,10 @@
 
 **⚠️ CRITICAL**: Ninguna historia de usuario puede implementarse hasta que esta fase esté completa.
 
-- [ ] T004 [P] Definir la interfaz del puerto de stock `StockPort`, el token `STOCK_PORT = Symbol('STOCK_PORT')` y los tipos `StockItem` y `StockCheckResult` en `src/ai/integrations/ports/stock.port.ts`
-- [ ] T005 [P] Definir la interfaz del puerto de crédito `CreditPort`, el token `CREDIT_PORT = Symbol('CREDIT_PORT')` y los tipos `CreditEvaluationInput` y `CreditAssessmentResult` en `src/ai/integrations/ports/credit.port.ts`
-- [ ] T006 [P] Definir la interfaz del puerto de CRM `CrmPort`, el token `CRM_PORT = Symbol('CRM_PORT')`, el enum `ProspectStatus` y el tipo `CrmProspectRecord` para las 17 columnas canónicas en `src/ai/integrations/ports/crm.port.ts`
-- [ ] T007 [P] Crear el catálogo seed de maquinaria gastronómica y comercial en `src/ai/integrations/seeds/paljet-catalog.seed.ts` con precios de lista, precios contado, existencias iniciales y `substituteSkus: string[]`
+- [X] T004 [P] Definir la interfaz del puerto de stock `StockPort`, el token `STOCK_PORT = Symbol('STOCK_PORT')` y los tipos `StockItem` y `StockCheckResult` en `src/ai/integrations/ports/stock.port.ts`
+- [X] T005 [P] Definir la interfaz del puerto de crédito `CreditPort`, el token `CREDIT_PORT = Symbol('CREDIT_PORT')` y los tipos `CreditEvaluationInput` y `CreditAssessmentResult` en `src/ai/integrations/ports/credit.port.ts`
+- [X] T006 [P] Definir la interfaz del puerto de CRM `CrmPort`, el token `CRM_PORT = Symbol('CRM_PORT')`, el enum `ProspectStatus` y el tipo `CrmProspectRecord` para las 17 columnas canónicas en `src/ai/integrations/ports/crm.port.ts`
+- [X] T007 [P] Crear el catálogo seed de maquinaria gastronómica y comercial en `src/ai/integrations/seeds/paljet-catalog.seed.ts` con precios de lista, precios contado, existencias iniciales y `substituteSkus: string[]`
 
 **Checkpoint**: Interfaces y catálogo base listos — la implementación de adaptadores y herramientas puede comenzar.
 
@@ -48,16 +48,16 @@
 
 ### Tests for User Story 1 🧪
 
-- [ ] T008 [P] [US1] Escribir prueba unitaria para `MockStockAdapter` en `src/ai/integrations/adapters/mock-stock.adapter.spec.ts` verificando consulta por SKU, búsqueda por texto y regla RF09 de retornar hasta 2 sustitutos con stock cuando la existencia sea 0
-- [ ] T009 [P] [US1] Escribir prueba unitaria para `MockCreditAdapter` en `src/ai/integrations/adapters/mock-credit.adapter.spec.ts` verificando reglas de scoring determinístico por DNI y degradación graceful devolviendo `CreditVerdict.UNAVAILABLE` (RF10)
-- [ ] T010 [P] [US1] Escribir prueba unitaria para `N8nCrmAdapter` en `src/ai/integrations/adapters/n8n-crm.adapter.spec.ts` verificando llamadas a webhooks y fallback local en base de datos PostgreSQL
+- [X] T008 [P] [US1] Escribir prueba unitaria para `MockStockAdapter` en `src/ai/integrations/adapters/mock-stock.adapter.spec.ts` verificando consulta por SKU, búsqueda por texto y regla RF09 de retornar hasta 2 sustitutos con stock cuando la existencia sea 0
+- [X] T009 [P] [US1] Escribir prueba unitaria para `MockCreditAdapter` en `src/ai/integrations/adapters/mock-credit.adapter.spec.ts` verificando reglas de scoring determinístico por DNI y degradación graceful devolviendo `CreditVerdict.UNAVAILABLE` (RF10)
+- [X] T010 [P] [US1] Escribir prueba unitaria para `N8nCrmAdapter` en `src/ai/integrations/adapters/n8n-crm.adapter.spec.ts` verificando llamadas a webhooks y fallback local en base de datos PostgreSQL
 
 ### Implementation for User Story 1
 
-- [ ] T011 [US1] Implementar `MockStockAdapter` en `src/ai/integrations/adapters/mock-stock.adapter.ts` implementando `StockPort` y cargando datos desde `paljet-catalog.seed.ts` con lógica de sustitución automática (RF09)
-- [ ] T012 [US1] Implementar `MockCreditAdapter` en `src/ai/integrations/adapters/mock-credit.adapter.ts` implementando `CreditPort` con scoring por terminación de DNI (pares: `APPROVED`, intermedios: `APPROVED_WITH_CONDITIONS`, impares con deuda: `REJECTED`, timeout: `UNAVAILABLE`)
-- [ ] T013 [US1] Implementar `N8nCrmAdapter` en `src/ai/integrations/adapters/n8n-crm.adapter.ts` implementando `CrmPort` con llamadas HTTP a los webhooks de n8n y fallback a PostgreSQL mediante `PrismaService` ante fallos de conexión
-- [ ] T014 [US1] Registrar los proveedores de `STOCK_PORT`, `CREDIT_PORT` y `CRM_PORT` en `src/ai/integrations/integrations.module.ts` y exportarlos para consumo en agentes y controladores
+- [X] T011 [US1] Implementar `MockStockAdapter` en `src/ai/integrations/adapters/mock-stock.adapter.ts` implementando `StockPort` y cargando datos desde `paljet-catalog.seed.ts` con lógica de sustitución automática (RF09)
+- [X] T012 [US1] Implementar `MockCreditAdapter` en `src/ai/integrations/adapters/mock-credit.adapter.ts` implementando `CreditPort` con scoring por terminación de DNI (pares: `APPROVED`, intermedios: `APPROVED_WITH_CONDITIONS`, impares con deuda: `REJECTED`, timeout: `UNAVAILABLE`)
+- [X] T013 [US1] Implementar `N8nCrmAdapter` en `src/ai/integrations/adapters/n8n-crm.adapter.ts` implementando `CrmPort` con llamadas HTTP a los webhooks de n8n y fallback a PostgreSQL mediante `PrismaService` ante fallos de conexión
+- [X] T014 [US1] Registrar los proveedores de `STOCK_PORT`, `CREDIT_PORT` y `CRM_PORT` en `src/ai/integrations/integrations.module.ts` y exportarlos para consumo en agentes y controladores
 
 **Checkpoint**: Adaptadores base testeados e inyectables en memoria. MVP arquitectónico funcional.
 
@@ -71,15 +71,15 @@
 
 ### Tests for User Story 2 🧪
 
-- [ ] T015 [P] [US2] Escribir test de integración en `src/ai/agents/sales/sales-tools.spec.ts` verificando que el agente de ventas ejecute `checkStockTool` al recibir una consulta de producto y use las opciones con enlaces web de Credimisión
+- [X] T015 [P] [US2] Escribir test de integración en `src/ai/agents/sales/sales-tools.spec.ts` verificando que el agente de ventas ejecute `checkStockTool` al recibir una consulta de producto y use las opciones con enlaces web de Credimisión
 
 ### Implementation for User Story 2
 
-- [ ] T016 [P] [US2] Crear la herramienta LangChain `checkStockTool` en `src/ai/integrations/tools/check-stock.tool.ts` con esquema Zod `{ query: z.string() }` delegando en `StockPort.checkAvailability`
-- [ ] T017 [P] [US2] Crear la herramienta LangChain `saveProspectTool` en `src/ai/integrations/tools/save-prospect.tool.ts` con esquema Zod `{ name: z.string(), phone: z.string(), product: z.string(), modality: z.enum(['CASH', 'FINANCED']) }` delegando en `CrmPort.createProspect`
-- [ ] T018 [P] [US2] Crear la herramienta LangChain `evaluateCreditTool` en `src/ai/integrations/tools/evaluate-credit.tool.ts` con esquema Zod `{ dni: z.string(), amount: z.number().optional() }` delegando en `CreditPort.evaluateCredit`
-- [ ] T019 [US2] Integrar `checkStockTool` y `saveProspectTool` en `src/ai/agents/sales/sales.graph.ts` y actualizar las instrucciones de estilo en `src/ai/agents/sales/sales.prompt.ts` para ofrecer hasta 4 opciones y enlaces a Credimisión
-- [ ] T020 [US2] Integrar `evaluateCreditTool` en `src/ai/agents/admin/admin.graph.ts` y actualizar `src/ai/agents/admin/admin.prompt.ts` asegurando que la evaluación de riesgo permanezca confidencial
+- [X] T016 [P] [US2] Crear la herramienta LangChain `checkStockTool` en `src/ai/integrations/tools/check-stock.tool.ts` con esquema Zod `{ query: z.string() }` delegando en `StockPort.checkAvailability`
+- [X] T017 [P] [US2] Crear la herramienta LangChain `saveProspectTool` en `src/ai/integrations/tools/save-prospect.tool.ts` con esquema Zod `{ name: z.string(), phone: z.string(), product: z.string(), modality: z.enum(['CASH', 'FINANCED']) }` delegando en `CrmPort.createProspect`
+- [X] T018 [P] [US2] Crear la herramienta LangChain `evaluateCreditTool` en `src/ai/integrations/tools/evaluate-credit.tool.ts` con esquema Zod `{ dni: z.string(), amount: z.number().optional() }` delegando en `CreditPort.evaluateCredit`
+- [X] T019 [US2] Integrar `checkStockTool` y `saveProspectTool` en `src/ai/agents/sales/sales.graph.ts` y actualizar las instrucciones de estilo en `src/ai/agents/sales/sales.prompt.ts` para ofrecer hasta 4 opciones y enlaces a Credimisión
+- [X] T020 [US2] Integrar `evaluateCreditTool` en `src/ai/agents/admin/admin.graph.ts` y actualizar `src/ai/agents/admin/admin.prompt.ts` asegurando que la evaluación de riesgo permanezca confidencial
 
 **Checkpoint**: Agentes conversacionales interactúan con herramientas determinísticas de stock, CRM y crédito.
 
@@ -93,13 +93,13 @@
 
 ### Tests for User Story 3 🧪
 
-- [ ] T021 [P] [US3] Escribir test unitario en `src/ai/integrations/crm-sync.service.spec.ts` validando el formateo de los 17 campos canónicos y el reintento de sincronización para prospectos marcados con `ProspectSyncStatus.PENDING`
+- [X] T021 [P] [US3] Escribir test unitario en `src/ai/integrations/crm-sync.service.spec.ts` validando el formateo de los 17 campos canónicos y el reintento de sincronización para prospectos marcados con `ProspectSyncStatus.PENDING`
 
 ### Implementation for User Story 3
 
-- [ ] T022 [P] [US3] Crear el DTO y validador de los 17 campos del CRM `CrmProspectDto` en `src/ai/integrations/dto/crm-prospect.dto.ts`
-- [ ] T023 [US3] Implementar el servicio `CrmSyncService` en `src/ai/integrations/crm-sync.service.ts` para coordinar el alta, búsqueda por teléfono y notas de seguimiento hacia `CrmPort`
-- [ ] T024 [P] [US3] Exportar y documentar los workflows n8n `n8n/workflows/CrmUpsertProspect.json` y `n8n/workflows/CrmSearchProspect.json` con la correspondencia de las 17 columnas de Google Sheets
+- [X] T022 [P] [US3] Crear el DTO y validador de los 17 campos del CRM `CrmProspectDto` en `src/ai/integrations/dto/crm-prospect.dto.ts`
+- [X] T023 [US3] Implementar el servicio `CrmSyncService` en `src/ai/integrations/crm-sync.service.ts` para coordinar el alta, búsqueda por teléfono y notas de seguimiento hacia `CrmPort`
+- [X] T024 [P] [US3] Exportar y documentar los workflows n8n `n8n/workflows/CrmUpsertProspect.json` y `n8n/workflows/CrmSearchProspect.json` con la correspondencia de las 17 columnas de Google Sheets
 
 **Checkpoint**: Flujo de sincronización de CRM operativo con resiliencia ante cortes de red.
 
@@ -113,13 +113,13 @@
 
 ### Tests for User Story 4 🧪
 
-- [ ] T025 [P] [US4] Escribir test de confidencialidad en `src/sales/sales-credit-confidentiality.spec.ts` verificando que un usuario con rol de Ventas reciba `{ verdict, commercialCondition }` y que cualquier campo confidencial (`score`, `rawReport`) sea excluido del payload de respuesta
+- [X] T025 [P] [US4] Escribir test de confidencialidad en `src/sales/sales-credit-confidentiality.spec.ts` verificando que un usuario con rol de Ventas reciba `{ verdict, commercialCondition }` y que cualquier campo confidencial (`score`, `rawReport`) sea excluido del payload de respuesta
 
 ### Implementation for User Story 4
 
-- [ ] T026 [P] [US4] Crear `CreditCheckDto` y `CommercialCreditResultDto` en `src/sales/dto/credit-check.dto.ts`
-- [ ] T027 [US4] Implementar el método `checkCreditCommercial` en `src/sales/sales.service.ts` que invoque a `CreditPort` y transforme el reporte técnico en un dictamen comercial con condiciones de cuotas/anticipos
-- [ ] T028 [US4] Agregar el endpoint `POST /sales/credit-check` en `src/sales/sales.controller.ts` protegido con `JwtAuthGuard` y `RolesGuard` asegurando el acceso para el sector Ventas
+- [X] T026 [P] [US4] Crear `CreditCheckDto` y `CommercialCreditResultDto` en `src/sales/dto/credit-check.dto.ts`
+- [X] T027 [US4] Implementar el método `checkCreditCommercial` en `src/sales/sales.service.ts` que invoque a `CreditPort` y transforme el reporte técnico en un dictamen comercial con condiciones de cuotas/anticipos
+- [X] T028 [US4] Agregar el endpoint `POST /sales/credit-check` en `src/sales/sales.controller.ts` protegido con `JwtAuthGuard` y `RolesGuard` asegurando el acceso para el sector Ventas
 
 **Checkpoint**: Verificación crediticia confidencial expuesta para el panel de ventas cumpliendo OE-10.
 
@@ -133,15 +133,15 @@
 
 ### Tests for User Story 5 🧪
 
-- [ ] T029 [P] [US5] Escribir test en `src/sales/sales.controller.spec.ts` para verificar la consulta de stock, listado de prospectos y el registro de cierre de venta mediante `POST /sales/close`
+- [X] T029 [P] [US5] Escribir test en `src/sales/sales.controller.spec.ts` para verificar la consulta de stock, listado de prospectos y el registro de cierre de venta mediante `POST /sales/close`
 
 ### Implementation for User Story 5
 
-- [ ] T030 [P] [US5] Definir el esquema Zod `salesHandoffSchema` en `src/ai/agents/sales/sales-handoff.schema.ts` conteniendo `{ producto, precioEstimado, modalidad, estadoCredito, motivoAlerta, observaciones }`
-- [ ] T031 [US5] Actualizar la lógica de derivación en `src/ai/agents/sales/sales.graph.ts` para invocar `structuredOutput(salesHandoffSchema)` y persistir el resumen en `InternalNote` con `authorAgentType: SALES`
-- [ ] T032 [P] [US5] Crear DTOs `CloseSaleDto` y `StockQueryDto` en `src/sales/dto/`
-- [ ] T033 [US5] Implementar los métodos `getStockCatalog`, `getProspects` y `closeSale` en `src/sales/sales.service.ts`
-- [ ] T034 [US5] Exponer los endpoints `GET /sales/stock`, `GET /sales/prospects` y `POST /sales/close` en `src/sales/sales.controller.ts`
+- [X] T030 [P] [US5] Definir el esquema Zod `salesHandoffSchema` en `src/ai/agents/sales/sales-handoff.schema.ts` conteniendo `{ producto, precioEstimado, modalidad, estadoCredito, motivoAlerta, observaciones }`
+- [X] T031 [US5] Actualizar la lógica de derivación en `src/ai/agents/sales/sales.graph.ts` para invocar `structuredOutput(salesHandoffSchema)` y persistir el resumen en `InternalNote` con `authorAgentType: SALES`
+- [X] T032 [P] [US5] Crear DTOs `CloseSaleDto` y `StockQueryDto` en `src/sales/dto/`
+- [X] T033 [US5] Implementar los métodos `getStockCatalog`, `getProspects` y `closeSale` en `src/sales/sales.service.ts`
+- [X] T034 [US5] Exponer los endpoints `GET /sales/stock`, `GET /sales/prospects` y `POST /sales/close` en `src/sales/sales.controller.ts`
 
 **Checkpoint**: Flujo de ventas completo con resumen comercial estructurado y registro de cierre manual.
 
@@ -151,10 +151,10 @@
 
 **Purpose**: Verificación integral, robustez de tests, validación de variables de entorno y documentación técnica.
 
-- [ ] T035 [P] Ejecutar la suite completa de pruebas con `npm test` verificando que el 100% de los tests corran en memoria sin fallas
-- [ ] T036 [P] Validar que `N8N_BASE_URL` esté incorporada con esquema Joi en `src/common/config/config.module.ts` y documentada en `.env.example`
-- [ ] T037 Actualizar `docs/CONTEXTO_TECNICO.md` detallando la arquitectura de puertos en `src/ai/integrations/` y los endpoints del módulo `sales`
-- [ ] T038 Ejecutar los escenarios de prueba descritos en `specs/019-integraciones-crm-stock-credito/quickstart.md` verificando respuestas cURL esperadas
+- [X] T035 [P] Ejecutar la suite completa de pruebas con `npm test` verificando que el 100% de los tests corran en memoria sin fallas
+- [X] T036 [P] Validar que `N8N_BASE_URL` esté incorporada con esquema Joi en `src/common/config/config.module.ts` y documentada en `.env.example`
+- [X] T037 Actualizar `docs/CONTEXTO_TECNICO.md` detallando la arquitectura de puertos en `src/ai/integrations/` y los endpoints del módulo `sales`
+- [X] T038 Ejecutar los escenarios de prueba descritos en `specs/019-integraciones-crm-stock-credito/quickstart.md` verificando respuestas cURL esperadas
 
 ---
 
@@ -213,3 +213,4 @@
 7. Completar **Phase 7** (User Story 5 - Resumen estructurado y cierre de venta).
 8. Ejecutar **Phase 8** (Polish y validación completa de `quickstart.md`).
 9. Cierre con **Phase 9** (Panel frontend en `trimIA-frontend`).
+

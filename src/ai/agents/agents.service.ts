@@ -1,3 +1,7 @@
+import { Inject, Optional } from '@nestjs/common';
+import { STOCK_PORT, StockPort } from '../integrations/ports/stock.port';
+import { CREDIT_PORT, CreditPort } from '../integrations/ports/credit.port';
+import { CRM_PORT, CrmPort } from '../integrations/ports/crm.port';
 import { Injectable, OnModuleInit, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { LlmService } from '../llm/llm.service';
@@ -37,6 +41,9 @@ export class AgentsService implements OnModuleInit {
     private readonly knowledge: KnowledgeService,
     private readonly config: ConfigService,
     private readonly escalations: EscalationsService,
+    @Optional() @Inject(STOCK_PORT) private readonly stockPort?: StockPort,
+    @Optional() @Inject(CREDIT_PORT) private readonly creditPort?: CreditPort,
+    @Optional() @Inject(CRM_PORT) private readonly crmPort?: CrmPort,
   ) {}
 
   onModuleInit() {
@@ -51,6 +58,9 @@ export class AgentsService implements OnModuleInit {
       confidenceThreshold,
       logger: this.logger,
       escalations: this.escalations,
+      stockPort: this.stockPort,
+      creditPort: this.creditPort,
+      crmPort: this.crmPort,
     };
 
     this.graphs = {

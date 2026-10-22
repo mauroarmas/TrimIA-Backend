@@ -36,6 +36,9 @@ export interface AgentGraphDeps {
   logger: Logger;
   /** Crea el caso pendiente cuando la confianza es baja (Sprint 3). */
   escalations: EscalationsService;
+  stockPort?: any;
+  creditPort?: any;
+  crmPort?: any;
 }
 
 /** Configuración específica de cada agente RAG. */
@@ -46,6 +49,7 @@ export interface RagAgentConfig {
   prompt: string;
   /** Mensaje al usuario cuando la confianza es baja y se deriva a un humano. */
   escalationMessage?: string;
+  tools?: any[];
 }
 
 const DEFAULT_ESCALATION =
@@ -95,8 +99,40 @@ export function buildRagAgentGraph(
       agentType,
       k: 4,
     });
-    const confidence = hits[0]?.score ?? 0;
-    const context = hits.map((h) => `- ${h.content}`).join('\n');
+let confidence = hits[0]?.score ?? 0;
+    let context = hits.map((h) => `- ${h.content}`).join('\n');
+
+    // Sprint 6 (Herramientas fácticas): Si el agente dispone de tools, evaluar si invocarlas
+    if (config.tools && config.tools.length > 0) {
+      try {
+        const modelWithTools = llm.chat.bindTools(config.tools);
+        const toolCheckPrompt = [
+          new SystemMessage(
+            `Sos el componente de integraciones del agente ${agentType}. Tu única tarea es decidir si la consulta del usuario necesita invocar una herramienta (como consultar existencias de stock, registrar un prospecto o evaluar crédito). Si la consulta NO requiere herramientas, no invoques ninguna.`,
+          ),
+          new HumanMessage(state.message),
+        ];
+        const toolRes = await modelWithTools.invoke(toolCheckPrompt);
+        if (toolRes.tool_calls && toolRes.tool_calls.length > 0) {
+          logger.log(`${tag} invocando ${toolRes.tool_calls.length} herramientas`);
+          const toolOutputs: string[] = [];
+          for (const tc of toolRes.tool_calls) {
+            const matched = config.tools.find((t: any) => t.name === tc.name);
+            if (matched) {
+              const res = await matched.invoke(tc.args);
+              toolOutputs.push(`[Herramienta ${tc.name}]: ${res}`);
+            }
+          }
+          if (toolOutputs.length > 0) {
+            const toolBlock = `\n\nInformación fáctica en tiempo real (Integraciones):\n${toolOutputs.join('\n')}`;
+            context = context ? `${context}${toolBlock}` : toolBlock;
+            confidence = Math.max(confidence, 0.95);
+          }
+        }
+      } catch (err: any) {
+        logger.warn(`${tag} evaluación de herramientas omitida por error: ${err.message}`);
+      }
+    }
 
     // Sprint 5A (US7, FR-046): se registran TODOS los candidatos, no solo el
     // que ganó. `confidence` sigue saliendo de hits[0] exactamente igual que

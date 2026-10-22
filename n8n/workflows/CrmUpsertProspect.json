@@ -1,0 +1,81 @@
+{
+  "name": "CRM: Sincronización de Prospectos TrimIA (17 Columnas)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "crm-prospect-create",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [-512, 112],
+      "id": "webhook-crm-prospect-create",
+      "name": "Webhook Prospect Create"
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "1eU8lXoA6mcSh-s02NElqr8EWl1R2rR3TZAIFX1cENu4",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "Prospectos",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": ["telefono"],
+          "value": {
+            "fecha_contacto": "={{ $json.body.fechaContacto }}",
+            "nombre_apellido": "={{ $json.body.nombreApellido }}",
+            "telefono": "={{ $json.body.telefono }}",
+            "dni": "={{ $json.body.dni }}",
+            "comercio": "={{ $json.body.comercio }}",
+            "rubro": "={{ $json.body.rubro }}",
+            "localidad": "={{ $json.body.localidad }}",
+            "producto_interes": "={{ $json.body.productoInteres }}",
+            "modalidad": "={{ $json.body.modalidad }}",
+            "monto_estimado": "={{ $json.body.montoEstimado }}",
+            "estado": "={{ $json.body.estado }}",
+            "dictamen_crediticio": "={{ $json.body.dictamenCrediticio }}",
+            "vendedor_asignado": "={{ $json.body.vendedorAsignado }}",
+            "canal_origen": "={{ $json.body.canalOrigen }}",
+            "ultima_interaccion": "={{ $json.body.ultimaInteraccion }}",
+            "notas_seguimiento": "={{ $json.body.notasSeguimiento }}",
+            "conversation_id": "={{ $json.body.conversationId }}"
+          }
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [-256, 112],
+      "id": "sheets-crm-prospect-create",
+      "name": "Google Sheets Prospectos",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "PSBd2QQ3ePFjvOeF",
+          "name": "Google Sheets account"
+        }
+      }
+    }
+  ],
+  "connections": {
+    "Webhook Prospect Create": {
+      "main": [
+        [
+          {
+            "node": "Google Sheets Prospectos",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}
+

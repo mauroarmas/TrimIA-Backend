@@ -1099,9 +1099,11 @@ E12 Dirección.
 Para repartir. Cada tarea indica el/los archivo(s) o módulo(s) donde trabajar.
 
 ### Entregable E7 — Integraciones y Flujos
-- **Mocks de integraciones** (Paljet, Riesgo Online, CRM) detrás de puertos/adaptadores
-  (cumple RNF-04: desacoplado). Crear interfaces + implementación mock que los agentes
-  consuman como *tools*. Sugerido: `src/ai/integrations/` (no existe aún).
+✅ **Integraciones operativas (Sprint 6, Feature 019)**:
+  - Arquitectura hexagonal en `src/ai/integrations/` con puertos desacoplados: `StockPort`, `CreditPort`, `CrmPort`.
+  - Mocks y adaptadores determinísticos: `MockStockAdapter` (catálogo seed y sugerencia de hasta 2 sustitutos si stock=0, RF09), `MockCreditAdapter` (scoring por DNI y degradación graceful UNAVAILABLE, RF10), `N8nCrmAdapter` (17 campos canónicos de Google Sheets y fallback a PostgreSQL local `Prospect` ante caídas de n8n).
+  - Tools en LangGraph: `check_stock` y `save_prospect` en `sales.graph.ts`; `evaluate_credit` en `admin.graph.ts`.
+  - Confidencialidad (OE-10): `POST /sales/credit-check` filtra reportes confidenciales y entrega sólo el dictamen comercial; `GET /sales/stock`, `GET /sales/prospects` y `POST /sales/close` implementados en `src/sales/`.
 - **Flujo de venta financiada** (RF-13): SALES recopila datos → ADMIN consulta crédito →
   deriva a supervisor (Cola de Prioridades). Aquí entra el **checkpointer** de LangGraph
   (interrupt/resume). Toca: `orchestrator.graph.ts`, `admin.graph.ts`, nuevo nodo de handoff a humano.

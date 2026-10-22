@@ -109,3 +109,4 @@ Para ejecutar todas las pruebas asociadas al Sprint 6:
 ```bash
 npm test -- --testPathPattern="integrations|sales"
 ```
+

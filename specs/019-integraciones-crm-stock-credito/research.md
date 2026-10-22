@@ -130,3 +130,4 @@ LangGraph en TrimIA utiliza `ChatGoogleGenerativeAI` de `@langchain/google-genai
 ## 6. Conclusión de Factibilidad
 
 Todas las decisiones respetan rigurosamente la Constitución (Principios I, II, III, IV y V), no requieren cambios en dependencias base ni introducen librerías incompatibles, y permiten que los tests unitarios y de integración se ejecuten con `npm test` de forma 100% aislada y rápida.
+
