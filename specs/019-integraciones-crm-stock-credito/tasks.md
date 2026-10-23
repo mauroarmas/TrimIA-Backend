@@ -164,10 +164,10 @@
 
 > *Nota constitucional: Estas tareas se enumeran como backlog visible para la demostración ante el tribunal.*
 
-- [ ] T039 [P] Conectar la pestaña "Consultar stock" de `SalesPanel.jsx` con el endpoint `GET /sales/stock` mostrando buscador y estado de stock
-- [ ] T040 [P] Conectar la lista "Clientes por contactar" de `SalesPanel.jsx` con `GET /sales/prospects` mostrando tarjetas con el resumen estructurado generado por el bot
-- [ ] T041 [P] Conectar la simulación de crédito de `SalesPanel.jsx` con `POST /sales/credit-check` mostrando dictamen comercial y condiciones sin revelar datos bancarios
-- [ ] T042 Conectar el formulario "Alta de cliente / Cierre de venta" de `SalesPanel.jsx` con `POST /sales/close` para marcar ventas cerradas
+- [X] T039 [P] Conectar la pestaña "Consultar stock" de `SalesPanel.jsx` con el endpoint `GET /sales/stock` mostrando buscador y estado de stock
+- [X] T040 [P] Conectar la lista "Clientes por contactar" de `SalesPanel.jsx` con `GET /sales/prospects` mostrando tarjetas con el resumen estructurado generado por el bot
+- [X] T041 [P] Conectar la simulación de crédito de `SalesPanel.jsx` con `POST /sales/credit-check` mostrando dictamen comercial y condiciones sin revelar datos bancarios
+- [X] T042 Conectar el formulario "Alta de cliente / Cierre de venta" de `SalesPanel.jsx` con `POST /sales/close` para marcar ventas cerradas
 
 ---
 
