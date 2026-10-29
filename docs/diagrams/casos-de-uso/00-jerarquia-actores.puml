@@ -1,0 +1,19 @@
+@startuml 00-jerarquia-actores
+!pragma layout smetana
+top to bottom direction
+skinparam shadowing false
+skinparam defaultFontName Arial
+
+actor "Empleado" as Empleado
+actor "Supervisor" as Supervisor
+actor "Vendedor" as Vendedor
+actor "Cobrador" as Cobrador
+actor "Cobrador Controlador" as Controlador
+actor "Cliente" as Cliente
+
+Empleado <|-- Supervisor
+Empleado <|-- Vendedor
+Empleado <|-- Cobrador
+Cobrador <|-- Controlador
+@enduml
+

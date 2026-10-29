@@ -1,0 +1,18 @@
+@startuml 02-asistente-conversacional
+!pragma layout smetana
+left to right direction
+skinparam packageStyle rectangle
+skinparam shadowing false
+skinparam defaultFontName Arial
+
+actor "Empleado" as Empleado
+actor "Supervisor" as Supervisor
+
+rectangle "Módulo Asistente Conversacional - TrimIA" {
+  usecase "CU-GEN-01:\nConsultar al asistente" as CU_GEN_01
+}
+
+Empleado --> CU_GEN_01
+CU_GEN_01 --> Supervisor
+@enduml
+

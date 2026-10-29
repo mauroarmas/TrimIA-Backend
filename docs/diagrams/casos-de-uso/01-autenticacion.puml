@@ -1,0 +1,18 @@
+@startuml 01-autenticacion
+!pragma layout smetana
+left to right direction
+skinparam packageStyle rectangle
+skinparam shadowing false
+skinparam defaultFontName Arial
+
+actor "Empleado" as Empleado
+actor "Supervisor" as Supervisor
+
+Empleado <|-up- Supervisor
+
+rectangle "Módulo de Autenticación - TrimIA" {
+  usecase "CU-AUTH-01:\nIniciar sesión" as CU_AUTH_01
+}
+
+Empleado --> CU_AUTH_01
+@enduml
