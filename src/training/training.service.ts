@@ -263,17 +263,21 @@ export class TrainingService {
   async getEmployeeModules(employeeId: string): Promise<EmployeeModuleSummaryDto[]> {
     const employee = await this.prisma.employee.findUnique({
       where: { id: employeeId },
-      select: { sectorId: true },
+      select: { sectorId: true, role: true },
     });
     if (!employee) throw new NotFoundException('Empleado no encontrado');
 
+    const isSupervisor = employee.role === 'SUPERVISOR';
+    const whereClause: any = { isActive: true };
+    if (!isSupervisor) {
+      whereClause.OR = [{ sectorId: employee.sectorId }, { sectorId: null }];
+    }
+
     const modules = await this.prisma.trainingModule.findMany({
-      where: {
-        isActive: true,
-        OR: [{ sectorId: employee.sectorId }, { sectorId: null }],
-      },
+      where: whereClause,
       orderBy: { orderIndex: 'asc' },
       include: {
+        sector: true,
         pills: {
           where: { status: PillStatus.PUBLISHED },
           orderBy: { orderIndex: 'asc' },
@@ -302,7 +306,7 @@ export class TrainingService {
       const pillsSummary: EmployeePillSummaryDto[] = mod.pills.map((p, idx) => {
         const isApproved = approvedSet.has(p.id);
         const status = progressMap.get(p.id) ?? TrainingProgressStatus.NOT_STARTED;
-        const isLocked = idx === 0 ? false : !previousPillApproved;
+        const isLocked = isSupervisor ? false : (idx === 0 ? false : !previousPillApproved);
         previousPillApproved = isApproved;
 
         return {
@@ -321,6 +325,8 @@ export class TrainingService {
         id: mod.id,
         title: mod.title,
         description: mod.description,
+        sectorId: mod.sectorId,
+        sectorName: mod.sector?.name ?? null,
         pillsCount: pillsSummary.length,
         completedPillsCount: pillsSummary.filter((p) => p.isCompleted).length,
         pills: pillsSummary,
@@ -335,25 +341,28 @@ export class TrainingService {
   async getEmployeePill(employeeId: string, pillId: string): Promise<EmployeePillDetailDto> {
     const employee = await this.prisma.employee.findUnique({
       where: { id: employeeId },
-      select: { sectorId: true },
+      select: { sectorId: true, role: true },
     });
     if (!employee) throw new NotFoundException('Empleado no encontrado');
 
     const pill = await this.prisma.pill.findUnique({
       where: { id: pillId },
-      include: { module: true },
+      include: { module: { include: { sector: true } } },
     });
     if (!pill || pill.status !== PillStatus.PUBLISHED) {
       throw new NotFoundException('Píldora no encontrada o no disponible');
     }
 
-    // Validación de sector (el empleado solo accede a su sector o módulos transversales generales)
-    if (pill.module.sectorId && pill.module.sectorId !== employee.sectorId) {
+    const isSupervisor = employee.role === 'SUPERVISOR';
+
+    // Validación de sector (el empleado solo accede a su sector o módulos transversales generales,
+    // pero el supervisor puede ver todos los casos de capacitación de todas las áreas)
+    if (!isSupervisor && pill.module.sectorId && pill.module.sectorId !== employee.sectorId) {
       throw new ForbiddenException('No tiene acceso a capacitaciones de este sector');
     }
 
-    // Validación de candados si no es la primera píldora
-    if (pill.orderIndex > 0) {
+    // Validación de candados si no es la primera píldora (supervisores no tienen bloqueo)
+    if (!isSupervisor && pill.orderIndex > 0) {
       const prevPill = await this.prisma.pill.findFirst({
         where: {
           moduleId: pill.moduleId,
@@ -521,7 +530,7 @@ export class TrainingService {
   async getDiagnosticQuestions(employeeId: string): Promise<DiagnosticQuizResponseDto> {
     const employee = await this.prisma.employee.findUnique({
       where: { id: employeeId },
-      select: { id: true, sectorId: true },
+      select: { id: true, sectorId: true, role: true },
     });
     if (!employee) throw new NotFoundException('Empleado no encontrado');
 
@@ -534,13 +543,17 @@ export class TrainingService {
     }
 
     // Obtener módulos del sector y generales
+    const isSupervisor = employee.role === 'SUPERVISOR';
+    const whereClause: any = { isActive: true };
+    if (!isSupervisor) {
+      whereClause.OR = [{ sectorId: employee.sectorId }, { sectorId: null }];
+    }
+
     const modules = await this.prisma.trainingModule.findMany({
-      where: {
-        isActive: true,
-        OR: [{ sectorId: employee.sectorId }, { sectorId: null }],
-      },
+      where: whereClause,
       orderBy: { orderIndex: 'asc' },
       include: {
+        sector: true,
         pills: {
           where: { status: PillStatus.PUBLISHED },
           orderBy: { orderIndex: 'asc' },
@@ -761,11 +774,21 @@ export class TrainingService {
     });
     if (!employee) throw new NotFoundException('Empleado no encontrado');
 
-    // Validación de sector (Principio I)
-    await this.knowledge.assertPuedeEscribir(
-      supervisorId,
-      employee.sector?.agentType ?? null,
-    );
+    // Validación de sector: supervisores pueden ver los casos y diagnósticos de todas las áreas
+    try {
+      await this.knowledge.assertPuedeEscribir(
+        supervisorId,
+        employee.sector?.agentType ?? null,
+      );
+    } catch (err) {
+      const supervisor = await this.prisma.employee.findUnique({
+        where: { id: supervisorId },
+        select: { role: true },
+      });
+      if (supervisor?.role !== 'SUPERVISOR') {
+        throw err;
+      }
+    }
 
     const latestSession = await this.prisma.diagnosticSession.findFirst({
       where: { employeeId },

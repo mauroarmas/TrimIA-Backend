@@ -1,4 +1,4 @@
-﻿import { AudioStatus, TrainingProgressStatus } from '@prisma/client';
+import { AudioStatus, TrainingProgressStatus } from '@prisma/client';
 
 export interface EmployeeQuizQuestion {
   id: number;
@@ -43,6 +43,8 @@ export interface EmployeeModuleSummaryDto {
   id: string;
   title: string;
   description?: string | null;
+  sectorId?: string | null;
+  sectorName?: string | null;
   pillsCount: number;
   completedPillsCount: number;
   pills: EmployeePillSummaryDto[];

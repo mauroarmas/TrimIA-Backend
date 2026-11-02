@@ -224,6 +224,38 @@ describe('TrainingService', () => {
       expect(modules[0].pills[0].isLocked).toBe(false);
       expect(modules[0].pills[1].isLocked).toBe(true); // Bloqueada
     });
+
+    it('debe permitir al supervisor ver modulos de todas las areas sin candados', async () => {
+      mockPrisma.employee.findUnique.mockResolvedValueOnce({
+        id: 'sup-1',
+        sectorId: 'sector-ventas',
+        role: 'SUPERVISOR',
+      });
+      mockPrisma.trainingModule.findMany.mockResolvedValueOnce([
+        {
+          id: 'mod-1',
+          title: 'Cobranzas',
+          sectorId: 'sector-cobranzas',
+          sector: { name: 'Cobranzas' },
+          pills: [
+            { id: 'pill-1', title: 'Pill 1', objective: 'Obj 1', orderIndex: 0, status: PillStatus.PUBLISHED },
+            { id: 'pill-2', title: 'Pill 2', objective: 'Obj 2', orderIndex: 1, status: PillStatus.PUBLISHED },
+          ],
+        },
+      ]);
+      mockPrisma.employeeProgress.findMany.mockResolvedValueOnce([]);
+
+      const modules = await service.getEmployeeModules('sup-1');
+
+      expect(mockPrisma.trainingModule.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { isActive: true },
+        }),
+      );
+      expect(modules[0].sectorName).toBe('Cobranzas');
+      expect(modules[0].pills[0].isLocked).toBe(false);
+      expect(modules[0].pills[1].isLocked).toBe(false);
+    });
   });
 
   describe('getEmployeePill (US3)', () => {
@@ -260,6 +292,26 @@ describe('TrainingService', () => {
       });
 
       await expect(service.getEmployeePill('emp-1', 'pill-ventas')).rejects.toThrow(ForbiddenException);
+    });
+
+    it('debe permitir al supervisor acceder a pildoras de otro sector', async () => {
+      mockPrisma.employee.findUnique.mockResolvedValueOnce({
+        id: 'sup-1',
+        sectorId: 'sector-ventas',
+        role: 'SUPERVISOR',
+      });
+      mockPrisma.pill.findUnique.mockResolvedValueOnce({
+        id: 'pill-cobranzas',
+        moduleId: 'mod-cobranzas',
+        status: PillStatus.PUBLISHED,
+        orderIndex: 1,
+        quiz: [{ id: 1, question: 'Q', options: ['A'], correctOptionIndex: 0, explanation: 'E' }],
+        module: { sectorId: 'sector-cobranzas', sector: { name: 'Cobranzas' } },
+      });
+
+      const pill = await service.getEmployeePill('sup-1', 'pill-cobranzas');
+      expect(pill.id).toBe('pill-cobranzas');
+      expect(pill.isLocked).toBe(false);
     });
   });
 
@@ -500,6 +552,31 @@ describe('TrainingService', () => {
       expect(detail.employeeName).toBe('Roberto Sosa');
       expect(detail.hasCompletedDiagnostic).toBe(true);
       expect(detail.lastSession?.score).toBe(100);
+    });
+
+    it('debe permitir al supervisor auditar el diagnostico de empleados de otro sector', async () => {
+      mockPrisma.employee.findUnique
+        .mockResolvedValueOnce({
+          id: 'emp-2',
+          name: 'Carlos Ruiz',
+          sector: { name: 'Logística', agentType: AgentType.LOGISTICS },
+        })
+        .mockResolvedValueOnce({
+          id: 'sup-1',
+          role: 'SUPERVISOR',
+        });
+      mockKnowledge.assertPuedeEscribir.mockRejectedValueOnce(new ForbiddenException('Sector ajeno'));
+      mockPrisma.diagnosticSession.findFirst.mockResolvedValueOnce({
+        id: 'session-2',
+        score: 80,
+        completedAt: new Date(),
+        totalQuestions: 5,
+        isReset: false,
+      });
+
+      const detail = await service.getSupervisorEmployeeDiagnostic('sup-1', 'emp-2');
+      expect(detail.employeeName).toBe('Carlos Ruiz');
+      expect(detail.sectorName).toBe('Logística');
     });
 
     it('debe reiniciar diagnóstico, marcar isReset=true y revertir píldoras eximidas a NOT_STARTED', async () => {
