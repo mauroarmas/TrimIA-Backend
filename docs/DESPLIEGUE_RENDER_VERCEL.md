@@ -13,7 +13,7 @@ Configuración preparada el 2026-11-02 sobre `origin/main` (`2f7d973`). Esta gu�
 | ChromaDB 0.5.20 | Render `trimia-chroma`, servicio privado | Disco `/chroma/chroma` |
 | n8n 2.30.7 | Render `trimia-n8n` | SQLite y configuración en `/home/node/.n8n` |
 
-API y workers siguen en el mismo proceso. Es intencional para esta demo: intercambian rutas de archivos locales y el procesamiento por conversación todavía incluye coordinación local. **No agregar réplicas ni separar workers** sin mover archivos a almacenamiento compartido y revisar esa coordinación. Los discos de Render pertenecen a una instancia; los despliegues con disco tienen una interrupción breve. El cierre de Nest recibe SIGTERM y Render espera hasta 300 segundos.
+API y workers siguen en el mismo proceso. Es intencional para esta demo: intercambian rutas de archivos locales y el procesamiento por conversación todavía incluye coordinación local. **No agregar réplicas ni separar workers** sin mover archivos a almacenamiento compartido y revisar esa coordinación. Los discos de Render pertenecen a una instancia; los despliegues con disco tienen una interrupción breve. El cierre de Nest recibe SIGTERM y espera a los workers antes de cerrar las conexiones. Render aplica su plazo de cierre predeterminado: no permite configurar `maxShutdownDelaySeconds` en servicios con disco persistente.
 
 Los cuatro servicios de cómputo/datos más PostgreSQL y los discos requieren revisar el costo: **este Blueprint no es un despliegue gratuito**. Todos los recursos están en Virginia para usar la misma red privada. Render muestra los importes al crear el Blueprint; confirmar allí el total antes de contratar. No reutilizar como cotización los importes antiguos del plan del proyecto.
 

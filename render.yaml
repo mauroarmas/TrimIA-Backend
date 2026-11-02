@@ -10,7 +10,6 @@ services:
     autoDeployTrigger: checksPass
     preDeployCommand: npm run db:deploy
     healthCheckPath: /health
-    maxShutdownDelaySeconds: 300
     numInstances: 1
     disk:
       name: trimia-files
