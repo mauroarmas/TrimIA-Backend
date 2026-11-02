@@ -1,0 +1,61 @@
+# Entorno aislado de comprobación: no carga .env ni contacta Meta/Gemini.
+services:
+  postgres:
+    image: postgres:16.3-alpine
+    environment:
+      POSTGRES_USER: trimia
+      POSTGRES_PASSWORD: smoke-only-not-for-deployment
+      POSTGRES_DB: trimia
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U trimia']
+      interval: 2s
+      timeout: 2s
+      retries: 30
+  redis:
+    image: redis:7.2-alpine
+    command: ['redis-server', '--maxmemory-policy', 'noeviction']
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 2s
+      timeout: 2s
+      retries: 30
+  chroma:
+    image: chromadb/chroma:0.5.20
+    environment:
+      IS_PERSISTENT: 'TRUE'
+      ANONYMIZED_TELEMETRY: 'FALSE'
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:8000/api/v1/heartbeat']
+      interval: 3s
+      timeout: 3s
+      retries: 40
+  api:
+    image: trimia-deploy-ready
+    ports: ['127.0.0.1::3000']
+    volumes: [files:/app/storage]
+    environment:
+      NODE_ENV: production
+      DATABASE_URL: postgresql://trimia:smoke-only-not-for-deployment@postgres:5432/trimia
+      POSTGRES_USER: trimia
+      POSTGRES_PASSWORD: smoke-only-not-for-deployment
+      POSTGRES_DB: trimia
+      REDIS_URL: redis://redis:6379
+      CHROMA_HOSTPORT: chroma:8000
+      N8N_HOSTPORT: n8n:5678
+      CORS_ORIGINS: https://panel.example.invalid
+      TRUST_PROXY_HOPS: '1'
+      GOOGLE_API_KEY: smoke-key-with-no-provider-access
+      GEMINI_MODEL: smoke-no-provider-calls
+      EMBEDDING_MODEL: smoke-no-provider-calls
+      N8N_WEBHOOK_SECRET: smoke-secret-that-is-at-least-32-characters
+      KNOWLEDGE_ADMIN_SECRET: smoke-knowledge-secret-at-least-32-characters
+      JWT_SECRET: smoke-jwt-secret-that-is-at-least-32-characters
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      chroma:
+        condition: service_healthy
+volumes:
+  files:

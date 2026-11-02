@@ -69,3 +69,6 @@ docs/*/*.jsonl
 # Los guiones para volver a grabarlos viven en
 # specs/003-archivos-chat-conocimiento/audio-fixtures.md
 /audios/
+
+# Caché de compilación local (no pertenece al artefacto fuente)
+*.tsbuildinfo

@@ -14,7 +14,13 @@ import { WhatsappSenderService } from './whatsapp-sender.service';
 
 function buildService() {
   const config = {
-    get: jest.fn().mockReturnValue('http://n8n:5678'),
+    get: jest.fn(
+      (key: string) =>
+        ({
+          N8N_BASE_URL: 'http://n8n:5678',
+          N8N_WEBHOOK_SECRET: 'test-shared-secret',
+        })[key],
+    ),
   };
   const service = new WhatsappSenderService(config as unknown as ConfigService);
   return { service };
@@ -45,7 +51,27 @@ describe('WhatsappSenderService.send — el canal decide si sale por WhatsApp', 
 
     expect(fetchMock).toHaveBeenCalledWith(
       expect.stringContaining('/webhook/send-whatsapp'),
-      expect.any(Object),
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          'x-n8n-secret': 'test-shared-secret',
+        }),
+      }),
+    );
+  });
+
+  it('autentica también los envíos por plantilla', async () => {
+    const fetchMock = jest.fn().mockResolvedValue({ ok: true });
+    global.fetch = fetchMock as unknown as typeof fetch;
+    await buildService().service.sendTemplate('5493865505362', 'recordatorio', [
+      'Laura',
+    ]);
+    expect(fetchMock).toHaveBeenCalledWith(
+      'http://n8n:5678/webhook/send-whatsapp-template',
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          'x-n8n-secret': 'test-shared-secret',
+        }),
+      }),
     );
   });
 });

@@ -25,7 +25,10 @@ export class N8nCrmAdapter implements CrmPort {
     const baseUrl = this.config.get<string>('N8N_BASE_URL');
     const res = await fetch(`${baseUrl}/webhook/crm-upsert-client`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'x-n8n-secret': this.config.get<string>('N8N_WEBHOOK_SECRET')!,
+      },
       body: JSON.stringify({
         name: record.name,
         phone: record.phone,

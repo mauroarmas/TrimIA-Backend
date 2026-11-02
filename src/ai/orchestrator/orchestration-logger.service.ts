@@ -6,7 +6,7 @@ import { RetrievedDoc } from './orchestrator.state';
 /**
  * Conecta los grafos de LangGraph con la capa de negocio (Prisma).
  * Escribe dos tipos de registros:
- *  - OrchestrationEvent → auditoría (qué pasó). Lo consume Paperclip.
+ *  - OrchestrationEvent → auditoría (qué pasó). Lo consume el panel propio de supervisión.
  *  - TokenUsage         → análisis económico (cuántos tokens y cuánto tardó).
  */
 @Injectable()

@@ -24,7 +24,7 @@ export class N8nCrmAdapter implements CrmPort {
 
       const res = await fetch(`${baseUrl}/webhook/crm-prospect-create`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'x-n8n-secret': this.config.get<string>('N8N_WEBHOOK_SECRET')! },
         body: JSON.stringify(record),
         signal: controller.signal,
       });
@@ -76,7 +76,7 @@ export class N8nCrmAdapter implements CrmPort {
 
       const res = await fetch(`${baseUrl}/webhook/crm-prospect-search?phone=${encodeURIComponent(phone)}`, {
         method: 'GET',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'x-n8n-secret': this.config.get<string>('N8N_WEBHOOK_SECRET')! },
         signal: controller.signal,
       });
       clearTimeout(timeoutId);
@@ -146,7 +146,7 @@ export class N8nCrmAdapter implements CrmPort {
     try {
       await fetch(`${baseUrl}/webhook/crm-prospect-followup`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', 'x-n8n-secret': this.config.get<string>('N8N_WEBHOOK_SECRET')! },
         body: JSON.stringify({
           phone,
           note,

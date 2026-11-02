@@ -64,9 +64,9 @@ Sistemas Externos (Paljet / Riesgo Online): APIs de terceros consultadas en modo
 
 4. Capa de Administración y Gobernanza (El Panel de Control)
 La interfaz humana para auditar y controlar a los agentes.
-Paperclip: El entorno visual para los supervisores. Permite monitorear el gasto de tokens, leer el historial exacto de las derivaciones de LangGraph, pausar agentes o tomar el control manual del chat (Human-in-the-loop) en casos críticos.
+Panel propio de supervisión (React + NestJS): El entorno visual para los supervisores. Permite monitorear el gasto de tokens, leer el historial exacto de las derivaciones de LangGraph, pausar agentes o tomar el control manual del chat (Human-in-the-loop) en casos críticos.
 
 5. Capa de Infraestructura y Despliegue (Los Cimientos)
 El entorno físico y virtual donde vive todo el código.
 Docker & Docker Compose: Contenedores que empaquetan NestJS, Redis, la base de datos y n8n, asegurando que funcionen idénticamente en desarrollo y en producción.
-Google Cloud Platform (GCP): El proveedor de infraestructura en la nube donde se alojarán los contenedores para garantizar alta disponibilidad operativa.
+Despliegue de demo preparado en Render (backend y servicios) y Vercel (frontend), según `docs/DESPLIEGUE_RENDER_VERCEL.md`. Google Cloud Platform queda como alternativa de infraestructura; no se requiere Cloud Speech-to-Text ni Paperclip.

@@ -163,3 +163,6 @@ src/
 - **`DATABASE_URL` en Docker**: el `docker-compose.yml` inyecta `postgres:5432` automáticamente para que NestJS se conecte por la red interna. El valor en `.env` (`localhost:5433`) es para conectarse desde herramientas externas como pgAdmin.
 - **Tablas `checkpoint_*`**: si aparecen en la DB son remanentes del checkpointer de LangGraph (hoy desconectado; vuelve en Fase 5 para interrupt/resume). Prisma no las gestiona; no dependas de ellas por ahora.
 - **Hot reload**: NestJS corre en modo `--watch`. Cualquier cambio en `src/` se compila y recarga automáticamente sin reiniciar el contenedor.
+## Despliegue de pruebas
+
+Configuración preparada para backend en Render y panel en Vercel, con actualización desde GitHub. Ver [guía de puesta en marcha](docs/DESPLIEGUE_RENDER_VERCEL.md). Incluye persistencia, alta del supervisor inicial y validación. No requiere Speech-to-Text ni Paperclip.

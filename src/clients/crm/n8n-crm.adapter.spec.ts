@@ -11,7 +11,15 @@ describe('N8nCrmAdapter', () => {
   };
 
   beforeEach(() => {
-    config = { get: jest.fn().mockReturnValue('http://localhost:5678') };
+    config = {
+      get: jest.fn(
+        (key: string) =>
+          ({
+            N8N_BASE_URL: 'http://localhost:5678',
+            N8N_WEBHOOK_SECRET: 'test-crm-secret',
+          })[key],
+      ),
+    };
     adapter = new N8nCrmAdapter(config as any);
     global.fetch = jest.fn();
   });
@@ -25,6 +33,7 @@ describe('N8nCrmAdapter', () => {
       'http://localhost:5678/webhook/crm-upsert-client',
       expect.objectContaining({
         method: 'POST',
+        headers: expect.objectContaining({ 'x-n8n-secret': 'test-crm-secret' }),
         body: JSON.stringify({
           name: 'Juan Pérez',
           phone: '5493865505362',

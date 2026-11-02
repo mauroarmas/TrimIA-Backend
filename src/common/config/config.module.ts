@@ -12,6 +12,12 @@ import * as Joi from 'joi';
           .valid('development', 'production', 'test')
           .default('development'),
         PORT: Joi.number().default(3000),
+        TRUST_PROXY_HOPS: Joi.number().integer().min(0).default(0),
+        CORS_ORIGINS: Joi.string().when('NODE_ENV', {
+          is: 'production',
+          then: Joi.string().required(),
+          otherwise: Joi.string().allow('').default(''),
+        }),
 
         DATABASE_URL: Joi.string().required(),
         POSTGRES_USER: Joi.string().required(),
@@ -19,7 +25,12 @@ import * as Joi from 'joi';
         POSTGRES_DB: Joi.string().required(),
         POSTGRES_SAVER_POOL_MAX: Joi.number().default(5),
 
-        REDIS_HOST: Joi.string().required(),
+        REDIS_URL: Joi.string().uri({ scheme: ['redis', 'rediss'] }),
+        REDIS_HOST: Joi.string().when('REDIS_URL', {
+          is: Joi.exist(),
+          then: Joi.optional(),
+          otherwise: Joi.required(),
+        }),
         REDIS_PORT: Joi.number().default(6379),
 
         GOOGLE_API_KEY: Joi.string().required(),
@@ -27,6 +38,8 @@ import * as Joi from 'joi';
         EMBEDDING_MODEL: Joi.string().default('gemini-embedding-001'),
 
         CHROMA_URL: Joi.string().uri().required(),
+        CHROMA_HOSTPORT: Joi.string(),
+        N8N_HOSTPORT: Joi.string(),
 
         N8N_WEBHOOK_SECRET: Joi.string().min(32).required(),
         N8N_BASE_URL: Joi.string().uri().required(),
