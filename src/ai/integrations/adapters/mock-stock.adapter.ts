@@ -5,18 +5,27 @@ import { PALJET_CATALOG_SEED } from '../seeds/paljet-catalog.seed';
 @Injectable()
 export class MockStockAdapter implements StockPort {
   private readonly logger = new Logger(MockStockAdapter.name);
-  private catalog: StockItem[] = [...PALJET_CATALOG_SEED];
+  private catalog: StockItem[] = PALJET_CATALOG_SEED.map((item) => ({
+    ...item,
+    source: 'SIMULATED',
+  }));
 
-  async checkAvailability(skuOrQuery: string, _userType?: string): Promise<StockCheckResult> {
+  async checkAvailability(
+    skuOrQuery: string,
+    _userType?: string,
+  ): Promise<StockCheckResult> {
     const q = skuOrQuery.trim().toLowerCase();
-    
+
     // Búsqueda por SKU exacto o coincidencia en nombre
-    let found = this.catalog.find(
-      (item) => item.sku.toLowerCase() === q || item.name.toLowerCase().includes(q),
+    const found = this.catalog.find(
+      (item) =>
+        item.sku.toLowerCase() === q || item.name.toLowerCase().includes(q),
     );
 
     if (!found) {
-      throw new NotFoundException(`Producto "${skuOrQuery}" no encontrado en el catálogo de Paljet`);
+      throw new NotFoundException(
+        `Producto "${skuOrQuery}" no encontrado en el catálogo de Paljet`,
+      );
     }
 
     const available = found.stock > 0;
@@ -25,7 +34,9 @@ export class MockStockAdapter implements StockPort {
     let suggestedSubstitutes: StockItem[] | undefined;
     if (!available && found.substituteSkus && found.substituteSkus.length > 0) {
       suggestedSubstitutes = this.catalog
-        .filter((item) => found!.substituteSkus.includes(item.sku) && item.stock > 0)
+        .filter(
+          (item) => found!.substituteSkus.includes(item.sku) && item.stock > 0,
+        )
         .slice(0, 2);
     }
 
@@ -43,8 +54,9 @@ export class MockStockAdapter implements StockPort {
   async listCatalog(category?: string): Promise<StockItem[]> {
     if (!category) return [...this.catalog];
     return this.catalog.filter(
-      (item) => item.category.toUpperCase() === category.toUpperCase(),
+      (item) =>
+        item.category.toUpperCase() ===
+        category.trim().toUpperCase().replace(/\s+/g, '_'),
     );
   }
 }
-

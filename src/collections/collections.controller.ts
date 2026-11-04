@@ -14,7 +14,7 @@ import {
 import { Response } from 'express';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
-import { RolesGuard, Roles } from '../auth/guards/roles.guard';
+import { RolesGuard } from '../auth/guards/roles.guard';
 import { PaymentProofsService } from './payment-proofs.service';
 import { CollectionsService } from './collections.service';
 import { QuotasService } from './quotas.service';
@@ -111,20 +111,28 @@ export class CollectionsController {
     return this.paymentProofs.markManualHandling(id, req.user.id, dto.note);
   }
 
-  /** GET /collections/reminder-config — solo SUPERVISOR. */
+  /** GET /collections/reminder-config — supervisor o cobrador controlador. */
   @Get('reminder-config')
-  @Roles('SUPERVISOR')
   @ApiOperation({ summary: 'Configuración vigente de recordatorios' })
-  getReminderConfig() {
+  getReminderConfig(@Req() req: any) {
+    this.assertCanConfigureReminders(req.user);
     return this.reminderConfig.get();
   }
 
-  /** PUT /collections/reminder-config — solo SUPERVISOR. */
+  /** PUT /collections/reminder-config — supervisor o cobrador controlador. */
   @Put('reminder-config')
-  @Roles('SUPERVISOR')
   @ApiOperation({ summary: 'Actualiza la configuración de recordatorios' })
-  updateReminderConfig(@Body() dto: UpdateReminderConfigDto) {
+  updateReminderConfig(@Body() dto: UpdateReminderConfigDto, @Req() req: any) {
+    this.assertCanConfigureReminders(req.user);
     return this.reminderConfig.update(dto);
+  }
+
+  private assertCanConfigureReminders(user: any) {
+    if (user.role !== 'SUPERVISOR' && !user.isController) {
+      throw new ForbiddenException(
+        'Solo un supervisor o un cobrador controlador puede configurar recordatorios',
+      );
+    }
   }
 
   /** GET /collections/proofs/accepted — Cobrador Controlador verifica impacto. */

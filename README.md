@@ -166,3 +166,7 @@ src/
 ## Despliegue de pruebas
 
 Configuración preparada para backend en Render y panel en Vercel, con actualización desde GitHub. Ver [guía de puesta en marcha](docs/DESPLIEGUE_RENDER_VERCEL.md). Incluye persistencia, alta del supervisor inicial y validación. No requiere Speech-to-Text ni Paperclip.
+
+## Demo desde la PC (sin servicios pagos de hosting)
+
+Para el profesor: panel y backend locales con publicación HTTPS y WhatsApp. Seguir [DEMO_LOCAL_WHATSAPP.md](docs/DEMO_LOCAL_WHATSAPP.md). Render/Vercel quedan como alternativa.

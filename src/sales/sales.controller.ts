@@ -3,6 +3,8 @@ import {
   Controller,
   ForbiddenException,
   Get,
+  Param,
+  ParseUUIDPipe,
   Post,
   Query,
   Req,
@@ -17,8 +19,20 @@ import { CreateClientDto } from './dto/create-client.dto';
 import { CreditCheckDto } from './dto/credit-check.dto';
 import { StockQueryDto } from './dto/stock-query.dto';
 import { CloseSaleDto } from './dto/close-sale.dto';
+import { ReviewFinancingDto } from './dto/review-financing.dto';
 
 const SALES_SECTOR = 'Ventas';
+
+function assertCanAccessFinancing(user: any) {
+  if (
+    !user.isGeneralSupervisor &&
+    !['Administración', 'Admin'].includes(user.sectorName)
+  ) {
+    throw new ForbiddenException(
+      'Solo Administración o el supervisor general puede consultar las solicitudes de financiación',
+    );
+  }
+}
 
 function assertCanAccessSales(user: any) {
   if (user.sectorName !== SALES_SECTOR && !user.isGeneralSupervisor) {
@@ -39,6 +53,27 @@ export class SalesController {
     private readonly onboarding: ClientOnboardingService,
     private readonly salesService: SalesService,
   ) {}
+
+  @Get('financing/requests')
+  listFinancing(@Req() req: any) {
+    assertCanAccessFinancing(req.user);
+    return this.salesService.listFinancingRequests();
+  }
+
+  @Post('financing/requests/:id/review')
+  reviewFinancing(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ReviewFinancingDto,
+    @Req() req: any,
+  ) {
+    assertCanAccessFinancing(req.user);
+    if (req.user.role !== 'SUPERVISOR') {
+      throw new ForbiddenException(
+        'Solo un supervisor puede aprobar o rechazar una financiación',
+      );
+    }
+    return this.salesService.reviewFinancingRequest(id, dto, req.user.id);
+  }
 
   /** POST /sales/clients — alta de cliente con su plan de cuotas. */
   @Post('clients')
@@ -73,7 +108,8 @@ export class SalesController {
   /** POST /sales/credit-check — verificación crediticia comercial confidencial (OE-10). */
   @Post('credit-check')
   @ApiOperation({
-    summary: 'Consulta aptitud crediticia comercial sin revelar reporte bancario confidencial',
+    summary:
+      'Consulta aptitud crediticia comercial sin revelar reporte bancario confidencial',
   })
   checkCredit(@Body() dto: CreditCheckDto, @Req() req: any) {
     assertCanAccessSales(req.user);

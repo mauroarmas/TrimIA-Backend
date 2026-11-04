@@ -7,6 +7,23 @@ describe('MockStockAdapter', () => {
     adapter = new MockStockAdapter();
   });
 
+  it('incluye los tres Smart TV definidos por RF09-01, con precios desconocidos explícitos', async () => {
+    const items = await adapter.listCatalog('Smart TV');
+    expect(items.map((item) => [item.name, item.stock])).toEqual([
+      ['Smart TV Samsung 55" 4K', 4],
+      ['Smart TV LG 50" Full HD', 1],
+      ['Smart TV Philips 43"', 0],
+    ]);
+    expect(
+      items.every(
+        (item) => item.source === 'SIMULATED' && item.cashPrice === null,
+      ),
+    ).toBe(true);
+    const unavailable = await adapter.checkAvailability('Philips 43');
+    expect(unavailable.available).toBe(false);
+    expect(unavailable.suggestedSubstitutes).toHaveLength(2);
+  });
+
   it('debe encontrar un producto por SKU exacto cuando hay stock disponible', async () => {
     const result = await adapter.checkAvailability('BAL-SYS-CUORA');
     expect(result.available).toBe(true);
@@ -43,4 +60,3 @@ describe('MockStockAdapter', () => {
     expect(balanzas.every((p) => p.category === 'BALANZAS')).toBe(true);
   });
 });
-

@@ -21,6 +21,7 @@ jobs:
       - run: npx prisma generate
       - run: npm run build
       - run: npm test -- --runInBand
+      - run: npm run test:gateway
       - name: Build production container
         run: docker build -t trimia-ci .
       - name: Verify container artifact

@@ -1,9 +1,12 @@
 import { Injectable, UnauthorizedException } from '@nestjs/common';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcrypt';
+import { randomUUID } from 'crypto';
+import { RedisService } from '../redis/redis.service';
 import { PrismaService } from '../database/prisma.service';
 
 export interface JwtPayload {
+  jti?: string;
   sub: string; // employee id
   email: string;
   name?: string;
@@ -27,6 +30,7 @@ export class AuthService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly jwt: JwtService,
+    private readonly redis: RedisService,
   ) {}
 
   async validateCredentials(
@@ -58,9 +62,11 @@ export class AuthService {
     const isGeneralSupervisor =
       employee.role === 'SUPERVISOR' &&
       (employee.email === 'diego.bazan@credimision.com' ||
-        (employee.areasSupervisadas?.length ?? 0) >= totalSectorsCount);
+        (totalSectorsCount > 0 &&
+          (employee.areasSupervisadas?.length ?? 0) >= totalSectorsCount));
 
     const payload: JwtPayload = {
+      jti: randomUUID(),
       sub: employee.id,
       email: employee.email,
       name: employee.name,
@@ -82,5 +88,50 @@ export class AuthService {
    */
   async hashPassword(plain: string): Promise<string> {
     return bcrypt.hash(plain, 10);
+  }
+
+  /** También cubre los JWT emitidos antes de incorporar el cierre de sesión. */
+  async revokeSession(sessionId: string, expiresAt: number): Promise<void> {
+    const ttl = Math.ceil(expiresAt - Date.now() / 1000);
+    if (ttl > 0) {
+      await this.redis.set(`auth:revoked:${sessionId}`, '1', 'EX', ttl);
+    }
+  }
+
+  async isSessionRevoked(sessionId: string): Promise<boolean> {
+    return (await this.redis.exists(`auth:revoked:${sessionId}`)) > 0;
+  }
+
+  async currentIdentity(employeeId: string) {
+    const [employee, totalSectors] = await Promise.all([
+      this.prisma.employee.findUnique({
+        where: { id: employeeId },
+        include: {
+          sector: true,
+          areasSupervisadas: {
+            select: { id: true, name: true, agentType: true },
+          },
+        },
+      }),
+      this.prisma.sector.count(),
+    ]);
+    if (!employee?.isActive) {
+      throw new UnauthorizedException('La sesión ya no está habilitada');
+    }
+    return {
+      id: employee.id,
+      email: employee.email,
+      name: employee.name,
+      role: employee.role,
+      sectorId: employee.sectorId,
+      sectorName: employee.sector.name,
+      isController: employee.isController,
+      isGeneralSupervisor:
+        employee.role === 'SUPERVISOR' &&
+        (employee.email === 'diego.bazan@credimision.com' ||
+          (totalSectors > 0 &&
+            employee.areasSupervisadas.length >= totalSectors)),
+      areasSupervisadas: employee.areasSupervisadas,
+    };
   }
 }

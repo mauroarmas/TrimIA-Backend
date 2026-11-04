@@ -8,6 +8,7 @@ import { OrchestratorService } from '../../ai/orchestrator/orchestrator.service'
 import { EmployeesService } from '../../employees/employees.service';
 import { CallerResolver } from '../../ai/caller/caller.resolver';
 import { OrchestrationLogger } from '../../ai/orchestrator/orchestration-logger.service';
+import { isClosingCourtesy } from '../../ai/orchestrator/utils/trivial-filter';
 
 interface MessageJob {
   conversationId: string;
@@ -125,7 +126,10 @@ export class MessageProcessor extends WorkerHost {
         // Solo en WAITING_HUMAN: si un supervisor ya tomó el control
         // (HUMAN_HANDLING) está mirando la conversación y va a contestar él,
         // un aviso automático ahí sobra y confunde.
-        if (conversation.status === 'WAITING_HUMAN') {
+        if (
+          conversation.status === 'WAITING_HUMAN' &&
+          !isClosingCourtesy(message)
+        ) {
           await this.acknowledgeWaitingHuman(
             conversationId,
             externalId,

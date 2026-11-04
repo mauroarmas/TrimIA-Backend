@@ -17,6 +17,7 @@ import { KnowledgeMergeService } from './knowledge-merge.service';
 import { DiscardPairDto } from './dto/discard-pair.dto';
 import { MergePreviewDto } from './dto/merge-preview.dto';
 import { MergeApplyDto } from './dto/merge-apply.dto';
+import { GeneralSupervisorGuard } from '../../auth/guards/general-supervisor.guard';
 
 interface AuthenticatedRequest {
   user: { id: string; role: string };
@@ -41,6 +42,7 @@ export class KnowledgeHygieneController {
   ) {}
 
   @Post('scan')
+  @UseGuards(GeneralSupervisorGuard)
   @HttpCode(201)
   @ApiOperation({
     summary: 'Lanza un barrido de detección (FR-004)',
@@ -54,6 +56,7 @@ export class KnowledgeHygieneController {
   }
 
   @Get('scan/latest')
+  @UseGuards(GeneralSupervisorGuard)
   @ApiOperation({
     summary: 'El resultado de la última corrida',
     description:

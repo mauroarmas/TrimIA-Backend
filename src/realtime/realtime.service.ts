@@ -49,6 +49,7 @@ const cierraLaConversacion = (message: SseMessage): boolean =>
     'CLOSED';
 
 export interface StreamOptions {
+  sessionId?: string;
   /**
    * Se ejecuta en cada keepalive para confirmar que quien abrió el stream
    * TODAVÍA puede leer esta conversación (RF-021, CL-9). Devolver `false`
@@ -251,7 +252,21 @@ export class RealtimeService implements OnModuleDestroy {
       takeWhile((message) => !cierraLaConversacion(message), true),
     );
 
-    if (!options.replay) return live$;
+    // La sesión se revalida al ENTREGAR, también para mensajes retenidos
+    // durante una reanudación. Un logout puede ocurrir mientras se lee la DB.
+    const authorized = (source: Observable<SseMessage>) =>
+      source.pipe(
+        concatMap(async (message) => {
+          if (!(await this.stillAllowed(conversationId, options))) {
+            stop$.next();
+            return null;
+          }
+          return message;
+        }),
+        filter((message): message is SseMessage => message !== null),
+      );
+
+    if (!options.replay) return authorized(live$);
 
     // Reanudación (RF-006) sin la ventana de CL-6.
     //
@@ -272,7 +287,7 @@ export class RealtimeService implements OnModuleDestroy {
       const missed$ = defer(replay).pipe(
         concatMap((events) => events.map(toSseMessage)),
       );
-      const outSub = concat(missed$, buffer).subscribe(subscriber);
+      const outSub = authorized(concat(missed$, buffer)).subscribe(subscriber);
 
       return () => {
         outSub.unsubscribe();
@@ -282,7 +297,7 @@ export class RealtimeService implements OnModuleDestroy {
   }
 
   /**
-   * Dos motivos para cerrar un stream ya abierto, chequeados en cada keepalive.
+   * Revocación, expiración y permisos se chequean al entregar y en cada keepalive.
    *
    * El orden importa poco, pero el criterio de falla sí: si la revalidación
    * lanza, se cierra el stream. Fail-closed — ante la duda sobre un permiso, no
@@ -292,6 +307,17 @@ export class RealtimeService implements OnModuleDestroy {
     conversationId: string,
     options: StreamOptions,
   ): Promise<boolean> {
+    if (options.sessionId) {
+      try {
+        if ((await this.redis.exists(`auth:revoked:${options.sessionId}`)) > 0)
+          return false;
+      } catch (error) {
+        this.logger.error(
+          `No se pudo verificar la sesión del stream de [${conversationId}]: ${error}`,
+        );
+        return false;
+      }
+    }
     // RF-022: el token que abrió el stream no puede sobrevivirlo. Y esto gana
     // sobre "mantener vivo el turno en curso" (RF-008): no se entrega sobre una
     // credencial vencida ni para terminar una respuesta en camino (CL-16). No se

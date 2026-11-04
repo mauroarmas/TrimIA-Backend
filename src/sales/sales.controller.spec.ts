@@ -14,12 +14,14 @@ describe('SalesController', () => {
   };
 
   const mockSalesService = {
-    getStockCatalog: jest.fn().mockResolvedValue([
-      { sku: 'BAL-SYS-CUORA', name: 'Balanza Systel Cuora', stock: 5 },
-    ]),
-    getProspects: jest.fn().mockResolvedValue([
-      { id: 'p-1', name: 'Juan Gómez', status: 'NUEVO' },
-    ]),
+    getStockCatalog: jest
+      .fn()
+      .mockResolvedValue([
+        { sku: 'BAL-SYS-CUORA', name: 'Balanza Systel Cuora', stock: 5 },
+      ]),
+    getProspects: jest
+      .fn()
+      .mockResolvedValue([{ id: 'p-1', name: 'Juan Gómez', status: 'NUEVO' }]),
     checkCreditCommercial: jest.fn().mockResolvedValue({
       verdict: CreditVerdict.APPROVED,
       commercialCondition: 'Aprobado sin anticipo',
@@ -30,6 +32,8 @@ describe('SalesController', () => {
       closedAt: new Date().toISOString(),
       closedById: 'emp-1',
     }),
+    listFinancingRequests: jest.fn().mockResolvedValue([]),
+    reviewFinancingRequest: jest.fn().mockResolvedValue({ status: 'APPROVED' }),
   };
 
   beforeEach(async () => {
@@ -54,13 +58,71 @@ describe('SalesController', () => {
   };
 
   const supervisorGeneral = {
-    user: { id: 'emp-diego', sectorName: 'Supervisión', isGeneralSupervisor: true },
+    user: {
+      id: 'emp-diego',
+      sectorName: 'Supervisión',
+      isGeneralSupervisor: true,
+    },
   };
 
   it('permite consultar stock a un vendedor de Ventas', async () => {
     const res = await controller.getStock({ query: 'balanza' }, salesUser);
     expect(res).toBeDefined();
-    expect(salesService.getStockCatalog).toHaveBeenCalledWith('balanza', undefined);
+    expect(salesService.getStockCatalog).toHaveBeenCalledWith(
+      'balanza',
+      undefined,
+    );
+  });
+
+  it('reserva la bandeja financiera a Administración y supervisión general', async () => {
+    expect(() => controller.listFinancing(salesUser)).toThrow(
+      ForbiddenException,
+    );
+    expect(
+      await controller.listFinancing({
+        user: { role: 'EMPLEADO', sectorName: 'Administración' },
+      }),
+    ).toEqual([]);
+    expect(await controller.listFinancing(supervisorGeneral)).toEqual([]);
+  });
+
+  it('un administrativo puede consultar pero solo un supervisor puede decidir', async () => {
+    expect(() =>
+      controller.reviewFinancing(
+        'request-1',
+        { decision: 'APPROVED' },
+        {
+          user: {
+            id: 'admin-1',
+            role: 'EMPLEADO',
+            sectorName: 'Administración',
+          },
+        },
+      ),
+    ).toThrow(ForbiddenException);
+    expect(() =>
+      controller.reviewFinancing(
+        'request-1',
+        { decision: 'APPROVED' },
+        { user: { id: 'sales-1', role: 'SUPERVISOR', sectorName: 'Ventas' } },
+      ),
+    ).toThrow(ForbiddenException);
+    await controller.reviewFinancing(
+      'request-1',
+      { decision: 'APPROVED' },
+      {
+        user: {
+          id: 'supervisor-1',
+          role: 'SUPERVISOR',
+          isGeneralSupervisor: true,
+        },
+      },
+    );
+    expect(mockSalesService.reviewFinancingRequest).toHaveBeenCalledWith(
+      'request-1',
+      { decision: 'APPROVED' },
+      'supervisor-1',
+    );
   });
 
   it('permite consultar stock a Diego Bazán (supervisor general)', async () => {
@@ -69,13 +131,17 @@ describe('SalesController', () => {
   });
 
   it('rechaza con 403 Forbidden a un empleado de otro sector', async () => {
-    expect(() => controller.getStock({}, otherSectorUser)).toThrow(ForbiddenException);
+    expect(() => controller.getStock({}, otherSectorUser)).toThrow(
+      ForbiddenException,
+    );
   });
 
   it('permite verificar crédito comercialmente', async () => {
     const res = await controller.checkCredit({ dni: '30123456' }, salesUser);
     expect(res.verdict).toBe(CreditVerdict.APPROVED);
-    expect(salesService.checkCreditCommercial).toHaveBeenCalledWith({ dni: '30123456' });
+    expect(salesService.checkCreditCommercial).toHaveBeenCalledWith({
+      dni: '30123456',
+    });
   });
 
   it('permite registrar el cierre manual de venta', async () => {
@@ -91,4 +157,3 @@ describe('SalesController', () => {
     expect(salesService.closeSale).toHaveBeenCalled();
   });
 });
-

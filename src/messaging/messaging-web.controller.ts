@@ -30,7 +30,7 @@ import { Roles, RolesGuard } from '../auth/guards/roles.guard';
 /** Mismo trap que en KnowledgeController: `req.user.id`, no `req.user.sub`. */
 interface AuthenticatedRequest {
   /** `exp` es el vencimiento del token (segundos epoch), ver JwtStrategy. */
-  user: { id: string; exp?: number };
+  user: { id: string; exp?: number; sessionId?: string };
 }
 
 /**
@@ -140,6 +140,7 @@ export class MessagingWebController {
       // a un empleado dado de baja le seguirían llegando mensajes (CL-9).
       revalidate: () => this.ownsConversation(convId, req.user.id),
       expiresAt: req.user.exp,
+      sessionId: req.user.sessionId,
     });
   }
 

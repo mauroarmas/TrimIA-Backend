@@ -10,6 +10,10 @@ export function createCheckStockTool(stockPort: StockPort) {
         if (result.available) {
           return JSON.stringify({
             disponible: true,
+            fuente:
+              result.item.source === 'SIMULATED'
+                ? 'Paljet simulado para pruebas'
+                : 'Paljet',
             producto: result.item.name,
             sku: result.item.sku,
             precioLista: result.item.listPrice,
@@ -31,11 +35,15 @@ export function createCheckStockTool(stockPort: StockPort) {
 
         return JSON.stringify({
           disponible: false,
+          fuente:
+            result.item.source === 'SIMULATED'
+              ? 'Paljet simulado para pruebas'
+              : 'Paljet',
           productoConsultado: result.item.name,
           motivo: 'Actualmente sin existencia en depósito',
           alternativasSugeridas: sustitutos,
         });
-      } catch (err: any) {
+      } catch (_err: any) {
         return JSON.stringify({
           error: true,
           mensaje: `No se encontró el producto "${query}" en el inventario o catálogo oficial.`,
@@ -47,9 +55,12 @@ export function createCheckStockTool(stockPort: StockPort) {
       description:
         'Consulta disponibilidad, existencias reales y precios de maquinarias comerciales o gastronómicas. Si no hay stock disponible, retorna automáticamente hasta 2 productos sustitutos con stock.',
       schema: z.object({
-        query: z.string().describe('Nombre del producto, modelo o SKU a consultar (ej. "balanza cuora", "cortadora 330")'),
+        query: z
+          .string()
+          .describe(
+            'Nombre del producto, modelo o SKU a consultar (ej. "balanza cuora", "cortadora 330")',
+          ),
       }),
     },
   );
 }
-

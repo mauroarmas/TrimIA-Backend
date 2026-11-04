@@ -48,6 +48,7 @@ interface AuthenticatedRequest {
     role?: string;
     isGeneralSupervisor?: boolean;
     exp?: number;
+    sessionId?: string;
   };
 }
 
@@ -159,6 +160,7 @@ export class SupervisorController {
         : undefined,
       revalidate: () => this.stillSupervisor(req.user.id, id),
       expiresAt: req.user.exp,
+      sessionId: req.user.sessionId,
     });
   }
 
