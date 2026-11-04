@@ -15,6 +15,11 @@ export interface EmployeePillSummaryDto {
   isLocked: boolean;
   status?: TrainingProgressStatus;
   isExempted?: boolean;
+  audioStatus?: AudioStatus;
+  hasAudio?: boolean;
+  audioDurationSeconds?: number | null;
+  isAudioCompleted?: boolean;
+  playbackProgressSeconds?: number;
 }
 
 export interface EmployeePillDetailDto {

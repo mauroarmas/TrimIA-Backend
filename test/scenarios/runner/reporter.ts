@@ -6,7 +6,9 @@ export class ScenarioReporter {
    */
   static printHeader(totalScenarios: number, runsPerScenario: number): void {
     console.log('\n' + '='.repeat(84));
-    console.log('🧪 ARNES DE EVALUACIÓN: BANCO DE ESCENARIOS Y MEDICIÓN DE CALIDAD — TRIMIA');
+    console.log(
+      '🧪 ARNES DE EVALUACIÓN: BANCO DE ESCENARIOS Y MEDICIÓN DE CALIDAD — TRIMIA',
+    );
     console.log('='.repeat(84));
     console.log(`📋 Total escenarios a evaluar: ${totalScenarios}`);
     console.log(`🔄 Repeticiones por escenario: ${runsPerScenario} corridas`);
@@ -18,13 +20,20 @@ export class ScenarioReporter {
    * Imprime el resultado de un escenario evaluado.
    */
   static printScenarioSummary(summary: ScenarioSummary): void {
-    const symbol = summary.status === 'PASS' ? '✅' : summary.status === 'WARN' ? '⚠️' : '❌';
+    const symbol =
+      summary.status === 'PASS'
+        ? '✅'
+        : summary.status === 'WARN'
+          ? '⚠️'
+          : '❌';
     const tag = `[${summary.status}]`.padEnd(8);
     const title = summary.title.padEnd(46, '.');
     const ratio = `${summary.passedRuns}/${summary.totalRuns}`.padStart(5);
     const pct = `(${Math.round(summary.passRate)}%)`.padStart(7);
 
-    console.log(`${symbol} ${tag} ${summary.scenarioId}: ${title} ${ratio} ${pct}`);
+    console.log(
+      `${symbol} ${tag} ${summary.scenarioId}: ${title} ${ratio} ${pct}`,
+    );
 
     // Si hubo fallas en alguna corrida, mostrar detalles
     const failedRuns = summary.runs.filter((r) => !r.passed);
@@ -36,6 +45,10 @@ export class ScenarioReporter {
           console.log(`        Texto generado: "${v.actual}"`);
         }
       }
+      if (failed.generatedResponse)
+        console.log(
+          `      Respuesta completa [${summary.scenarioId} #${failed.runIndex}]:\n${failed.generatedResponse}`,
+        );
       if (failed.error) {
         console.log(`      • Error técnico: ${failed.error}`);
       }
@@ -49,16 +62,29 @@ export class ScenarioReporter {
     console.log('\n' + '='.repeat(84));
     console.log('📊 REPORTE CONSOLIDADO FINAL');
     console.log('='.repeat(84));
-    console.log(`Escenarios aprobados:   ${report.passedScenarios} / ${report.totalScenarios} (${Math.round((report.passedScenarios / report.totalScenarios) * 100)}%)`);
+    console.log(
+      `Escenarios aprobados:   ${report.passedScenarios} / ${report.totalScenarios} (${Math.round((report.passedScenarios / report.totalScenarios) * 100)}%)`,
+    );
     console.log(`Total corridas totales: ${report.totalRuns}`);
-    console.log(`Efectividad global:     ${Math.round(report.overallPassRate)}%`);
-    console.log(`Tiempo total ejecución: ${(report.executionTimeMs / 1000).toFixed(1)}s`);
+    console.log(
+      `Efectividad global:     ${Math.round(report.overallPassRate)}%`,
+    );
+    console.log(
+      `Tiempo total ejecución: ${(report.executionTimeMs / 1000).toFixed(1)}s`,
+    );
     console.log('='.repeat(84));
 
-    if (report.passedScenarios === report.totalScenarios && report.overallPassRate >= 80) {
-      console.log('🎉 TODOS LOS ESCENARIOS CUMPLIERON EL UMBRAL DE CALIDAD ESTABLECIDO.\n');
+    if (
+      report.passedScenarios === report.totalScenarios &&
+      report.overallPassRate >= 80
+    ) {
+      console.log(
+        '🎉 TODOS LOS ESCENARIOS CUMPLIERON EL UMBRAL DE CALIDAD ESTABLECIDO.\n',
+      );
     } else {
-      console.log('⚠️  ATENCIÓN: Algunos escenarios presentaron variaciones o incumplieron reglas críticas.\n');
+      console.log(
+        '⚠️  ATENCIÓN: Algunos escenarios presentaron variaciones o incumplieron reglas críticas.\n',
+      );
     }
   }
 }

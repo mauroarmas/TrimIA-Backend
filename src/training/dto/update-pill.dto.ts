@@ -1,4 +1,12 @@
-import { IsArray, IsInt, IsOptional, IsString, ValidateNested } from 'class-validator';
+import {
+  ArrayMinSize,
+  ArrayMaxSize,
+  IsArray,
+  IsInt,
+  IsOptional,
+  IsString,
+  ValidateNested,
+} from 'class-validator';
 import { Type } from 'class-transformer';
 import { VerificationQuestionDto } from './training-common.dto';
 
@@ -16,6 +24,8 @@ export class UpdatePillDto {
   content?: string;
 
   @IsArray()
+  @ArrayMinSize(2)
+  @ArrayMaxSize(2)
   @ValidateNested({ each: true })
   @Type(() => VerificationQuestionDto)
   @IsOptional()
@@ -25,4 +35,3 @@ export class UpdatePillDto {
   @IsOptional()
   orderIndex?: number;
 }
-

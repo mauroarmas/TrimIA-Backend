@@ -1,3 +1,4 @@
+import { botMayRespond } from '../bot-response-policy';
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
@@ -119,7 +120,7 @@ export class MessageProcessor extends WorkerHost {
       // (HUMAN_HANDLING), el agente de IA no responde. El mensaje ya quedó
       // persistido por MessagingService.prepareConversation() antes de
       // encolar — el supervisor lo ve en el contexto sin acción adicional.
-      if (conversation && conversation.status !== 'ACTIVE') {
+      if (conversation && !botMayRespond(conversation.status)) {
         this.logger.log(
           `Conversación [${conversationId}] en estado ${conversation.status}: no se invoca al agente.`,
         );

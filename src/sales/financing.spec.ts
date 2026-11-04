@@ -19,6 +19,7 @@ describe('Revisión de financiación persistida', () => {
         updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
     };
+    prisma.$transaction = jest.fn((fn) => fn(prisma));
     service = new SalesService(null, null, prisma);
   });
   it('devuelve una bandeja vacía cuando no hay solicitudes y excluye los reportes bancarios crudos', async () => {

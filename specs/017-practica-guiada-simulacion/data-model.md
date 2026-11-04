@@ -1,5 +1,7 @@
 # Data Model: Práctica Guiada, Simulación Libre y Devolución Cualitativa
 
+> Implementación 2026-11-04: El modelo real agrega SimulationSession.version para CAS de turnos/cierre. SimulationFeedback suma whatWentWellBand, toImproveBand y businessRulesBand (PerformanceBand nullable solo para conservar registros históricos). Las sesiones sin interacción durante 24 h se conservan ABANDONED, sin penalización.
+
 **Feature**: `017-practica-guiada-simulacion`  
 **Date**: 2026-10-13  
 **Status**: Ready

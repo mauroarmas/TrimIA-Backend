@@ -6,59 +6,75 @@
         "httpMethod": "GET",
         "path": "crm-prospect-search",
         "responseMode": "responseNode",
-        "options": {}
+        "options": {},
+        "authentication": "headerAuth"
       },
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2.1,
-      "position": [-512, 112],
+      "position": [
+        -512,
+        112
+      ],
       "id": "webhook-crm-prospect-search",
-      "name": "Webhook Prospect Search"
+      "name": "Webhook Prospect Search",
+      "credentials": {
+        "httpHeaderAuth": {
+          "id": "CONFIGURAR_AUTH",
+          "name": "TrimIA x-n8n-secret"
+        }
+      }
     },
     {
       "parameters": {
         "operation": "read",
         "documentId": {
           "__rl": true,
-          "value": "1eU8lXoA6mcSh-s02NElqr8EWl1R2rR3TZAIFX1cENu4",
+          "value": "CONFIGURAR_SPREADSHEET_ID",
           "mode": "id"
         },
         "sheetName": {
           "__rl": true,
-          "value": "Prospectos",
+          "value": "CRM",
           "mode": "name"
         },
-        "filters": {
-          "conditions": [
+        "options": {},
+        "filtersUI": {
+          "values": [
             {
-              "column": "telefono",
-              "operation": "equals",
-              "value": "={{ $json.query.phone }}"
+              "lookupColumn": "Teléfono",
+              "lookupValue": "={{ $json.query.phone }}"
             }
           ]
-        },
-        "options": {}
+        }
       },
       "type": "n8n-nodes-base.googleSheets",
       "typeVersion": 4.5,
-      "position": [-256, 112],
+      "position": [
+        -256,
+        112
+      ],
       "id": "sheets-crm-prospect-search",
       "name": "Google Sheets Read",
       "credentials": {
         "googleSheetsOAuth2Api": {
-          "id": "PSBd2QQ3ePFjvOeF",
-          "name": "Google Sheets account"
+          "id": "CONFIGURAR_GOOGLE",
+          "name": "Google Sheets CRM"
         }
-      }
+      },
+      "alwaysOutputData": true
     },
     {
       "parameters": {
         "respondWith": "json",
-        "responseBody": "={{ { found: $json.length > 0, prospect: $json[0] || null } }}",
+        "responseBody": "={{ (() => { const row = $input.all().map(i => i.json).find(r => String(r['Teléfono']) === String($('Webhook Prospect Search').first().json.query.phone)); return { found: !!row, prospect: row || null }; })() }}",
         "options": {}
       },
       "type": "n8n-nodes-base.respondToWebhook",
       "typeVersion": 1.1,
-      "position": [0, 112],
+      "position": [
+        0,
+        112
+      ],
       "id": "respond-crm-prospect-search",
       "name": "Respond to Webhook"
     }
@@ -86,6 +102,6 @@
         ]
       ]
     }
-  }
+  },
+  "active": false
 }
-

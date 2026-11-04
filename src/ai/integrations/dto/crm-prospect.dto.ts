@@ -1,8 +1,24 @@
-import { IsEnum, IsNotEmpty, IsNumber, IsOptional, IsString } from 'class-validator';
+import {
+  IsEnum,
+  IsNotEmpty,
+  IsNumber,
+  IsObject,
+  IsOptional,
+  IsString,
+} from 'class-validator';
 import { ApiProperty, ApiPropertyOptional } from '@nestjs/swagger';
+import { CrmSheetRow } from '../crm-sheet.mapper';
 import { ProspectStatus } from '../ports/crm.port';
 
 export class CrmProspectDto {
+  @ApiPropertyOptional({
+    description:
+      'Las 17 columnas de la hoja CRM; metadata interna fuera del transporte',
+  })
+  @IsOptional()
+  @IsObject()
+  sheet?: CrmSheetRow;
+
   @ApiProperty({ example: '21/10/2026' })
   @IsNotEmpty()
   @IsString()
@@ -86,4 +102,3 @@ export class CrmProspectDto {
   @IsString()
   conversationId?: string;
 }
-

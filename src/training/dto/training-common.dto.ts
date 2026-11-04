@@ -1,5 +1,12 @@
-import { IsArray, IsInt, IsNotEmpty, IsString, Min, ValidateNested } from 'class-validator';
-import { Type } from 'class-transformer';
+import {
+  ArrayMinSize,
+  ArrayMaxSize,
+  IsArray,
+  IsInt,
+  IsNotEmpty,
+  IsString,
+  Min,
+} from 'class-validator';
 
 export interface VerificationQuestion {
   id: number;
@@ -18,6 +25,8 @@ export class VerificationQuestionDto implements VerificationQuestion {
   question: string;
 
   @IsArray()
+  @ArrayMinSize(3)
+  @ArrayMaxSize(4)
   @IsString({ each: true })
   options: string[];
 
@@ -29,4 +38,3 @@ export class VerificationQuestionDto implements VerificationQuestion {
   @IsNotEmpty()
   explanation: string;
 }
-

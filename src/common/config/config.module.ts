@@ -34,6 +34,7 @@ import * as Joi from 'joi';
         REDIS_PORT: Joi.number().default(6379),
 
         GOOGLE_API_KEY: Joi.string().required(),
+        GEMINI_TTS_MODEL: Joi.string().pattern(/^gemini-[a-zA-Z0-9.-]+$/),
         GEMINI_MODEL: Joi.string().default('gemini-3.5-flash-lite'),
         EMBEDDING_MODEL: Joi.string().default('gemini-embedding-001'),
 

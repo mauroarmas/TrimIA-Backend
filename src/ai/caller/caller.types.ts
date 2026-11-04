@@ -23,6 +23,8 @@ export interface CallerArea {
 }
 
 export interface Caller {
+  /** Identidad verificada del empleado; se usa solo en operaciones, no en lectura RAG. */
+  employeeId?: string;
   /** Lo que ya existía: define audiencia del RAG y agentes permitidos. */
   userType: UserType;
   /** `null` para un CLIENTE: no está en la whitelist, no hay de dónde sacarlo. */

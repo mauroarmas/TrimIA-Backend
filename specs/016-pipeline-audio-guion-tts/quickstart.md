@@ -1,4 +1,6 @@
-﻿# Quickstart & Integration Scenarios: 016 — Pipeline de Audio: Guion a 2 Voces y Síntesis TTS
+# Quickstart & Integration Scenarios: 016 — Pipeline de Audio: Guion a 2 Voces y Síntesis TTS
+
+> Actualización de implementación (2026-11-04): Todos los GET requieren JWT vigente (Bearer o token query existente) y acceso a la píldora. Configurar GEMINI_TTS_MODEL explícito para sintetizar, reutilizando GOOGLE_API_KEY; la imagen instala ffmpeg. Se mide la duración real (≤300 s); no se fabrican bytes de audio ante un error. El primer avance ancla tiempo y los reportes no otorgan tolerancias acumulables. Ver ../../docs/CONVERGENCIA_014_019.md.
 
 **Feature**: [spec.md](./spec.md)  
 **Status**: Completed  

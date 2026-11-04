@@ -9,6 +9,8 @@ export class AssertionEngine {
       text: string;
       routedAgent?: string;
       escalated?: boolean;
+      paused?: boolean;
+      createdTicketsCount?: number;
     },
     assertions: ScenarioAssertions,
   ): AssertionViolation[] {
@@ -18,9 +20,10 @@ export class AssertionEngine {
     // 1. Patrones obligatorios (mustContain)
     if (assertions.mustContain) {
       for (const pattern of assertions.mustContain) {
-        const matches = pattern instanceof RegExp
-          ? pattern.test(text)
-          : text.toLowerCase().includes(pattern.toLowerCase());
+        const matches =
+          pattern instanceof RegExp
+            ? pattern.test(text)
+            : text.toLowerCase().includes(pattern.toLowerCase());
 
         if (!matches) {
           violations.push({
@@ -36,9 +39,10 @@ export class AssertionEngine {
     // 2. Patrones prohibidos (mustNotContain)
     if (assertions.mustNotContain) {
       for (const pattern of assertions.mustNotContain) {
-        const matches = pattern instanceof RegExp
-          ? pattern.test(text)
-          : text.toLowerCase().includes(pattern.toLowerCase());
+        const matches =
+          pattern instanceof RegExp
+            ? pattern.test(text)
+            : text.toLowerCase().includes(pattern.toLowerCase());
 
         if (matches) {
           violations.push({
@@ -52,12 +56,15 @@ export class AssertionEngine {
     }
 
     // 3. Verificación de agente ruteado
-    if (assertions.expectedAgent && response.routedAgent) {
-      if (response.routedAgent.toLowerCase() !== assertions.expectedAgent.toLowerCase()) {
+    if (assertions.expectedAgent) {
+      if (
+        (response.routedAgent ?? '').toLowerCase() !==
+        assertions.expectedAgent.toLowerCase()
+      ) {
         violations.push({
           rule: 'expectedAgent',
           expected: assertions.expectedAgent,
-          actual: response.routedAgent,
+          actual: response.routedAgent ?? '(ninguno)',
           reason: `Se esperaba ruteo a ${assertions.expectedAgent} pero fue ruteado a ${response.routedAgent}`,
         });
       }
@@ -84,7 +91,8 @@ export class AssertionEngine {
             rule: 'customCheck',
             expected: 'Validación personalizada exitosa',
             actual: 'Validación personalizada fallida',
-            reason: customResult.reason || 'Fallo en comprobación personalizada',
+            reason:
+              customResult.reason || 'Fallo en comprobación personalizada',
           });
         }
       } catch (err: any) {

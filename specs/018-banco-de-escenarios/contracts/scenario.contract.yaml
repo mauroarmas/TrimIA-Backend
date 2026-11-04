@@ -2,7 +2,9 @@ openapi: 3.0.3
 info:
   title: Scenario Evaluation Harness Contract
   version: 1.0.0
-  description: Contrato de estructura de escenarios y reportes para el banco de pruebas de TrimIA.
+  description: Contrato programático del arnés CLI (no es un endpoint HTTP desplegado).
+    Grafos reales con corpus/puertos en memoria; 80% por escenario, PASS completo,
+    WARN mixto, FAIL cero éxitos. Los errores técnicos nunca aprueban.
 paths:
   /evaluation/run:
     post:
@@ -17,7 +19,7 @@ paths:
                   type: integer
                   default: 3
                   minimum: 1
-                  maximum: 10
+                  maximum: 5
                 scenarioFilter:
                   type: string
                   description: ID opcional de escenario o patrón de nombre
@@ -28,16 +30,15 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/EvaluationReport'
-
 components:
   schemas:
     ScenarioDefinition:
       type: object
       required:
-        - id
-        - title
-        - userMessage
-        - assertions
+      - id
+      - title
+      - userMessage
+      - assertions
       properties:
         id:
           type: string
@@ -50,10 +51,14 @@ components:
           properties:
             userType:
               type: string
-              enum: [CLIENTE, EMPLEADO]
+              enum:
+              - CLIENTE
+              - EMPLEADO
             employeeRole:
               type: string
-              enum: [EMPLEADO, SUPERVISOR]
+              enum:
+              - EMPLEADO
+              - SUPERVISOR
         assertions:
           type: object
           properties:
@@ -67,7 +72,6 @@ components:
                 type: string
             expectedAgent:
               type: string
-
     EvaluationReport:
       type: object
       properties:
@@ -93,5 +97,7 @@ components:
                 type: number
               status:
                 type: string
-                enum: [PASS, WARN, FAIL]
-
+                enum:
+                - PASS
+                - WARN
+                - FAIL

@@ -1,21 +1,24 @@
 openapi: 3.0.3
 info:
   title: API de Diagnóstico Inicial y Progresión Formativa
-  description: Endpoints para la evaluación diagnóstica ágil de empleados y gobernanza de exenciones en TrimIA.
+  description: Endpoints para la evaluación diagnóstica ágil de empleados y gobernanza
+    de exenciones en TrimIA.
   version: 1.0.0
 servers:
-  - url: http://localhost:3000
-    description: Servidor de desarrollo local
-
+- url: http://localhost:3000
+  description: Servidor de desarrollo local
 paths:
   /training/diagnostic:
     get:
       tags:
-        - Diagnóstico - Empleados
+      - Diagnóstico - Empleados
       summary: Obtener el cuestionario de evaluación diagnóstica inicial para el empleado
-      description: Retorna de 5 a 8 preguntas representativas seleccionadas de las píldoras publicadas de su sector y generales, ocultando opciones correctas y explicaciones.
+      description: Entrega hasta 8 preguntas publicadas del sector/general y conserva
+        un examen privado pendiente. Repetir GET devuelve el mismo examen. Si no hay
+        preguntas retorna totalQuestions=0; no se fabrica contenido. Nunca devuelve
+        índices correctos ni explicaciones.
       security:
-        - bearerAuth: []
+      - bearerAuth: []
       responses:
         '200':
           description: Cuestionario generado con éxito
@@ -27,15 +30,16 @@ paths:
           description: El empleado ya ha completado su diagnóstico y no ha sido reiniciado
         '401':
           description: No autenticado
-
   /training/diagnostic/submit:
     post:
       tags:
-        - Diagnóstico - Empleados
+      - Diagnóstico - Empleados
       summary: Enviar respuestas de la evaluación diagnóstica inicial
-      description: Califica el examen, aplica exenciones automáticas para módulos con 100% de aciertos y actualiza la progresión formativa.
+      description: Exige exactamente todas las parejas pillId/questionId asignadas,
+        sin duplicados y con opciones válidas. Rechaza omisiones. Calificación, sesión
+        y exenciones se confirman en una transacción, con exclusión de doble entrega.
       security:
-        - bearerAuth: []
+      - bearerAuth: []
       requestBody:
         required: true
         content:
@@ -53,22 +57,22 @@ paths:
           description: Cuestionario ya completado o respuestas inválidas
         '401':
           description: No autenticado
-
   /training/supervisor/diagnostic/{employeeId}:
     get:
       tags:
-        - Diagnóstico - Supervisión
+      - Diagnóstico - Supervisión
       summary: Obtener el historial y resultado del diagnóstico de un empleado
-      description: Permite al supervisor ver el desempeño diagnóstico de un empleado de su sector.
+      description: Permite al supervisor ver el desempeño diagnóstico de un empleado
+        de su sector.
       security:
-        - bearerAuth: []
+      - bearerAuth: []
       parameters:
-        - name: employeeId
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
+      - name: employeeId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
       responses:
         '200':
           description: Detalle del diagnóstico del empleado
@@ -80,22 +84,22 @@ paths:
           description: No autorizado para supervisar el sector de este empleado
         '404':
           description: Diagnóstico o empleado no encontrado
-
   /training/supervisor/diagnostic/{employeeId}/reset:
     post:
       tags:
-        - Diagnóstico - Supervisión
+      - Diagnóstico - Supervisión
       summary: Reiniciar el diagnóstico de un empleado
-      description: Archiva el diagnóstico previo y remueve exenciones para permitir que el empleado rinda nuevamente.
+      description: Archiva el diagnóstico previo y remueve exenciones para permitir
+        que el empleado rinda nuevamente.
       security:
-        - bearerAuth: []
+      - bearerAuth: []
       parameters:
-        - name: employeeId
-          in: path
-          required: true
-          schema:
-            type: string
-            format: uuid
+      - name: employeeId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
       responses:
         '200':
           description: Diagnóstico reiniciado exitosamente
@@ -110,14 +114,12 @@ paths:
                     type: string
         '403':
           description: No autorizado para el sector del empleado
-
 components:
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
       bearerFormat: JWT
-
   schemas:
     DiagnosticQuestion:
       type: object
@@ -138,7 +140,6 @@ components:
           type: array
           items:
             type: string
-
     DiagnosticQuizResponse:
       type: object
       properties:
@@ -151,13 +152,12 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/DiagnosticQuestion'
-
     DiagnosticAnswerItem:
       type: object
       required:
-        - pillId
-        - questionId
-        - selectedOptionIndex
+      - pillId
+      - questionId
+      - selectedOptionIndex
       properties:
         pillId:
           type: string
@@ -165,17 +165,17 @@ components:
           type: integer
         selectedOptionIndex:
           type: integer
-
     SubmitDiagnosticDto:
       type: object
       required:
-        - answers
+      - answers
       properties:
         answers:
           type: array
           items:
             $ref: '#/components/schemas/DiagnosticAnswerItem'
-
+          minItems: 1
+          maxItems: 8
     ExemptedModuleItem:
       type: object
       properties:
@@ -183,7 +183,6 @@ components:
           type: string
         title:
           type: string
-
     DiagnosticResultResponse:
       type: object
       properties:
@@ -206,7 +205,6 @@ components:
             $ref: '#/components/schemas/ExemptedModuleItem'
         message:
           type: string
-
     SupervisorDiagnosticDetailResponse:
       type: object
       properties:
@@ -221,21 +219,5 @@ components:
         lastSession:
           type: object
           nullable: true
-          properties:
-            sessionId:
-              type: string
-            score:
-              type: number
-            completedAt:
-              type: string
-              format: date-time
-            totalQuestions:
-              type: integer
-            correctAnswers:
-              type: integer
-            exemptedModuleIds:
-              type: array
-              items:
-                type: string
-            isReset:
-              type: boolean
+          description: Última sesión completada, incluyendo answers con pregunta/opciones/respuesta
+            y corrección; solo supervisión autorizada.

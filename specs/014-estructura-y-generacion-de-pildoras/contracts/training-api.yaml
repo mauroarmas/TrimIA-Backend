@@ -2,14 +2,16 @@ openapi: 3.0.3
 info:
   title: TrimIA Training Module API
   version: 1.0.0
-  description: Endpoints para la estructura de capacitación, generación asistida de píldoras y seguimiento de progreso de empleados.
+  description: Endpoints para la estructura de capacitación, generación asistida de
+    píldoras y seguimiento de progreso de empleados.
 paths:
   /training/modules:
     get:
       summary: Listar módulos disponibles para el empleado autenticado
-      description: Devuelve los módulos activos asociados al sector del empleado y transversales generales, con el progreso calculado.
+      description: Devuelve los módulos activos asociados al sector del empleado y
+        transversales generales, con el progreso calculado.
       security:
-        - bearerAuth: []
+      - bearerAuth: []
       responses:
         '200':
           description: Lista de módulos y píldoras publicadas
@@ -19,11 +21,10 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/EmployeeModuleDto'
-
     post:
       summary: Crear un nuevo módulo formativo (Solo Supervisores)
       security:
-        - bearerAuth: []
+      - bearerAuth: []
       requestBody:
         required: true
         content:
@@ -39,12 +40,11 @@ paths:
                 $ref: '#/components/schemas/TrainingModuleDto'
         '403':
           description: No autorizado para el sector indicado
-
   /training/supervisor/modules:
     get:
       summary: Listar todos los módulos y píldoras (incluidos borradores) para supervisión
       security:
-        - bearerAuth: []
+      - bearerAuth: []
       responses:
         '200':
           description: Lista completa de módulos para el supervisor
@@ -54,13 +54,13 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/SupervisorModuleDto'
-
   /training/pills/generate:
     post:
       summary: Generar propuesta de píldora asistida con IA (Solo Supervisores)
-      description: Consulta el RAG y entrevistas del sector y genera una píldora estructurada en estado DRAFT.
+      description: Consulta el RAG y entrevistas del sector y genera una píldora estructurada
+        en estado DRAFT.
       security:
-        - bearerAuth: []
+      - bearerAuth: []
       requestBody:
         required: true
         content:
@@ -78,21 +78,21 @@ paths:
           description: Contexto RAG insuficiente para generar procedimiento veraz
         '403':
           description: Supervisor sin permisos para el sector del módulo
-
   /training/pills/{id}:
     get:
       summary: Obtener detalle y contenido de una píldora
       security:
-        - bearerAuth: []
+      - bearerAuth: []
       parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
       responses:
         '200':
-          description: Contenido de la píldora (si es empleado, las respuestas correctas se ocultan)
+          description: Contenido de la píldora (si es empleado, las respuestas correctas
+            se ocultan)
           content:
             application/json:
               schema:
@@ -101,17 +101,16 @@ paths:
           description: Píldora bloqueada o no accesible para el empleado
         '404':
           description: Píldora no encontrada
-
     put:
       summary: Editar borrador de píldora (Solo Supervisores)
       security:
-        - bearerAuth: []
+      - bearerAuth: []
       parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
       requestBody:
         required: true
         content:
@@ -125,18 +124,17 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PillDetailDto'
-
   /training/pills/{id}/publish:
     post:
       summary: Aprobar y publicar píldora (Solo Supervisores)
       security:
-        - bearerAuth: []
+      - bearerAuth: []
       parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
       requestBody:
         required: false
         content:
@@ -147,7 +145,8 @@ paths:
                 indexInKnowledge:
                   type: boolean
                   default: false
-                  description: Si es true, añade la píldora a la base de conocimiento general pasando por deduplicación
+                  description: Si es true, añade la píldora a la base de conocimiento
+                    general pasando por deduplicación
       responses:
         '200':
           description: Píldora publicada
@@ -155,18 +154,20 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/PillDetailDto'
-
+      description: Publica un DRAFT validado. indexing informa NOT_REQUESTED, INDEXED,
+        DUPLICATE o FAILED, con documentId/similarDocuments/mensaje según corresponda.
+        Un fallo de índice no revierte la publicación.
   /training/pills/{id}/verify:
     post:
       summary: Enviar respuestas de autoevaluación (Empleado)
       security:
-        - bearerAuth: []
+      - bearerAuth: []
       parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
       requestBody:
         required: true
         content:
@@ -174,13 +175,14 @@ paths:
             schema:
               type: object
               required:
-                - answers
+              - answers
               properties:
                 answers:
                   type: array
                   items:
                     type: integer
-                  description: Índices seleccionados para las 2 preguntas (ej. [2, 0])
+                  description: Índices seleccionados para las 2 preguntas (ej. [2,
+                    0])
       responses:
         '200':
           description: Resultado de la evaluación
@@ -188,19 +190,34 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/QuizVerificationResultDto'
-
+  /training/pills/{id}/archive:
+    post:
+      summary: Archivar una píldora conservando progreso y auditoría; retirar audio
+      security:
+      - bearerAuth: []
+      parameters:
+      - in: path
+        name: id
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '201':
+          description: Píldora archivada
+        '403':
+          description: Supervisor sin permiso sobre el área
 components:
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
       bearerFormat: JWT
-
   schemas:
     CreateModuleDto:
       type: object
       required:
-        - title
+      - title
       properties:
         title:
           type: string
@@ -212,21 +229,20 @@ components:
         orderIndex:
           type: integer
           default: 0
-
     GeneratePillDto:
       type: object
       required:
-        - moduleId
-        - topic
+      - moduleId
+      - topic
       properties:
         moduleId:
           type: string
         topic:
           type: string
-          description: Tema o procedimiento a redactar (ej. "Recepción y validación de transferencias")
+          description: Tema o procedimiento a redactar (ej. "Recepción y validación
+            de transferencias")
         additionalNotes:
           type: string
-
     UpdatePillDto:
       type: object
       properties:
@@ -240,17 +256,18 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/QuizQuestionDto'
+          minItems: 2
+          maxItems: 2
         orderIndex:
           type: integer
-
     QuizQuestionDto:
       type: object
       required:
-        - id
-        - question
-        - options
-        - correctOptionIndex
-        - explanation
+      - id
+      - question
+      - options
+      - correctOptionIndex
+      - explanation
       properties:
         id:
           type: integer
@@ -260,11 +277,13 @@ components:
           type: array
           items:
             type: string
+          minItems: 3
+          maxItems: 4
         correctOptionIndex:
           type: integer
+          minimum: 0
         explanation:
           type: string
-
     QuizVerificationResultDto:
       type: object
       properties:
@@ -281,7 +300,6 @@ components:
         nextPillId:
           type: string
           nullable: true
-
     PillDetailDto:
       type: object
       properties:
@@ -297,18 +315,22 @@ components:
           type: string
         status:
           type: string
-          enum: [DRAFT, PUBLISHED, ARCHIVED]
+          enum:
+          - DRAFT
+          - PUBLISHED
+          - ARCHIVED
         orderIndex:
           type: integer
         quiz:
           type: array
           items:
             $ref: '#/components/schemas/QuizQuestionDto'
+          minItems: 2
+          maxItems: 2
         isCompleted:
           type: boolean
         isLocked:
           type: boolean
-
     EmployeeModuleDto:
       type: object
       properties:
@@ -326,7 +348,6 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/PillDetailDto'
-
     SupervisorModuleDto:
       type: object
       properties:
@@ -341,3 +362,29 @@ components:
           type: array
           items:
             $ref: '#/components/schemas/PillDetailDto'
+    TrainingModuleDto:
+      type: object
+      required:
+      - id
+      - title
+      - isActive
+      properties:
+        id:
+          type: string
+          format: uuid
+        title:
+          type: string
+        description:
+          type: string
+          nullable: true
+        sectorId:
+          type: string
+          format: uuid
+          nullable: true
+        orderIndex:
+          type: integer
+        isActive:
+          type: boolean
+        sector:
+          type: object
+          nullable: true

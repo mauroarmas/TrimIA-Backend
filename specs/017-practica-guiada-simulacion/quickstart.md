@@ -1,5 +1,7 @@
 # Quickstart Validation Guide: Práctica Guiada y Simulación Libre
 
+> Actualización de implementación (2026-11-04): Sincronizar el esquema con prisma db push. GET /training/pills/{id}/simulations/active?mode=GUIDED|FREE permite reanudar. La autorización precede la creación/consulta; turnos/cierre verifican versión. Un fallo del evaluador deja la sesión abierta; las tres bandas se guardan por dimensión. Ver ../../docs/CONVERGENCIA_014_019.md.
+
 **Feature**: `017-practica-guiada-simulacion`  
 **Date**: 2026-10-13  
 **Status**: Ready
@@ -11,7 +13,7 @@ Este documento detalla los pasos y comandos para validar de extremo a extremo la
 ## 1. Prerrequisitos
 
 1. Backend de TrimIA en ejecución (`docker-compose up` o `npm run start:dev` en puerto 3000).
-2. Base de datos con migraciones de simulación aplicadas (`npx prisma migrate dev`).
+2. Base de datos con esquema de simulación sincronizado (`npx prisma db push`).
 3. Token de autenticación de un empleado (ej. `roberto.sosa@credimision.com`) y de un supervisor (`diego.bazan@credimision.com`).
 4. Al menos una píldora publicada en el sistema.
 

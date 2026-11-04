@@ -25,6 +25,7 @@ describe('buildRagAgentGraph', () => {
     response: null,
     context: null,
     confidence: null,
+    integrationEvidence: null,
     retrievedDocs: null,
     escalated: null,
     escalationId: null,

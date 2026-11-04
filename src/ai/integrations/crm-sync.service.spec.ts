@@ -1,8 +1,7 @@
 import { Test, TestingModule } from '@nestjs/testing';
 import { CrmSyncService } from './crm-sync.service';
-import { CRM_PORT, CrmPort, ProspectStatus } from './ports/crm.port';
+import { CRM_PORT, CrmPort } from './ports/crm.port';
 import { PrismaService } from '../../database/prisma.service';
-import { ProspectSyncStatus } from '@prisma/client';
 
 describe('CrmSyncService', () => {
   let service: CrmSyncService;
@@ -10,7 +9,9 @@ describe('CrmSyncService', () => {
   let prisma: PrismaService;
 
   const mockCrmPort = {
-    createProspect: jest.fn().mockResolvedValue({ success: true, id: 'ext-123' }),
+    createProspect: jest
+      .fn()
+      .mockResolvedValue({ success: true, id: 'p-1', remoteSynced: true }),
     searchProspect: jest.fn(),
     addFollowUp: jest.fn(),
   };
@@ -58,12 +59,9 @@ describe('CrmSyncService', () => {
     const count = await service.syncPendingProspects();
     expect(count).toBe(1);
     expect(crmPort.createProspect).toHaveBeenCalled();
-    expect(prisma.prospect.update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        where: { id: 'p-1' },
-        data: expect.objectContaining({ syncStatus: ProspectSyncStatus.SYNCED }),
-      }),
+    expect(crmPort.createProspect).toHaveBeenCalledWith(
+      expect.objectContaining({ localId: 'p-1' }),
     );
+    expect(prisma.prospect.update).not.toHaveBeenCalled();
   });
 });
-

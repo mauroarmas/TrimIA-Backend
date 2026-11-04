@@ -1,3 +1,7 @@
+import { ConversationContactService } from './conversation-contact.service';
+import { BullModule } from '@nestjs/bullmq';
+import { CrmSyncProcessor } from './crm-sync.processor';
+import { AdministrativeCreditService } from './administrative-credit.service';
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { PrismaModule } from '../../database/prisma.module';
@@ -10,8 +14,15 @@ import { N8nCrmAdapter } from './adapters/n8n-crm.adapter';
 import { CrmSyncService } from './crm-sync.service';
 
 @Module({
-  imports: [ConfigModule, PrismaModule],
+  imports: [
+    ConfigModule,
+    PrismaModule,
+    BullModule.registerQueue({ name: 'crm-sync' }),
+  ],
   providers: [
+    CrmSyncProcessor,
+    AdministrativeCreditService,
+    ConversationContactService,
     MockStockAdapter,
     MockCreditAdapter,
     N8nCrmAdapter,
@@ -33,6 +44,8 @@ import { CrmSyncService } from './crm-sync.service';
     STOCK_PORT,
     CREDIT_PORT,
     CRM_PORT,
+    AdministrativeCreditService,
+    ConversationContactService,
     MockStockAdapter,
     MockCreditAdapter,
     N8nCrmAdapter,

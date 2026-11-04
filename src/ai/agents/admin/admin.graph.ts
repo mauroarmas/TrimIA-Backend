@@ -7,8 +7,10 @@ import { createEvaluateCreditTool } from '../../integrations/tools/evaluate-cred
  */
 export function buildAdminGraph(deps: AgentGraphDeps) {
   const tools: any[] = [];
-  if (deps.creditPort) {
-    tools.push(createEvaluateCreditTool(deps.creditPort));
+  if (deps.administrativeCredit || deps.creditPort) {
+    tools.push(
+      createEvaluateCreditTool(deps.administrativeCredit ?? deps.creditPort),
+    );
   }
   return buildRagAgentGraph(
     {

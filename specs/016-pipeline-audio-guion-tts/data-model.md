@@ -1,4 +1,6 @@
-﻿# Data Model: 016 — Pipeline de Audio: Guion a 2 Voces y Síntesis TTS
+# Data Model: 016 — Pipeline de Audio: Guion a 2 Voces y Síntesis TTS
+
+> Implementación 2026-11-04: El modelo real agrega Pill.audioGenerationId para descartar trabajos obsoletos. audioDurationSeconds es Float nullable: conserva la duración medida con ffprobe. Un resultado fallido no fabrica audio ni se marca READY.
 
 **Feature**: [spec.md](./spec.md)  
 **Status**: Completed  
@@ -37,7 +39,7 @@ model Pill {
   audioStatus          AudioStatus @default(NOT_REQUESTED)
   audioScript          Json?       // { estimatedDurationSeconds: number, dialogue: [{ speaker: "SPEAKER_1"|"SPEAKER_2", text: string }] }
   audioUrl             String?     // Ruta interna o URI del archivo generado (ej. "storage/audio/pill-xxx.mp3")
-  audioDurationSeconds Int?        // Duración total calculada del audio en segundos
+  audioDurationSeconds Float?        // Duración total calculada del audio en segundos
   audioError           String?     // Mensaje descriptivo si audioStatus == AUDIO_FAILED
   audioGeneratedAt     DateTime?   // Fecha/hora de finalización exitosa de la síntesis
 

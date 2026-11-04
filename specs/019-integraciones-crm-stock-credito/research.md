@@ -1,5 +1,7 @@
 # Research: Integraciones CRM (Google Sheets vía n8n), Mock Stock Paljet y Mock Crédito Riesgo Online
 
+> Revisión de implementación 2026-11-04: la lista histórica de columnas de D3 se reemplaza por el contrato de docs/plan_de_trabajo.md §4 (hoja CRM). Ver contracts/n8n-crm-webhooks.json y src/ai/integrations/crm-sheet.mapper.ts. El flujo efectivo de D4 guarda primero en PostgreSQL, distingue remoteSynced del éxito local y reintenta el mismo ID con BullMQ. No se importaron exports a n8n ni se modificó una hoja viva.
+
 **Feature**: `019-integraciones-crm-stock-credito`  
 **Date**: 2026-10-21  
 **Status**: Completed  

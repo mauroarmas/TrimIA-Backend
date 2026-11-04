@@ -26,6 +26,9 @@ export interface TurnAiResponse {
 
 export interface GeneratedFeedback {
   band: PerformanceBand;
+  whatWentWellBand: PerformanceBand;
+  toImproveBand: PerformanceBand;
+  businessRulesBand: PerformanceBand;
   whatWentWell: string;
   toImprove: string;
   businessRules: string;

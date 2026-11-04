@@ -4,7 +4,10 @@ import {
   ForbiddenException,
   BadRequestException,
   Logger,
+  ConflictException,
 } from '@nestjs/common';
+import { TrainingService } from '../../training.service';
+import { KnowledgeService } from '../../../ai/knowledge/knowledge.service';
 import { PrismaService } from '../../../database/prisma.service';
 import { SimulationAiService } from './simulation-ai.service';
 import { StartSimulationDto } from '../dto/start-simulation.dto';
@@ -22,19 +25,19 @@ export class SimulationService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly simulationAi: SimulationAiService,
+    private readonly training: TrainingService,
+    private readonly knowledge: KnowledgeService,
   ) {}
 
   /**
    * Inicia una nueva sesión de simulación para un empleado en una píldora dada.
    */
-  async startSimulation(employeeId: string, pillId: string, dto: StartSimulationDto) {
-    const pill = await this.prisma.pill.findUnique({
-      where: { id: pillId },
-      select: { id: true, title: true, objective: true, content: true },
-    });
-    if (!pill) {
-      throw new NotFoundException('Píldora formativa no encontrada');
-    }
+  async startSimulation(
+    employeeId: string,
+    pillId: string,
+    dto: StartSimulationDto,
+  ) {
+    const { pill } = await this.training.getAccessiblePill(employeeId, pillId);
 
     // 1. Generar escenario y objetivos mediante IA
     const scenario = await this.simulationAi.generateScenario({
@@ -97,8 +100,17 @@ export class SimulationService {
   /**
    * Envía un mensaje como empleado y genera la respuesta del cliente simulado (con evaluación en vivo en modo guiado).
    */
-  async sendMessage(employeeId: string, sessionId: string, dto: SendSimulationMessageDto) {
-    const session = await this.prisma.simulationSession.findUnique({
+  async sendMessage(
+    employeeId: string,
+    sessionId: string,
+    dto: SendSimulationMessageDto,
+  ) {
+    const content = dto.content?.trim();
+    if (!content || content.length < 2)
+      throw new BadRequestException(
+        'El mensaje debe tener al menos 2 caracteres.',
+      );
+    let session = await this.prisma.simulationSession.findUnique({
       where: { id: sessionId },
       include: {
         goals: { orderBy: { order: 'asc' } },
@@ -110,8 +122,11 @@ export class SimulationService {
       throw new NotFoundException('Sesión de simulación no encontrada');
     }
     if (session.employeeId !== employeeId) {
-      throw new ForbiddenException('No tienes acceso a esta sesión de simulación');
+      throw new ForbiddenException(
+        'No tienes acceso a esta sesión de simulación',
+      );
     }
+    session = await this.expireSession(session);
     if (session.status !== SimulationStatus.IN_PROGRESS) {
       throw new BadRequestException('La sesión de simulación ya fue concluida');
     }
@@ -128,18 +143,34 @@ export class SimulationService {
         sender: m.sender,
         content: m.content,
       })),
-      latestEmployeeMessage: dto.content,
-      pendingGoals: pendingGoals.map((g) => ({ id: g.id, description: g.description })),
+      latestEmployeeMessage: content,
+      pendingGoals: pendingGoals.map((g) => ({
+        id: g.id,
+        description: g.description,
+      })),
     });
 
     // 2. Persistir ambos mensajes y actualizar objetivos cumplidos en transacción
     return this.prisma.$transaction(async (tx) => {
+      const claimed = await tx.simulationSession.updateMany({
+        where: {
+          id: sessionId,
+          employeeId,
+          status: SimulationStatus.IN_PROGRESS,
+          version: session.version,
+        },
+        data: { version: { increment: 1 } },
+      });
+      if (claimed.count !== 1)
+        throw new ConflictException(
+          'La sesión cambió mientras respondía. Volvé a cargarla.',
+        );
       // Guardar mensaje del empleado
       const empMsg = await tx.simulationMessage.create({
         data: {
           sessionId,
           sender: SimulationSender.EMPLOYEE,
-          content: dto.content,
+          content,
           turnIndex: currentTurn,
         },
       });
@@ -152,9 +183,15 @@ export class SimulationService {
         aiResponse.completedGoalEvaluations.length > 0
       ) {
         for (const evalItem of aiResponse.completedGoalEvaluations) {
-          if (evalItem.isCompleted) {
-            await tx.simulationGoal.update({
-              where: { id: evalItem.goalId },
+          if (
+            evalItem.isCompleted &&
+            pendingGoals.some((goal) => goal.id === evalItem.goalId) &&
+            evalItem.evidence?.trim() &&
+            content.includes(evalItem.evidence.trim()) &&
+            !newlyCompletedGoalIds.includes(evalItem.goalId)
+          ) {
+            await tx.simulationGoal.updateMany({
+              where: { id: evalItem.goalId, sessionId, isCompleted: false },
               data: {
                 isCompleted: true,
                 completedAtTurn: currentTurn,
@@ -174,7 +211,10 @@ export class SimulationService {
           content: aiResponse.customerResponse,
           turnIndex: currentTurn + 1,
           emotion: aiResponse.emotion,
-          completedGoalIds: newlyCompletedGoalIds.length > 0 ? newlyCompletedGoalIds : undefined,
+          completedGoalIds:
+            newlyCompletedGoalIds.length > 0
+              ? newlyCompletedGoalIds
+              : undefined,
         },
       });
 
@@ -212,11 +252,14 @@ export class SimulationService {
     if (!session) {
       throw new NotFoundException('Sesión de simulación no encontrada');
     }
-    if (session.employeeId !== userId && !isSupervisor) {
-      throw new ForbiddenException('No tienes permisos para consultar esta sesión');
+    if (session.employeeId !== userId) {
+      if (!isSupervisor)
+        throw new ForbiddenException(
+          'No tienes permisos para consultar esta sesión',
+        );
+      await this.assertSupervisor(userId, session.employeeId);
     }
-
-    return session;
+    return this.expireSession(session);
   }
 
   /**
@@ -226,7 +269,7 @@ export class SimulationService {
     const session = await this.prisma.simulationSession.findUnique({
       where: { id: sessionId },
       include: {
-        pill: { select: { title: true, objective: true } },
+        pill: { include: { module: { include: { sector: true } } } },
         messages: { orderBy: { turnIndex: 'asc' } },
         feedback: true,
       },
@@ -242,7 +285,14 @@ export class SimulationService {
       return session.feedback;
     }
 
-    const employeeMessages = session.messages.filter((m) => m.sender === SimulationSender.EMPLOYEE);
+    const current = await this.expireSession(session);
+    if (current.status !== SimulationStatus.IN_PROGRESS)
+      throw new BadRequestException(
+        'Esta práctica ya no está activa. Iniciá otra.',
+      );
+    const employeeMessages = session.messages.filter(
+      (m) => m.sender === SimulationSender.EMPLOYEE,
+    );
     if (employeeMessages.length < 2) {
       throw new BadRequestException(
         'Debes intercambiar al menos 2 mensajes con el cliente simulado antes de finalizar la práctica',
@@ -254,50 +304,135 @@ export class SimulationService {
       scenarioTitle: session.scenarioTitle,
       customerProfile: session.customerProfile,
       pillObjective: session.pill.objective,
+      pillContent: session.pill.content,
+      sector: session.pill.module.sector?.name ?? 'General',
       conversationTranscript: session.messages.map((m) => ({
         sender: m.sender,
         content: m.content,
       })),
     });
 
-    return this.prisma.$transaction(async (tx) => {
-      const feedback = await tx.simulationFeedback.create({
-        data: {
-          sessionId,
-          band: feedbackData.band,
-          whatWentWell: feedbackData.whatWentWell,
-          toImprove: feedbackData.toImprove,
-          businessRules: feedbackData.businessRules,
-          summary: feedbackData.summary,
-        },
+    try {
+      return await this.prisma.$transaction(async (tx) => {
+        const claimed = await tx.simulationSession.updateMany({
+          where: {
+            id: sessionId,
+            employeeId,
+            status: SimulationStatus.IN_PROGRESS,
+            version: session.version,
+          },
+          data: {
+            status: SimulationStatus.COMPLETED,
+            completedAt: new Date(),
+            version: { increment: 1 },
+          },
+        });
+        if (claimed.count !== 1)
+          throw new ConflictException(
+            'La sesión cambió durante la evaluación. Volvé a intentarlo.',
+          );
+        return tx.simulationFeedback.create({
+          data: { sessionId, ...feedbackData },
+        });
       });
-
-      await tx.simulationSession.update({
+    } catch (error) {
+      if (!(error instanceof ConflictException)) throw error;
+      const latest = await this.prisma.simulationSession.findUnique({
         where: { id: sessionId },
-        data: {
-          status: SimulationStatus.COMPLETED,
-          completedAt: new Date(),
-        },
+        include: { feedback: true },
       });
+      if (latest?.status === SimulationStatus.COMPLETED && latest.feedback)
+        return latest.feedback;
+      throw error;
+    }
+  }
 
-      return feedback;
+  private async assertSupervisor(supervisorId: string, employeeId: string) {
+    const employee = await this.prisma.employee.findUnique({
+      where: { id: employeeId },
+      include: { sector: true },
     });
+    if (!employee) throw new NotFoundException('Empleado no encontrado');
+    await this.knowledge.assertPuedeEscribir(
+      supervisorId,
+      employee.sector?.agentType ?? null,
+    );
+  }
+
+  private async expireSession<
+    T extends {
+      id: string;
+      status: SimulationStatus;
+      version: number;
+      createdAt: Date;
+      messages: { createdAt: Date }[];
+    },
+  >(session: T): Promise<T> {
+    const last = session.messages.at(-1)?.createdAt ?? session.createdAt;
+    if (
+      session.status === SimulationStatus.IN_PROGRESS &&
+      Date.now() - last.getTime() >= 24 * 3600000
+    ) {
+      const updated = await this.prisma.simulationSession.updateMany({
+        where: {
+          id: session.id,
+          status: SimulationStatus.IN_PROGRESS,
+          version: session.version,
+        },
+        data: { status: SimulationStatus.ABANDONED, version: { increment: 1 } },
+      });
+      if (updated.count === 1)
+        return { ...session, status: SimulationStatus.ABANDONED };
+      throw new ConflictException('La sesión cambió. Volvé a cargarla.');
+    }
+    return session;
+  }
+
+  async getActiveSession(
+    employeeId: string,
+    pillId: string,
+    mode: SimulationMode,
+  ) {
+    await this.training.getAccessiblePill(employeeId, pillId);
+    if (!Object.values(SimulationMode).includes(mode))
+      throw new BadRequestException('Modo de práctica inválido');
+    const sessions = await this.prisma.simulationSession.findMany({
+      where: { employeeId, pillId, mode, status: SimulationStatus.IN_PROGRESS },
+      include: {
+        messages: { orderBy: { turnIndex: 'asc' } },
+        goals: { orderBy: { order: 'asc' } },
+        feedback: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    let active = null;
+    for (const session of sessions) {
+      const current = await this.expireSession(session);
+      if (!active && current.status === SimulationStatus.IN_PROGRESS)
+        active = current;
+    }
+    return active;
   }
 
   /**
    * Obtiene el listado de simulaciones de un empleado para auditoría del supervisor.
    */
-  async getEmployeeSimulations(employeeId: string) {
+  async getEmployeeSimulations(supervisorId: string, employeeId: string) {
+    await this.assertSupervisor(supervisorId, employeeId);
     const sessions = await this.prisma.simulationSession.findMany({
       where: { employeeId },
       include: {
         pill: { select: { id: true, title: true } },
         feedback: { select: { band: true, summary: true, createdAt: true } },
+        messages: { orderBy: { turnIndex: 'desc' }, take: 1 },
       },
       orderBy: { createdAt: 'desc' },
     });
 
-    return sessions.map((s) => ({
+    const current = await Promise.all(
+      sessions.map((s) => this.expireSession(s)),
+    );
+    return current.map((s) => ({
       id: s.id,
       pillId: s.pillId,
       pillTitle: s.pill.title,

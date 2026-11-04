@@ -1,5 +1,10 @@
-import { BadRequestException, ForbiddenException, NotFoundException } from '@nestjs/common';
-import { AgentType, Audience, PillStatus, TrainingProgressStatus } from '@prisma/client';
+import { BadRequestException, ForbiddenException } from '@nestjs/common';
+import {
+  AgentType,
+  Audience,
+  PillStatus,
+  TrainingProgressStatus,
+} from '@prisma/client';
 import { TrainingService } from './training.service';
 
 describe('TrainingService', () => {
@@ -19,7 +24,11 @@ describe('TrainingService', () => {
       employeeProgress: {
         findMany: jest.fn().mockResolvedValue([]),
         findUnique: jest.fn().mockResolvedValue(null),
-        upsert: jest.fn().mockImplementation(({ create }) => Promise.resolve({ id: 'prog-1', ...create })),
+        upsert: jest
+          .fn()
+          .mockImplementation(({ create }) =>
+            Promise.resolve({ id: 'prog-1', ...create }),
+          ),
         updateMany: jest.fn().mockResolvedValue({ count: 2 }),
       },
       trainingModule: {
@@ -29,30 +38,64 @@ describe('TrainingService', () => {
           sectorId: 'sector-cobranzas',
           sector: { id: 'sector-cobranzas', agentType: AgentType.COLLECTIONS },
         }),
-        create: jest.fn().mockImplementation(({ data }) => Promise.resolve({ id: 'mod-new', ...data })),
+        create: jest
+          .fn()
+          .mockImplementation(({ data }) =>
+            Promise.resolve({ id: 'mod-new', ...data }),
+          ),
         findMany: jest.fn().mockResolvedValue([]),
       },
       sector: {
-        findUnique: jest.fn().mockResolvedValue({ id: 'sector-cobranzas', agentType: AgentType.COLLECTIONS }),
+        findUnique: jest.fn().mockResolvedValue({
+          id: 'sector-cobranzas',
+          agentType: AgentType.COLLECTIONS,
+        }),
       },
       diagnosticSession: {
         findFirst: jest.fn().mockResolvedValue(null),
-        create: jest.fn().mockImplementation(({ data }) => Promise.resolve({ id: 'session-1', ...data })),
-        update: jest.fn().mockImplementation(({ data }) => Promise.resolve({ id: 'session-1', ...data })),
+        create: jest
+          .fn()
+          .mockImplementation(({ data }) =>
+            Promise.resolve({ id: 'session-1', ...data }),
+          ),
+        update: jest
+          .fn()
+          .mockImplementation(({ data }) =>
+            Promise.resolve({ id: 'session-1', ...data }),
+          ),
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       },
       pill: {
+        updateMany: jest.fn().mockResolvedValue({ count: 1 }),
         findMany: jest.fn().mockResolvedValue([]),
         findFirst: jest.fn().mockResolvedValue(null),
-        create: jest.fn().mockImplementation(({ data }) => Promise.resolve({ id: 'pill-1', ...data })),
+        create: jest
+          .fn()
+          .mockImplementation(({ data }) =>
+            Promise.resolve({ id: 'pill-1', ...data }),
+          ),
         findUnique: jest.fn().mockResolvedValue({
           id: 'pill-1',
           moduleId: 'mod-1',
           title: 'Píldora Inicial',
           objective: 'Objetivo de prueba',
-          content: 'Pasos...',
+          content:
+            '### Paso 1: Recibir\n\nRecibir.\n\n### Paso 2: Revisar\n\nRevisar.\n\n### Paso 3: Derivar\n\nDerivar.',
           quiz: [
-            { id: 1, question: 'P1', options: ['O1', 'O2'], correctOptionIndex: 0, explanation: 'Exp1' },
-            { id: 2, question: 'P2', options: ['O1', 'O2'], correctOptionIndex: 1, explanation: 'Exp2' },
+            {
+              id: 1,
+              question: 'P1',
+              options: ['O1', 'O2', 'O3'],
+              correctOptionIndex: 0,
+              explanation: 'Exp1',
+            },
+            {
+              id: 2,
+              question: 'P2',
+              options: ['O1', 'O2', 'O3'],
+              correctOptionIndex: 1,
+              explanation: 'Exp2',
+            },
           ],
           status: PillStatus.DRAFT,
           orderIndex: 0,
@@ -62,32 +105,71 @@ describe('TrainingService', () => {
             sector: { agentType: AgentType.COLLECTIONS },
           },
         }),
-        update: jest.fn().mockImplementation(({ data }) => Promise.resolve({ id: 'pill-1', ...data })),
+        update: jest
+          .fn()
+          .mockImplementation(({ data }) =>
+            Promise.resolve({ id: 'pill-1', ...data }),
+          ),
       },
     };
 
+    mockPrisma.pillAudit = { create: jest.fn().mockResolvedValue({}) };
+    mockPrisma.$transaction = jest.fn(async (fn) => fn(mockPrisma));
+
     mockKnowledge = {
       assertPuedeEscribir: jest.fn().mockResolvedValue(undefined),
-      ingest: jest.fn().mockResolvedValue({ documentId: 'doc-created', chunks: 2 }),
+      ingest: jest
+        .fn()
+        .mockResolvedValue({ documentId: 'doc-created', chunks: 2 }),
     };
 
     mockGenerator = {
-          generateAudioScript: jest.fn().mockResolvedValue({ title: 'test', estimatedDurationSeconds: 60, dialogue: [] }),
-    generatePillProposal: jest.fn().mockResolvedValue({
+      generateAudioScript: jest.fn().mockResolvedValue({
+        title: 'test',
+        estimatedDurationSeconds: 60,
+        dialogue: [
+          { speaker: 'SPEAKER_1', text: 'Recibir el comprobante' },
+          { speaker: 'SPEAKER_2', text: 'Revisar según el procedimiento' },
+        ],
+      }),
+      generatePillProposal: jest.fn().mockResolvedValue({
         title: 'Gestión de Mora Temprana',
         objective: 'Contactar al cliente antes del vencimiento',
-        content: '### Paso 1: Revisar cuota',
+        content:
+          '### Paso 1: Revisar cuota\n\nRevisar.\n\n### Paso 2: Contactar\n\nContactar.\n\n### Paso 3: Registrar\n\nRegistrar.',
         quiz: [
-          { id: 1, question: '¿Cuándo llamar?', options: ['3 días antes', 'El mismo día'], correctOptionIndex: 0, explanation: 'Anticipación' },
-          { id: 2, question: '¿Qué pedir?', options: ['Aviso de pago', 'Comprobante'], correctOptionIndex: 1, explanation: 'Cotejo' },
+          {
+            id: 1,
+            question: '¿Cuándo llamar?',
+            options: ['3 días antes', 'El mismo día', 'Al mes siguiente'],
+            correctOptionIndex: 0,
+            explanation: 'Anticipación',
+          },
+          {
+            id: 2,
+            question: '¿Qué pedir?',
+            options: ['Aviso de pago', 'Comprobante', 'Nada'],
+            correctOptionIndex: 1,
+            explanation: 'Cotejo',
+          },
         ],
       }),
     };
 
-    
-    const mockAudioStorage = { saveAudio: jest.fn(), getAudioMetadata: jest.fn(), createAudioStream: jest.fn() } as any;
+    const mockAudioStorage = {
+      saveAudio: jest.fn(),
+      getAudioMetadata: jest.fn(),
+      createAudioStream: jest.fn(),
+      deleteAudio: jest.fn(),
+    } as any;
     const mockAudioQueue = { add: jest.fn() } as any;
-    service = new TrainingService(mockPrisma, mockKnowledge, mockGenerator, mockAudioStorage, mockAudioQueue);
+    service = new TrainingService(
+      mockPrisma,
+      mockKnowledge,
+      mockGenerator,
+      mockAudioStorage,
+      mockAudioQueue,
+    );
   });
 
   describe('generatePillDraft (US1)', () => {
@@ -97,8 +179,15 @@ describe('TrainingService', () => {
         topic: 'Gestión de mora',
       });
 
-      expect(mockKnowledge.assertPuedeEscribir).toHaveBeenCalledWith('supervisor-1', AgentType.COLLECTIONS);
-      expect(mockGenerator.generatePillProposal).toHaveBeenCalledWith('Gestión de mora', 'sector-cobranzas', undefined);
+      expect(mockKnowledge.assertPuedeEscribir).toHaveBeenCalledWith(
+        'supervisor-1',
+        AgentType.COLLECTIONS,
+      );
+      expect(mockGenerator.generatePillProposal).toHaveBeenCalledWith(
+        'Gestión de mora',
+        'sector-cobranzas',
+        undefined,
+      );
       expect(mockPrisma.pill.create).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
@@ -117,7 +206,10 @@ describe('TrainingService', () => {
       );
 
       await expect(
-        service.generatePillDraft('supervisor-ajeno', { moduleId: 'mod-1', topic: 'Gestión de mora' }),
+        service.generatePillDraft('supervisor-ajeno', {
+          moduleId: 'mod-1',
+          topic: 'Gestión de mora',
+        }),
       ).rejects.toThrow(ForbiddenException);
 
       expect(mockGenerator.generatePillProposal).not.toHaveBeenCalled();
@@ -130,7 +222,10 @@ describe('TrainingService', () => {
         title: 'Nuevo Título Editado',
       });
 
-      expect(mockKnowledge.assertPuedeEscribir).toHaveBeenCalledWith('supervisor-1', AgentType.COLLECTIONS);
+      expect(mockKnowledge.assertPuedeEscribir).toHaveBeenCalledWith(
+        'supervisor-1',
+        AgentType.COLLECTIONS,
+      );
       expect(mockPrisma.pill.update).toHaveBeenCalled();
       expect(result.title).toBe('Nuevo Título Editado');
     });
@@ -143,16 +238,23 @@ describe('TrainingService', () => {
       });
 
       await expect(
-        service.updatePill('supervisor-1', 'pill-1', { title: 'Intento de edición' }),
+        service.updatePill('supervisor-1', 'pill-1', {
+          title: 'Intento de edición',
+        }),
       ).rejects.toThrow(BadRequestException);
     });
   });
 
   describe('publishPill (US2)', () => {
     it('debe publicar la píldora y registrar publishedById y publishedAt', async () => {
-      const result = await service.publishPill('supervisor-1', 'pill-1', { indexInKnowledge: false });
+      const result = await service.publishPill('supervisor-1', 'pill-1', {
+        indexInKnowledge: false,
+      });
 
-      expect(mockKnowledge.assertPuedeEscribir).toHaveBeenCalledWith('supervisor-1', AgentType.COLLECTIONS);
+      expect(mockKnowledge.assertPuedeEscribir).toHaveBeenCalledWith(
+        'supervisor-1',
+        AgentType.COLLECTIONS,
+      );
       expect(mockPrisma.pill.update).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
@@ -166,7 +268,9 @@ describe('TrainingService', () => {
     });
 
     it('debe ingresar la píldora al corpus RAG si indexInKnowledge es true', async () => {
-      await service.publishPill('supervisor-1', 'pill-1', { indexInKnowledge: true });
+      await service.publishPill('supervisor-1', 'pill-1', {
+        indexInKnowledge: true,
+      });
 
       expect(mockKnowledge.ingest).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -186,8 +290,20 @@ describe('TrainingService', () => {
           title: 'Cobranzas',
           sectorId: 'sector-cobranzas',
           pills: [
-            { id: 'pill-1', title: 'Pill 1', objective: 'Obj 1', orderIndex: 0, status: PillStatus.PUBLISHED },
-            { id: 'pill-2', title: 'Pill 2', objective: 'Obj 2', orderIndex: 1, status: PillStatus.PUBLISHED },
+            {
+              id: 'pill-1',
+              title: 'Pill 1',
+              objective: 'Obj 1',
+              orderIndex: 0,
+              status: PillStatus.PUBLISHED,
+            },
+            {
+              id: 'pill-2',
+              title: 'Pill 2',
+              objective: 'Obj 2',
+              orderIndex: 1,
+              status: PillStatus.PUBLISHED,
+            },
           ],
         },
       ]);
@@ -212,8 +328,20 @@ describe('TrainingService', () => {
           title: 'Cobranzas',
           sectorId: 'sector-cobranzas',
           pills: [
-            { id: 'pill-1', title: 'Pill 1', objective: 'Obj 1', orderIndex: 0, status: PillStatus.PUBLISHED },
-            { id: 'pill-2', title: 'Pill 2', objective: 'Obj 2', orderIndex: 1, status: PillStatus.PUBLISHED },
+            {
+              id: 'pill-1',
+              title: 'Pill 1',
+              objective: 'Obj 1',
+              orderIndex: 0,
+              status: PillStatus.PUBLISHED,
+            },
+            {
+              id: 'pill-2',
+              title: 'Pill 2',
+              objective: 'Obj 2',
+              orderIndex: 1,
+              status: PillStatus.PUBLISHED,
+            },
           ],
         },
       ]);
@@ -238,8 +366,20 @@ describe('TrainingService', () => {
           sectorId: 'sector-cobranzas',
           sector: { name: 'Cobranzas' },
           pills: [
-            { id: 'pill-1', title: 'Pill 1', objective: 'Obj 1', orderIndex: 0, status: PillStatus.PUBLISHED },
-            { id: 'pill-2', title: 'Pill 2', objective: 'Obj 2', orderIndex: 1, status: PillStatus.PUBLISHED },
+            {
+              id: 'pill-1',
+              title: 'Pill 1',
+              objective: 'Obj 1',
+              orderIndex: 0,
+              status: PillStatus.PUBLISHED,
+            },
+            {
+              id: 'pill-2',
+              title: 'Pill 2',
+              objective: 'Obj 2',
+              orderIndex: 1,
+              status: PillStatus.PUBLISHED,
+            },
           ],
         },
       ]);
@@ -269,7 +409,13 @@ describe('TrainingService', () => {
         status: PillStatus.PUBLISHED,
         orderIndex: 0,
         quiz: [
-          { id: 1, question: 'Q1', options: ['A', 'B'], correctOptionIndex: 1, explanation: 'Exp secret' },
+          {
+            id: 1,
+            question: 'Q1',
+            options: ['A', 'B', 'C'],
+            correctOptionIndex: 1,
+            explanation: 'Exp secret',
+          },
         ],
         module: { sectorId: 'sector-cobranzas' },
       });
@@ -291,7 +437,9 @@ describe('TrainingService', () => {
         module: { sectorId: 'sector-ventas' },
       });
 
-      await expect(service.getEmployeePill('emp-1', 'pill-ventas')).rejects.toThrow(ForbiddenException);
+      await expect(
+        service.getEmployeePill('emp-1', 'pill-ventas'),
+      ).rejects.toThrow(ForbiddenException);
     });
 
     it('debe permitir al supervisor acceder a pildoras de otro sector', async () => {
@@ -305,7 +453,15 @@ describe('TrainingService', () => {
         moduleId: 'mod-cobranzas',
         status: PillStatus.PUBLISHED,
         orderIndex: 1,
-        quiz: [{ id: 1, question: 'Q', options: ['A'], correctOptionIndex: 0, explanation: 'E' }],
+        quiz: [
+          {
+            id: 1,
+            question: 'Q',
+            options: ['A'],
+            correctOptionIndex: 0,
+            explanation: 'E',
+          },
+        ],
         module: { sectorId: 'sector-cobranzas', sector: { name: 'Cobranzas' } },
       });
 
@@ -322,9 +478,22 @@ describe('TrainingService', () => {
         moduleId: 'mod-1',
         status: PillStatus.PUBLISHED,
         orderIndex: 0,
+        module: { sectorId: 'sector-cobranzas', isActive: true },
         quiz: [
-          { id: 1, question: 'Q1', options: ['A', 'B'], correctOptionIndex: 0, explanation: 'Regla 1' },
-          { id: 2, question: 'Q2', options: ['A', 'B'], correctOptionIndex: 1, explanation: 'Regla 2' },
+          {
+            id: 1,
+            question: 'Q1',
+            options: ['A', 'B', 'C'],
+            correctOptionIndex: 0,
+            explanation: 'Regla 1',
+          },
+          {
+            id: 2,
+            question: 'Q2',
+            options: ['A', 'B', 'C'],
+            correctOptionIndex: 1,
+            explanation: 'Regla 2',
+          },
         ],
       });
 
@@ -335,7 +504,9 @@ describe('TrainingService', () => {
       expect(result.explanations).toHaveLength(2);
       expect(mockPrisma.employeeProgress.upsert).toHaveBeenCalledWith(
         expect.objectContaining({
-          create: expect.objectContaining({ status: TrainingProgressStatus.IN_PROGRESS }),
+          create: expect.objectContaining({
+            status: TrainingProgressStatus.IN_PROGRESS,
+          }),
         }),
       );
     });
@@ -346,9 +517,22 @@ describe('TrainingService', () => {
         moduleId: 'mod-1',
         status: PillStatus.PUBLISHED,
         orderIndex: 0,
+        module: { sectorId: 'sector-cobranzas', isActive: true },
         quiz: [
-          { id: 1, question: 'Q1', options: ['A', 'B'], correctOptionIndex: 0, explanation: 'Regla 1' },
-          { id: 2, question: 'Q2', options: ['A', 'B'], correctOptionIndex: 1, explanation: 'Regla 2' },
+          {
+            id: 1,
+            question: 'Q1',
+            options: ['A', 'B', 'C'],
+            correctOptionIndex: 0,
+            explanation: 'Regla 1',
+          },
+          {
+            id: 2,
+            question: 'Q2',
+            options: ['A', 'B', 'C'],
+            correctOptionIndex: 1,
+            explanation: 'Regla 2',
+          },
         ],
       });
       mockPrisma.pill.findFirst.mockResolvedValueOnce({ id: 'pill-2' }); // Siguiente píldora
@@ -360,7 +544,9 @@ describe('TrainingService', () => {
       expect(result.nextPillId).toBe('pill-2');
       expect(mockPrisma.employeeProgress.upsert).toHaveBeenCalledWith(
         expect.objectContaining({
-          create: expect.objectContaining({ status: TrainingProgressStatus.COMPLETED }),
+          create: expect.objectContaining({
+            status: TrainingProgressStatus.COMPLETED,
+          }),
         }),
       );
     });
@@ -377,8 +563,20 @@ describe('TrainingService', () => {
               id: 'pill-1',
               title: 'Píldora 1',
               quiz: [
-                { id: 1, question: '¿Q1?', options: ['A', 'B'], correctOptionIndex: 0, explanation: 'Exp 1' },
-                { id: 2, question: '¿Q2?', options: ['A', 'B'], correctOptionIndex: 1, explanation: 'Exp 2' },
+                {
+                  id: 1,
+                  question: '¿Q1?',
+                  options: ['A', 'B', 'C'],
+                  correctOptionIndex: 0,
+                  explanation: 'Exp 1',
+                },
+                {
+                  id: 2,
+                  question: '¿Q2?',
+                  options: ['A', 'B', 'C'],
+                  correctOptionIndex: 1,
+                  explanation: 'Exp 2',
+                },
               ],
             },
           ],
@@ -391,7 +589,13 @@ describe('TrainingService', () => {
               id: 'pill-2',
               title: 'Píldora 2',
               quiz: [
-                { id: 1, question: '¿Q3?', options: ['A', 'B'], correctOptionIndex: 0, explanation: 'Exp 3' },
+                {
+                  id: 1,
+                  question: '¿Q3?',
+                  options: ['A', 'B', 'C'],
+                  correctOptionIndex: 0,
+                  explanation: 'Exp 3',
+                },
               ],
             },
           ],
@@ -417,9 +621,12 @@ describe('TrainingService', () => {
       mockPrisma.diagnosticSession.findFirst.mockResolvedValueOnce({
         id: 'session-prev',
         isReset: false,
+        completedAt: new Date(),
       });
 
-      await expect(service.getDiagnosticQuestions('emp-1')).rejects.toThrow(BadRequestException);
+      await expect(service.getDiagnosticQuestions('emp-1')).rejects.toThrow(
+        BadRequestException,
+      );
     });
   });
 
@@ -434,7 +641,12 @@ describe('TrainingService', () => {
               title: 'Píldora 1',
               module: { title: 'Módulo 1' },
               quiz: [
-                { id: 1, question: 'Q1', options: ['A', 'B'], correctOptionIndex: 0 },
+                {
+                  id: 1,
+                  question: 'Q1',
+                  options: ['A', 'B', 'C'],
+                  correctOptionIndex: 0,
+                },
               ],
             },
             {
@@ -443,7 +655,12 @@ describe('TrainingService', () => {
               title: 'Píldora 2',
               module: { title: 'Módulo 2' },
               quiz: [
-                { id: 1, question: 'Q2', options: ['A', 'B'], correctOptionIndex: 1 },
+                {
+                  id: 1,
+                  question: 'Q2',
+                  options: ['A', 'B', 'C'],
+                  correctOptionIndex: 1,
+                },
               ],
             },
           ]);
@@ -454,6 +671,30 @@ describe('TrainingService', () => {
         return Promise.resolve([]);
       });
 
+      mockPrisma.diagnosticSession.findFirst.mockResolvedValue({
+        id: 'session-1',
+        completedAt: null,
+        questionSet: [
+          {
+            pillId: 'pill-1',
+            questionId: 1,
+            moduleId: 'mod-1',
+            moduleTitle: 'Módulo 1',
+            sectorId: 'sector-cobranzas',
+            options: ['A', 'B', 'C'],
+            correctOptionIndex: 0,
+          },
+          {
+            pillId: 'pill-2',
+            questionId: 1,
+            moduleId: 'mod-2',
+            moduleTitle: 'Módulo 2',
+            sectorId: 'sector-cobranzas',
+            options: ['A', 'B', 'C'],
+            correctOptionIndex: 1,
+          },
+        ],
+      });
       const submission = {
         answers: [
           { pillId: 'pill-1', questionId: 1, selectedOptionIndex: 0 }, // Correcto (100% en mod-1)
@@ -466,8 +707,12 @@ describe('TrainingService', () => {
       expect(result.score).toBe(50);
       expect(result.totalQuestions).toBe(2);
       expect(result.correctAnswers).toBe(1);
-      expect(result.exemptedModules).toEqual([{ id: 'mod-1', title: 'Módulo 1' }]);
-      expect(result.pendingModules).toEqual([{ id: 'mod-2', title: 'Módulo 2' }]);
+      expect(result.exemptedModules).toEqual([
+        { id: 'mod-1', title: 'Módulo 1' },
+      ]);
+      expect(result.pendingModules).toEqual([
+        { id: 'mod-2', title: 'Módulo 2' },
+      ]);
 
       expect(mockPrisma.employeeProgress.upsert).toHaveBeenCalledWith(
         expect.objectContaining({
@@ -476,7 +721,15 @@ describe('TrainingService', () => {
           }),
         }),
       );
-      expect(mockPrisma.diagnosticSession.create).toHaveBeenCalled();
+      expect(mockPrisma.diagnosticSession.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({
+            score: 50,
+            correctAnswers: 1,
+            completedAt: expect.any(Date),
+          }),
+        }),
+      );
     });
   });
 
@@ -493,7 +746,10 @@ describe('TrainingService', () => {
         },
       ]);
       mockPrisma.employeeProgress.findMany.mockResolvedValueOnce([
-        { pillId: 'pill-1', status: TrainingProgressStatus.EXEMPTED_BY_DIAGNOSTIC },
+        {
+          pillId: 'pill-1',
+          status: TrainingProgressStatus.EXEMPTED_BY_DIAGNOSTIC,
+        },
       ]);
 
       const modules = await service.getEmployeeModules('emp-1');
@@ -513,7 +769,15 @@ describe('TrainingService', () => {
         content: 'Procedimiento operativo...',
         status: PillStatus.PUBLISHED,
         orderIndex: 0,
-        quiz: [{ id: 1, question: 'Q', options: ['A', 'B'], correctOptionIndex: 0, explanation: 'Exp' }],
+        quiz: [
+          {
+            id: 1,
+            question: 'Q',
+            options: ['A', 'B', 'C'],
+            correctOptionIndex: 0,
+            explanation: 'Exp',
+          },
+        ],
         module: { sectorId: 'sector-cobranzas' },
       });
       mockPrisma.employeeProgress.findUnique.mockResolvedValueOnce({
@@ -546,15 +810,21 @@ describe('TrainingService', () => {
         isReset: false,
       });
 
-      const detail = await service.getSupervisorEmployeeDiagnostic('sup-1', 'emp-1');
+      const detail = await service.getSupervisorEmployeeDiagnostic(
+        'sup-1',
+        'emp-1',
+      );
 
-      expect(mockKnowledge.assertPuedeEscribir).toHaveBeenCalledWith('sup-1', AgentType.COLLECTIONS);
+      expect(mockKnowledge.assertPuedeEscribir).toHaveBeenCalledWith(
+        'sup-1',
+        AgentType.COLLECTIONS,
+      );
       expect(detail.employeeName).toBe('Roberto Sosa');
       expect(detail.hasCompletedDiagnostic).toBe(true);
       expect(detail.lastSession?.score).toBe(100);
     });
 
-    it('debe permitir al supervisor auditar el diagnostico de empleados de otro sector', async () => {
+    it('debe rechazar al supervisor ajeno al sector del diagnóstico', async () => {
       mockPrisma.employee.findUnique
         .mockResolvedValueOnce({
           id: 'emp-2',
@@ -565,7 +835,9 @@ describe('TrainingService', () => {
           id: 'sup-1',
           role: 'SUPERVISOR',
         });
-      mockKnowledge.assertPuedeEscribir.mockRejectedValueOnce(new ForbiddenException('Sector ajeno'));
+      mockKnowledge.assertPuedeEscribir.mockRejectedValueOnce(
+        new ForbiddenException('Sector ajeno'),
+      );
       mockPrisma.diagnosticSession.findFirst.mockResolvedValueOnce({
         id: 'session-2',
         score: 80,
@@ -574,9 +846,9 @@ describe('TrainingService', () => {
         isReset: false,
       });
 
-      const detail = await service.getSupervisorEmployeeDiagnostic('sup-1', 'emp-2');
-      expect(detail.employeeName).toBe('Carlos Ruiz');
-      expect(detail.sectorName).toBe('Logística');
+      await expect(
+        service.getSupervisorEmployeeDiagnostic('sup-1', 'emp-2'),
+      ).rejects.toThrow(ForbiddenException);
     });
 
     it('debe reiniciar diagnóstico, marcar isReset=true y revertir píldoras eximidas a NOT_STARTED', async () => {
@@ -592,37 +864,47 @@ describe('TrainingService', () => {
 
       const res = await service.resetEmployeeDiagnostic('sup-1', 'emp-1');
 
-      expect(mockKnowledge.assertPuedeEscribir).toHaveBeenCalledWith('sup-1', AgentType.COLLECTIONS);
-      expect(mockPrisma.diagnosticSession.update).toHaveBeenCalledWith(
+      expect(mockKnowledge.assertPuedeEscribir).toHaveBeenCalledWith(
+        'sup-1',
+        AgentType.COLLECTIONS,
+      );
+      expect(mockPrisma.diagnosticSession.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { id: 'session-1' },
+          where: { employeeId: 'emp-1', isReset: false },
           data: expect.objectContaining({ isReset: true, resetById: 'sup-1' }),
         }),
       );
       expect(mockPrisma.employeeProgress.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
-          where: { employeeId: 'emp-1', status: TrainingProgressStatus.EXEMPTED_BY_DIAGNOSTIC },
-          data: expect.objectContaining({ status: TrainingProgressStatus.NOT_STARTED }),
+          where: {
+            employeeId: 'emp-1',
+            status: TrainingProgressStatus.EXEMPTED_BY_DIAGNOSTIC,
+          },
+          data: expect.objectContaining({
+            status: TrainingProgressStatus.NOT_STARTED,
+          }),
         }),
       );
       expect(res.success).toBe(true);
     });
   });
 
-
-  
   describe('aspectos de audio (Spec 016)', () => {
     it('debe generar el guion a dos voces con permisos del supervisor', async () => {
       mockPrisma.pill.findUnique = jest.fn().mockResolvedValue({
         id: 'pill-1',
         title: 'Píldora Audio',
+        status: 'PUBLISHED',
         objective: 'Objetivo de prueba',
         content: 'Contenido del procedimiento',
         module: { sector: { agentType: AgentType.COLLECTIONS } },
       } as any);
       await service.generatePillAudioScript('supervisor-1', 'pill-1');
-      expect(mockKnowledge.assertPuedeEscribir).toHaveBeenCalledWith('supervisor-1', AgentType.COLLECTIONS);
-      expect(mockPrisma.pill.update).toHaveBeenCalledWith(
+      expect(mockKnowledge.assertPuedeEscribir).toHaveBeenCalledWith(
+        'supervisor-1',
+        AgentType.COLLECTIONS,
+      );
+      expect(mockPrisma.pill.updateMany).toHaveBeenCalledWith(
         expect.objectContaining({
           data: expect.objectContaining({
             audioStatus: 'SCRIPT_GENERATED',
@@ -634,32 +916,41 @@ describe('TrainingService', () => {
     it('debe encolar la séntesis de audio en BullMQ previo guion agregado', async () => {
       mockPrisma.pill.findUnique = jest.fn().mockResolvedValue({
         id: 'pill-1',
-        audioScript: {},
+        status: 'PUBLISHED',
+        audioScript: {
+          title: 'test',
+          estimatedDurationSeconds: 60,
+          dialogue: [
+            { speaker: 'SPEAKER_1', text: 'Recibir' },
+            { speaker: 'SPEAKER_2', text: 'Revisar' },
+          ],
+        },
         audioStatus: 'SCRIPT_GENERATED',
         module: { sector: { agentType: AgentType.COLLECTIONS } },
       } as any);
       const status = await service.enqueueAudioGeneration('sup-1', 'pill-1');
       expect(status.status).toBe('AUDIO_PENDING');
-      expect(mockPrisma.pill.update).toHaveBeenCalledWith(
-        expect.objectContaining({ data: expect.objectContaining({ audioStatus: 'AUDIO_PENDING' }) }),
+      expect(mockPrisma.pill.updateMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ audioStatus: 'AUDIO_PENDING' }),
+        }),
       );
     });
 
-    it('debe desbloquear isAudioCompleted al alcanzar el 80% y validar antifraude', async () => {
-      mockPrisma.pill.findUnique = jest.fn().mockResolvedValue({
+    it('rechaza saltar al final sin tiempo de reproducción acreditado', async () => {
+      mockPrisma.pill.findUnique.mockResolvedValue({
         id: 'pill-1',
+        status: 'PUBLISHED',
+        orderIndex: 0,
+        module: { sectorId: 'sector-cobranzas' },
         audioDurationSeconds: 100,
         audioStatus: 'AUDIO_READY',
-      } as any);
-      mockPrisma.employeeProgress.findUnique = jest.fn().mockResolvedValue({
-        playbackProgressSeconds: 0,
-        isAudioCompleted: false,
-        lastPlaybackReportAt: null,
-      } as any);
-      const res = await service.recordPlaybackProgress('emp-1', 'pill-1', { currentSeconds: 85 });
-      expect(res.isAudioCompleted).toBe(true);
-      expect(res.playbackProgressSeconds).toBe(85);
+      });
+      await expect(
+        service.recordPlaybackProgress('emp-1', 'pill-1', {
+          currentSeconds: 85,
+        }),
+      ).rejects.toThrow(BadRequestException);
     });
   });
-
 });

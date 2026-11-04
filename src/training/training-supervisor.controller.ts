@@ -10,7 +10,12 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
-import { ApiBearerAuth, ApiOperation, ApiResponse, ApiTags } from '@nestjs/swagger';
+import {
+  ApiBearerAuth,
+  ApiOperation,
+  ApiResponse,
+  ApiTags,
+} from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { Roles, RolesGuard } from '../auth/guards/roles.guard';
 import { TrainingService } from './training.service';
@@ -19,7 +24,11 @@ import { GeneratePillDto } from './dto/generate-pill.dto';
 import { UpdatePillDto } from './dto/update-pill.dto';
 import { PublishPillDto } from './dto/publish-pill.dto';
 import { SupervisorDiagnosticDetailResponseDto } from './dto/supervisor-diagnostic.dto';
-import { AudioScriptDto, GenerateAudioScriptDto, UpdateAudioScriptDto } from './dto/audio-script.dto';
+import {
+  AudioScriptDto,
+  GenerateAudioScriptDto,
+  UpdateAudioScriptDto,
+} from './dto/audio-script.dto';
 import { AudioStatusResponseDto } from './dto/audio-status.dto';
 
 interface AuthenticatedRequest {
@@ -36,8 +45,14 @@ export class TrainingSupervisorController {
 
   @Post('modules')
   @ApiOperation({ summary: 'Crear un nuevo módulo formativo' })
-  @ApiResponse({ status: 201, description: 'Módulo formativo creado exitosamente' })
-  @ApiResponse({ status: 403, description: 'No autorizado para el sector indicado' })
+  @ApiResponse({
+    status: 201,
+    description: 'Módulo formativo creado exitosamente',
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'No autorizado para el sector indicado',
+  })
   async createModule(
     @Req() req: AuthenticatedRequest,
     @Body() dto: CreateModuleDto,
@@ -46,17 +61,34 @@ export class TrainingSupervisorController {
   }
 
   @Get('supervisor/modules')
-  @ApiOperation({ summary: 'Listar todos los módulos y píldoras (incluidos borradores) para supervisores' })
-  @ApiResponse({ status: 200, description: 'Lista completa de módulos y píldoras' })
+  @ApiOperation({
+    summary:
+      'Listar todos los módulos y píldoras (incluidos borradores) para supervisores',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Lista completa de módulos y píldoras',
+  })
   async getSupervisorModules() {
     return this.trainingService.getSupervisorModules();
   }
 
   @Post('pills/generate')
-  @ApiOperation({ summary: 'Generar propuesta estructurada de píldora con IA (DRAFT)' })
-  @ApiResponse({ status: 201, description: 'Propuesta generada en borrador (DRAFT)' })
-  @ApiResponse({ status: 400, description: 'Contexto insuficiente en la base de conocimiento' })
-  @ApiResponse({ status: 403, description: 'No autorizado para el sector del módulo' })
+  @ApiOperation({
+    summary: 'Generar propuesta estructurada de píldora con IA (DRAFT)',
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Propuesta generada en borrador (DRAFT)',
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'Contexto insuficiente en la base de conocimiento',
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'No autorizado para el sector del módulo',
+  })
   async generatePill(
     @Req() req: AuthenticatedRequest,
     @Body() dto: GeneratePillDto,
@@ -67,8 +99,14 @@ export class TrainingSupervisorController {
   @Put('pills/:id')
   @ApiOperation({ summary: 'Editar borrador de píldora (Solo DRAFT)' })
   @ApiResponse({ status: 200, description: 'Píldora actualizada exitosamente' })
-  @ApiResponse({ status: 400, description: 'La píldora no se encuentra en estado DRAFT' })
-  @ApiResponse({ status: 403, description: 'No autorizado para el sector del módulo' })
+  @ApiResponse({
+    status: 400,
+    description: 'La píldora no se encuentra en estado DRAFT',
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'No autorizado para el sector del módulo',
+  })
   async updatePill(
     @Req() req: AuthenticatedRequest,
     @Param('id') id: string,
@@ -78,9 +116,16 @@ export class TrainingSupervisorController {
   }
 
   @Post('pills/:id/publish')
+  @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Aprobar y publicar píldora para empleados' })
-  @ApiResponse({ status: 200, description: 'Píldora publicada exitosamente (PUBLISHED)' })
-  @ApiResponse({ status: 403, description: 'No autorizado para el sector del módulo' })
+  @ApiResponse({
+    status: 200,
+    description: 'Píldora publicada exitosamente (PUBLISHED)',
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'No autorizado para el sector del módulo',
+  })
   async publishPill(
     @Req() req: AuthenticatedRequest,
     @Param('id') id: string,
@@ -92,39 +137,60 @@ export class TrainingSupervisorController {
   @Post('pills/:id/archive')
   @ApiOperation({ summary: 'Archivar píldora' })
   @ApiResponse({ status: 200, description: 'Píldora archivada (ARCHIVED)' })
-  async archivePill(
-    @Req() req: AuthenticatedRequest,
-    @Param('id') id: string,
-  ) {
+  async archivePill(@Req() req: AuthenticatedRequest, @Param('id') id: string) {
     return this.trainingService.archivePill(req.user.id, id);
   }
 
   @Get('supervisor/diagnostic/:employeeId')
-  @ApiOperation({ summary: 'Obtener historial y resultado del diagnóstico de un empleado' })
+  @ApiOperation({
+    summary: 'Obtener historial y resultado del diagnóstico de un empleado',
+  })
   @ApiResponse({
     status: 200,
     description: 'Detalle del diagnóstico del empleado',
     type: SupervisorDiagnosticDetailResponseDto,
   })
-  @ApiResponse({ status: 403, description: 'No autorizado para el sector del empleado' })
-  @ApiResponse({ status: 404, description: 'Empleado o diagnóstico no encontrado' })
+  @ApiResponse({
+    status: 403,
+    description: 'No autorizado para el sector del empleado',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Empleado o diagnóstico no encontrado',
+  })
   async getEmployeeDiagnostic(
     @Req() req: AuthenticatedRequest,
     @Param('employeeId') employeeId: string,
   ) {
-    return this.trainingService.getSupervisorEmployeeDiagnostic(req.user.id, employeeId);
+    return this.trainingService.getSupervisorEmployeeDiagnostic(
+      req.user.id,
+      employeeId,
+    );
   }
 
   @Post('supervisor/diagnostic/:employeeId/reset')
+  @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Reiniciar el diagnóstico de un empleado' })
-  @ApiResponse({ status: 200, description: 'Diagnóstico reiniciado exitosamente' })
-  @ApiResponse({ status: 403, description: 'No autorizado para el sector del empleado' })
-  @ApiResponse({ status: 404, description: 'Empleado o sesión diagnóstica no encontrada' })
+  @ApiResponse({
+    status: 200,
+    description: 'Diagnóstico reiniciado exitosamente',
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'No autorizado para el sector del empleado',
+  })
+  @ApiResponse({
+    status: 404,
+    description: 'Empleado o sesión diagnóstica no encontrada',
+  })
   async resetEmployeeDiagnostic(
     @Req() req: AuthenticatedRequest,
     @Param('employeeId') employeeId: string,
   ) {
-    return this.trainingService.resetEmployeeDiagnostic(req.user.id, employeeId);
+    return this.trainingService.resetEmployeeDiagnostic(
+      req.user.id,
+      employeeId,
+    );
   }
 
   // ==========================================================================
@@ -132,23 +198,46 @@ export class TrainingSupervisorController {
   // ==========================================================================
 
   @Post('pills/:id/script')
-  @ApiOperation({ summary: 'Generar guion a 2 voces conversacional mediante IA para la píldora' })
-  @ApiResponse({ status: 201, description: 'Guion generado exitosamente', type: AudioScriptDto })
-  @ApiResponse({ status: 403, description: 'No autorizado para el sector del módulo' })
+  @ApiOperation({
+    summary:
+      'Generar guion a 2 voces conversacional mediante IA para la píldora',
+  })
+  @ApiResponse({
+    status: 201,
+    description: 'Guion generado exitosamente',
+    type: AudioScriptDto,
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'No autorizado para el sector del módulo',
+  })
   @ApiResponse({ status: 404, description: 'Píldora no encontrada' })
   async generateScript(
     @Req() req: AuthenticatedRequest,
     @Param('id') id: string,
     @Body() dto?: GenerateAudioScriptDto,
   ) {
-    return this.trainingService.generatePillAudioScript(req.user.id, id, dto?.targetDurationSeconds);
+    return this.trainingService.generatePillAudioScript(
+      req.user.id,
+      id,
+      dto?.targetDurationSeconds,
+    );
   }
 
   @Put('pills/:id/script')
-  @ApiOperation({ summary: 'Editar y guardar el guion conversacional de la píldora' })
-  @ApiResponse({ status: 200, description: 'Guion editado y actualizado exitosamente', type: AudioScriptDto })
+  @ApiOperation({
+    summary: 'Editar y guardar el guion conversacional de la píldora',
+  })
+  @ApiResponse({
+    status: 200,
+    description: 'Guion editado y actualizado exitosamente',
+    type: AudioScriptDto,
+  })
   @ApiResponse({ status: 400, description: 'Datos del guion inválidos' })
-  @ApiResponse({ status: 403, description: 'No autorizado para el sector del módulo' })
+  @ApiResponse({
+    status: 403,
+    description: 'No autorizado para el sector del módulo',
+  })
   @ApiResponse({ status: 404, description: 'Píldora no encontrada' })
   async updateScript(
     @Req() req: AuthenticatedRequest,
@@ -160,10 +249,22 @@ export class TrainingSupervisorController {
 
   @Post('pills/:id/audio/generate')
   @HttpCode(HttpStatus.ACCEPTED)
-  @ApiOperation({ summary: 'Encolar la síntesis de voz en background vía BullMQ' })
-  @ApiResponse({ status: 202, description: 'Síntesis encolada exitosamente', type: AudioStatusResponseDto })
-  @ApiResponse({ status: 400, description: 'La píldora no posee guion o ya se encuentra en proceso' })
-  @ApiResponse({ status: 403, description: 'No autorizado para el sector del módulo' })
+  @ApiOperation({
+    summary: 'Encolar la síntesis de voz en background vía BullMQ',
+  })
+  @ApiResponse({
+    status: 202,
+    description: 'Síntesis encolada exitosamente',
+    type: AudioStatusResponseDto,
+  })
+  @ApiResponse({
+    status: 400,
+    description: 'La píldora no posee guion o ya se encuentra en proceso',
+  })
+  @ApiResponse({
+    status: 403,
+    description: 'No autorizado para el sector del módulo',
+  })
   @ApiResponse({ status: 404, description: 'Píldora no encontrada' })
   async generateAudio(
     @Req() req: AuthenticatedRequest,

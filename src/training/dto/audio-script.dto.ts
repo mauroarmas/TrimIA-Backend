@@ -8,6 +8,7 @@ import {
   IsOptional,
   IsString,
   Min,
+  Max,
   ValidateNested,
 } from 'class-validator';
 
@@ -18,7 +19,8 @@ export enum SpeakerRole {
 
 export class DialogueLineDto {
   @ApiProperty({
-    description: 'Rol del locutor (SPEAKER_1: Conductor/a, SPEAKER_2: Copresentador/a)',
+    description:
+      'Rol del locutor (SPEAKER_1: Conductor/a, SPEAKER_2: Copresentador/a)',
     enum: SpeakerRole,
     example: SpeakerRole.SPEAKER_1,
   })
@@ -49,6 +51,7 @@ export class AudioScriptDto {
   })
   @IsInt()
   @Min(1)
+  @Max(300)
   estimatedDurationSeconds: number;
 
   @ApiProperty({
@@ -78,6 +81,7 @@ export class UpdateAudioScriptDto {
   })
   @IsInt()
   @Min(1)
+  @Max(300)
   @IsOptional()
   estimatedDurationSeconds?: number;
 
@@ -93,12 +97,14 @@ export class UpdateAudioScriptDto {
 
 export class GenerateAudioScriptDto {
   @ApiProperty({
-    description: 'Duración objetivo deseada para el audio en segundos (ej. 60, 90, 120, 180)',
+    description:
+      'Duración objetivo deseada para el audio en segundos (ej. 60, 90, 120, 180)',
     example: 90,
     required: false,
   })
   @IsInt()
   @Min(30)
+  @Max(300)
   @IsOptional()
   targetDurationSeconds?: number;
 }
