@@ -69,3 +69,5 @@ El formulario financiero admitía únicamente WHATSAPP y dejaba las solicitudes 
 Las nuevas notas de derivación por confianza insuficiente muestran la consulta y la acción pendiente, sin puntajes ni jerga. El diagnóstico conserva el puntaje en el motivo de derivación. El panel simplifica también la visualización de las notas automáticas antiguas de ese formato, sin modificar los textos guardados ni las notas humanas.
 
 Verificación: 11 suites y 192 pruebas aprobadas, incluido formulario WEB completo con PostgreSQL aislado, revisión humana y aviso simulado.
+
+La prueba con Gemini real detectó además un rechazo HTTP 400: el esquema reutilizado producía referencias `$ref` no admitidas por responseSchema. Cada campo ahora genera un esquema independiente; se agregó una prueba de la conversión real de LangChain para impedir su reaparición. Verificación en la URL pública con la frase «Quiero comprar un televisor en cuotas, quiero financiación»: conversación WEB `cd91e468-0667-4fc9-a021-cd290e7e759f`, borrador COLLECTING y respuesta solicitando datos. No se confirmó ni presentó el pedido, ni se creó oportunidad ni se envió WhatsApp.

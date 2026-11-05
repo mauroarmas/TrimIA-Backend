@@ -8,9 +8,9 @@ import { LlmService } from '../ai/llm/llm.service';
 import { Caller } from '../ai/caller/caller.types';
 import { PrismaService } from '../database/prisma.service';
 import { FinancingService, FinancingInput } from './financing.service';
-const observation = z
-  .object({ value: z.string(), evidence: z.string() })
-  .strict();
+// Cada campo requiere su propia instancia: Gemini responseSchema no admite $ref.
+const observation = () =>
+  z.object({ value: z.string(), evidence: z.string() }).strict();
 const extracted = z
   .object({
     intent: z.enum([
@@ -21,11 +21,11 @@ const extracted = z
       'CANCEL',
       'OTHER',
     ]),
-    name: observation.optional(),
-    dni: observation.optional(),
-    productSummary: observation.optional(),
-    sku: observation.optional(),
-    observedAmount: observation.optional(),
+    name: observation().optional(),
+    dni: observation().optional(),
+    productSummary: observation().optional(),
+    sku: observation().optional(),
+    observedAmount: observation().optional(),
   })
   .strict();
 export const explicitFinancingRequest = (s: string) =>

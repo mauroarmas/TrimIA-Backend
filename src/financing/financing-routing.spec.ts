@@ -1,3 +1,4 @@
+import { toJsonSchema } from '@langchain/core/utils/json_schema';
 import { FinancingConversationService } from './financing-conversation.service';
 const client = {
   userType: 'CLIENTE',
@@ -9,7 +10,7 @@ describe('financial operation routing boundary', () => {
   const prisma: any = { conversation: { findUnique: jest.fn() } };
   const invoke = jest.fn();
   const llm: any = {
-    classifierChat: { withStructuredOutput: () => ({ invoke }) },
+    classifierChat: { withStructuredOutput: jest.fn(() => ({ invoke })) },
   };
   const applyInput = jest
     .fn()
@@ -68,6 +69,23 @@ describe('financial operation routing boundary', () => {
       await service.handle('c', 'm', 'Quiero financiación', client),
     ).toEqual({ handled: true, response: 'Datos guardados' });
     expect(applyInput).toHaveBeenCalledWith('c', 'm', { intent: 'REQUEST' });
+  });
+  it('envía a Gemini campos completos sin referencias JSON no admitidas', async () => {
+    invoke.mockResolvedValue({ intent: 'REQUEST' });
+    await service.handle('c', 'm', 'Quiero financiación', client);
+    const schema = llm.classifierChat.withStructuredOutput.mock.calls[0][0];
+    const json = toJsonSchema(schema);
+    expect(JSON.stringify(json)).not.toContain('"$ref"');
+    for (const field of [
+      'name',
+      'dni',
+      'productSummary',
+      'sku',
+      'observedAmount',
+    ]) {
+      expect(json).toHaveProperty(`properties.${field}.properties.value`);
+      expect(json).toHaveProperty(`properties.${field}.properties.evidence`);
+    }
   });
   it('preguntas ajenas vuelven al orquestador sin cambiar RAG', async () => {
     prisma.conversation.findUnique.mockResolvedValue({
