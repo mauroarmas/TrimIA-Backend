@@ -58,14 +58,16 @@ describe('financial operation routing boundary', () => {
       expect(invoke).not.toHaveBeenCalled();
     },
   );
-  it('no atiende otro canal', async () => {
+  it('el simulador WEB de clientes inicia la misma solicitud', async () => {
     prisma.conversation.findUnique.mockResolvedValue({
       channel: 'WEB',
       status: 'ACTIVE',
     });
+    invoke.mockResolvedValue({ intent: 'REQUEST' });
     expect(
       await service.handle('c', 'm', 'Quiero financiación', client),
-    ).toEqual({ handled: false });
+    ).toEqual({ handled: true, response: 'Datos guardados' });
+    expect(applyInput).toHaveBeenCalledWith('c', 'm', { intent: 'REQUEST' });
   });
   it('preguntas ajenas vuelven al orquestador sin cambiar RAG', async () => {
     prisma.conversation.findUnique.mockResolvedValue({

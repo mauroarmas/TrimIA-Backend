@@ -229,7 +229,7 @@ export class FinancingService {
         where: { id: conversationId },
       });
       if (
-        c.channel !== 'WHATSAPP' ||
+        !['WHATSAPP', 'WEB'].includes(c.channel) ||
         c.userType !== 'CLIENTE' ||
         c.status !== 'ACTIVE' ||
         !/^\+?\d{8,15}$/.test(c.externalId)
@@ -583,7 +583,11 @@ export class FinancingService {
             where: { id: req.conversationId },
           })
         : null;
-      if (!c || c.channel !== 'WHATSAPP' || !/^\+?\d{8,15}$/.test(c.externalId))
+      if (
+        !c ||
+        !['WHATSAPP', 'WEB'].includes(c.channel) ||
+        !/^\+?\d{8,15}$/.test(c.externalId)
+      )
         throw financingConflict(
           'IDENTITY_CONFLICT',
           'Requiere un hilo WhatsApp original válido.',

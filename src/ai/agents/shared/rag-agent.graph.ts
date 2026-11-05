@@ -377,6 +377,9 @@ export function buildRagAgentGraph(
     // candidatos a corregir.
     let escalationId: string | null = null;
     if (state.conversationId) {
+      const query = Array.from(state.message.replace(/\s+/g, ' ').trim());
+      const excerpt =
+        query.slice(0, 180).join('') + (query.length > 180 ? '…' : '');
       const caso = await escalations.create({
         conversationId: state.conversationId,
         reason: `${tag} confianza insuficiente (${confidence.toFixed(2)})`,
@@ -385,9 +388,8 @@ export function buildRagAgentGraph(
         // así que no hay un resumen generado. Igual le ahorra al supervisor
         // tener que abrir la conversación para saber qué se preguntó.
         internalNote:
-          `Escalado automático: la base de conocimiento no tenía una respuesta ` +
-          `con confianza suficiente (${confidence.toFixed(2)}, umbral ${confidenceThreshold}).\n` +
-          `Consulta del cliente: «${state.message}»`,
+          `Consulta: «${excerpt}».\n` +
+          'Pendiente: confirmar la información y responder al cliente.',
       });
       escalationId = caso.id;
     }

@@ -24,7 +24,7 @@ docker exec trimia-nestjs-1 node scripts/verify-knowledge-demo.cjs
 docker exec -e KNOWLEDGE_DEMO_REPORT=/tmp/trimia-knowledge-demo-routing.json trimia-nestjs-1 node scripts/verify-knowledge-demo.cjs --fresh
 ```
 
-Las sesiones nuevas del simulador ahora usan un número ficticio propio; no comparten el número fijo de una prueba anterior. Una sesión guardada conserva su historial. Para empezar de cero desde esa sesión, usar **Simulador de Chat → Nuevo número**. Un hilo que ya está WAITING_HUMAN sigue esperando intervención humana; actualizar conocimiento no resuelve ni reabre sus casos automáticamente. El simulador es canal WEB; el formulario completo de financiación 020 entra por WhatsApp. Las preguntas informativas de financiación sí se responden desde el simulador.
+Las sesiones nuevas del simulador ahora usan un número ficticio propio; no comparten el número fijo de una prueba anterior. Una sesión guardada conserva su historial. Para empezar de cero desde esa sesión, usar **Simulador de Chat → Nuevo número**. Un hilo que ya está WAITING_HUMAN sigue esperando intervención humana; actualizar conocimiento no resuelve ni reabre sus casos automáticamente. El simulador es canal WEB y permite iniciar y completar el mismo formulario de financiación 020 que WhatsApp. Conserva la confirmación del cliente, la revisión humana y los avisos simulados; no envía mensajes reales al teléfono ficticio.
 
 Las respuestas de demostración no sustituyen condiciones comerciales reales. Antes de usar el sistema con clientes reales, reemplazar estos datos por políticas y catálogo aprobados. Las latencias del proveedor pueden variar: mejorar contenido no garantiza un tiempo fijo de respuesta.
 
@@ -61,3 +61,11 @@ La carga admite `KNOWLEDGE_DEMO_FORCE_REINDEX=true` para reconstruir también do
 «Qué venden» pasó de 64,60 % antes de la carga a 74,01 % con el contenido final. «Hola, ¿qué venden?» respondió desde cero con 67,40 %. Los tiempos finales observados oscilaron entre 4.1 y 42.5 segundos; la variación de Gemini continúa siendo una limitación independiente del contenido. Estos controles no garantizan todas las formulaciones posibles.
 
 Evidencia JSON y versiones anteriores en el archivo externo indicado. Build del panel correcto; nuevas sesiones usan número ficticio propio (commit frontend 698ce11). El hilo anterior WAITING_HUMAN se conserva. API y panel continúan en el mismo enlace.
+
+## Ajuste del simulador y notas internas (2026-11-05)
+
+El formulario financiero admitía únicamente WHATSAPP y dejaba las solicitudes WEB en el circuito de preguntas generales. Se habilitó WEB en la entrada, persistencia y aviso simulado, y en el editor de importe del panel. No cambia la autorización ni el control humano.
+
+Las nuevas notas de derivación por confianza insuficiente muestran la consulta y la acción pendiente, sin puntajes ni jerga. El diagnóstico conserva el puntaje en el motivo de derivación. El panel simplifica también la visualización de las notas automáticas antiguas de ese formato, sin modificar los textos guardados ni las notas humanas.
+
+Verificación: 11 suites y 192 pruebas aprobadas, incluido formulario WEB completo con PostgreSQL aislado, revisión humana y aviso simulado.

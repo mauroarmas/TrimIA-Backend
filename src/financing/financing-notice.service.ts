@@ -45,7 +45,7 @@ export class FinancingNoticeService {
       }
       if (
         !['APPROVED', 'REJECTED'].includes(notice.purchaseRequest.status) ||
-        notice.conversation.channel !== 'WHATSAPP' ||
+        !['WHATSAPP', 'WEB'].includes(notice.conversation.channel) ||
         !/^\+?\d{8,15}$/.test(notice.conversation.externalId)
       )
         return null;

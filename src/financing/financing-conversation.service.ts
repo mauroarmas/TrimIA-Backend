@@ -55,7 +55,7 @@ export class FinancingConversationService {
     const c = await this.prisma.conversation.findUnique({
       where: { id: conversationId },
     });
-    if (!c || c.channel !== 'WHATSAPP' || c.status !== 'ACTIVE')
+    if (!c || !['WHATSAPP', 'WEB'].includes(c.channel) || c.status !== 'ACTIVE')
       return { handled: false };
     const draft = c.financingDraft as any;
     const active =

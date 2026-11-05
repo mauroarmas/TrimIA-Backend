@@ -431,6 +431,17 @@ describe('buildRagAgentGraph', () => {
   });
 
   describe('escalate_to_human (baja confianza del RAG)', () => {
+    it('resume consultas largas sin perder el texto original del estado', async () => {
+      const { graph, escalations } = buildGraph(0.3);
+      const message = 'Quiero consultar por un producto. '.repeat(30);
+      const result = await graph.invoke({ ...baseState, message });
+      expect(result.message).toBe(message);
+      const note = escalations.create.mock.calls[0][0].internalNote;
+      expect(note.length).toBeLessThan(300);
+      expect(note).toContain('…');
+      expect(message.length).toBeGreaterThan(300);
+    });
+
     it('crea un caso pendiente cuando la confianza cae bajo el umbral', async () => {
       const { graph, escalations, structuredInvoke } = buildGraph(0.3);
 
@@ -472,7 +483,12 @@ describe('buildRagAgentGraph', () => {
       const { internalNote, agentType } = escalations.create.mock.calls[0][0];
       expect(agentType).toBe('SALES');
       expect(internalNote).toContain('¿tienen la heladera en 12 cuotas?');
-      expect(internalNote).toContain('0.30');
+      expect(internalNote).toContain(
+        'Pendiente: confirmar la información y responder al cliente.',
+      );
+      expect(internalNote).not.toMatch(
+        /0\.30|umbral|confianza|base de conocimiento/i,
+      );
     });
   });
 

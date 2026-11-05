@@ -24,13 +24,16 @@ const enabled = !!process.env.TEST_DATABASE_URL;
     const adapter = new SimulatedFinancingNoticeAdapter();
     const notices = new FinancingNoticeService(prisma as any, config, adapter);
     let supervisor: string;
-    async function start(dni = '30000008') {
+    async function start(
+      dni = '30000008',
+      channel: 'WHATSAPP' | 'WEB' = 'WHATSAPP',
+    ) {
       const phone =
         '549' +
         String(Date.now()).slice(-10) +
         String(Math.floor(Math.random() * 10));
       const conv = await prisma.conversation.create({
-        data: { externalId: phone, channel: 'WHATSAPP' },
+        data: { externalId: phone, channel },
       });
       await service.applyInput(conv.id, randomUUID(), {
         intent: 'REQUEST',
@@ -65,6 +68,31 @@ const enabled = !!process.env.TEST_DATABASE_URL;
         messageId,
       };
     }
+    it('completa desde WEB la confirmación, revisión y aviso simulado en el mismo hilo', async () => {
+      const { conv, req } = await start('30000008', 'WEB');
+      await service.review(
+        req.id,
+        {
+          expectedVersion: req.version,
+          decision: 'APPROVED',
+          note: 'Revisión humana del simulador',
+        },
+        supervisor,
+      );
+      const notice = await prisma.outboundCommunication.findFirstOrThrow({
+        where: { purchaseRequestId: req.id },
+      });
+      await notices.dispatch(notice.id);
+      const sent = await prisma.outboundCommunication.findUniqueOrThrow({
+        where: { id: notice.id },
+      });
+      expect(sent.status).toBe('ACCEPTED');
+      expect(sent.transportMode).toBe('simulated');
+      expect(sent.conversationId).toBe(conv.id);
+      expect(
+        await prisma.financing.count({ where: { purchaseRequestId: req.id } }),
+      ).toBe(0);
+    });
     beforeAll(async () => {
       const sector = await prisma.sector.create({
         data: { name: 'Admin ' + randomUUID(), agentType: 'ADMIN' },
