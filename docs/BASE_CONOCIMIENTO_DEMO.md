@@ -71,3 +71,11 @@ Las nuevas notas de derivación por confianza insuficiente muestran la consulta 
 Verificación: 11 suites y 192 pruebas aprobadas, incluido formulario WEB completo con PostgreSQL aislado, revisión humana y aviso simulado.
 
 La prueba con Gemini real detectó además un rechazo HTTP 400: el esquema reutilizado producía referencias `$ref` no admitidas por responseSchema. Cada campo ahora genera un esquema independiente; se agregó una prueba de la conversión real de LangChain para impedir su reaparición. Verificación en la URL pública con la frase «Quiero comprar un televisor en cuotas, quiero financiación»: conversación WEB `cd91e468-0667-4fc9-a021-cd290e7e759f`, borrador COLLECTING y respuesta solicitando datos. No se confirmó ni presentó el pedido, ni se creó oportunidad ni se envió WhatsApp.
+
+## Continuación del formulario (2026-11-05)
+
+El intercambio con nombre y DNI reveló que Gemini podía incluir campos opcionales con value/evidence vacíos. La comprobación de evidencia aceptaba esas cadenas y el SKU vacío fallaba en la validación de persistencia. Se ignoran valores y evidencias vacíos o en blanco antes de aplicar los campos. Regresión con el texto «me llamo Abel Lopez, mi dni es 30000008» y campos ausentes vacíos: conserva únicamente nombre y DNI.
+
+La prueba real de varios turnos detectó además que el extractor no recibía el contexto de formulario abierto y podía clasificar una descripción de producto como OTHER. Ahora se indica explícitamente si existe un formulario activo y cómo reconocer los datos de continuación, sin autorizar condiciones ni completar campos ausentes.
+
+Se preserva además el DNI escrito con etiqueta explícita (`DNI` o `documento`) y formato de 7–8 dígitos aunque el extractor lo omita. No se deduce de otros números. Prueba real en el canal WEB de la demo: conversación `04c2067e-135e-41cb-9f14-9202f06b7db8`, nombre/DNI persistidos, producto «televisor Smart TV de 43 pulgadas», importe ficticio ARS 450000.00 confirmado por supervisor y resumen AWAITING_CONFIRMATION. Se dejó sin confirmación final: no presentó solicitud ni creó oportunidad.

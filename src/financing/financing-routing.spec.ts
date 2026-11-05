@@ -116,6 +116,57 @@ describe('financial operation routing boundary', () => {
       dni: '30000008',
     });
   });
+  it.each(['', '   '])(
+    'omite campos vacíos del modelo al recibir nombre y DNI (%p)',
+    async (blank) => {
+      prisma.conversation.findUnique.mockResolvedValue({
+        channel: 'WEB',
+        status: 'ACTIVE',
+        financingDraft: { stage: 'COLLECTING' },
+      });
+      invoke.mockResolvedValue({
+        intent: 'PROVIDE_DATA',
+        name: { value: 'Abel Lopez', evidence: 'Abel Lopez' },
+        dni: { value: '30000008', evidence: '30000008' },
+        sku: { value: blank, evidence: blank },
+        productSummary: { value: blank, evidence: blank },
+        observedAmount: { value: blank, evidence: blank },
+      });
+      await service.handle(
+        'c',
+        'm',
+        'me llamo Abel Lopez, mi dni es 30000008',
+        client,
+      );
+      expect(applyInput).toHaveBeenCalledWith('c', 'm', {
+        intent: 'PROVIDE_DATA',
+        name: 'Abel Lopez',
+        dni: '30000008',
+      });
+    },
+  );
+  it('conserva un DNI etiquetado aunque el modelo lo omita', async () => {
+    prisma.conversation.findUnique.mockResolvedValue({
+      channel: 'WEB',
+      status: 'ACTIVE',
+      financingDraft: { stage: 'COLLECTING' },
+    });
+    invoke.mockResolvedValue({
+      intent: 'PROVIDE_DATA',
+      name: { value: 'Abel Lopez', evidence: 'Abel Lopez' },
+    });
+    await service.handle(
+      'c',
+      'm',
+      'me llamo Abel Lopez, mi dni es 30000008',
+      client,
+    );
+    expect(applyInput).toHaveBeenCalledWith('c', 'm', {
+      intent: 'PROVIDE_DATA',
+      name: 'Abel Lopez',
+      dni: '30000008',
+    });
+  });
   it('no acepta dictamen inyectado por extractor', async () => {
     invoke.mockResolvedValue({
       intent: 'REQUEST',
