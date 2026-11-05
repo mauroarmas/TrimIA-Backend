@@ -51,6 +51,7 @@ describe('PaymentProofsService', () => {
     messageId: 'msg-1',
     message,
     status: 'PENDING_REVIEW',
+    extractedAmount: '120000.00',
     quota: {
       id: 'inst-1',
       client: { id: 'cust-1', assignedCollectorId: 'collector-1' },
@@ -94,6 +95,21 @@ describe('PaymentProofsService', () => {
   });
 
   describe('accept', () => {
+    it.each([0, '0.00', -1, null, undefined, 'NaN'])(
+      'no acepta un monto inválido (%s) ni modifica la cuota',
+      async (extractedAmount) => {
+        prisma.paymentProof.findUnique.mockResolvedValue({
+          ...pendingProof,
+          extractedAmount,
+        });
+        await expect(service.accept('proof-1', 'collector-1')).rejects.toThrow(
+          /mayor a cero/,
+        );
+        expect(prisma.paymentProof.update).not.toHaveBeenCalled();
+        expect(prisma.quota.update).not.toHaveBeenCalled();
+        expect(sender.send).not.toHaveBeenCalled();
+      },
+    );
     it('acepta el comprobante, confirma al cliente y deja la cuota esperando verificación', async () => {
       prisma.paymentProof.findUnique.mockResolvedValue(pendingProof);
       prisma.paymentProof.update.mockResolvedValue({
@@ -629,6 +645,24 @@ describe('PaymentProofsService', () => {
   });
 
   describe('verifyImpact (Phase 5 — US3)', () => {
+    it('no da por pagada una cuota por un comprobante histórico de monto cero', async () => {
+      employees.findById.mockResolvedValue({
+        id: 'controller-1',
+        isController: true,
+      });
+      prisma.paymentProof.findUnique.mockResolvedValue({
+        ...pendingProof,
+        status: 'ACCEPTED',
+        extractedAmount: '0',
+      });
+      await expect(
+        service.verifyImpact('proof-1', 'controller-1', {
+          impactStatus: ImpactStatusDto.CONFIRMED,
+        }),
+      ).rejects.toThrow(/mayor a cero/);
+      expect(prisma.paymentProof.update).not.toHaveBeenCalled();
+      expect(prisma.quota.update).not.toHaveBeenCalled();
+    });
     const acceptedProof = {
       ...pendingProof,
       id: 'proof-accepted',

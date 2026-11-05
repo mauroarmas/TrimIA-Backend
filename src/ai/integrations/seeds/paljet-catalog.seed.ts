@@ -1,6 +1,41 @@
 import { StockItem } from '../ports/stock.port';
 
 export const PALJET_CATALOG_SEED: StockItem[] = [
+  // Datos del Anexo B de docs/PRUEBAS/Plan de Testing (RF09-01/02).
+  // El plan no informa precios ni fichas web: no se inventan.
+  {
+    sku: 'TV-SAM-55-4K',
+    name: 'Smart TV Samsung 55" 4K',
+    category: 'SMART_TV',
+    stock: 4,
+    listPrice: null,
+    cashPrice: null,
+    substituteSkus: ['TV-LG-50-FHD'],
+    urlCredimision: null,
+    lastUpdated: new Date().toISOString(),
+  },
+  {
+    sku: 'TV-LG-50-FHD',
+    name: 'Smart TV LG 50" Full HD',
+    category: 'SMART_TV',
+    stock: 1,
+    listPrice: null,
+    cashPrice: null,
+    substituteSkus: ['TV-SAM-55-4K'],
+    urlCredimision: null,
+    lastUpdated: new Date().toISOString(),
+  },
+  {
+    sku: 'TV-PHI-43',
+    name: 'Smart TV Philips 43"',
+    category: 'SMART_TV',
+    stock: 0,
+    listPrice: null,
+    cashPrice: null,
+    substituteSkus: ['TV-SAM-55-4K', 'TV-LG-50-FHD'],
+    urlCredimision: null,
+    lastUpdated: new Date().toISOString(),
+  },
   {
     sku: 'BAL-SYS-CUORA',
     name: 'Balanza Electrónica Systel Cuora 30kg con Impresor',
@@ -9,7 +44,8 @@ export const PALJET_CATALOG_SEED: StockItem[] = [
     listPrice: 420000,
     cashPrice: 350000,
     substituteSkus: ['BAL-SYS-CROMA', 'BAL-KRETZ-AURA'],
-    urlCredimision: 'https://credimision.com.ar/productos/balanzas/systel-cuora-30kg',
+    urlCredimision:
+      'https://credimision.com.ar/productos/balanzas/systel-cuora-30kg',
     lastUpdated: new Date().toISOString(),
   },
   {
@@ -20,7 +56,8 @@ export const PALJET_CATALOG_SEED: StockItem[] = [
     listPrice: 280000,
     cashPrice: 235000,
     substituteSkus: ['BAL-SYS-CUORA'],
-    urlCredimision: 'https://credimision.com.ar/productos/balanzas/systel-croma-30kg',
+    urlCredimision:
+      'https://credimision.com.ar/productos/balanzas/systel-croma-30kg',
     lastUpdated: new Date().toISOString(),
   },
   {
@@ -31,7 +68,8 @@ export const PALJET_CATALOG_SEED: StockItem[] = [
     listPrice: 650000,
     cashPrice: 540000,
     substituteSkus: ['COR-TRI-300', 'COR-BER-300'],
-    urlCredimision: 'https://credimision.com.ar/productos/cortadoras/marani-330mm',
+    urlCredimision:
+      'https://credimision.com.ar/productos/cortadoras/marani-330mm',
     lastUpdated: new Date().toISOString(),
   },
   {
@@ -42,7 +80,8 @@ export const PALJET_CATALOG_SEED: StockItem[] = [
     listPrice: 580000,
     cashPrice: 485000,
     substituteSkus: ['COR-MAR-330', 'COR-BER-300'],
-    urlCredimision: 'https://credimision.com.ar/productos/cortadoras/trinidad-300mm',
+    urlCredimision:
+      'https://credimision.com.ar/productos/cortadoras/trinidad-300mm',
     lastUpdated: new Date().toISOString(),
   },
   {
@@ -53,7 +92,8 @@ export const PALJET_CATALOG_SEED: StockItem[] = [
     listPrice: 610000,
     cashPrice: 510000,
     substituteSkus: ['COR-TRI-300'],
-    urlCredimision: 'https://credimision.com.ar/productos/cortadoras/berkley-300mm',
+    urlCredimision:
+      'https://credimision.com.ar/productos/cortadoras/berkley-300mm',
     lastUpdated: new Date().toISOString(),
   },
   {
@@ -64,7 +104,8 @@ export const PALJET_CATALOG_SEED: StockItem[] = [
     listPrice: 890000,
     cashPrice: 750000,
     substituteSkus: ['AMA-SAN-20K'],
-    urlCredimision: 'https://credimision.com.ar/productos/gastronomia/sobadora-santini-20kg',
+    urlCredimision:
+      'https://credimision.com.ar/productos/gastronomia/sobadora-santini-20kg',
     lastUpdated: new Date().toISOString(),
   },
   {
@@ -75,7 +116,8 @@ export const PALJET_CATALOG_SEED: StockItem[] = [
     listPrice: 940000,
     cashPrice: 790000,
     substituteSkus: ['SOB-SAN-20K'],
-    urlCredimision: 'https://credimision.com.ar/productos/gastronomia/amasadora-santini-20kg',
+    urlCredimision:
+      'https://credimision.com.ar/productos/gastronomia/amasadora-santini-20kg',
     lastUpdated: new Date().toISOString(),
   },
   {
@@ -86,7 +128,8 @@ export const PALJET_CATALOG_SEED: StockItem[] = [
     listPrice: 520000,
     cashPrice: 435000,
     substituteSkus: [],
-    urlCredimision: 'https://credimision.com.ar/productos/gastronomia/horno-morelli-6-moldes',
+    urlCredimision:
+      'https://credimision.com.ar/productos/gastronomia/horno-morelli-6-moldes',
     lastUpdated: new Date().toISOString(),
   },
   {
@@ -97,7 +140,8 @@ export const PALJET_CATALOG_SEED: StockItem[] = [
     listPrice: 780000,
     cashPrice: 650000,
     substituteSkus: ['EXH-INH-420'],
-    urlCredimision: 'https://credimision.com.ar/productos/refrigeracion/exhibidora-briket-390l',
+    urlCredimision:
+      'https://credimision.com.ar/productos/refrigeracion/exhibidora-briket-390l',
     lastUpdated: new Date().toISOString(),
   },
   {
@@ -108,8 +152,8 @@ export const PALJET_CATALOG_SEED: StockItem[] = [
     listPrice: 840000,
     cashPrice: 710000,
     substituteSkus: ['EXH-BRI-390'],
-    urlCredimision: 'https://credimision.com.ar/productos/refrigeracion/exhibidora-inelro-420l',
+    urlCredimision:
+      'https://credimision.com.ar/productos/refrigeracion/exhibidora-inelro-420l',
     lastUpdated: new Date().toISOString(),
   },
 ];
-

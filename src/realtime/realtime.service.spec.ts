@@ -14,7 +14,7 @@ import { RealtimeEvent, conversationChannel } from './realtime.types';
  */
 describe('RealtimeService', () => {
   let service: RealtimeService;
-  let redis: { publish: jest.Mock; duplicate: jest.Mock };
+  let redis: { publish: jest.Mock; duplicate: jest.Mock; exists: jest.Mock };
   let subscriber: {
     subscribe: jest.Mock;
     unsubscribe: jest.Mock;
@@ -48,6 +48,7 @@ describe('RealtimeService', () => {
       quit: jest.fn().mockResolvedValue('OK'),
     };
     redis = {
+      exists: jest.fn().mockResolvedValue(0),
       publish: jest.fn().mockResolvedValue(1),
       duplicate: jest.fn().mockReturnValue(subscriber),
     };
@@ -170,6 +171,41 @@ describe('RealtimeService', () => {
   });
 
   describe('sseStreamFor — revalidación y expiración', () => {
+    it('un token revocado deja de recibir eventos en un stream abierto', async () => {
+      const received: unknown[] = [];
+      const complete = jest.fn();
+      const sub = service
+        .sseStreamFor('conv-1', { sessionId: 'session-1' })
+        .subscribe({ next: (event) => received.push(event), complete });
+      redis.exists.mockResolvedValue(1);
+      onMessage(conversationChannel('conv-1'), JSON.stringify(evento));
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(received).toEqual([]);
+      expect(complete).toHaveBeenCalled();
+      expect(redis.exists).toHaveBeenCalledWith('auth:revoked:session-1');
+      sub.unsubscribe();
+    });
+
+    it('tampoco entrega el historial que terminó de leerse después de revocar la sesión', async () => {
+      const received: unknown[] = [];
+      let finishReplay: (events: RealtimeEvent[]) => void;
+      const complete = jest.fn();
+      const sub = service
+        .sseStreamFor('conv-1', {
+          sessionId: 'session-1',
+          replay: () =>
+            new Promise<RealtimeEvent[]>((resolve) => {
+              finishReplay = resolve;
+            }),
+        })
+        .subscribe({ next: (event) => received.push(event), complete });
+      redis.exists.mockResolvedValue(1);
+      finishReplay([evento]);
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(received).toEqual([]);
+      expect(complete).toHaveBeenCalled();
+      sub.unsubscribe();
+    });
     it('cierra el stream cuando el permiso se perdió (RF-021, CL-9)', async () => {
       jest.useFakeTimers();
       const revalidate = jest.fn().mockResolvedValue(false);

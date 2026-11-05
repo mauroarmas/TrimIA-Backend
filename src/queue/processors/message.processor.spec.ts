@@ -92,6 +92,17 @@ describe('MessageProcessor — pausa human-in-the-loop', () => {
       userType: 'CLIENTE',
     };
 
+    it.each(['Gracias, quedo atento', 'Gracias', 'Muchas gracias', 'Ok'])(
+      'no responde a la cortesía "%s" después de escalar',
+      async (message) => {
+        conversations.findById.mockResolvedValue(waitingConversation);
+        await processor.process({ ...job, data: { ...job.data, message } });
+        expect(orchestrator.invoke).not.toHaveBeenCalled();
+        expect(sender.send).not.toHaveBeenCalled();
+        expect(conversations.addMessage).not.toHaveBeenCalled();
+      },
+    );
+
     it('avisa que el caso está en manos de un responsable', async () => {
       conversations.findById.mockResolvedValue(waitingConversation);
 

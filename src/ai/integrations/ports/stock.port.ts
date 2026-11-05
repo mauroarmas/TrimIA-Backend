@@ -1,13 +1,20 @@
 export interface StockItem {
   sku: string;
   name: string;
-  category: 'BALANZAS' | 'CORTADORAS' | 'GASTRONOMIA' | 'REFRIGERACION' | 'ACCESORIOS';
+  category:
+    | 'BALANZAS'
+    | 'CORTADORAS'
+    | 'GASTRONOMIA'
+    | 'REFRIGERACION'
+    | 'ACCESORIOS'
+    | 'SMART_TV';
+  source?: 'SIMULATED';
   stock: number;
-  listPrice: number;        // Precio de lista para cuotas
-  cashPrice: number;        // Precio contado efectivo
+  listPrice: number | null; // null cuando la fuente de prueba no informa precio
+  cashPrice: number | null;
   substituteSkus: string[]; // SKUs de productos alternativos si stock === 0
-  urlCredimision: string;   // Link oficial a la ficha web
-  lastUpdated: string;      // ISO string
+  urlCredimision: string | null;
+  lastUpdated: string; // ISO string
 }
 
 export interface StockCheckResult {
@@ -23,11 +30,13 @@ export interface StockPort {
    * Consulta disponibilidad y precio por SKU o término de búsqueda.
    * Si no hay stock disponible, calcula y retorna hasta 2 productos sustitutos (RF09).
    */
-  checkAvailability(skuOrQuery: string, userType?: string): Promise<StockCheckResult>;
+  checkAvailability(
+    skuOrQuery: string,
+    userType?: string,
+  ): Promise<StockCheckResult>;
 
   /**
    * Obtiene la lista completa del catálogo para el panel de ventas.
    */
   listCatalog(category?: string): Promise<StockItem[]>;
 }
-

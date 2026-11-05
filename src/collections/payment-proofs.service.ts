@@ -394,6 +394,13 @@ export class PaymentProofsService {
     const proof = await this.findOrThrow(id);
     this.assertPendingReview(proof.status);
 
+    const amount = Number(proof.extractedAmount);
+    if (!Number.isFinite(amount) || amount <= 0) {
+      throw new ConflictException(
+        'El comprobante debe tener un monto válido mayor a cero. Rechazalo o pasalo a manejo manual para revisar los datos.',
+      );
+    }
+
     const updated = await this.prisma.paymentProof.update({
       where: { id },
       data: {
@@ -499,6 +506,21 @@ export class PaymentProofsService {
     }
 
     const proof = await this.findOrThrow(id);
+
+    if (proof.status !== 'ACCEPTED') {
+      throw new ConflictException(
+        'Solo se puede verificar el impacto de un comprobante aceptado',
+      );
+    }
+    if (
+      dto.impactStatus === 'CONFIRMED' &&
+      (!Number.isFinite(Number(proof.extractedAmount)) ||
+        !(Number(proof.extractedAmount) > 0))
+    ) {
+      throw new ConflictException(
+        'No se puede confirmar un comprobante sin monto válido mayor a cero',
+      );
+    }
 
     const updated = await this.prisma.paymentProof.update({
       where: { id },
