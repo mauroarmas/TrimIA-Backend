@@ -1,5 +1,15 @@
 # Specs — estado del producto
 
+## Próximo trabajo del MVP — 2026-11-04
+
+| Orden | Spec | Estado y alcance |
+|---|---|---|
+| 1 | [020 — Venta financiada completa](020-venta-financiada-mvp/spec.md) | Especificada y validada para planificar. Conversación → solicitud → dictamen simulado → revisión humana → aviso. |
+| 2 | [021 — Seguimiento comercial automático](021-seguimiento-comercial-mvp/spec.md) | Especificada y validada para planificar. Una regla, un seguimiento por oportunidad, bajas y resultado de comunicación. |
+
+Google Sheets se configura y valida dentro de la [019](019-integraciones-crm-stock-credito/spec.md). Audio web, mezcla de hilos y proveedores reales no se incorporan a estas dos specs. Las specs 014–019 están en el repositorio y su implementación de convergencia fue desplegada; ver [registro](../docs/CONVERGENCIA_014_019.md). La tabla histórica que sigue no representa por sí sola el estado actual del despliegue.
+
+
 Una carpeta por feature, con el flujo de GitHub Spec Kit
 (`/speckit-specify → /speckit-plan → /speckit-tasks → /speckit-implement`).
 Este archivo es el índice: qué aporta cada spec, en qué estado está y qué le
