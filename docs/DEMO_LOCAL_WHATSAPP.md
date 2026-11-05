@@ -174,3 +174,15 @@ No se inició el stack sobre los datos existentes ni se publicó un túnel: prim
 - [Instalar Tailscale en Linux](https://tailscale.com/docs/install/linux)
 - [Límites de Quick Tunnels: sin SSE](https://developers.cloudflare.com/tunnel/get-started/quick-tunnels/#limitations)
 - [Guía actual ngrok/WhatsApp](https://ngrok.com/docs/integrations/webhooks/whatsapp-webhooks)
+
+## Diagnóstico temporal habilitado el 2026-11-05
+
+Mauro autorizó guardar las ejecuciones nuevas de n8n para depurar la demo, incluidos sus payloads. El override local configura `EXECUTIONS_DATA_SAVE_ON_SUCCESS=all`, `EXECUTIONS_DATA_SAVE_ON_ERROR=all`, `EXECUTIONS_DATA_SAVE_MANUAL_EXECUTIONS=true`, `EXECUTIONS_DATA_PRUNE=true` y `EXECUTIONS_DATA_MAX_AGE=24`. La limpieza es periódica: 24 horas es la retención, no una garantía de borrado al segundo exacto. No recupera ejecuciones anteriores que no se guardaron. Al terminar QA, volver a none/none/false y recrear solo n8n con el Compose de demo. El Compose base mantiene su política habitual sin persistir ejecuciones; esta es una excepción temporal expresamente autorizada.
+
+El editor sigue privado en http://localhost:5678. En Recepción de Mensaje (A) → Executions ya se comprobó la ejecución 1260 (webhook GET de verificación sin mensajes externos, success). Las futuras ejecuciones de WhatsApp aparecerán ahí. El **Simulador de Chat** usa `/messaging/simulate` → BullMQ → backend/Gemini: no pasa por ese workflow de n8n. Las llamadas Gemini del agente se inspeccionan en las métricas/logs del backend; n8n solo transcribe audio en su rama específica y conecta WhatsApp/Sheets.
+
+Diagnóstico del hilo WEB 090e3597-7725-4b61-a123-801d65e059ff: ingreso en 13–19 ms, cola sin trabajos waiting/active/delayed/failed al comprobarla. «hola» tardó 20.202 ms en el orquestador porque el agente sticky forzaba scope_check; «qué venden?» tardó 11.418 ms (scope ~1.262 ms y retrieval ~10.135 ms), con score 0,6460288 bajo el umbral 0,65. Esta derivación fue por baja confianza. Los candidatos públicos fueron «Qué es Credimisión: la empresa en una página» y «Sobre Nosotros», entre otros; la cobertura del catálogo requiere revisión de contenido, no bajar el umbral.
+
+Conectividad verificada desde la API: Gemini `gemini-3.5-flash-lite` respondió en 988 ms; embeddings `gemini-embedding-2-preview` en 958 ms y consulta local Chroma en 70 ms. Son mediciones puntuales, no un SLA del proveedor ni garantía de que desaparezca toda variación de latencia.
+
+Se corrigió el saludo aislado con agente ya fijado: `hola`, `¡hola!` y `buenas tardes` ahora usan respuesta local sin LLM. Confirmaciones ambiguas como `dale`/`ok` y saludos con una consulta conservan el análisis contextual. Validación: 5 suites / 125 pruebas aprobadas, ESLint/Prettier, imagen construida y API desplegada; grafo compilado del contenedor activo probado con 0 llamadas al modelo (43 ms), smoke de API/CORS/autenticación correcto y health público 200. No se alteró ni resolvió automáticamente el caso real que espera supervisor.

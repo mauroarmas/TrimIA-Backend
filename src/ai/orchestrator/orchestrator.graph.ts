@@ -22,6 +22,7 @@ import {
 } from './utils/orchestrator.schemas';
 import {
   isTrivial,
+  isOpeningGreeting,
   isUntranscribableAudio,
   cannedReply,
   OPENING_REPLY,
@@ -42,7 +43,7 @@ const AGENT_KEYS: SpecializedAgent[] = [
  *
  * Flujo:
  *   START → [entryRouter]
- *     - trivial (regex), SOLO sin sticky → trivial_response → log_event → track_tokens → END (0 tokens)
+ *     - saludo aislado (con/sin sticky) o cortesía sin sticky → trivial_response → log_event → track_tokens → END (0 tokens)
  *     - sticky (currentAgent)  → scope_check
  *     - sin agente             → classify_intent
  *   scope_check → [scopeRouter]
@@ -285,7 +286,11 @@ export function buildOrchestratorGraph(
     // simplemente no se entendió.
     if (isUntranscribableAudio(state.message)) return 'trivial';
 
-    // El atajo de 0 tokens solo es seguro sin agente sticky: con un agente
+    // "Hola" no confirma una acción previa: no necesita scope_check ni Gemini.
+    // "Dale"/"ok" con sticky mantienen el análisis contextual de abajo.
+    if (isOpeningGreeting(state.message)) return 'trivial';
+
+    // Para cierres/cortesías, el atajo solo es seguro sin agente sticky: con uno
     // fijado, un "dale"/"listo"/"ok" corto puede ser la confirmación a una
     // pregunta que el bot mismo hizo en el turno anterior (mismo callejón sin
     // salida que motivó pasarle el historial a scope_check — ver su comentario).

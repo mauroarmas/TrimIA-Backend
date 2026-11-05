@@ -21,6 +21,13 @@ services:
       N8N_EDITOR_BASE_URL: http://localhost:5678
       N8N_SECURE_COOKIE: 'false'
       TRIMIA_API_URL: http://nestjs:3000
+      # Diagnóstico temporal de la demo autorizado el 2026-11-05.
+      # Guarda payloads de ejecuciones nuevas; volver a none/false al cerrar QA.
+      EXECUTIONS_DATA_SAVE_ON_SUCCESS: all
+      EXECUTIONS_DATA_SAVE_ON_ERROR: all
+      EXECUTIONS_DATA_SAVE_MANUAL_EXECUTIONS: 'true'
+      EXECUTIONS_DATA_PRUNE: 'true'
+      EXECUTIONS_DATA_MAX_AGE: '24'
   nestjs:
     build:
       dockerfile: Dockerfile
