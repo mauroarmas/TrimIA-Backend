@@ -1,5 +1,7 @@
 # Implementación aislada de convergencia 014–019
 
+> Actualización del 2026-11-04: la convergencia fue revisada y aprobada por Mauro y se integró en los checkouts del despliegue. Ya está publicada en `https://trimia-demo.tail9126e1.ts.net/`. La descripción de aislamiento que sigue documenta la etapa anterior a esa aprobación; ver el registro de despliegue al final.
+
 Fecha: 2026-11-04. Rama de backend y panel: `feat/convergencia-014-019-20261103`.
 
 El checkout estable y el servicio de Tailscale permanecen en su versión previa. Los cambios se prepararon en `/home/mauro/Proyectos/trimIA-convergencia-20261103/trimIA` y su hermano `trimIA-frontend`. No se hizo merge a main ni despliegue en el entorno compartido.
@@ -61,3 +63,14 @@ Pendientes de revisión visual: edición/publicación e indexación opcional del
 - Comparación del checkout estable: 2.062 archivos sin cambios, incluidas fuentes, dist del panel, HEAD y cliente Prisma originales. Solo variaron dos archivos operativos WAL/SHM de n8n durante su funcionamiento. API/gateway conservaron ID e imagen; Tailscale respondió HTTP 200.
 
 Marcas de la fase de convergencia: 45 verificadas. T039/T040 de 015 y T032 de 017 conservan `[ ]` exclusivamente por su comprobación visual explícita pendiente. El código correspondiente está implementado. Las checklists de requisitos no se modificaron (019 continuó con autorización expresa del usuario).
+
+## Despliegue aprobado — 2026-11-04
+
+- Integración en la rama local que usa la demo, `fix/reporte-qa-produccion-2026-11-02`: backend merge `bf8db54`; frontend integra `f9bffec`. Los árboles integrados coinciden con la convergencia revisada. Las eliminaciones documentales previas y los archivos de trabajo ajenos a la integración se conservaron.
+- Respaldo de PostgreSQL: `storage/backups/demo-20261104-221304.sql`. Se conservó además el build anterior del panel en el respaldo local del despliegue.
+- El diferencial de esquema fue revisado antes de aplicar. `prisma db push` se detuvo por la advertencia genérica de índice único en `diagnostic_sessions.activeKey`; la tabla tenía cero filas. Se aplicó el SQL revisado mediante `psql -1 -v ON_ERROR_STOP=1`, sin `--accept-data-loss`, reset ni seed. Los cambios agregan campos, índices y auditoría y convierten la duración de audio de entero a decimal.
+- Las cantidades de empleados, clientes, cuotas, comprobantes, conversaciones, mensajes, prospectos, solicitudes, módulos, píldoras, progresos, diagnósticos y simulaciones coincidieron antes y después de la actualización.
+- Se reconstruyó la imagen de API con ffmpeg/ffprobe y se configuró `GEMINI_TTS_MODEL=gemini-3.1-flash-tts-preview`, comprobando que figura entre los modelos disponibles de la cuenta. No se ejecutó síntesis nueva durante el despliegue.
+- El panel se compiló con el mismo origen HTTPS y se publicó conservando los assets anteriores para las sesiones abiertas. La URL pública y la configuración de Tailscale no se modificaron.
+- Comprobaciones por la URL pública: build nuevo, health 200, cuentas QA válidas y cuenta inactiva rechazada, módulos y gestión de capacitación, audio existente con rango 206, prospectos, stock, solicitudes de financiación, métricas y estado de agentes. Se comprobó 401 al pedir audio sin sesión y revocación efectiva del token al cerrar sesión. Las seis comprobaciones del gateway también aprobaron.
+- No se importaron workflows CRM ni se configuró una hoja externa. Su configuración con Google Sheets continúa como trabajo del MVP; no se atribuye a este despliegue una integración remota que no se verificó.
