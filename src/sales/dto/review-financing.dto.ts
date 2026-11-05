@@ -1,6 +1,14 @@
-import { IsIn, IsOptional, IsString, MaxLength } from 'class-validator';
+import {
+  IsInt,
+  Min,
+  IsIn,
+  IsOptional,
+  IsString,
+  MaxLength,
+} from 'class-validator';
 
 export class ReviewFinancingDto {
+  @IsInt() @Min(1) expectedVersion: number;
   @IsIn(['APPROVED', 'REJECTED'])
   decision: 'APPROVED' | 'REJECTED';
 

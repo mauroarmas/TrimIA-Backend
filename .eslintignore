@@ -4,3 +4,7 @@ build/
 coverage/
 storage/
 *.min.js
+
+build/
+coverage/
+*.min.js

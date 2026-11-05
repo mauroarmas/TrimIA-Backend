@@ -22,7 +22,8 @@
     "db:deploy": "prisma db push --skip-generate",
     "bootstrap:supervisor": "node scripts/create-supervisor.cjs",
     "deploy:prepare-n8n": "node scripts/prepare-n8n.cjs",
-    "test:gateway": "node --test deploy/local/gateway.test.cjs"
+    "test:gateway": "node --test deploy/local/gateway.test.cjs",
+    "financing:demo": "node -r ts-node/register src/financing/testing/financing-demo.ts"
   },
   "dependencies": {
     "@langchain/core": "^1.1.47",

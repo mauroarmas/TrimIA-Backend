@@ -4,7 +4,7 @@
 
 **Created**: 2026-11-04
 
-**Status**: Draft — lista para planificación; no implementada.
+**Status**: Implementada y validada en ramas aisladas; pendiente de integración y despliegue.
 
 **Input**: Flujo aprobado por Mauro: cliente solicita financiación → se registra la solicitud → Administración obtiene un dictamen simulado → supervisor decide → cliente recibe el resultado. Stock y crédito simulados; Google Sheets como CRM; GCP para versión final y Paperclip excluido.
 

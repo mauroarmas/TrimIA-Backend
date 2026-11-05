@@ -1,6 +1,6 @@
 # Contexto técnico de TrimIA
 
-Referencia operativa actualizada el 2026-11-04. La versión anterior de este documento quedó en el archivo externo indicado en [el índice](README.md). El código y los contratos de las specs prevalecen sobre descripciones históricas.
+Referencia operativa actualizada el 2026-11-05. La versión anterior de este documento quedó en el archivo externo indicado en [el índice](README.md). El código y los contratos de las specs prevalecen sobre descripciones históricas.
 
 ## Componentes
 
@@ -61,3 +61,14 @@ La presencia de esos módulos no acredita por sí sola un MVP completo. Los fluj
 `npm test -- --runInBand`, `npm run build` y `npm run test:gateway` cubren las comprobaciones locales habituales. El banco generativo se ejecuta aparte con `npm run test:escenarios`; las pruebas determinísticas no acreditan por sí solas precisión o latencia de un proveedor real.
 
 Specs 014–019 y [registro de convergencia](CONVERGENCIA_014_019.md) documentan los cambios recientes. Los requisitos originales y fuentes de negocio permanecen en `docs/`.
+
+
+## Financiación MVP — spec 020 (rama aislada)
+
+`src/financing/` completa el formulario operativo de clientes externos WhatsApp antes del orquestador factual, después de verificar identidad/pausa. Preguntas ajenas, cortesías y audio no transcribible conservan su flujo anterior; fábrica, audiencias, whitelist y umbrales RAG no cambian. Nombre/DNI/producto y precio STOCK inequívoco o confirmado por supervisor se guardan como borrador privado. Confirmación final, solicitud/oportunidad y marca idempotente comparten transacción. caseKey relaciona recopilación con auditoría; requestVersion invalida resúmenes anteriores a cambios humanos. El bloqueo de fila es FOR NO KEY UPDATE para permitir FK sin perder exclusión del formulario.
+
+La cola financing recupera evaluaciones pendientes y avisos cada 30 segundos. Las evaluaciones MOCK guardan snapshots y requieren siempre decisión humana. Corrección CAS actualiza los campos comerciales del Prospect y lo deja PENDING de sincronización; Sheets mantiene sus 17 columnas. Revisión/cancelación compiten por versión, no sobreescriben historia y no crean cuotas/pagos/cierre.
+
+OutboundCommunication es la única tabla nueva y su propia salida duradera. Claim y Message se guardan juntos; la aceptación simulada no acredita entrega. Claim vencido a los 60 segundos produce UNCERTAIN sin reenvío ciego. Solo FAILED admite retry humano. FINANCING_NOTICE_TRANSPORT se valida con Joi: disabled por defecto, simulated para prueba; no existe adaptador real en esta spec. Ingresos con providerMessageId usan namespace del gateway configurado/canal y se publican por ConversationsService, conservando mensaje/job originales ante reenvío. Borradores privados se omiten en conversaciones, escalaciones y proyecciones comerciales.
+
+Panel: bandeja AdminFinancingPanel ampliada; FinancingDraftEditor en el hilo de SupervisorPanel conserva sus permisos. Nuevos clientes API requieren expectedVersion y recarga ante 409. Ver [contratos](../specs/020-venta-financiada-mvp/contracts/README.md) y [evidencia/entorno aislado](../specs/020-venta-financiada-mvp/quickstart.md). Esta rama no cambia el link Tailscale ni el despliegue vigente.

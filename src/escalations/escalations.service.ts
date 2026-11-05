@@ -368,7 +368,9 @@ export class EscalationsService {
     const escalation = await this.prisma.escalation.findUnique({
       where: { id },
       include: {
-        conversation: true,
+        conversation: {
+          omit: { financingDraft: true, financingVersion: true },
+        },
         // Spec 007: para poder mostrar "se corrigió «título»" / "ya existía
         // como «título»" sin que el panel tenga que pedir el documento aparte.
         resolvedWithDocument: { select: { id: true, title: true } },

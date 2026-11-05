@@ -1,3 +1,4 @@
+import { financingTransportSchema } from '../../financing/financing.types';
 import { Global, Module } from '@nestjs/common';
 import { ConfigModule as NestConfigModule } from '@nestjs/config';
 import * as Joi from 'joi';
@@ -12,6 +13,7 @@ import * as Joi from 'joi';
           .valid('development', 'production', 'test')
           .default('development'),
         PORT: Joi.number().default(3000),
+        FINANCING_NOTICE_TRANSPORT: financingTransportSchema,
         TRUST_PROXY_HOPS: Joi.number().integer().min(0).default(0),
         CORS_ORIGINS: Joi.string().when('NODE_ENV', {
           is: 'production',

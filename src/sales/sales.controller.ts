@@ -1,3 +1,7 @@
+import { CompleteFinancingDraftDto } from '../financing/dto/complete-financing-draft.dto';
+import { CorrectFinancingDto } from '../financing/dto/correct-financing.dto';
+import { CancelFinancingDto } from '../financing/dto/cancel-financing.dto';
+import { RetryFinancingNoticeDto } from '../financing/dto/retry-financing-notice.dto';
 import { CommercialFollowupDto } from './dto/commercial-followup.dto';
 import {
   Body,
@@ -63,6 +67,7 @@ export class SalesController {
   }
 
   @Post('financing/requests/:id/review')
+  @HttpCode(200)
   reviewFinancing(
     @Param('id', ParseUUIDPipe) id: string,
     @Body() dto: ReviewFinancingDto,
@@ -75,6 +80,68 @@ export class SalesController {
       );
     }
     return this.salesService.reviewFinancingRequest(id, dto, req.user.id);
+  }
+
+  private assertFinancialSupervisor(user: any) {
+    assertCanAccessFinancing(user);
+    if (user.role !== 'SUPERVISOR')
+      throw new ForbiddenException(
+        'Solo un supervisor financiero puede modificar el caso',
+      );
+  }
+  @Get('financing/requests/:id')
+  financingDetail(@Param('id', ParseUUIDPipe) id: string, @Req() req: any) {
+    assertCanAccessFinancing(req.user);
+    return this.salesService.getFinancingRequest(id);
+  }
+  @Get('financing/conversations/:id/draft')
+  financingDraft(@Param('id', ParseUUIDPipe) id: string, @Req() req: any) {
+    assertCanAccessFinancing(req.user);
+    return this.salesService.getFinancingDraft(id);
+  }
+  @Post('financing/conversations/:id/draft')
+  @HttpCode(200)
+  completeFinancingDraft(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CompleteFinancingDraftDto,
+    @Req() req: any,
+  ) {
+    this.assertFinancialSupervisor(req.user);
+    return this.salesService.completeFinancingDraft(id, dto, req.user.id);
+  }
+  @Post('financing/requests/:id/correct')
+  @HttpCode(200)
+  correctFinancing(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CorrectFinancingDto,
+    @Req() req: any,
+  ) {
+    this.assertFinancialSupervisor(req.user);
+    return this.salesService.correctFinancingRequest(id, dto, req.user.id);
+  }
+  @Post('financing/requests/:id/cancel')
+  @HttpCode(200)
+  cancelFinancing(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CancelFinancingDto,
+    @Req() req: any,
+  ) {
+    this.assertFinancialSupervisor(req.user);
+    return this.salesService.cancelFinancingRequest(id, dto, req.user.id);
+  }
+  @Post('financing/notices/:id/retry')
+  @HttpCode(200)
+  retryFinancingNotice(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: RetryFinancingNoticeDto,
+    @Req() req: any,
+  ) {
+    this.assertFinancialSupervisor(req.user);
+    return this.salesService.retryFinancingNotice(
+      id,
+      dto.expectedVersion,
+      req.user.id,
+    );
   }
 
   /** POST /sales/clients — alta de cliente con su plan de cuotas. */

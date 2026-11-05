@@ -1,3 +1,5 @@
+import { FinancingModule } from '../financing/financing.module';
+import { FinancingProcessor } from './processors/financing.processor';
 import { Module } from '@nestjs/common';
 import { BullModule } from '@nestjs/bullmq';
 import { ConversationsModule } from '../conversations/conversations.module';
@@ -26,8 +28,10 @@ import { ImprovementsModule } from '../improvements/improvements.module';
 
 @Module({
   imports: [
+    FinancingModule,
     BullModule.registerQueue(
       { name: 'message-processing' },
+      { name: 'financing' },
       { name: 'receipt-extraction' },
       { name: 'reminders' },
       { name: 'knowledge-reindex' }, // Sprint 5A
@@ -52,6 +56,7 @@ import { ImprovementsModule } from '../improvements/improvements.module';
     ImprovementsModule,
   ],
   providers: [
+    FinancingProcessor,
     MessageProcessor,
     ReceiptExtractionProcessor,
     RemindersProcessor,

@@ -81,6 +81,15 @@ export function localCrmRecord(local: any): CrmProspectRecord {
     local.crmData && typeof local.crmData === 'object' ? local.crmData : {};
   const record: CrmProspectRecord = {
     ...stored,
+    ...(stored.sheet
+      ? {
+          sheet: {
+            ...stored.sheet,
+            'Producto/s': local.productInterest,
+            Planes: local.modality === 'FINANCED' ? 'Cuotas semanales' : '',
+          },
+        }
+      : {}),
     localId: local.id,
     fechaContacto:
       stored.fechaContacto ?? local.createdAt.toISOString().slice(0, 10),

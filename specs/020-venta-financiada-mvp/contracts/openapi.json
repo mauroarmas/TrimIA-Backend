@@ -1,0 +1,1963 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "TrimIA — contrato objetivo financiación MVP 020",
+    "version": "0.1.0",
+    "description": "Diseño, no implementación. JWT y permisos financieros actuales; mutaciones solo supervisor habilitado. Rutas relativas al prefijo global ya configurado."
+  },
+  "security": [
+    {
+      "bearerAuth": []
+    }
+  ],
+  "paths": {
+    "/sales/financing/requests": {
+      "get": {
+        "operationId": "listFinancingRequests",
+        "tags": [
+          "Financing020"
+        ],
+        "summary": "listFinancingRequests",
+        "description": "Requiere acceso financiero actual; no amplía acceso al reporte crediticio.",
+        "responses": {
+          "200": {
+            "description": "Resultado seguro; aceptación de aviso no implica entrega",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/Summary"
+                  }
+                },
+                "examples": {
+                  "PendingRequest": {
+                    "summary": "Solicitud nueva pendiente de revisión",
+                    "value": [
+                      {
+                        "id": "00000000-0000-4000-8000-000000000001",
+                        "productSummary": "Producto de prueba 020",
+                        "amount": "100000.00",
+                        "status": "PENDING_REVIEW",
+                        "createdAt": "2026-11-05T12:00:00Z",
+                        "reviewedAt": null,
+                        "reviewNote": null,
+                        "client": {
+                          "id": "00000000-0000-4000-8000-000000000004",
+                          "name": "Cliente Ficticio 020",
+                          "dni": "30000008",
+                          "phone": "5490000000001"
+                        },
+                        "reviewedBy": null,
+                        "financing": null,
+                        "creditAssessments": [
+                          {
+                            "verdict": "APPROVED",
+                            "reason": "Resultado reservado de prueba.",
+                            "source": "MOCK",
+                            "createdAt": "2026-11-05T12:00:00Z",
+                            "requestVersion": 1,
+                            "inputSnapshot": {
+                              "name": "Cliente Ficticio 020",
+                              "dni": "30000008",
+                              "productSummary": "Producto de prueba 020",
+                              "amount": "100000.00",
+                              "currency": "ARS",
+                              "priceSource": "SUPERVISOR",
+                              "priceConfirmedAt": "2026-11-05T12:00:00Z",
+                              "priceConfirmedById": "00000000-0000-4000-8000-000000000002",
+                              "conversationId": "00000000-0000-4000-8000-000000000003",
+                              "phone": "5490000000001",
+                              "inputVersion": 1
+                            }
+                          }
+                        ],
+                        "version": 1,
+                        "conversationId": "00000000-0000-4000-8000-000000000003",
+                        "prospectId": "00000000-0000-4000-8000-000000000005",
+                        "evaluationState": "READY",
+                        "legacyNeedsConfirmation": false,
+                        "inputSnapshot": {
+                          "name": "Cliente Ficticio 020",
+                          "dni": "30000008",
+                          "productSummary": "Producto de prueba 020",
+                          "amount": "100000.00",
+                          "currency": "ARS",
+                          "priceSource": "SUPERVISOR",
+                          "priceConfirmedAt": "2026-11-05T12:00:00Z",
+                          "priceConfirmedById": "00000000-0000-4000-8000-000000000002",
+                          "conversationId": "00000000-0000-4000-8000-000000000003",
+                          "phone": "5490000000001",
+                          "inputVersion": 1
+                        },
+                        "reviewedSnapshot": null,
+                        "notice": null
+                      }
+                    ]
+                  },
+                  "LegacyRequest": {
+                    "summary": "Solicitud legada que exige confirmación humana",
+                    "value": [
+                      {
+                        "id": "00000000-0000-4000-8000-000000000010",
+                        "productSummary": "Producto de prueba 020",
+                        "amount": "100000.00",
+                        "status": "PENDING_REVIEW",
+                        "createdAt": "2026-11-05T12:00:00Z",
+                        "reviewedAt": null,
+                        "reviewNote": null,
+                        "client": {
+                          "id": "00000000-0000-4000-8000-000000000004",
+                          "name": "Cliente Ficticio 020",
+                          "dni": "30000008",
+                          "phone": "5490000000001"
+                        },
+                        "reviewedBy": null,
+                        "financing": null,
+                        "creditAssessments": [],
+                        "version": 1,
+                        "conversationId": "00000000-0000-4000-8000-000000000003",
+                        "prospectId": null,
+                        "evaluationState": null,
+                        "legacyNeedsConfirmation": true,
+                        "inputSnapshot": null,
+                        "reviewedSnapshot": null,
+                        "notice": null
+                      }
+                    ]
+                  },
+                  "ResolvedRequest": {
+                    "summary": "Solicitud resuelta con aviso aceptado en simulación",
+                    "value": [
+                      {
+                        "id": "00000000-0000-4000-8000-000000000020",
+                        "productSummary": "Producto de prueba 020",
+                        "amount": "100000.00",
+                        "status": "APPROVED",
+                        "createdAt": "2026-11-05T12:00:00Z",
+                        "reviewedAt": "2026-11-05T12:00:00Z",
+                        "reviewNote": null,
+                        "client": {
+                          "id": "00000000-0000-4000-8000-000000000004",
+                          "name": "Cliente Ficticio 020",
+                          "dni": "30000008",
+                          "phone": "5490000000001"
+                        },
+                        "reviewedBy": {
+                          "id": "00000000-0000-4000-8000-000000000002",
+                          "name": "Supervisor Ficticio 020"
+                        },
+                        "financing": null,
+                        "creditAssessments": [
+                          {
+                            "verdict": "APPROVED",
+                            "reason": "Resultado reservado de prueba.",
+                            "source": "MOCK",
+                            "createdAt": "2026-11-05T12:00:00Z",
+                            "requestVersion": 1,
+                            "inputSnapshot": {
+                              "name": "Cliente Ficticio 020",
+                              "dni": "30000008",
+                              "productSummary": "Producto de prueba 020",
+                              "amount": "100000.00",
+                              "currency": "ARS",
+                              "priceSource": "SUPERVISOR",
+                              "priceConfirmedAt": "2026-11-05T12:00:00Z",
+                              "priceConfirmedById": "00000000-0000-4000-8000-000000000002",
+                              "conversationId": "00000000-0000-4000-8000-000000000003",
+                              "phone": "5490000000001",
+                              "inputVersion": 1
+                            }
+                          }
+                        ],
+                        "version": 2,
+                        "conversationId": "00000000-0000-4000-8000-000000000003",
+                        "prospectId": "00000000-0000-4000-8000-000000000005",
+                        "evaluationState": "READY",
+                        "legacyNeedsConfirmation": false,
+                        "inputSnapshot": {
+                          "name": "Cliente Ficticio 020",
+                          "dni": "30000008",
+                          "productSummary": "Producto de prueba 020",
+                          "amount": "100000.00",
+                          "currency": "ARS",
+                          "priceSource": "SUPERVISOR",
+                          "priceConfirmedAt": "2026-11-05T12:00:00Z",
+                          "priceConfirmedById": "00000000-0000-4000-8000-000000000002",
+                          "conversationId": "00000000-0000-4000-8000-000000000003",
+                          "phone": "5490000000001",
+                          "inputVersion": 1
+                        },
+                        "reviewedSnapshot": {
+                          "name": "Cliente Ficticio 020",
+                          "dni": "30000008",
+                          "productSummary": "Producto de prueba 020",
+                          "amount": "100000.00",
+                          "currency": "ARS",
+                          "priceSource": "SUPERVISOR",
+                          "priceConfirmedAt": "2026-11-05T12:00:00Z",
+                          "priceConfirmedById": "00000000-0000-4000-8000-000000000002",
+                          "conversationId": "00000000-0000-4000-8000-000000000003",
+                          "phone": "5490000000001",
+                          "inputVersion": 1
+                        },
+                        "notice": {
+                          "id": "00000000-0000-4000-8000-000000000021",
+                          "version": 3,
+                          "status": "ACCEPTED",
+                          "transportMode": "simulated",
+                          "providerMessageId": "sim:financing-020-example",
+                          "lastErrorCode": null,
+                          "attemptCount": 1,
+                          "acceptedAt": "2026-11-05T12:00:00Z"
+                        }
+                      }
+                    ]
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Datos o nota inválidos",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No autenticado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Sin permiso financiero/de supervisión",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No encontrado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Versión/estado en conflicto; recargar caso",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sales/financing/requests/{id}": {
+      "get": {
+        "operationId": "getFinancingRequest",
+        "tags": [
+          "Financing020"
+        ],
+        "summary": "getFinancingRequest",
+        "description": "Requiere acceso financiero actual; no amplía acceso al reporte crediticio.",
+        "responses": {
+          "200": {
+            "description": "Resultado seguro; aceptación de aviso no implica entrega",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Detail"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Datos o nota inválidos",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No autenticado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Sin permiso financiero/de supervisión",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No encontrado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Versión/estado en conflicto; recargar caso",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ]
+      }
+    },
+    "/sales/financing/requests/{id}/review": {
+      "post": {
+        "operationId": "reviewFinancingRequest",
+        "tags": [
+          "Financing020"
+        ],
+        "summary": "reviewFinancingRequest",
+        "description": "Requiere acceso financiero actual y role SUPERVISOR.",
+        "responses": {
+          "200": {
+            "description": "Resultado seguro; aceptación de aviso no implica entrega",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Summary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Datos o nota inválidos",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No autenticado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Sin permiso financiero/de supervisión",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No encontrado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Versión/estado en conflicto; recargar caso",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Review"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sales/financing/requests/{id}/correct": {
+      "post": {
+        "operationId": "correctFinancingRequest",
+        "tags": [
+          "Financing020"
+        ],
+        "summary": "correctFinancingRequest",
+        "description": "Requiere acceso financiero actual y role SUPERVISOR.",
+        "responses": {
+          "200": {
+            "description": "Resultado seguro; aceptación de aviso no implica entrega",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Detail"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Datos o nota inválidos",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No autenticado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Sin permiso financiero/de supervisión",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No encontrado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Versión/estado en conflicto; recargar caso",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Correction"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sales/financing/requests/{id}/cancel": {
+      "post": {
+        "operationId": "cancelFinancingRequest",
+        "tags": [
+          "Financing020"
+        ],
+        "summary": "cancelFinancingRequest",
+        "description": "Requiere acceso financiero actual y role SUPERVISOR.",
+        "responses": {
+          "200": {
+            "description": "Resultado seguro; aceptación de aviso no implica entrega",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Summary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Datos o nota inválidos",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No autenticado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Sin permiso financiero/de supervisión",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No encontrado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Versión/estado en conflicto; recargar caso",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Cancel"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sales/financing/conversations/{id}/draft": {
+      "get": {
+        "operationId": "getFinancingDraft",
+        "tags": [
+          "Financing020"
+        ],
+        "summary": "getFinancingDraft",
+        "description": "Requiere acceso financiero actual; no amplía acceso al reporte crediticio.",
+        "responses": {
+          "200": {
+            "description": "Resultado seguro; aceptación de aviso no implica entrega",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Draft"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Datos o nota inválidos",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No autenticado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Sin permiso financiero/de supervisión",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No encontrado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Versión/estado en conflicto; recargar caso",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ]
+      },
+      "post": {
+        "operationId": "completeFinancingDraft",
+        "tags": [
+          "Financing020"
+        ],
+        "summary": "completeFinancingDraft",
+        "description": "Requiere acceso financiero actual y role SUPERVISOR.",
+        "responses": {
+          "200": {
+            "description": "Resultado seguro; aceptación de aviso no implica entrega",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Draft"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Datos o nota inválidos",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No autenticado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Sin permiso financiero/de supervisión",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No encontrado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Versión/estado en conflicto; recargar caso",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/CompleteDraft"
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sales/financing/notices/{id}/retry": {
+      "post": {
+        "operationId": "retryFinancingNotice",
+        "tags": [
+          "Financing020"
+        ],
+        "summary": "retryFinancingNotice",
+        "description": "Requiere acceso financiero actual y role SUPERVISOR.",
+        "responses": {
+          "200": {
+            "description": "Resultado seguro; aceptación de aviso no implica entrega",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Notice"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Datos o nota inválidos",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "No autenticado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Sin permiso financiero/de supervisión",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "No encontrado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Versión/estado en conflicto; recargar caso",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        },
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/Retry"
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
+      }
+    },
+    "schemas": {
+      "Error": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "code": {
+            "type": "string"
+          },
+          "message": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message"
+        ]
+      },
+      "Person": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ]
+      },
+      "Client": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "dni": {
+            "type": "string",
+            "pattern": "^[0-9]{7,8}$",
+            "nullable": true
+          },
+          "phone": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "dni",
+          "phone"
+        ]
+      },
+      "Snapshot": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "dni": {
+            "type": "string",
+            "pattern": "^[0-9]{7,8}$"
+          },
+          "productSummary": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "sku": {
+            "type": "string"
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^(?:0\\.[0-9]{2}|[1-9][0-9]*\\.[0-9]{2})$",
+            "description": "Decimal ARS. Servicio exige valor estrictamente positivo; 0.00 no es válido."
+          },
+          "currency": {
+            "type": "string",
+            "enum": [
+              "ARS"
+            ]
+          },
+          "priceSource": {
+            "type": "string",
+            "enum": [
+              "STOCK",
+              "SUPERVISOR"
+            ]
+          },
+          "priceConfirmedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "priceConfirmedById": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "conversationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "phone": {
+            "type": "string"
+          },
+          "inputVersion": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "name",
+          "dni",
+          "productSummary",
+          "amount",
+          "currency",
+          "priceSource",
+          "priceConfirmedAt",
+          "conversationId",
+          "phone",
+          "inputVersion"
+        ]
+      },
+      "Assessment": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "verdict": {
+            "type": "string",
+            "enum": [
+              "APPROVED",
+              "APPROVED_WITH_CONDITIONS",
+              "REJECTED",
+              "UNAVAILABLE"
+            ]
+          },
+          "reason": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "requestVersion": {
+            "type": "integer",
+            "minimum": 1,
+            "nullable": true
+          },
+          "commercialCondition": {
+            "type": "string"
+          },
+          "inputSnapshot": {
+            "$ref": "#/components/schemas/NullableSnapshot"
+          }
+        },
+        "required": [
+          "verdict",
+          "reason",
+          "source",
+          "createdAt"
+        ]
+      },
+      "Notice": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "PENDING",
+              "SENDING",
+              "ACCEPTED",
+              "FAILED",
+              "UNCERTAIN"
+            ]
+          },
+          "transportMode": {
+            "type": "string",
+            "enum": [
+              "disabled",
+              "simulated"
+            ]
+          },
+          "providerMessageId": {
+            "type": "string",
+            "nullable": true
+          },
+          "lastErrorCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "attemptCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "acceptedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "status",
+          "transportMode",
+          "attemptCount"
+        ]
+      },
+      "Financing": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "quotaCount": {
+            "type": "integer"
+          },
+          "totalAmount": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "quotaCount",
+          "totalAmount"
+        ]
+      },
+      "Summary": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "productSummary": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "amount": {
+            "type": "string",
+            "nullable": true
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "DRAFT",
+              "PENDING_REVIEW",
+              "APPROVED",
+              "REJECTED",
+              "CANCELLED"
+            ]
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "reviewedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "reviewNote": {
+            "type": "string",
+            "nullable": true
+          },
+          "client": {
+            "$ref": "#/components/schemas/Client"
+          },
+          "reviewedBy": {
+            "$ref": "#/components/schemas/NullablePerson"
+          },
+          "financing": {
+            "$ref": "#/components/schemas/NullableFinancing"
+          },
+          "creditAssessments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Assessment"
+            }
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "conversationId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "prospectId": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "evaluationState": {
+            "type": "string",
+            "enum": [
+              "PENDING",
+              "READY",
+              null
+            ],
+            "nullable": true
+          },
+          "legacyNeedsConfirmation": {
+            "type": "boolean"
+          },
+          "inputSnapshot": {
+            "$ref": "#/components/schemas/NullableSnapshot"
+          },
+          "reviewedSnapshot": {
+            "$ref": "#/components/schemas/NullableSnapshot"
+          },
+          "notice": {
+            "$ref": "#/components/schemas/NullableNotice"
+          }
+        },
+        "required": [
+          "id",
+          "productSummary",
+          "amount",
+          "status",
+          "createdAt",
+          "reviewedAt",
+          "reviewNote",
+          "client",
+          "reviewedBy",
+          "financing",
+          "creditAssessments",
+          "version",
+          "evaluationState",
+          "legacyNeedsConfirmation",
+          "notice"
+        ]
+      },
+      "ThreadMessage": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "role": {
+            "type": "string",
+            "enum": [
+              "USER",
+              "ASSISTANT"
+            ]
+          },
+          "content": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "noticeId": {
+            "type": "string",
+            "format": "uuid"
+          }
+        },
+        "required": [
+          "id",
+          "role",
+          "content",
+          "createdAt"
+        ]
+      },
+      "Event": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "eventType": {
+            "type": "string"
+          },
+          "createdAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "requestVersion": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "actorId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "sourceMessageId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "errorCode": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "eventType",
+          "createdAt"
+        ]
+      },
+      "Detail": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "request": {
+            "$ref": "#/components/schemas/Summary"
+          },
+          "assessments": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Assessment"
+            }
+          },
+          "messages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ThreadMessage"
+            }
+          },
+          "events": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/Event"
+            }
+          }
+        },
+        "required": [
+          "request",
+          "assessments",
+          "messages",
+          "events"
+        ]
+      },
+      "Review": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "expectedVersion": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "decision": {
+            "type": "string",
+            "enum": [
+              "APPROVED",
+              "REJECTED"
+            ]
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 2000
+          }
+        },
+        "required": [
+          "expectedVersion",
+          "decision"
+        ],
+        "description": "Nota no vacía obligatoria para apartarse del dictamen, confirmar condiciones o resolver UNAVAILABLE. Requiere evaluación vigente READY y snapshot confirmado."
+      },
+      "Correction": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "expectedVersion": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "dni": {
+            "type": "string",
+            "pattern": "^[0-9]{7,8}$"
+          },
+          "productSummary": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "sku": {
+            "type": "string"
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^(?:0\\.[0-9]{2}|[1-9][0-9]*\\.[0-9]{2})$",
+            "description": "Decimal ARS. Servicio exige valor estrictamente positivo; 0.00 no es válido."
+          },
+          "confirmData": {
+            "type": "boolean",
+            "enum": [
+              true
+            ]
+          },
+          "note": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          }
+        },
+        "required": [
+          "expectedVersion",
+          "name",
+          "dni",
+          "productSummary",
+          "amount",
+          "confirmData",
+          "note"
+        ],
+        "description": "Supervisor confirma datos/precio, crea snapshot y nueva evaluación; no modifica cliente global ni resueltos."
+      },
+      "Cancel": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "expectedVersion": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "note": {
+            "type": "string",
+            "maxLength": 2000
+          }
+        },
+        "required": [
+          "expectedVersion"
+        ]
+      },
+      "Retry": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "expectedVersion": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "expectedVersion"
+        ]
+      },
+      "Draft": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "conversationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "stage": {
+            "type": "string",
+            "enum": [
+              "COLLECTING",
+              "AWAITING_CONFIRMATION",
+              "SUBMITTED",
+              "CANCELLED",
+              "IDENTITY_CONFLICT"
+            ]
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "dni": {
+            "type": "string",
+            "pattern": "^[0-9]{7,8}$"
+          },
+          "productSummary": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "sku": {
+            "type": "string"
+          },
+          "observedAmount": {
+            "type": "string",
+            "pattern": "^(?:0\\.[0-9]{2}|[1-9][0-9]*\\.[0-9]{2})$",
+            "description": "Decimal ARS. Servicio exige valor estrictamente positivo; 0.00 no es válido."
+          },
+          "confirmedAmount": {
+            "type": "string",
+            "pattern": "^(?:0\\.[0-9]{2}|[1-9][0-9]*\\.[0-9]{2})$",
+            "description": "Decimal ARS. Servicio exige valor estrictamente positivo; 0.00 no es válido."
+          },
+          "priceSource": {
+            "type": "string",
+            "enum": [
+              "STOCK",
+              "SUPERVISOR"
+            ]
+          },
+          "priceConfirmedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "priceConfirmedById": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "purchaseRequestId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "missingFields": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "name",
+                "dni",
+                "product",
+                "confirmedAmount",
+                "customerConfirmation"
+              ]
+            }
+          }
+        },
+        "required": [
+          "conversationId",
+          "version",
+          "stage",
+          "missingFields"
+        ]
+      },
+      "CompleteDraft": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "expectedVersion": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "dni": {
+            "type": "string",
+            "pattern": "^[0-9]{7,8}$"
+          },
+          "productSummary": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "sku": {
+            "type": "string"
+          },
+          "confirmedAmount": {
+            "type": "string",
+            "pattern": "^(?:0\\.[0-9]{2}|[1-9][0-9]*\\.[0-9]{2})$",
+            "description": "Decimal ARS. Servicio exige valor estrictamente positivo; 0.00 no es válido."
+          },
+          "note": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          }
+        },
+        "required": [
+          "expectedVersion",
+          "confirmedAmount",
+          "note"
+        ],
+        "description": "Corrección humana; precio confirmado por actor JWT. Invalida confirmación previa. Cliente confirma el nuevo resumen antes de presentación."
+      },
+      "NullablePerson": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          }
+        },
+        "required": [
+          "id",
+          "name"
+        ],
+        "nullable": true
+      },
+      "NullableFinancing": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "quotaCount": {
+            "type": "integer"
+          },
+          "totalAmount": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "quotaCount",
+          "totalAmount"
+        ],
+        "nullable": true
+      },
+      "NullableSnapshot": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          },
+          "dni": {
+            "type": "string",
+            "pattern": "^[0-9]{7,8}$"
+          },
+          "productSummary": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 500
+          },
+          "sku": {
+            "type": "string"
+          },
+          "amount": {
+            "type": "string",
+            "pattern": "^(?:0\\.[0-9]{2}|[1-9][0-9]*\\.[0-9]{2})$",
+            "description": "Decimal ARS. Servicio exige valor estrictamente positivo; 0.00 no es válido."
+          },
+          "currency": {
+            "type": "string",
+            "enum": [
+              "ARS"
+            ]
+          },
+          "priceSource": {
+            "type": "string",
+            "enum": [
+              "STOCK",
+              "SUPERVISOR"
+            ]
+          },
+          "priceConfirmedAt": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "priceConfirmedById": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "conversationId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "phone": {
+            "type": "string"
+          },
+          "inputVersion": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "name",
+          "dni",
+          "productSummary",
+          "amount",
+          "currency",
+          "priceSource",
+          "priceConfirmedAt",
+          "conversationId",
+          "phone",
+          "inputVersion"
+        ],
+        "nullable": true
+      },
+      "NullableNotice": {
+        "type": "object",
+        "additionalProperties": false,
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "PENDING",
+              "SENDING",
+              "ACCEPTED",
+              "FAILED",
+              "UNCERTAIN"
+            ]
+          },
+          "transportMode": {
+            "type": "string",
+            "enum": [
+              "disabled",
+              "simulated"
+            ]
+          },
+          "providerMessageId": {
+            "type": "string",
+            "nullable": true
+          },
+          "lastErrorCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "attemptCount": {
+            "type": "integer",
+            "minimum": 0
+          },
+          "acceptedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          }
+        },
+        "required": [
+          "id",
+          "version",
+          "status",
+          "transportMode",
+          "attemptCount"
+        ],
+        "nullable": true
+      }
+    },
+    "examples": {
+      "PendingRequest": {
+        "summary": "Solicitud nueva pendiente de revisión",
+        "value": {
+          "id": "00000000-0000-4000-8000-000000000001",
+          "productSummary": "Producto de prueba 020",
+          "amount": "100000.00",
+          "status": "PENDING_REVIEW",
+          "createdAt": "2026-11-05T12:00:00Z",
+          "reviewedAt": null,
+          "reviewNote": null,
+          "client": {
+            "id": "00000000-0000-4000-8000-000000000004",
+            "name": "Cliente Ficticio 020",
+            "dni": "30000008",
+            "phone": "5490000000001"
+          },
+          "reviewedBy": null,
+          "financing": null,
+          "creditAssessments": [
+            {
+              "verdict": "APPROVED",
+              "reason": "Resultado reservado de prueba.",
+              "source": "MOCK",
+              "createdAt": "2026-11-05T12:00:00Z",
+              "requestVersion": 1,
+              "inputSnapshot": {
+                "name": "Cliente Ficticio 020",
+                "dni": "30000008",
+                "productSummary": "Producto de prueba 020",
+                "amount": "100000.00",
+                "currency": "ARS",
+                "priceSource": "SUPERVISOR",
+                "priceConfirmedAt": "2026-11-05T12:00:00Z",
+                "priceConfirmedById": "00000000-0000-4000-8000-000000000002",
+                "conversationId": "00000000-0000-4000-8000-000000000003",
+                "phone": "5490000000001",
+                "inputVersion": 1
+              }
+            }
+          ],
+          "version": 1,
+          "conversationId": "00000000-0000-4000-8000-000000000003",
+          "prospectId": "00000000-0000-4000-8000-000000000005",
+          "evaluationState": "READY",
+          "legacyNeedsConfirmation": false,
+          "inputSnapshot": {
+            "name": "Cliente Ficticio 020",
+            "dni": "30000008",
+            "productSummary": "Producto de prueba 020",
+            "amount": "100000.00",
+            "currency": "ARS",
+            "priceSource": "SUPERVISOR",
+            "priceConfirmedAt": "2026-11-05T12:00:00Z",
+            "priceConfirmedById": "00000000-0000-4000-8000-000000000002",
+            "conversationId": "00000000-0000-4000-8000-000000000003",
+            "phone": "5490000000001",
+            "inputVersion": 1
+          },
+          "reviewedSnapshot": null,
+          "notice": null
+        }
+      },
+      "LegacyRequest": {
+        "summary": "Solicitud legada que exige confirmación humana",
+        "value": {
+          "id": "00000000-0000-4000-8000-000000000010",
+          "productSummary": "Producto de prueba 020",
+          "amount": "100000.00",
+          "status": "PENDING_REVIEW",
+          "createdAt": "2026-11-05T12:00:00Z",
+          "reviewedAt": null,
+          "reviewNote": null,
+          "client": {
+            "id": "00000000-0000-4000-8000-000000000004",
+            "name": "Cliente Ficticio 020",
+            "dni": "30000008",
+            "phone": "5490000000001"
+          },
+          "reviewedBy": null,
+          "financing": null,
+          "creditAssessments": [],
+          "version": 1,
+          "conversationId": "00000000-0000-4000-8000-000000000003",
+          "prospectId": null,
+          "evaluationState": null,
+          "legacyNeedsConfirmation": true,
+          "inputSnapshot": null,
+          "reviewedSnapshot": null,
+          "notice": null
+        }
+      },
+      "ResolvedRequest": {
+        "summary": "Solicitud resuelta con aviso aceptado en simulación",
+        "value": {
+          "id": "00000000-0000-4000-8000-000000000020",
+          "productSummary": "Producto de prueba 020",
+          "amount": "100000.00",
+          "status": "APPROVED",
+          "createdAt": "2026-11-05T12:00:00Z",
+          "reviewedAt": "2026-11-05T12:00:00Z",
+          "reviewNote": null,
+          "client": {
+            "id": "00000000-0000-4000-8000-000000000004",
+            "name": "Cliente Ficticio 020",
+            "dni": "30000008",
+            "phone": "5490000000001"
+          },
+          "reviewedBy": {
+            "id": "00000000-0000-4000-8000-000000000002",
+            "name": "Supervisor Ficticio 020"
+          },
+          "financing": null,
+          "creditAssessments": [
+            {
+              "verdict": "APPROVED",
+              "reason": "Resultado reservado de prueba.",
+              "source": "MOCK",
+              "createdAt": "2026-11-05T12:00:00Z",
+              "requestVersion": 1,
+              "inputSnapshot": {
+                "name": "Cliente Ficticio 020",
+                "dni": "30000008",
+                "productSummary": "Producto de prueba 020",
+                "amount": "100000.00",
+                "currency": "ARS",
+                "priceSource": "SUPERVISOR",
+                "priceConfirmedAt": "2026-11-05T12:00:00Z",
+                "priceConfirmedById": "00000000-0000-4000-8000-000000000002",
+                "conversationId": "00000000-0000-4000-8000-000000000003",
+                "phone": "5490000000001",
+                "inputVersion": 1
+              }
+            }
+          ],
+          "version": 2,
+          "conversationId": "00000000-0000-4000-8000-000000000003",
+          "prospectId": "00000000-0000-4000-8000-000000000005",
+          "evaluationState": "READY",
+          "legacyNeedsConfirmation": false,
+          "inputSnapshot": {
+            "name": "Cliente Ficticio 020",
+            "dni": "30000008",
+            "productSummary": "Producto de prueba 020",
+            "amount": "100000.00",
+            "currency": "ARS",
+            "priceSource": "SUPERVISOR",
+            "priceConfirmedAt": "2026-11-05T12:00:00Z",
+            "priceConfirmedById": "00000000-0000-4000-8000-000000000002",
+            "conversationId": "00000000-0000-4000-8000-000000000003",
+            "phone": "5490000000001",
+            "inputVersion": 1
+          },
+          "reviewedSnapshot": {
+            "name": "Cliente Ficticio 020",
+            "dni": "30000008",
+            "productSummary": "Producto de prueba 020",
+            "amount": "100000.00",
+            "currency": "ARS",
+            "priceSource": "SUPERVISOR",
+            "priceConfirmedAt": "2026-11-05T12:00:00Z",
+            "priceConfirmedById": "00000000-0000-4000-8000-000000000002",
+            "conversationId": "00000000-0000-4000-8000-000000000003",
+            "phone": "5490000000001",
+            "inputVersion": 1
+          },
+          "notice": {
+            "id": "00000000-0000-4000-8000-000000000021",
+            "version": 3,
+            "status": "ACCEPTED",
+            "transportMode": "simulated",
+            "providerMessageId": "sim:financing-020-example",
+            "lastErrorCode": null,
+            "attemptCount": 1,
+            "acceptedAt": "2026-11-05T12:00:00Z"
+          }
+        }
+      }
+    }
+  }
+}

@@ -1,5 +1,5 @@
 generator client {
-  provider = "prisma-client-js"
+  provider      = "prisma-client-js"
   binaryTargets = ["native", "windows"]
 }
 
@@ -183,18 +183,19 @@ model Sector {
 
 // Empleado/supervisor autorizado. Determina userType al recibir un mensaje.
 model Employee {
-  id       String       @id @default(uuid())
-  phone    String       @unique // número WhatsApp normalizado
-  email    String       @unique
-  name     String
-  password String // hash bcrypt
-  role     EmployeeRole @default(EMPLEADO)
-  isActive Boolean      @default(true)
-  sectorId String
+  cancelledPurchaseRequests PurchaseRequest[] @relation("PurchaseRequestCancelledBy")
+  id                        String            @id @default(uuid())
+  phone                     String            @unique // número WhatsApp normalizado
+  email                     String            @unique
+  name                      String
+  password                  String // hash bcrypt
+  role                      EmployeeRole      @default(EMPLEADO)
+  isActive                  Boolean           @default(true)
+  sectorId                  String
   // Dónde trabaja (1:N). El nombre de la relación es OBLIGATORIO desde la spec
   // 005: hay DOS relaciones entre Employee y Sector, y sin nombrarlas Prisma no
   // puede inferir cuál es cuál (falla el `db push`).
-  sector   Sector       @relation("EmpleadoDelSector", fields: [sectorId], references: [id])
+  sector                    Sector            @relation("EmpleadoDelSector", fields: [sectorId], references: [id])
 
   // De qué áreas es RESPONSABLE (N:M, spec 005). Vacío para un empleado común;
   // una o más para un supervisor; todas para el gerente.
@@ -257,7 +258,7 @@ model Employee {
   diagnosticsReset   DiagnosticSession[] @relation("DiagnosticResetBy")
 
   // Spec 017 — Simulación y Práctica
-  simulations        SimulationSession[]
+  simulations SimulationSession[]
 
   @@index([phone])
   @@index([email])
@@ -297,17 +298,28 @@ model Client {
 // panel. `productSummary` es texto libre a propósito — TrimIA no escribe en
 // Paljet, así que no replica su catálogo (ver plan_de_trabajo.md tarea 6.9).
 model PurchaseRequest {
-  closedAt       DateTime?
-  closedById     String?
-  id             String                @id @default(uuid())
-  clientId       String
-  client         Client                @relation(fields: [clientId], references: [id])
-  conversationId String? // de qué conversación salió
-  conversation   Conversation?         @relation(fields: [conversationId], references: [id])
-  productSummary String
-  amount         Decimal?
-  modality       PaymentModality
-  status         PurchaseRequestStatus @default(PENDING_REVIEW)
+  prospectId             String?
+  prospect               Prospect?                 @relation(fields: [prospectId], references: [id])
+  version                Int                       @default(1)
+  inputSnapshot          Json?
+  reviewedSnapshot       Json?
+  activeKey              String?                   @unique
+  evaluationState        FinancingEvaluationState?
+  cancelledAt            DateTime?
+  cancelledById          String?
+  cancelledBy            Employee?                 @relation("PurchaseRequestCancelledBy", fields: [cancelledById], references: [id])
+  outboundCommunications OutboundCommunication[]
+  closedAt               DateTime?
+  closedById             String?
+  id                     String                    @id @default(uuid())
+  clientId               String
+  client                 Client                    @relation(fields: [clientId], references: [id])
+  conversationId         String? // de qué conversación salió
+  conversation           Conversation?             @relation(fields: [conversationId], references: [id])
+  productSummary         String
+  amount                 Decimal?
+  modality               PaymentModality
+  status                 PurchaseRequestStatus     @default(PENDING_REVIEW)
 
   // "Aprueba (Vendedor)": quién la gestionó desde el panel.
   reviewedById String?
@@ -321,6 +333,7 @@ model PurchaseRequest {
   creditAssessments CreditAssessment[]
   financing         Financing?
 
+  @@index([prospectId])
   @@index([clientId])
   @@index([status])
   @@index([reviewedById])
@@ -337,6 +350,8 @@ model PurchaseRequest {
 // `rawPayload` es la respuesta cruda de Riesgo Online: INTERNO, nunca se
 // expone al cliente ni sale del agente ADMIN (OE-10, RF13).
 model CreditAssessment {
+  requestVersion    Int?
+  inputSnapshot     Json?
   id                String           @id @default(uuid())
   clientId          String
   client            Client           @relation(fields: [clientId], references: [id])
@@ -350,6 +365,7 @@ model CreditAssessment {
   assessedBy        Employee?        @relation("CreditAssessmentAssessedBy", fields: [assessedById], references: [id])
   createdAt         DateTime         @default(now())
 
+  @@unique([purchaseRequestId, requestVersion])
   @@index([clientId, createdAt])
   @@index([purchaseRequestId])
 }
@@ -481,15 +497,18 @@ enum UserType {
 }
 
 model Conversation {
-  id            String     @id @default(uuid())
-  channel       Channel
-  externalId    String
-  status        ConvStatus @default(ACTIVE)
-  currentAgent  AgentType? // agente "sticky" que atiende la conversación (null = sin asignar)
-  agentLockedAt DateTime? // cuándo se fijó el currentAgent
-  userType      UserType   @default(CLIENTE) // determina audiencia e intents permitidas
-  createdAt     DateTime   @default(now())
-  updatedAt     DateTime   @updatedAt
+  financingDraft         Json?
+  financingVersion       Int                     @default(0)
+  outboundCommunications OutboundCommunication[]
+  id                     String                  @id @default(uuid())
+  channel                Channel
+  externalId             String
+  status                 ConvStatus              @default(ACTIVE)
+  currentAgent           AgentType? // agente "sticky" que atiende la conversación (null = sin asignar)
+  agentLockedAt          DateTime? // cuándo se fijó el currentAgent
+  userType               UserType                @default(CLIENTE) // determina audiencia e intents permitidas
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
 
   handledById String? // supervisor con control manual (Sprint 3, status=HUMAN_HANDLING)
   handledBy   Employee? @relation("ConversationHandledBy", fields: [handledById], references: [id])
@@ -515,13 +534,15 @@ model Conversation {
 }
 
 model Message {
-  id             String       @id @default(uuid())
-  conversationId String
-  conversation   Conversation @relation(fields: [conversationId], references: [id])
-  role           MessageRole
-  content        String
-  agentType      AgentType?
-  createdAt      DateTime     @default(now())
+  ingressKey            String?                @unique
+  outboundCommunication OutboundCommunication?
+  id                    String                 @id @default(uuid())
+  conversationId        String
+  conversation          Conversation           @relation(fields: [conversationId], references: [id])
+  role                  MessageRole
+  content               String
+  agentType             AgentType?
+  createdAt             DateTime               @default(now())
 
   paymentProofs PaymentProof[]
 
@@ -953,6 +974,7 @@ model KnowledgeRetrieval {
 }
 
 model OrchestrationEvent {
+  actionKey      String?       @unique
   id             String        @id @default(uuid())
   conversationId String?
   conversation   Conversation? @relation(fields: [conversationId], references: [id])
@@ -1492,7 +1514,6 @@ model ImprovementDismissal {
   @@index([documentId, documentVersion])
 }
 
-
 // ============================================================================
 // Spec 014 — Estructura de capacitación y generación de píldoras
 // ============================================================================
@@ -1536,15 +1557,15 @@ model TrainingModule {
 }
 
 model Pill {
-  id          String     @id @default(uuid())
-  moduleId    String
-  title       String
-  objective   String
-  content     String     @db.Text
-  quiz        Json
-  status      PillStatus @default(DRAFT)
-  orderIndex  Int        @default(0)
-  version     Int        @default(1)
+  id         String     @id @default(uuid())
+  moduleId   String
+  title      String
+  objective  String
+  content    String     @db.Text
+  quiz       Json
+  status     PillStatus @default(DRAFT)
+  orderIndex Int        @default(0)
+  version    Int        @default(1)
 
   // Spec 016 — Pipeline de Audio y TTS
   audioStatus          AudioStatus @default(NOT_REQUESTED)
@@ -1558,12 +1579,12 @@ model Pill {
   createdById   String?
   publishedById String?
   publishedAt   DateTime?
-  createdAt     DateTime   @default(now())
-  updatedAt     DateTime   @updatedAt
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
 
-  module      TrainingModule     @relation(fields: [moduleId], references: [id], onDelete: Cascade)
-  createdBy   Employee?          @relation("PillCreatedBy", fields: [createdById], references: [id])
-  publishedBy Employee?          @relation("PillPublishedBy", fields: [publishedById], references: [id])
+  module      TrainingModule      @relation(fields: [moduleId], references: [id], onDelete: Cascade)
+  createdBy   Employee?           @relation("PillCreatedBy", fields: [createdById], references: [id])
+  publishedBy Employee?           @relation("PillPublishedBy", fields: [publishedById], references: [id])
   progress    EmployeeProgress[]
   simulations SimulationSession[]
   audits      PillAudit[]
@@ -1599,8 +1620,8 @@ model EmployeeProgress {
   isAudioCompleted        Boolean   @default(false)
   lastPlaybackReportAt    DateTime?
 
-  createdAt   DateTime               @default(now())
-  updatedAt   DateTime               @updatedAt
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
 
   employee Employee @relation(fields: [employeeId], references: [id], onDelete: Cascade)
   pill     Pill     @relation(fields: [pillId], references: [id], onDelete: Cascade)
@@ -1615,26 +1636,26 @@ model EmployeeProgress {
 
 /// Registro de la sesión de diagnóstico inicial rendida por un empleado.
 model DiagnosticSession {
-  id                String    @id @default(uuid())
+  id                String   @id @default(uuid())
   employeeId        String
-  score             Float     // Porcentaje total de aciertos (0.0 a 100.0)
+  score             Float // Porcentaje total de aciertos (0.0 a 100.0)
   totalQuestions    Int
   correctAnswers    Int
-  exemptedModuleIds String[]  @default([]) // IDs de los TrainingModule eximidos con 100% de aciertos
-  answers           Json      // Detalle de respuestas enviadas [{ pillId, questionId, selectedOptionIndex, isCorrect }]
-  questionSet       Json?     // Snapshot privado del examen entregado; nunca se devuelve en crudo
-  activeKey         String?   @unique // employeeId mientras la sesión está vigente, incluso tras completar
+  exemptedModuleIds String[] @default([]) // IDs de los TrainingModule eximidos con 100% de aciertos
+  answers           Json // Detalle de respuestas enviadas [{ pillId, questionId, selectedOptionIndex, isCorrect }]
+  questionSet       Json? // Snapshot privado del examen entregado; nunca se devuelve en crudo
+  activeKey         String?  @unique // employeeId mientras la sesión está vigente, incluso tras completar
 
   // Auditoría y Reinicio por Supervisor (Principio III)
-  isReset           Boolean   @default(false)
-  resetById         String?
-  resetBy           Employee? @relation("DiagnosticResetBy", fields: [resetById], references: [id])
-  resetAt           DateTime?
+  isReset   Boolean   @default(false)
+  resetById String?
+  resetBy   Employee? @relation("DiagnosticResetBy", fields: [resetById], references: [id])
+  resetAt   DateTime?
 
-  completedAt       DateTime?
-  createdAt         DateTime  @default(now())
+  completedAt DateTime?
+  createdAt   DateTime  @default(now())
 
-  employee          Employee  @relation("EmployeeDiagnostics", fields: [employeeId], references: [id], onDelete: Cascade)
+  employee Employee @relation("EmployeeDiagnostics", fields: [employeeId], references: [id], onDelete: Cascade)
 
   @@index([employeeId, isReset])
   @@map("diagnostic_sessions")
@@ -1667,23 +1688,23 @@ enum SimulationSender {
 }
 
 model SimulationSession {
-  version         Int                @default(0)
-  id              String             @id @default(uuid())
+  version         Int              @default(0)
+  id              String           @id @default(uuid())
   employeeId      String
   pillId          String
   mode            SimulationMode
-  status          SimulationStatus   @default(IN_PROGRESS)
+  status          SimulationStatus @default(IN_PROGRESS)
   scenarioTitle   String
   customerName    String
-  customerProfile String             @db.Text
-  createdAt       DateTime           @default(now())
+  customerProfile String           @db.Text
+  createdAt       DateTime         @default(now())
   completedAt     DateTime?
 
-  employee        Employee           @relation(fields: [employeeId], references: [id], onDelete: Cascade)
-  pill            Pill               @relation(fields: [pillId], references: [id], onDelete: Cascade)
-  messages        SimulationMessage[]
-  goals           SimulationGoal[]
-  feedback        SimulationFeedback?
+  employee Employee            @relation(fields: [employeeId], references: [id], onDelete: Cascade)
+  pill     Pill                @relation(fields: [pillId], references: [id], onDelete: Cascade)
+  messages SimulationMessage[]
+  goals    SimulationGoal[]
+  feedback SimulationFeedback?
 
   @@index([employeeId, pillId])
   @@index([status])
@@ -1691,84 +1712,123 @@ model SimulationSession {
 }
 
 model SimulationMessage {
-  id               String            @id @default(uuid())
+  id               String           @id @default(uuid())
   sessionId        String
   sender           SimulationSender
-  content          String            @db.Text
+  content          String           @db.Text
   turnIndex        Int
   completedGoalIds Json?
   emotion          String?
-  createdAt        DateTime          @default(now())
+  createdAt        DateTime         @default(now())
 
-  session          SimulationSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  session SimulationSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   @@index([sessionId, turnIndex])
   @@map("simulation_messages")
 }
 
 model SimulationGoal {
-  id              String            @id @default(uuid())
+  id              String  @id @default(uuid())
   sessionId       String
   description     String
   order           Int
-  isCompleted     Boolean           @default(false)
+  isCompleted     Boolean @default(false)
   completedAtTurn Int?
   evidence        String?
 
-  session         SimulationSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  session SimulationSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   @@index([sessionId, order])
   @@map("simulation_goals")
 }
 
 model SimulationFeedback {
-  whatWentWellBand PerformanceBand?
-  toImproveBand PerformanceBand?
+  whatWentWellBand  PerformanceBand?
+  toImproveBand     PerformanceBand?
   businessRulesBand PerformanceBand?
-  id            String            @id @default(uuid())
-  sessionId     String            @unique
-  band          PerformanceBand
-  whatWentWell  String            @db.Text
-  toImprove     String            @db.Text
-  businessRules String            @db.Text
-  summary       String            @db.Text
-  createdAt     DateTime          @default(now())
+  id                String           @id @default(uuid())
+  sessionId         String           @unique
+  band              PerformanceBand
+  whatWentWell      String           @db.Text
+  toImprove         String           @db.Text
+  businessRules     String           @db.Text
+  summary           String           @db.Text
+  createdAt         DateTime         @default(now())
 
-  session       SimulationSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  session SimulationSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
 
   @@map("simulation_feedbacks")
 }
 
-
-
 // Prospecto comercial sincronizado con CRM / Google Sheets (Sprint 6, Feature 019)
 model Prospect {
-  crmData         Json?
-  closedAt        DateTime?
-  id              String             @id @default(uuid())
-  phone           String
-  name            String
-  dni             String?
-  comercio        String?
-  rubro           String?
-  localidad       String?
-  productInterest String
-  modality        PaymentModality    @default(CASH)
-  estimatedAmount Decimal?
-  status          String             @default("NUEVO")
-  creditVerdict   CreditVerdict?
-  sellerId        String?
-  seller          Employee?          @relation("ProspectSeller", fields: [sellerId], references: [id])
-  originChannel   Channel            @default(WHATSAPP)
-  conversationId  String?
-  notes           String?
-  syncStatus      ProspectSyncStatus @default(SYNCED)
-  lastSyncedAt    DateTime?
-  createdAt       DateTime           @default(now())
-  updatedAt       DateTime           @updatedAt
+  purchaseRequests PurchaseRequest[]
+  crmData          Json?
+  closedAt         DateTime?
+  id               String             @id @default(uuid())
+  phone            String
+  name             String
+  dni              String?
+  comercio         String?
+  rubro            String?
+  localidad        String?
+  productInterest  String
+  modality         PaymentModality    @default(CASH)
+  estimatedAmount  Decimal?
+  status           String             @default("NUEVO")
+  creditVerdict    CreditVerdict?
+  sellerId         String?
+  seller           Employee?          @relation("ProspectSeller", fields: [sellerId], references: [id])
+  originChannel    Channel            @default(WHATSAPP)
+  conversationId   String?
+  notes            String?
+  syncStatus       ProspectSyncStatus @default(SYNCED)
+  lastSyncedAt     DateTime?
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
 
   @@index([phone])
   @@index([status])
   @@index([sellerId])
   @@index([syncStatus])
+}
+
+enum FinancingEvaluationState {
+  PENDING
+  READY
+}
+
+enum OutboundCommunicationStatus {
+  PENDING
+  SENDING
+  ACCEPTED
+  FAILED
+  UNCERTAIN
+}
+
+model OutboundCommunication {
+  id                String                      @id @default(uuid())
+  purpose           String                      @default("FINANCING_DECISION")
+  dedupeKey         String                      @unique
+  purchaseRequestId String
+  purchaseRequest   PurchaseRequest             @relation(fields: [purchaseRequestId], references: [id])
+  conversationId    String
+  conversation      Conversation                @relation(fields: [conversationId], references: [id])
+  messageId         String?                     @unique
+  message           Message?                    @relation(fields: [messageId], references: [id])
+  body              String
+  status            OutboundCommunicationStatus @default(PENDING)
+  version           Int                         @default(1)
+  transportMode     String                      @default("disabled")
+  providerMessageId String?
+  attemptToken      String?
+  attemptStartedAt  DateTime?
+  attemptCount      Int                         @default(0)
+  lastErrorCode     String?
+  createdAt         DateTime                    @default(now())
+  updatedAt         DateTime                    @updatedAt
+  acceptedAt        DateTime?
+
+  @@index([status, updatedAt])
+  @@index([purchaseRequestId])
 }

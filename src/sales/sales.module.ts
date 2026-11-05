@@ -1,3 +1,4 @@
+import { FinancingModule } from '../financing/financing.module';
 import { ConversationsModule } from '../conversations/conversations.module';
 import { Module } from '@nestjs/common';
 import { ClientsModule } from '../clients/clients.module';
@@ -11,6 +12,7 @@ import { SalesController } from './sales.controller';
 
 @Module({
   imports: [
+    FinancingModule,
     ClientsModule,
     ConversationsModule,
     CollectionsModule,

@@ -76,3 +76,8 @@ docs/*/*.jsonl
 # Entornos aislados y credenciales locales
 .env*
 !.env.example
+
+# Artefactos temporales
+*.tmp
+*.swp
+Thumbs.db

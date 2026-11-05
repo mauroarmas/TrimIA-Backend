@@ -90,7 +90,7 @@ describe('SalesController', () => {
     expect(() =>
       controller.reviewFinancing(
         'request-1',
-        { decision: 'APPROVED' },
+        { expectedVersion: 1, decision: 'APPROVED' },
         {
           user: {
             id: 'admin-1',
@@ -103,13 +103,13 @@ describe('SalesController', () => {
     expect(() =>
       controller.reviewFinancing(
         'request-1',
-        { decision: 'APPROVED' },
+        { expectedVersion: 1, decision: 'APPROVED' },
         { user: { id: 'sales-1', role: 'SUPERVISOR', sectorName: 'Ventas' } },
       ),
     ).toThrow(ForbiddenException);
     await controller.reviewFinancing(
       'request-1',
-      { decision: 'APPROVED' },
+      { expectedVersion: 1, decision: 'APPROVED' },
       {
         user: {
           id: 'supervisor-1',
@@ -120,7 +120,7 @@ describe('SalesController', () => {
     );
     expect(mockSalesService.reviewFinancingRequest).toHaveBeenCalledWith(
       'request-1',
-      { decision: 'APPROVED' },
+      { expectedVersion: 1, decision: 'APPROVED' },
       'supervisor-1',
     );
   });

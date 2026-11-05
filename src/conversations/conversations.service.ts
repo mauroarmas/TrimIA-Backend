@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import {
   ConflictException,
   ForbiddenException,
@@ -49,13 +50,15 @@ export class ConversationsService {
     externalId: string,
     channel: Channel,
     clientId?: string | null,
-  ): Promise<Conversation> {
+  ): Promise<Omit<Conversation, 'financingDraft' | 'financingVersion'>> {
     const existing = await this.prisma.conversation.findFirst({
+      omit: { financingDraft: true, financingVersion: true },
       where: { externalId, channel, status: { not: 'CLOSED' } },
     });
     if (existing) {
       if (clientId && !existing.clientId) {
         return this.prisma.conversation.update({
+          omit: { financingDraft: true, financingVersion: true },
           where: { id: existing.id },
           data: { clientId },
         });
@@ -64,6 +67,7 @@ export class ConversationsService {
     }
 
     return this.prisma.conversation.create({
+      omit: { financingDraft: true, financingVersion: true },
       data: { externalId, channel, clientId: clientId ?? undefined },
     });
   }
@@ -81,10 +85,25 @@ export class ConversationsService {
     role: MessageRole,
     content: string,
     agentType?: AgentType,
+    ingressKey?: string,
   ) {
-    const message = await this.prisma.message.create({
-      data: { conversationId, role, content, agentType },
-    });
+    const candidateId = ingressKey ? randomUUID() : undefined;
+    const message = ingressKey
+      ? await this.prisma.message.upsert({
+          where: { ingressKey },
+          create: {
+            id: candidateId,
+            conversationId,
+            role,
+            content,
+            agentType,
+            ingressKey,
+          },
+          update: {},
+        })
+      : await this.prisma.message.create({
+          data: { conversationId, role, content, agentType },
+        });
 
     // Se avisa DESPUÉS de que la escritura cerró: la base es la fuente de verdad
     // y el evento es solo la notificación (RF-007).
@@ -100,7 +119,10 @@ export class ConversationsService {
     // *lento* (no caído) le sumaría esa demora al acuse, que tiene que llegar en
     // milisegundos (RF-010, Principio IV). El aviso sale cuando salga; el mensaje
     // ya está registrado.
-    if (message.role === 'USER' || message.role === 'ASSISTANT') {
+    if (
+      (!ingressKey || message.id === candidateId) &&
+      (message.role === 'USER' || message.role === 'ASSISTANT')
+    ) {
       void this.realtime.publish(conversationId, {
         type: 'message',
         conversationId,
@@ -118,8 +140,11 @@ export class ConversationsService {
   }
 
   /** Devuelve la conversación por id (para leer el currentAgent sticky). */
-  findById(conversationId: string): Promise<Conversation | null> {
+  findById(
+    conversationId: string,
+  ): Promise<Omit<Conversation, 'financingDraft' | 'financingVersion'> | null> {
     return this.prisma.conversation.findUnique({
+      omit: { financingDraft: true, financingVersion: true },
       where: { id: conversationId },
     });
   }
@@ -237,6 +262,7 @@ export class ConversationsService {
   /** Fija el agente sticky de la conversación tras resolver un mensaje. */
   async setCurrentAgent(conversationId: string, agent: AgentType) {
     return this.prisma.conversation.update({
+      omit: { financingDraft: true, financingVersion: true },
       where: { id: conversationId },
       data: { currentAgent: agent, agentLockedAt: new Date() },
     });
@@ -245,6 +271,7 @@ export class ConversationsService {
   /** Actualiza el userType de la conversación (al detectar empleado por whitelist). */
   async setUserType(conversationId: string, userType: 'CLIENTE' | 'EMPLEADO') {
     return this.prisma.conversation.update({
+      omit: { financingDraft: true, financingVersion: true },
       where: { id: conversationId },
       data: { userType },
     });
@@ -257,6 +284,7 @@ export class ConversationsService {
    */
   async setStatus(conversationId: string, status: ConvStatus) {
     const updated = await this.prisma.conversation.update({
+      omit: { financingDraft: true, financingVersion: true },
       where: { id: conversationId },
       data: { status },
     });
@@ -276,7 +304,9 @@ export class ConversationsService {
    * acuse de espera no se repite si el usuario insiste, así que la UI no puede
    * depender de que llegue un mensaje nuevo para actualizar lo que muestra.
    */
-  private publishStatus(conversation: Conversation) {
+  private publishStatus(
+    conversation: Pick<Conversation, 'id' | 'status' | 'currentAgent'>,
+  ) {
     // Sin `await`, por el mismo motivo que en addMessage(): quien cambia el estado
     // no tiene que esperar a que el aviso salga.
     void this.realtime.publish(conversation.id, {
@@ -296,6 +326,7 @@ export class ConversationsService {
    */
   async takeover(conversationId: string, employeeId: string) {
     const conversation = await this.prisma.conversation.findUnique({
+      omit: { financingDraft: true, financingVersion: true },
       where: { id: conversationId },
     });
     if (!conversation) {
@@ -314,6 +345,7 @@ export class ConversationsService {
     }
 
     const updated = await this.prisma.conversation.update({
+      omit: { financingDraft: true, financingVersion: true },
       where: { id: conversationId },
       data: {
         status: 'HUMAN_HANDLING',
@@ -353,6 +385,7 @@ export class ConversationsService {
     asSupervisor = false,
   ) {
     const conversation = await this.prisma.conversation.findUnique({
+      omit: { financingDraft: true, financingVersion: true },
       where: { id: conversationId },
     });
     if (!conversation) {
@@ -366,6 +399,7 @@ export class ConversationsService {
     }
 
     const updated = await this.prisma.conversation.update({
+      omit: { financingDraft: true, financingVersion: true },
       where: { id: conversationId },
       data: { status: 'ACTIVE', handledById: null, handledAt: null },
     });
@@ -396,6 +430,7 @@ export class ConversationsService {
    */
   async close(conversationId: string) {
     const conversation = await this.prisma.conversation.findUnique({
+      omit: { financingDraft: true, financingVersion: true },
       where: { id: conversationId },
     });
     if (!conversation) {
@@ -414,6 +449,7 @@ export class ConversationsService {
     }
 
     const updated = await this.prisma.conversation.update({
+      omit: { financingDraft: true, financingVersion: true },
       where: { id: conversationId },
       data: { status: 'CLOSED' },
     });
@@ -434,6 +470,7 @@ export class ConversationsService {
     message: string,
   ) {
     const conversation = await this.prisma.conversation.findUnique({
+      omit: { financingDraft: true, financingVersion: true },
       where: { id: conversationId },
     });
     if (!conversation) {
@@ -576,6 +613,9 @@ export class ConversationsService {
         skip,
         take: limit,
         select: {
+          outboundCommunication: {
+            select: { id: true, status: true, transportMode: true },
+          },
           id: true,
           role: true,
           content: true,

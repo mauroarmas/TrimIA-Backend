@@ -1,3 +1,5 @@
+import { FinancingService } from '../financing/financing.service';
+import { FinancingNoticeService } from '../financing/financing-notice.service';
 import {
   ConflictException,
   BadRequestException,
@@ -29,24 +31,6 @@ import { salesHandoffSchema } from '../ai/agents/sales/sales-handoff.schema';
 import { PurchaseRequestStatus } from '@prisma/client';
 import { ReviewFinancingDto } from './dto/review-financing.dto';
 
-const financingSelection = {
-  id: true,
-  productSummary: true,
-  amount: true,
-  status: true,
-  createdAt: true,
-  reviewedAt: true,
-  reviewNote: true,
-  client: { select: { id: true, name: true, dni: true, phone: true } },
-  reviewedBy: { select: { id: true, name: true } },
-  financing: { select: { quotaCount: true, totalAmount: true } },
-  creditAssessments: {
-    orderBy: { createdAt: 'desc' as const },
-    take: 1,
-    select: { verdict: true, reason: true, source: true, createdAt: true },
-  },
-} as const;
-
 @Injectable()
 export class SalesService {
   private readonly logger = new Logger(SalesService.name);
@@ -57,52 +41,37 @@ export class SalesService {
     private readonly prisma: PrismaService,
     @Optional() @Inject(CRM_PORT) private readonly crm?: CrmPort,
     @Optional() private readonly conversations?: ConversationsService,
+    @Optional() private readonly finance?: FinancingService,
+    @Optional() private readonly financeNotices?: FinancingNoticeService,
   ) {}
 
   async listFinancingRequests() {
-    return this.prisma.purchaseRequest.findMany({
-      where: { modality: 'FINANCED' },
-      select: financingSelection,
-      orderBy: { createdAt: 'desc' },
-    });
+    return this.finance!.list();
   }
-
   async reviewFinancingRequest(
     id: string,
     dto: ReviewFinancingDto,
     reviewerId: string,
   ) {
-    const request = await this.prisma.purchaseRequest.findUnique({
-      where: { id },
-    });
-    if (!request || request.modality !== 'FINANCED') {
-      throw new NotFoundException('Solicitud de financiación no encontrada');
-    }
-    if (
-      dto.decision === 'APPROVED' &&
-      (!request.amount || Number(request.amount) <= 0)
-    ) {
-      throw new ConflictException(
-        'La solicitud debe tener un monto válido mayor a cero antes de aprobarla',
-      );
-    }
-    const result = await this.prisma.purchaseRequest.updateMany({
-      where: { id, modality: 'FINANCED', status: 'PENDING_REVIEW' },
-      data: {
-        status: dto.decision,
-        reviewedById: reviewerId,
-        reviewedAt: new Date(),
-        reviewNote: dto.note?.trim() || null,
-      },
-    });
-    if (result.count !== 1)
-      throw new ConflictException(
-        'La solicitud ya fue resuelta o no está pendiente de revisión',
-      );
-    return this.prisma.purchaseRequest.findUnique({
-      where: { id },
-      select: financingSelection,
-    });
+    return this.finance!.review(id, dto, reviewerId);
+  }
+  getFinancingRequest(id: string) {
+    return this.finance!.detail(id);
+  }
+  getFinancingDraft(id: string) {
+    return this.finance!.getDraft(id);
+  }
+  completeFinancingDraft(id: string, dto: any, actorId: string) {
+    return this.finance!.updateDraft(id, dto, actorId);
+  }
+  correctFinancingRequest(id: string, dto: any, actorId: string) {
+    return this.finance!.correct(id, dto, actorId);
+  }
+  cancelFinancingRequest(id: string, dto: any, actorId: string) {
+    return this.finance!.cancel(id, dto, actorId);
+  }
+  retryFinancingNotice(id: string, version: number, actorId: string) {
+    return this.financeNotices!.retry(id, version, actorId);
   }
 
   /**

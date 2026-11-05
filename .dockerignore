@@ -20,3 +20,8 @@ test
 **/*.log
 *.pdf
 *.xlsx
+
+# Artefactos temporales
+*.tmp
+*.swp
+Thumbs.db

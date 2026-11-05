@@ -279,7 +279,7 @@ export class SupervisorService {
         select: {
           id: true,
           externalId: true,
-                    status: true,
+          status: true,
           userType: true,
           currentAgent: true,
           agentLockedAt: true,
@@ -312,6 +312,7 @@ export class SupervisorService {
     const [conversation, messages, events, tokenTotals, internalNotes] =
       await Promise.all([
         this.prisma.conversation.findUnique({
+          omit: { financingDraft: true, financingVersion: true },
           where: { id: conversationId },
         }),
 
@@ -319,6 +320,9 @@ export class SupervisorService {
           where: { conversationId },
           orderBy: { createdAt: 'asc' },
           select: {
+            outboundCommunication: {
+              select: { id: true, status: true, transportMode: true },
+            },
             id: true,
             role: true,
             content: true,
@@ -335,7 +339,7 @@ export class SupervisorService {
             createdAt: true,
             eventType: true,
             agentType: true,
-                        payload: true,
+            payload: true,
           },
         }),
 
@@ -352,7 +356,7 @@ export class SupervisorService {
             id: true,
             content: true,
             createdAt: true,
-                        authorAgentType: true,
+            authorAgentType: true,
             author: { select: { id: true, name: true } },
           },
         }),

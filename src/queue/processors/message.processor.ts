@@ -1,3 +1,5 @@
+import { Optional } from '@nestjs/common';
+import { FinancingConversationService } from '../../financing/financing-conversation.service';
 import { botMayRespond } from '../bot-response-policy';
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
@@ -54,6 +56,7 @@ export class MessageProcessor extends WorkerHost {
     private readonly employees: EmployeesService,
     private readonly orchestrationLogger: OrchestrationLogger,
     private readonly callerResolver: CallerResolver,
+    @Optional() private readonly financing?: FinancingConversationService,
   ) {
     super();
   }
@@ -178,6 +181,30 @@ export class MessageProcessor extends WorkerHost {
           `userType de ${externalId}: ${conversation?.userType ?? 'nuevo'} → ${userType}` +
             (employee?.isActive ? ` (${employee.sector.name})` : ''),
         );
+      }
+
+      if (this.financing) {
+        const financial = await this.financing.handle(
+          conversationId,
+          messageId,
+          message,
+          caller,
+        );
+        if (financial.handled) {
+          if (
+            !('replayed' in financial && financial.replayed) &&
+            financial.response
+          ) {
+            await this.conversations.addMessage(
+              conversationId,
+              'ASSISTANT',
+              financial.response,
+              'SALES',
+            );
+            await this.sender.send(externalId, financial.response, channel);
+          }
+          return;
+        }
       }
 
       // El orquestador clasifica (o saltea, si hay sticky), deriva y registra.

@@ -1,6 +1,6 @@
 # Documentación vigente de TrimIA
 
-Actualizado el 2026-11-04. Este índice distingue las fuentes del proyecto, la operación actual y el material histórico archivado.
+Actualizado el 2026-11-05. Este índice distingue las fuentes del proyecto, la operación actual y el material histórico archivado.
 
 ## Alcance acordado para el MVP
 
@@ -10,12 +10,12 @@ Actualizado el 2026-11-04. Este índice distingue las fuentes del proyecto, la o
 - Paperclip excluido.
 - La convergencia 014–019 fue integrada y desplegada tras la revisión de Mauro. El MVP completo aún requiere cerrar los flujos identificados en la auditoría; no se agregan funcionalidades por archivar documentos.
 
-## Siguiente implementación del MVP
+## Estado de los flujos del MVP
 
 1. [020 — Venta financiada completa](../specs/020-venta-financiada-mvp/spec.md): solicitud desde la conversación, evaluación simulada, revisión humana y aviso al cliente.
 2. [021 — Seguimiento comercial automático](../specs/021-seguimiento-comercial-mvp/spec.md): una regla de seguimiento, bajas y estado de la comunicación.
 
-Ambas están especificadas, no implementadas. La configuración de Google Sheets permanece en la 019; no se abre una tercera spec de audio o historial.
+La 020 está implementada y validada en ramas aisladas de backend/panel, sin actualizar el despliegue. Su [guía de validación](../specs/020-venta-financiada-mvp/quickstart.md) contiene comandos y evidencia. La 021 continúa especificada y pendiente de implementación. La configuración de Google Sheets permanece en la 019; no se abre una tercera spec de audio o historial.
 
 ## Para trabajar y operar
 

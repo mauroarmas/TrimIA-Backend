@@ -117,7 +117,11 @@ export class EscalationSuggestionService {
   async suggest(escalationId: string): Promise<SuggestionResult> {
     const escalation = await this.prisma.escalation.findUnique({
       where: { id: escalationId },
-      include: { conversation: true },
+      include: {
+        conversation: {
+          omit: { financingDraft: true, financingVersion: true },
+        },
+      },
     });
     if (!escalation) {
       throw new NotFoundException('Caso pendiente no encontrado');

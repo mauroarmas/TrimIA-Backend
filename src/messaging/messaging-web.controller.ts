@@ -224,7 +224,7 @@ export class MessagingWebController {
   private async assertOwnership(
     convId: string,
     employeeId: string,
-  ): Promise<Conversation> {
+  ): Promise<Omit<Conversation, 'financingDraft' | 'financingVersion'>> {
     const employee = await this.employees.findById(employeeId);
     const conversation = await this.conversations.findById(convId);
     if (!conversation) {
