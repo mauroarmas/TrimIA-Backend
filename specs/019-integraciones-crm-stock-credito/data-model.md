@@ -1,5 +1,7 @@
 # Data Model: Integraciones CRM, Stock y Riesgo Crediticio
 
+> Implementación 2026-11-04: CrmProspectRecord es metadata interna; el transporte externo es {row} con las 17 columnas de docs/plan_de_trabajo.md §4, definidas en contracts/n8n-crm-webhooks.json. DNI/dictamen/scoring/conversationId no son columnas de la hoja. Prospect.crmData conserva la fila completa; se agregan fechas/actores de cierre en los registros locales. PostgreSQL se escribe primero; los reintentos usan el mismo ID y una confirmación remota explícita.
+
 **Feature**: `019-integraciones-crm-stock-credito`  
 **Date**: 2026-10-21  
 **Status**: Completed  

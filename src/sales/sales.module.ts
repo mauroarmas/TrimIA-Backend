@@ -1,3 +1,4 @@
+import { ConversationsModule } from '../conversations/conversations.module';
 import { Module } from '@nestjs/common';
 import { ClientsModule } from '../clients/clients.module';
 import { CollectionsModule } from '../collections/collections.module';
@@ -11,6 +12,7 @@ import { SalesController } from './sales.controller';
 @Module({
   imports: [
     ClientsModule,
+    ConversationsModule,
     CollectionsModule,
     OrchestrationLoggerModule,
     IntegrationsModule,

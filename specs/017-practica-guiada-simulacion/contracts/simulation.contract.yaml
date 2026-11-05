@@ -2,20 +2,26 @@ openapi: 3.0.3
 info:
   title: TrimIA - API de Práctica Guiada y Simulación Libre
   version: 1.0.0
-  description: Endpoints para roleplay con cliente simulado por IA, checklist interactivo y devolución formativa en 3 tarjetas.
+  description: Endpoints para roleplay con cliente simulado por IA, checklist interactivo
+    y devolución formativa en 3 tarjetas. Los turnos/cierre revalidan versión de sesión
+    y retornan 409 si hubo otro cambio. El cierre repetido devuelve el feedback persistido.
+    Un fallo de IA retorna 503 sin guardar evaluación genérica y permite reintentar.
+    Solo el propietario y la supervisión autorizada del sector/general consultan el
+    legajo.
 paths:
   /training/pills/{pillId}/simulations:
     post:
       summary: Iniciar una nueva sesión de simulación (Guiada o Libre)
-      description: Genera el perfil de cliente y objetivos del caso a partir de la píldora.
+      description: Genera el perfil de cliente y objetivos del caso a partir de la
+        píldora.
       security:
-        - bearerAuth: []
+      - bearerAuth: []
       parameters:
-        - name: pillId
-          in: path
-          required: true
-          schema:
-            type: string
+      - name: pillId
+        in: path
+        required: true
+        schema:
+          type: string
       requestBody:
         required: true
         content:
@@ -23,11 +29,13 @@ paths:
             schema:
               type: object
               required:
-                - mode
+              - mode
               properties:
                 mode:
                   type: string
-                  enum: [GUIDED, FREE]
+                  enum:
+                  - GUIDED
+                  - FREE
       responses:
         '201':
           description: Sesión iniciada exitosamente.
@@ -35,19 +43,18 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SimulationSessionDetail'
-
   /training/simulations/{sessionId}/messages:
     post:
       summary: Enviar un mensaje como empleado y recibir réplica del cliente simulado
       description: En modo GUIDED evalúa en vivo qué objetivos del checklist se cumplieron.
       security:
-        - bearerAuth: []
+      - bearerAuth: []
       parameters:
-        - name: sessionId
-          in: path
-          required: true
-          schema:
-            type: string
+      - name: sessionId
+        in: path
+        required: true
+        schema:
+          type: string
       requestBody:
         required: true
         content:
@@ -55,7 +62,7 @@ paths:
             schema:
               type: object
               required:
-                - content
+              - content
               properties:
                 content:
                   type: string
@@ -78,18 +85,17 @@ paths:
                       $ref: '#/components/schemas/SimulationGoal'
                   allGoalsCompleted:
                     type: boolean
-
   /training/simulations/{sessionId}:
     get:
       summary: Obtener el estado actual y transcripción de una sesión de simulación
       security:
-        - bearerAuth: []
+      - bearerAuth: []
       parameters:
-        - name: sessionId
-          in: path
-          required: true
-          schema:
-            type: string
+      - name: sessionId
+        in: path
+        required: true
+        schema:
+          type: string
       responses:
         '200':
           description: Detalle completo de la sesión.
@@ -97,18 +103,17 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SimulationSessionDetail'
-
   /training/simulations/{sessionId}/conclude:
     post:
       summary: Concluir la sesión y generar la devolución en 3 tarjetas cualitativas
       security:
-        - bearerAuth: []
+      - bearerAuth: []
       parameters:
-        - name: sessionId
-          in: path
-          required: true
-          schema:
-            type: string
+      - name: sessionId
+        in: path
+        required: true
+        schema:
+          type: string
       responses:
         '200':
           description: Sesión completada con evaluación en 3 tarjetas.
@@ -116,18 +121,17 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/SimulationFeedback'
-
   /training/supervisor/employees/{employeeId}/simulations:
     get:
       summary: Auditar historial de simulaciones de un empleado (Solo supervisores)
       security:
-        - bearerAuth: []
+      - bearerAuth: []
       parameters:
-        - name: employeeId
-          in: path
-          required: true
-          schema:
-            type: string
+      - name: employeeId
+        in: path
+        required: true
+        schema:
+          type: string
       responses:
         '200':
           description: Lista de simulaciones del empleado con sus evaluaciones.
@@ -137,14 +141,38 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/SimulationSessionSummary'
-
+  /training/pills/{pillId}/simulations/active:
+    get:
+      summary: Recuperar práctica propia vigente por píldora/modo, sin crear otra
+      security:
+      - bearerAuth: []
+      parameters:
+      - in: path
+        name: pillId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - in: query
+        name: mode
+        schema:
+          type: string
+          enum:
+          - GUIDED
+          - FREE
+          default: GUIDED
+      responses:
+        '200':
+          description: Detalle con mensajes/objetivos, o null. Las sesiones sin interacción
+            por 24h se conservan ABANDONED.
+        '403':
+          description: Sector o candado no habilitado
 components:
   securitySchemes:
     bearerAuth:
       type: http
       scheme: bearer
       bearerFormat: JWT
-
   schemas:
     SimulationSessionDetail:
       type: object
@@ -157,10 +185,15 @@ components:
           type: string
         mode:
           type: string
-          enum: [GUIDED, FREE]
+          enum:
+          - GUIDED
+          - FREE
         status:
           type: string
-          enum: [IN_PROGRESS, COMPLETED, ABANDONED]
+          enum:
+          - IN_PROGRESS
+          - COMPLETED
+          - ABANDONED
         scenarioTitle:
           type: string
         customerName:
@@ -180,7 +213,6 @@ components:
             $ref: '#/components/schemas/SimulationMessage'
         feedback:
           $ref: '#/components/schemas/SimulationFeedback'
-
     SimulationMessage:
       type: object
       properties:
@@ -188,7 +220,9 @@ components:
           type: string
         sender:
           type: string
-          enum: [EMPLOYEE, SIMULATED_CLIENT]
+          enum:
+          - EMPLOYEE
+          - SIMULATED_CLIENT
         content:
           type: string
         turnIndex:
@@ -198,7 +232,6 @@ components:
         createdAt:
           type: string
           format: date-time
-
     SimulationGoal:
       type: object
       properties:
@@ -216,7 +249,6 @@ components:
         evidence:
           type: string
           nullable: true
-
     SimulationFeedback:
       type: object
       properties:
@@ -224,7 +256,10 @@ components:
           type: string
         band:
           type: string
-          enum: [ACHIEVED, NEEDS_IMPROVEMENT, NOT_ACHIEVED]
+          enum:
+          - ACHIEVED
+          - NEEDS_IMPROVEMENT
+          - NOT_ACHIEVED
         whatWentWell:
           type: string
         toImprove:
@@ -236,7 +271,24 @@ components:
         createdAt:
           type: string
           format: date-time
-
+        whatWentWellBand:
+          type: string
+          nullable: true
+          enum: &id001
+          - ACHIEVED
+          - NEEDS_IMPROVEMENT
+          - NOT_ACHIEVED
+          description: Null solo en evaluaciones históricas previas al campo.
+        toImproveBand:
+          type: string
+          nullable: true
+          enum: *id001
+          description: Null solo en evaluaciones históricas previas al campo.
+        businessRulesBand:
+          type: string
+          nullable: true
+          enum: *id001
+          description: Null solo en evaluaciones históricas previas al campo.
     SimulationSessionSummary:
       type: object
       properties:
@@ -248,14 +300,18 @@ components:
           type: string
         mode:
           type: string
-          enum: [GUIDED, FREE]
+          enum:
+          - GUIDED
+          - FREE
         status:
           type: string
         band:
           type: string
-          enum: [ACHIEVED, NEEDS_IMPROVEMENT, NOT_ACHIEVED]
+          enum:
+          - ACHIEVED
+          - NEEDS_IMPROVEMENT
+          - NOT_ACHIEVED
           nullable: true
         createdAt:
           type: string
           format: date-time
-

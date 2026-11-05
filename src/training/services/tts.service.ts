@@ -1,6 +1,8 @@
-import { Injectable, Logger } from '@nestjs/common';
+import { Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { AudioScriptDto, SpeakerRole } from '../dto/audio-script.dto';
+import { AudioScriptDto } from '../dto/audio-script.dto';
+import { AudioCodecService } from './audio-codec.service';
+import { validateAudioScript } from '../audio-script-validation';
 
 export interface GeneratedAudioResult {
   audioBuffer: Buffer;
@@ -10,66 +12,84 @@ export interface GeneratedAudioResult {
 
 @Injectable()
 export class TtsService {
-  private readonly logger = new Logger(TtsService.name);
-  private readonly apiKey: string | undefined;
+  constructor(
+    private readonly config: ConfigService,
+    private readonly codec: AudioCodecService,
+  ) {}
 
-  constructor(private readonly configService: ConfigService) {
-    this.apiKey =
-      this.configService.get<string>('GEMINI_API_KEY') ||
-      this.configService.get<string>('GOOGLE_API_KEY');
-  }
-
-  public async synthesizeDialogue(script: AudioScriptDto): Promise<GeneratedAudioResult> {
-    this.logger.log('Iniciando sintesis de audio para guion ' + script.title + ' (' + script.dialogue.length + ' lineas)');
-
-    if (this.apiKey) {
-      try {
-        const result = await this.synthesizeWithGemini(script);
-        if (result) {
-          return result;
-        }
-      } catch (error: any) {
-        this.logger.warn('Fallo en sintesis remota TTS con Gemini, aplicando fallback estructurado: ' + error.message);
-      }
-    }
-
-    return this.synthesizeFallback(script);
-  }
-
-  private async synthesizeWithGemini(script: AudioScriptDto): Promise<GeneratedAudioResult | null> {
-    return null;
-  }
-
-  private synthesizeFallback(script: AudioScriptDto): GeneratedAudioResult {
-    let totalWordCount = 0;
-    for (const line of script.dialogue) {
-      const words = line.text.trim().split(/\s+/).filter(Boolean);
-      totalWordCount += words.length;
-    }
-
-    const computedDuration = Math.max(
-      script.estimatedDurationSeconds || 30,
-      Math.ceil((totalWordCount / 140) * 60),
+  async synthesizeDialogue(
+    script: AudioScriptDto,
+  ): Promise<GeneratedAudioResult> {
+    validateAudioScript(script);
+    const key = this.config.get<string>('GOOGLE_API_KEY');
+    const model = this.config.get<string>('GEMINI_TTS_MODEL');
+    if (!key || !model)
+      throw new Error('El servicio de voz no está configurado.');
+    const response = await fetch(
+      'https://generativelanguage.googleapis.com/v1beta/models/' +
+        encodeURIComponent(model) +
+        ':generateContent',
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'x-goog-api-key': key },
+        signal: AbortSignal.timeout(90000),
+        body: JSON.stringify({
+          contents: [
+            {
+              parts: [
+                {
+                  text:
+                    'Leé únicamente el siguiente diálogo con tono profesional y español rioplatense de Argentina. Respetá cada locutor y no agregues contenido.\n\n' +
+                    script.dialogue
+                      .map((line) => line.speaker + ': ' + line.text)
+                      .join('\n'),
+                },
+              ],
+            },
+          ],
+          generationConfig: {
+            responseModalities: ['AUDIO'],
+            speechConfig: {
+              multiSpeakerVoiceConfig: {
+                speakerVoiceConfigs: [
+                  {
+                    speaker: 'SPEAKER_1',
+                    voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } },
+                  },
+                  {
+                    speaker: 'SPEAKER_2',
+                    voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Puck' } },
+                  },
+                ],
+              },
+            },
+          },
+        }),
+      },
     );
-
-    const sampleBytesPerSecond = 16000;
-    const targetSize = Math.max(8192, computedDuration * sampleBytesPerSecond);
-    const buffer = Buffer.alloc(targetSize);
-
-    const id3Header = Buffer.from([0x49, 0x44, 0x33, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
-    id3Header.copy(buffer, 0);
-
-    const frameHeader = Buffer.from([0xff, 0xfb, 0x90, 0x64]);
-    for (let offset = 128; offset < targetSize - 4; offset += 417) {
-      frameHeader.copy(buffer, offset);
-    }
-
-    this.logger.log('Audio sintetico generado: duracion ' + computedDuration + 's, tamano ' + buffer.length + ' bytes');
-
-    return {
-      audioBuffer: buffer,
-      durationSeconds: computedDuration,
-      mimeType: 'audio/mpeg',
-    };
+    if (!response.ok)
+      throw new Error(
+        response.status === 429
+          ? 'El servicio de voz agotó temporalmente su cuota. Podés reintentar.'
+          : 'El servicio de voz no pudo completar la solicitud.',
+      );
+    const body = await response.json();
+    const parts = (body.candidates?.[0]?.content?.parts ?? []).filter(
+      (part: any) => part.inlineData?.data,
+    );
+    if (!parts.length)
+      throw new Error(
+        'El servicio no devolvió audio. El guion se conserva y puede reintentarse.',
+      );
+    const mimeType = parts[0].inlineData.mimeType;
+    if (
+      !mimeType ||
+      parts.some((part: any) => part.inlineData.mimeType !== mimeType)
+    )
+      throw new Error('La respuesta de voz contiene formatos incompatibles.');
+    const audio = Buffer.concat(
+      parts.map((part: any) => Buffer.from(part.inlineData.data, 'base64')),
+    );
+    return this.codec.encode(audio, mimeType);
   }
 }

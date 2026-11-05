@@ -297,6 +297,8 @@ model Client {
 // panel. `productSummary` es texto libre a propósito — TrimIA no escribe en
 // Paljet, así que no replica su catálogo (ver plan_de_trabajo.md tarea 6.9).
 model PurchaseRequest {
+  closedAt       DateTime?
+  closedById     String?
   id             String                @id @default(uuid())
   clientId       String
   client         Client                @relation(fields: [clientId], references: [id])
@@ -1542,14 +1544,16 @@ model Pill {
   quiz        Json
   status      PillStatus @default(DRAFT)
   orderIndex  Int        @default(0)
+  version     Int        @default(1)
 
   // Spec 016 — Pipeline de Audio y TTS
   audioStatus          AudioStatus @default(NOT_REQUESTED)
   audioScript          Json?
   audioUrl             String?
-  audioDurationSeconds Int?
+  audioDurationSeconds Float?
   audioError           String?
   audioGeneratedAt     DateTime?
+  audioGenerationId    String? // Identifica el trabajo vigente y descarta resultados obsoletos
 
   createdById   String?
   publishedById String?
@@ -1562,8 +1566,23 @@ model Pill {
   publishedBy Employee?          @relation("PillPublishedBy", fields: [publishedById], references: [id])
   progress    EmployeeProgress[]
   simulations SimulationSession[]
+  audits      PillAudit[]
 
   @@map("pills")
+}
+
+model PillAudit {
+  id        String   @id @default(uuid())
+  pillId    String
+  actorId   String
+  action    String
+  version   Int
+  snapshot  Json
+  createdAt DateTime @default(now())
+  pill      Pill     @relation(fields: [pillId], references: [id], onDelete: Cascade)
+
+  @@unique([pillId, version])
+  @@map("pill_audits")
 }
 
 model EmployeeProgress {
@@ -1603,6 +1622,8 @@ model DiagnosticSession {
   correctAnswers    Int
   exemptedModuleIds String[]  @default([]) // IDs de los TrainingModule eximidos con 100% de aciertos
   answers           Json      // Detalle de respuestas enviadas [{ pillId, questionId, selectedOptionIndex, isCorrect }]
+  questionSet       Json?     // Snapshot privado del examen entregado; nunca se devuelve en crudo
+  activeKey         String?   @unique // employeeId mientras la sesión está vigente, incluso tras completar
 
   // Auditoría y Reinicio por Supervisor (Principio III)
   isReset           Boolean   @default(false)
@@ -1610,7 +1631,7 @@ model DiagnosticSession {
   resetBy           Employee? @relation("DiagnosticResetBy", fields: [resetById], references: [id])
   resetAt           DateTime?
 
-  completedAt       DateTime  @default(now())
+  completedAt       DateTime?
   createdAt         DateTime  @default(now())
 
   employee          Employee  @relation("EmployeeDiagnostics", fields: [employeeId], references: [id], onDelete: Cascade)
@@ -1646,6 +1667,7 @@ enum SimulationSender {
 }
 
 model SimulationSession {
+  version         Int                @default(0)
   id              String             @id @default(uuid())
   employeeId      String
   pillId          String
@@ -1700,6 +1722,9 @@ model SimulationGoal {
 }
 
 model SimulationFeedback {
+  whatWentWellBand PerformanceBand?
+  toImproveBand PerformanceBand?
+  businessRulesBand PerformanceBand?
   id            String            @id @default(uuid())
   sessionId     String            @unique
   band          PerformanceBand
@@ -1718,6 +1743,8 @@ model SimulationFeedback {
 
 // Prospecto comercial sincronizado con CRM / Google Sheets (Sprint 6, Feature 019)
 model Prospect {
+  crmData         Json?
+  closedAt        DateTime?
   id              String             @id @default(uuid())
   phone           String
   name            String

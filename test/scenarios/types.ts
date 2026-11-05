@@ -11,7 +11,12 @@ export interface ScenarioContext {
 }
 
 export interface AssertionViolation {
-  rule: 'mustContain' | 'mustNotContain' | 'expectedAgent' | 'expectedEscalation' | 'customCheck';
+  rule:
+    | 'mustContain'
+    | 'mustNotContain'
+    | 'expectedAgent'
+    | 'expectedEscalation'
+    | 'customCheck';
   expected: string;
   actual?: string;
   reason?: string;
@@ -26,6 +31,8 @@ export interface ScenarioAssertions {
     text: string;
     routedAgent?: string;
     escalated?: boolean;
+    paused?: boolean;
+    createdTicketsCount?: number;
   }) => { passed: boolean; reason?: string };
 }
 

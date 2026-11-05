@@ -1,5 +1,7 @@
 # Quickstart: Validación de Integraciones (CRM, Stock y Crédito)
 
+> Actualización de implementación (2026-11-04): Los payloads de Sheets son {row} con las 17 columnas de plan_de_trabajo.md §4. PostgreSQL guarda primero; success local no implica remoteSynced. BullMQ reintenta el mismo ID. Los exports CRM están inactivos y requieren configuración aislada. Las operaciones de seguimiento y contacto interno están en /sales/prospects/{id}/{followup,conversation,takeover,reply,release}. El cierre exige destino válido y monto positivo. Ver ../../docs/CONVERGENCIA_014_019.md.
+
 **Feature**: `019-integraciones-crm-stock-credito`  
 **Date**: 2026-10-21  
 

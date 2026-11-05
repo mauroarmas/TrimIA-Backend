@@ -1,20 +1,21 @@
 import { Test, TestingModule } from '@nestjs/testing';
+import { AdministrativeCreditService } from '../ai/integrations/administrative-credit.service';
 import { SalesService } from './sales.service';
-import { CREDIT_PORT, CreditPort } from '../ai/integrations/ports/credit.port';
+import { CREDIT_PORT } from '../ai/integrations/ports/credit.port';
 import { STOCK_PORT } from '../ai/integrations/ports/stock.port';
 import { PrismaService } from '../database/prisma.service';
 import { CreditVerdict } from '@prisma/client';
 
 describe('SalesService - Confidencialidad Crediticia (OE-10)', () => {
   let service: SalesService;
-  let creditPort: CreditPort;
 
   const mockCreditPort = {
     evaluateCredit: jest.fn().mockResolvedValue({
       verdict: CreditVerdict.APPROVED_WITH_CONDITIONS,
       score: 640,
       reason: 'Deuda registrada en BCRA por $120.000 con mora nivel 2',
-      commercialCondition: 'Aprobado con anticipo del 20% y máximo 12 cuotas semanales.',
+      commercialCondition:
+        'Aprobado con anticipo del 20% y máximo 12 cuotas semanales.',
       rawReport: {
         bcraSituation: 2,
         totalDebt: 120000,
@@ -34,6 +35,7 @@ describe('SalesService - Confidencialidad Crediticia (OE-10)', () => {
     const module: TestingModule = await Test.createTestingModule({
       providers: [
         SalesService,
+        AdministrativeCreditService,
         { provide: CREDIT_PORT, useValue: mockCreditPort },
         { provide: STOCK_PORT, useValue: mockStockPort },
         { provide: PrismaService, useValue: mockPrisma },
@@ -41,11 +43,13 @@ describe('SalesService - Confidencialidad Crediticia (OE-10)', () => {
     }).compile();
 
     service = module.get<SalesService>(SalesService);
-    creditPort = module.get<CreditPort>(CREDIT_PORT);
   });
 
   it('debe devolver solo el dictamen comercial y omitir datos confidenciales (score, rawReport, reason técnico)', async () => {
-    const res: any = await service.checkCreditCommercial({ dni: '32123454', amount: 200000 });
+    const res: any = await service.checkCreditCommercial({
+      dni: '32123454',
+      amount: 200000,
+    });
 
     // Campos permitidos
     expect(res.verdict).toBe(CreditVerdict.APPROVED_WITH_CONDITIONS);
@@ -59,4 +63,3 @@ describe('SalesService - Confidencialidad Crediticia (OE-10)', () => {
     expect(res.bcraSituation).toBeUndefined();
   });
 });
-

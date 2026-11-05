@@ -2,48 +2,76 @@ import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
 import { CrmPort, ProspectStatus } from '../ports/crm.port';
 
-export function createSaveProspectTool(crmPort: CrmPort) {
+export function createSaveProspectTool(crm: CrmPort) {
   return tool(
-    async ({ name, phone, product, modality, notes, conversationId }) => {
+    async ({ name, product, modality, notes }, config) => {
+      const contact = config?.configurable?.contact;
+      if (!contact?.phone || !contact?.conversationId)
+        return JSON.stringify({
+          exito: false,
+          mensaje: 'No hay un contacto verificado en esta conversación.',
+        });
       try {
-        const result = await crmPort.createProspect({
-          fechaContacto: new Date().toLocaleDateString('es-AR'),
+        const existing =
+          config?.configurable?.prospect ??
+          (await crm.searchProspect(contact.phone));
+        if (
+          existing?.localId &&
+          existing.productoInteres === product &&
+          existing.estado !== ProspectStatus.VENTA_CERRADA &&
+          existing.estado !== ProspectStatus.PERDIDO
+        ) {
+          // Reusar el contacto del mismo interés, manteniendo repeticiones deliberadas de otras oportunidades.
+          await crm.addFollowUp(
+            contact.phone,
+            notes || 'Continúa la consulta por ' + product,
+            undefined,
+            existing.localId,
+          );
+          return JSON.stringify({
+            exito: true,
+            id: existing.localId,
+            mensaje: 'Contacto existente actualizado.',
+          });
+        }
+        const result = await crm.createProspect({
+          fechaContacto: new Date().toISOString().slice(0, 10),
           nombreApellido: name,
-          telefono: phone,
+          telefono: contact.phone,
           productoInteres: product,
           modalidad: modality === 'FINANCED' ? 'CUOTAS_SEMANALES' : 'CONTADO',
           estado: ProspectStatus.NUEVO,
           canalOrigen: 'WHATSAPP',
           ultimaInteraccion: new Date().toISOString(),
-          notasSeguimiento: notes || 'Captado automáticamente por asistente conversacional TrimIA',
-          conversationId,
+          notasSeguimiento: notes ?? '',
+          conversationId: contact.conversationId,
+          comercio: existing?.comercio,
+          rubro: existing?.rubro,
+          localidad: existing?.localidad,
         });
-
         return JSON.stringify({
-          exito: true,
-          mensaje: `Prospecto "${name}" registrado correctamente en el CRM`,
+          exito: result.success,
           id: result.id,
+          pendienteSincronizacion: !result.remoteSynced,
+          mensaje: 'Contacto guardado en TrimIA.',
         });
-      } catch (err: any) {
+      } catch {
         return JSON.stringify({
           exito: false,
-          mensaje: `Error al registrar prospecto en CRM: ${err.message}`,
+          mensaje: 'No se pudo guardar el contacto. Requiere revisión manual.',
         });
       }
     },
     {
       name: 'save_prospect',
       description:
-        'Registra los datos de contacto y requerimientos de un cliente o prospecto interesado en el CRM de la empresa.',
+        'Guarda un interés comercial con el contacto verificado del hilo. No inventes nombre, producto ni modalidad; usá solo los relevados.',
       schema: z.object({
-        name: z.string().describe('Nombre y apellido del cliente o persona de contacto'),
-        phone: z.string().describe('Número de teléfono o WhatsApp normalizado del cliente'),
-        product: z.string().describe('Producto, maquinaria o tipo de equipo que le interesa'),
-        modality: z.enum(['CASH', 'FINANCED']).describe('Modalidad de pago pretendida (CASH contado o FINANCED cuotas)'),
-        notes: z.string().optional().describe('Observaciones adicionales del comercio, rubro o localidad'),
-        conversationId: z.string().optional().describe('ID de la conversación de TrimIA'),
+        name: z.string().trim().min(1),
+        product: z.string().trim().min(1),
+        modality: z.enum(['CASH', 'FINANCED']),
+        notes: z.string().optional(),
       }),
     },
   );
 }
-

@@ -1,0 +1,41 @@
+// Persistencia y carreras en PostgreSQL aislado. No lee .env ni URLs externas.
+process.chdir(require('node:path').resolve(__dirname,'..'));
+require('ts-node/register/transpile-only');
+const assert=require('node:assert/strict');const {randomUUID}=require('node:crypto');const {PrismaClient}=require('@prisma/client');
+const {SimulationService}=require('../src/training/simulation/services/simulation.service');const {SalesService}=require('../src/sales/sales.service');const {N8nCrmAdapter}=require('../src/ai/integrations/adapters/n8n-crm.adapter');const {CrmSyncService}=require('../src/ai/integrations/crm-sync.service');
+const prisma=new PrismaClient({datasources:{db:{url:'postgresql://converge:converge_test_only@127.0.0.1:5543/trimia_convergence_test'}}});
+const tag=randomUUID();const ids={};const originalFetch=global.fetch;
+async function run(){
+ assert.equal((await prisma.$queryRaw`SELECT current_database() AS name`)[0].name,'trimia_convergence_test');
+ const sector=await prisma.sector.create({data:{name:'Prueba '+tag,agentType:'SALES'}});ids.sector=sector.id;
+ const employee=await prisma.employee.create({data:{phone:tag,email:tag+'@isolated.invalid',name:'Prueba',password:'not-a-login-hash',sectorId:sector.id}});ids.employee=employee.id;
+ const module=await prisma.trainingModule.create({data:{title:'Aislado '+tag,sectorId:sector.id}});ids.module=module.id;
+ const pill=await prisma.pill.create({data:{moduleId:module.id,title:'Recepción',objective:'Revisar cajas',content:'Contar las cajas recibidas',quiz:[],status:'PUBLISHED'}});
+ const ai={generateScenario:async()=>({scenarioTitle:'Entrega',customerName:'Cliente ficticio',customerProfile:'Consulta por entrega',initialCustomerGreeting:'Hola',goals:[{description:'Revisar cajas'}]}),generateTurnResponse:async()=>({customerResponse:'Revisemos',emotion:'neutral',completedGoalEvaluations:[{goalId:'foreign-goal',isCompleted:true,evidence:'Hola'}]}),generateFeedback:async()=>({band:'ACHIEVED',whatWentWellBand:'ACHIEVED',toImproveBand:'NEEDS_IMPROVEMENT',businessRulesBand:'ACHIEVED',whatWentWell:'Revisó las cajas',toImprove:'Repasar',businessRules:'Revisó según el procedimiento',summary:'Práctica concluida'})};
+ const service=new SimulationService(prisma,ai,{getAccessiblePill:async()=>({pill})},{assertPuedeEscribir:async()=>{}});
+ const session=await service.startSimulation(employee.id,pill.id,{mode:'GUIDED'});
+ const turns=await Promise.allSettled([service.sendMessage(employee.id,session.id,{content:'Hola, revisemos las cajas'}),service.sendMessage(employee.id,session.id,{content:'Hola, verifico el pedido'})]);
+ assert.equal(turns.filter(r=>r.status==='fulfilled').length,1);
+ let stored=await prisma.simulationMessage.findMany({where:{sessionId:session.id},orderBy:{turnIndex:'asc'}});assert.deepEqual(stored.map(m=>m.turnIndex),[0,1,2]);
+ assert.equal(await prisma.simulationGoal.count({where:{sessionId:session.id,isCompleted:true}}),0);
+ await service.sendMessage(employee.id,session.id,{content:'Ahora cotejamos el pedido'});
+ const closed=await Promise.all([service.concludeSimulation(employee.id,session.id),service.concludeSimulation(employee.id,session.id)]);assert.equal(closed[0].id,closed[1].id);assert.equal(await prisma.simulationFeedback.count({where:{sessionId:session.id}}),1);
+ await assert.rejects(service.sendMessage(employee.id,session.id,{content:'Mensaje tardío'}));
+ const resume=await service.startSimulation(employee.id,pill.id,{mode:'FREE'});assert.equal((await service.getActiveSession(employee.id,pill.id,'FREE')).id,resume.id);
+ await prisma.simulationMessage.updateMany({where:{sessionId:resume.id},data:{createdAt:new Date(Date.now()-25*3600000)}});assert.equal(await service.getActiveSession(employee.id,pill.id,'FREE'),null);assert.equal((await prisma.simulationSession.findUnique({where:{id:resume.id}})).status,'ABANDONED');
+ const client=await prisma.client.create({data:{name:'Cliente aislado',phone:tag}});ids.client=client.id;
+ const request=await prisma.purchaseRequest.create({data:{clientId:client.id,productSummary:'Equipo',amount:1000,modality:'CASH'}});ids.request=request.id;
+ global.fetch=async()=>{throw new Error('Indisponibilidad controlada; sin red');};
+ const adapter=new N8nCrmAdapter({get:key=>key==='N8N_BASE_URL'?'http://isolated.invalid':'test'},prisma);
+ const record={fechaContacto:'2026-11-04',nombreApellido:'Comercio aislado',telefono:tag,productoInteres:'Equipo',modalidad:'CONTADO',estado:'NUEVO',canalOrigen:'WEB',ultimaInteraccion:'2026-11-04',notasSeguimiento:'Consulta'};
+ const created=await adapter.createProspect(record);ids.prospect=created.id;assert.equal(created.remoteSynced,false);
+ const sync=new CrmSyncService(adapter,prisma);await sync.syncPendingProspects();assert.equal(await prisma.prospect.count({where:{phone:tag}}),1);assert.equal((await prisma.prospect.findUnique({where:{id:created.id}})).syncStatus,'PENDING');
+ global.fetch=async()=>({ok:true,json:async()=>({success:true})});await sync.syncPendingProspects();assert.equal((await prisma.prospect.findUnique({where:{id:created.id}})).syncStatus,'SYNCED');
+ await adapter.addFollowUp(tag,'Volver a llamar',undefined,created.id);assert((await prisma.prospect.findUnique({where:{id:created.id}})).crmData.sheet.Seguimiento.includes('Volver a llamar'));
+ const failPrisma=new Proxy(prisma,{get(target,key){if(key==='$transaction')return callback=>target.$transaction(tx=>callback(new Proxy(tx,{get(client,property){if(property==='purchaseRequest')return {...client.purchaseRequest,findUnique:client.purchaseRequest.findUnique.bind(client.purchaseRequest),updateMany:async()=>{throw new Error('Fallo de cierre controlado');}};return client[property];}})));return target[key];}});
+ const dto={prospectId:created.id,purchaseRequestId:request.id,finalAmount:1000,modality:'CASH',notes:'Factura aislada'};
+ await assert.rejects(new SalesService(null,null,failPrisma).closeSale(dto,employee.id),/Fallo de cierre controlado/);assert.equal((await prisma.prospect.findUnique({where:{id:created.id}})).closedAt,null);
+ const sales=new SalesService(null,null,prisma);const result=await sales.closeSale(dto,employee.id);assert.equal(result.success,true);assert.equal((await prisma.purchaseRequest.findUnique({where:{id:request.id}})).closedById,employee.id);assert.equal((await prisma.prospect.findUnique({where:{id:created.id}})).sellerId,employee.id);assert.equal((await sales.getProspects()).some(p=>p.id===created.id),false);
+ console.log('OK: turnos concurrentes, cierre idempotente, abandono 24h, CRM sin duplicados y rollback del cierre conjunto en PostgreSQL aislado.');
+}
+run().catch(error=>{console.error(error);process.exitCode=1;}).finally(async()=>{global.fetch=originalFetch;if(ids.prospect)await prisma.prospect.delete({where:{id:ids.prospect}});if(ids.request)await prisma.purchaseRequest.delete({where:{id:ids.request}});if(ids.client)await prisma.client.delete({where:{id:ids.client}});if(ids.module)await prisma.trainingModule.delete({where:{id:ids.module}});if(ids.employee)await prisma.employee.delete({where:{id:ids.employee}});if(ids.sector)await prisma.sector.delete({where:{id:ids.sector}});await prisma.$disconnect();});

@@ -1,5 +1,7 @@
 # Quickstart: 015 — Diagnóstico Inicial y Progresión por Puesto
 
+> Actualización de implementación (2026-11-04): El GET conserva un examen privado pendiente. La entrega debe incluir todas las parejas pillId/questionId, sin omisiones/duplicados. El reinicio es transaccional y preserva progreso COMPLETED. Ver ../../docs/CONVERGENCIA_014_019.md.
+
 **Feature**: `015-diagnostico-inicial-y-progresion`  
 **Fecha**: 2026-10-04  
 

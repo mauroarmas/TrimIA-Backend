@@ -1,8 +1,10 @@
+import { CommercialFollowupDto } from './dto/commercial-followup.dto';
 import {
   Body,
   Controller,
   ForbiddenException,
   Get,
+  HttpCode,
   Param,
   ParseUUIDPipe,
   Post,
@@ -105,8 +107,54 @@ export class SalesController {
     return this.salesService.getProspects(status);
   }
 
+  @Post('prospects/:id/followup')
+  @HttpCode(200)
+  followUp(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CommercialFollowupDto,
+    @Req() req: any,
+  ) {
+    assertCanAccessSales(req.user);
+    return this.salesService.followUp(id, dto.message);
+  }
+
+  @Get('prospects/:id/conversation')
+  getProspectConversation(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: any,
+  ) {
+    assertCanAccessSales(req.user);
+    return this.salesService.getProspectConversation(id);
+  }
+
+  @Post('prospects/:id/takeover')
+  @HttpCode(200)
+  takeProspect(@Param('id', ParseUUIDPipe) id: string, @Req() req: any) {
+    assertCanAccessSales(req.user);
+    return this.salesService.takeProspect(id, req.user.id);
+  }
+
+  @Post('prospects/:id/reply')
+  @HttpCode(200)
+  replyProspect(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CommercialFollowupDto,
+    @Req() req: any,
+  ) {
+    assertCanAccessSales(req.user);
+    return this.salesService.replyProspect(id, req.user.id, dto.message);
+  }
+
+  @Post('prospects/:id/release')
+  @HttpCode(200)
+  releaseProspect(@Param('id', ParseUUIDPipe) id: string, @Req() req: any) {
+    assertCanAccessSales(req.user);
+    return this.salesService.releaseProspect(id, req.user.id);
+  }
+
   /** POST /sales/credit-check — verificación crediticia comercial confidencial (OE-10). */
   @Post('credit-check')
+  @HttpCode(200)
   @ApiOperation({
     summary:
       'Consulta aptitud crediticia comercial sin revelar reporte bancario confidencial',
@@ -118,6 +166,7 @@ export class SalesController {
 
   /** POST /sales/close — registra el cierre manual de venta auditado en Paljet. */
   @Post('close')
+  @HttpCode(200)
   @ApiOperation({
     summary: 'Marca una venta como cerrada y auditada tras asentarse en Paljet',
   })

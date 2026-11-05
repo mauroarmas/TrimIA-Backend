@@ -21,6 +21,19 @@ export class SupervisorDiagnosticLastSessionDto {
 
   @ApiProperty({ description: 'Indica si la sesión fue reseteada' })
   isReset: boolean;
+
+  @ApiProperty({
+    description: 'Respuestas enviadas y resultado por pregunta',
+    type: [Object],
+  })
+  answers: Array<{
+    pillId: string;
+    questionId: number;
+    selectedOptionIndex: number;
+    isCorrect: boolean;
+    question?: string;
+    options?: string[];
+  }>;
 }
 
 export class SupervisorDiagnosticDetailResponseDto {
@@ -33,9 +46,15 @@ export class SupervisorDiagnosticDetailResponseDto {
   @ApiProperty({ description: 'Sector al que pertenece el empleado' })
   sectorName: string;
 
-  @ApiProperty({ description: 'Indica si ha completado la evaluación diagnóstica' })
+  @ApiProperty({
+    description: 'Indica si ha completado la evaluación diagnóstica',
+  })
   hasCompletedDiagnostic: boolean;
 
-  @ApiProperty({ description: 'Detalle de la última sesión diagnóstica', required: false, nullable: true })
+  @ApiProperty({
+    description: 'Detalle de la última sesión diagnóstica',
+    required: false,
+    nullable: true,
+  })
   lastSession: SupervisorDiagnosticLastSessionDto | null;
 }

@@ -1,4 +1,8 @@
-import { Injectable, Logger } from '@nestjs/common';
+import {
+  Injectable,
+  Logger,
+  ServiceUnavailableException,
+} from '@nestjs/common';
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { z } from 'zod';
 import { LlmService } from '../../../ai/llm/llm.service';
@@ -10,14 +14,38 @@ import {
 import { PerformanceBand } from '@prisma/client';
 
 const scenarioSchema = z.object({
-  scenarioTitle: z.string().describe('Título breve y representativo del caso'),
-  customerName: z.string().describe('Nombre y apellido del cliente ficticio'),
-  customerProfile: z.string().describe('Perfil del cliente: ocupación, ingresos, motivo de contacto, tono emocional e historial crediticio'),
-  initialCustomerGreeting: z.string().describe('Primer mensaje con el que el cliente inicia la interacción'),
+  scenarioTitle: z
+    .string()
+    .trim()
+    .min(1)
+    .describe('Título breve y representativo del caso'),
+  customerName: z
+    .string()
+    .trim()
+    .min(1)
+    .describe('Nombre y apellido del cliente ficticio'),
+  customerProfile: z
+    .string()
+    .trim()
+    .min(1)
+    .describe(
+      'Perfil del cliente: motivo de contacto y tono emocional, sin inventar condiciones operativas',
+    ),
+  initialCustomerGreeting: z
+    .string()
+    .trim()
+    .min(1)
+    .describe('Primer mensaje con el que el cliente inicia la interacción'),
   goals: z
     .array(
       z.object({
-        description: z.string().describe('Objetivo pedagógico observable que el empleado debe cumplir (verbo de acción)'),
+        description: z
+          .string()
+          .trim()
+          .min(1)
+          .describe(
+            'Objetivo pedagógico observable que el empleado debe cumplir (verbo de acción)',
+          ),
       }),
     )
     .min(3)
@@ -26,32 +54,94 @@ const scenarioSchema = z.object({
 });
 
 const guidedTurnSchema = z.object({
-  customerResponse: z.string().describe('Respuesta del cliente simulado continuando la conversación en personaje'),
-  emotion: z.string().describe('Emoción actual del cliente: neutral, interesado, frustrado, satisfecho, desconfiado'),
+  customerResponse: z
+    .string()
+    .trim()
+    .min(1)
+    .describe(
+      'Respuesta del cliente simulado continuando la conversación en personaje',
+    ),
+  emotion: z
+    .string()
+    .trim()
+    .min(1)
+    .describe(
+      'Emoción actual del cliente: neutral, interesado, frustrado, satisfecho, desconfiado',
+    ),
   evaluations: z
     .array(
       z.object({
-        goalId: z.string().describe('ID exacto del objetivo evaluado'),
-        isCompleted: z.boolean().describe('true si el mensaje del empleado cumplió satisfactoriamente este objetivo'),
-        evidence: z.string().optional().describe('Cita breve del mensaje del empleado que fundamenta el cumplimiento'),
+        goalId: z
+          .string()
+          .trim()
+          .min(1)
+          .describe('ID exacto del objetivo evaluado'),
+        isCompleted: z
+          .boolean()
+          .describe(
+            'true si el mensaje del empleado cumplió satisfactoriamente este objetivo',
+          ),
+        evidence: z
+          .string()
+          .trim()
+          .min(1)
+          .optional()
+          .describe(
+            'Cita breve del mensaje del empleado que fundamenta el cumplimiento',
+          ),
       }),
     )
-    .describe('Evaluación de los objetivos del checklist contra el último mensaje del empleado'),
+    .describe(
+      'Evaluación de los objetivos del checklist contra el último mensaje del empleado',
+    ),
 });
 
 const freeTurnSchema = z.object({
-  customerResponse: z.string().describe('Respuesta del cliente simulado continuando la conversación en personaje'),
-  emotion: z.string().describe('Emoción actual del cliente: neutral, interesado, frustrado, satisfecho, desconfiado'),
+  customerResponse: z
+    .string()
+    .trim()
+    .min(1)
+    .describe(
+      'Respuesta del cliente simulado continuando la conversación en personaje',
+    ),
+  emotion: z
+    .string()
+    .trim()
+    .min(1)
+    .describe(
+      'Emoción actual del cliente: neutral, interesado, frustrado, satisfecho, desconfiado',
+    ),
 });
 
 const feedbackSchema = z.object({
   band: z
     .enum(['ACHIEVED', 'NEEDS_IMPROVEMENT', 'NOT_ACHIEVED'])
     .describe('Banda cualitativa global de desempeño'),
-  whatWentWell: z.string().describe('Fortalezas demostradas por el empleado con citas textuales de la conversación'),
-  toImprove: z.string().describe('Puntos formativos a mejorar y recomendaciones pedagógicas concretas'),
-  businessRules: z.string().describe('Evaluación de adherencia a políticas, tasas, validación de identidad y procedimientos de Credimisión'),
-  summary: z.string().describe('Síntesis formativa general'),
+  whatWentWellBand: z.enum(['ACHIEVED', 'NEEDS_IMPROVEMENT', 'NOT_ACHIEVED']),
+  toImproveBand: z.enum(['ACHIEVED', 'NEEDS_IMPROVEMENT', 'NOT_ACHIEVED']),
+  businessRulesBand: z.enum(['ACHIEVED', 'NEEDS_IMPROVEMENT', 'NOT_ACHIEVED']),
+  whatWentWell: z
+    .string()
+    .trim()
+    .min(1)
+    .describe(
+      'Fortalezas demostradas por el empleado con citas textuales de la conversación',
+    ),
+  toImprove: z
+    .string()
+    .trim()
+    .min(1)
+    .describe(
+      'Puntos formativos a mejorar y recomendaciones pedagógicas concretas',
+    ),
+  businessRules: z
+    .string()
+    .trim()
+    .min(1)
+    .describe(
+      'Evaluación de adherencia únicamente al procedimiento aprobado de la píldora',
+    ),
+  summary: z.string().trim().min(1).describe('Síntesis formativa general'),
 });
 
 @Injectable()
@@ -71,7 +161,8 @@ export class SimulationAiService {
     const prompt =
       'Sos un diseñador pedagógico y capacitador experto de Credimisión (empresa comercial y de créditos en Argentina).\n' +
       'A partir del contenido de la píldora formativa, creá un escenario de roleplay creíble para que un nuevo empleado practique.\n' +
-      'El cliente simulado debe tener un nombre realista, una necesidad financiera o consulta concreta, objeciones típicas y un tono coherente.\n' +
+      'El cliente simulado debe tener un nombre realista, una consulta concreta del tema de la píldora, objeciones típicas y un tono coherente.\n' +
+      'Basate solo en la píldora. No inventes tasas, plazos, reglas ni requisitos ni fuerces un caso financiero si el tema es otro.\n' +
       'El checklist debe tener entre 3 y 5 objetivos claros, específicos y observables que el empleado deba realizar durante la conversación.';
 
     const structured = this.llm.chat.withStructuredOutput(scenarioSchema, {
@@ -79,12 +170,14 @@ export class SimulationAiService {
     });
 
     try {
-      const result = (await structured.invoke([
-        new SystemMessage(prompt),
-        new HumanMessage(
-          `Píldora: "${pill.title}"\nObjetivo pedagógico: ${pill.objective}\nContenido de referencia:\n${pill.content}`,
-        ),
-      ])) as z.infer<typeof scenarioSchema>;
+      const result = scenarioSchema.parse(
+        await structured.invoke([
+          new SystemMessage(prompt),
+          new HumanMessage(
+            `Píldora: "${pill.title}"\nObjetivo pedagógico: ${pill.objective}\nContenido de referencia:\n${pill.content}`,
+          ),
+        ]),
+      );
 
       return {
         scenarioTitle: result.scenarioTitle,
@@ -95,18 +188,9 @@ export class SimulationAiService {
       };
     } catch (err) {
       this.logger.error(`Error al generar escenario de simulación: ${err}`);
-      return {
-        scenarioTitle: `Práctica sobre ${pill.title}`,
-        customerName: 'Carlos Benítez',
-        customerProfile: 'Cliente interesado en consultar condiciones de financiación pero con dudas sobre tasas y cuotas.',
-        initialCustomerGreeting: 'Hola, buenas tardes. Quería consultar sobre los planes de crédito que tienen disponibles.',
-        goals: [
-          { description: 'Saludar con cortesía y solicitar datos de contacto o DNI' },
-          { description: 'Identificar la necesidad concreta del cliente' },
-          { description: 'Explicar con claridad las opciones disponibles y requisitos' },
-          { description: 'Ofrecer alternativas ante objeciones y cerrar el contacto cordial' },
-        ],
-      };
+      throw new ServiceUnavailableException(
+        'No se pudo preparar la práctica. Intentá nuevamente; no se creó una sesión.',
+      );
     }
   }
 
@@ -118,12 +202,18 @@ export class SimulationAiService {
     mode: 'GUIDED' | 'FREE';
     customerName: string;
     customerProfile: string;
-    conversationHistory: { sender: 'EMPLOYEE' | 'SIMULATED_CLIENT'; content: string }[];
+    conversationHistory: {
+      sender: 'EMPLOYEE' | 'SIMULATED_CLIENT';
+      content: string;
+    }[];
     latestEmployeeMessage: string;
     pendingGoals?: { id: string; description: string }[];
   }): Promise<TurnAiResponse> {
     const historyText = params.conversationHistory
-      .map((m) => `${m.sender === 'EMPLOYEE' ? 'Empleado' : params.customerName}: ${m.content}`)
+      .map(
+        (m) =>
+          `${m.sender === 'EMPLOYEE' ? 'Empleado' : params.customerName}: ${m.content}`,
+      )
       .join('\n');
 
     const systemPrompt =
@@ -137,7 +227,11 @@ export class SimulationAiService {
       '5. Respondé de forma conversacional (1 a 3 oraciones por turno, como en un chat de WhatsApp o mostrador).\n' +
       '6. Colaborá si el empleado te atiende bien y responde tus dudas, o mostrate más firme si no te da respuestas claras.';
 
-    if (params.mode === 'GUIDED' && params.pendingGoals && params.pendingGoals.length > 0) {
+    if (
+      params.mode === 'GUIDED' &&
+      params.pendingGoals &&
+      params.pendingGoals.length > 0
+    ) {
       const goalsText = params.pendingGoals
         .map((g) => `- [ID: ${g.id}]: ${g.description}`)
         .join('\n');
@@ -154,12 +248,14 @@ export class SimulationAiService {
       });
 
       try {
-        const result = (await structured.invoke([
-          new SystemMessage(evaluationPrompt),
-          new HumanMessage(
-            `Historial previo:\n${historyText}\n\nÚltimo mensaje del Empleado:\n"${params.latestEmployeeMessage}"`,
-          ),
-        ])) as z.infer<typeof guidedTurnSchema>;
+        const result = guidedTurnSchema.parse(
+          await structured.invoke([
+            new SystemMessage(evaluationPrompt),
+            new HumanMessage(
+              `Historial previo:\n${historyText}\n\nÚltimo mensaje del Empleado:\n"${params.latestEmployeeMessage}"`,
+            ),
+          ]),
+        );
 
         return {
           customerResponse: result.customerResponse,
@@ -172,11 +268,9 @@ export class SimulationAiService {
         };
       } catch (err) {
         this.logger.error(`Error en turno guiado de simulación: ${err}`);
-        return {
-          customerResponse: 'Entiendo lo que me decís. ¿Cómo seguimos entonces?',
-          emotion: 'neutral',
-          completedGoalEvaluations: [],
-        };
+        throw new ServiceUnavailableException(
+          'No se pudo responder. El turno no se guardó; podés reintentarlo.',
+        );
       }
     } else {
       const structured = this.llm.chat.withStructuredOutput(freeTurnSchema, {
@@ -184,12 +278,14 @@ export class SimulationAiService {
       });
 
       try {
-        const result = (await structured.invoke([
-          new SystemMessage(systemPrompt),
-          new HumanMessage(
-            `Historial previo:\n${historyText}\n\nÚltimo mensaje del Empleado:\n"${params.latestEmployeeMessage}"`,
-          ),
-        ])) as z.infer<typeof freeTurnSchema>;
+        const result = freeTurnSchema.parse(
+          await structured.invoke([
+            new SystemMessage(systemPrompt),
+            new HumanMessage(
+              `Historial previo:\n${historyText}\n\nÚltimo mensaje del Empleado:\n"${params.latestEmployeeMessage}"`,
+            ),
+          ]),
+        );
 
         return {
           customerResponse: result.customerResponse,
@@ -197,10 +293,9 @@ export class SimulationAiService {
         };
       } catch (err) {
         this.logger.error(`Error en turno libre de simulación: ${err}`);
-        return {
-          customerResponse: 'Perfecto, comprendo. ¿Cuáles serían los pasos a seguir?',
-          emotion: 'neutral',
-        };
+        throw new ServiceUnavailableException(
+          'No se pudo responder. El turno no se guardó; podés reintentarlo.',
+        );
       }
     }
   }
@@ -212,10 +307,18 @@ export class SimulationAiService {
     scenarioTitle: string;
     customerProfile: string;
     pillObjective: string;
-    conversationTranscript: { sender: 'EMPLOYEE' | 'SIMULATED_CLIENT'; content: string }[];
+    pillContent: string;
+    sector: string;
+    conversationTranscript: {
+      sender: 'EMPLOYEE' | 'SIMULATED_CLIENT';
+      content: string;
+    }[];
   }): Promise<GeneratedFeedback> {
     const transcriptText = params.conversationTranscript
-      .map((m) => `[${m.sender === 'EMPLOYEE' ? 'Empleado' : 'Cliente'}]: ${m.content}`)
+      .map(
+        (m) =>
+          `[${m.sender === 'EMPLOYEE' ? 'Empleado' : 'Cliente'}]: ${m.content}`,
+      )
       .join('\n');
 
     const prompt =
@@ -224,11 +327,12 @@ export class SimulationAiService {
       'Debes emitir una evaluación pedagógica en exactamente 3 dimensiones cualitativas y clasificar el desempeño en una banda:\n\n' +
       '1. "whatWentWell" (Qué hizo bien): Fortalezas observadas, empatía, claridad, con citas textuales del chat.\n' +
       '2. "toImprove" (A mejorar): Aspectos a pulir, respuestas incompletas, tono o falta de información clave.\n' +
-      '3. "businessRules" (Reglas del negocio): Cumplimiento de políticas de Credimisión (verificación de identidad, explicación de tasas/cuotas, formalización de acuerdos).\n' +
+      '3. "businessRules" (Reglas del negocio): Cumplimiento únicamente del procedimiento aprobado que se adjunta. No supongas normas, tasas o requisitos ausentes.\n' +
       '4. "band": Asignar exactamente una de las siguientes bandas cualitativas:\n' +
       '   - ACHIEVED (Logrado): Cumplió el objetivo formativo y respetó las normas de atención.\n' +
       '   - NEEDS_IMPROVEMENT (A mejorar): Tuvo buena predisposición pero omitió validaciones clave o reglas secundarias.\n' +
       '   - NOT_ACHIEVED (No logrado): Incumplió reglas críticas de negocio o no logró resolver la interacción.\n\n' +
+      'Asigná también una banda a cada dimensión: whatWentWellBand, toImproveBand, businessRulesBand. Basá cada valoración en citas de la charla y el procedimiento, sin inventar fortalezas ni penalizar requisitos que no figuran.\n' +
       'PROHIBICIÓN ESTRICTA: NO uses notas ni puntuaciones numéricas de 0 a 100.';
 
     const structured = this.llm.chat.withStructuredOutput(feedbackSchema, {
@@ -236,18 +340,24 @@ export class SimulationAiService {
     });
 
     try {
-      const result = (await structured.invoke([
-        new SystemMessage(prompt),
-        new HumanMessage(
-          `Escenario: ${params.scenarioTitle}\n` +
-            `Objetivo de la píldora: ${params.pillObjective}\n` +
-            `Perfil del cliente: ${params.customerProfile}\n\n` +
-            `Transcripción de la charla:\n${transcriptText}`,
-        ),
-      ])) as z.infer<typeof feedbackSchema>;
+      const result = feedbackSchema.parse(
+        await structured.invoke([
+          new SystemMessage(prompt),
+          new HumanMessage(
+            `Escenario: ${params.scenarioTitle}\n` +
+              `Objetivo de la píldora: ${params.pillObjective}\n` +
+              `Sector: ${params.sector}\nProcedimiento aprobado:\n${params.pillContent}\n` +
+              `Perfil del cliente: ${params.customerProfile}\n\n` +
+              `Transcripción de la charla:\n${transcriptText}`,
+          ),
+        ]),
+      );
 
       return {
         band: result.band as PerformanceBand,
+        whatWentWellBand: result.whatWentWellBand as PerformanceBand,
+        toImproveBand: result.toImproveBand as PerformanceBand,
+        businessRulesBand: result.businessRulesBand as PerformanceBand,
         whatWentWell: result.whatWentWell,
         toImprove: result.toImprove,
         businessRules: result.businessRules,
@@ -255,13 +365,9 @@ export class SimulationAiService {
       };
     } catch (err) {
       this.logger.error(`Error al generar feedback cualitativo: ${err}`);
-      return {
-        band: PerformanceBand.NEEDS_IMPROVEMENT,
-        whatWentWell: 'Se observó predisposición para atender la consulta del cliente.',
-        toImprove: 'Revisar la validación completa de datos y el cierre formal del acuerdo.',
-        businessRules: 'Asegurar siempre la confirmación del DNI y las condiciones del préstamo.',
-        summary: 'Práctica completada. Se sugiere repasar la teoría de la píldora antes de volver a intentar.',
-      };
+      throw new ServiceUnavailableException(
+        'No se pudo evaluar la práctica. La sesión sigue abierta para reintentar.',
+      );
     }
   }
 }

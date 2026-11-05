@@ -14,7 +14,9 @@
             "name": "query",
             "in": "query",
             "required": false,
-            "schema": { "type": "string" },
+            "schema": {
+              "type": "string"
+            },
             "description": "Nombre, modelo o SKU a filtrar"
           },
           {
@@ -23,7 +25,13 @@
             "required": false,
             "schema": {
               "type": "string",
-              "enum": ["BALANZAS", "CORTADORAS", "GASTRONOMIA", "REFRIGERACION", "ACCESORIOS"]
+              "enum": [
+                "BALANZAS",
+                "CORTADORAS",
+                "GASTRONOMIA",
+                "REFRIGERACION",
+                "ACCESORIOS"
+              ]
             }
           }
         ],
@@ -52,7 +60,9 @@
             "name": "status",
             "in": "query",
             "required": false,
-            "schema": { "type": "string" }
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
@@ -82,10 +92,18 @@
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": ["dni"],
+                "required": [
+                  "dni"
+                ],
                 "properties": {
-                  "dni": { "type": "string", "example": "32123456" },
-                  "amount": { "type": "number", "example": 250000 }
+                  "dni": {
+                    "type": "string",
+                    "example": "32123456"
+                  },
+                  "amount": {
+                    "type": "number",
+                    "example": 250000
+                  }
                 }
               }
             }
@@ -102,28 +120,51 @@
               }
             }
           },
-          "400": { "description": "DNI inválido" },
-          "403": { "description": "No autorizado para consultar crédito" }
+          "400": {
+            "description": "DNI inválido"
+          },
+          "403": {
+            "description": "No autorizado para consultar crédito"
+          }
         }
       }
     },
     "/sales/close": {
       "post": {
         "summary": "Registro de cierre manual de venta",
-        "description": "Asienta la venta como cerrada una vez cargada en el ERP Paljet por el vendedor.",
+        "description": "Requiere prospectId o purchaseRequestId y finalAmount>0; valida ambos destinos antes de escribir. Guarda vendedor/fecha y excluye cerrados del listado predeterminado. Mantiene aprobación/monto del supervisor en financiación y devuelve auditoría existente al repetir.",
         "requestBody": {
           "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
-                "required": ["finalAmount", "modality"],
+                "required": [
+                  "finalAmount",
+                  "modality"
+                ],
                 "properties": {
-                  "prospectId": { "type": "string" },
-                  "purchaseRequestId": { "type": "string" },
-                  "finalAmount": { "type": "number", "example": 180000 },
-                  "modality": { "type": "string", "enum": ["CASH", "FINANCED"] },
-                  "notes": { "type": "string", "example": "Factura A-0001-000123. Se coordinó entrega para el jueves." }
+                  "prospectId": {
+                    "type": "string"
+                  },
+                  "purchaseRequestId": {
+                    "type": "string"
+                  },
+                  "finalAmount": {
+                    "type": "number",
+                    "example": 180000
+                  },
+                  "modality": {
+                    "type": "string",
+                    "enum": [
+                      "CASH",
+                      "FINANCED"
+                    ]
+                  },
+                  "notes": {
+                    "type": "string",
+                    "example": "Factura A-0001-000123. Se coordinó entrega para el jueves."
+                  }
                 }
               }
             }
@@ -137,13 +178,220 @@
                 "schema": {
                   "type": "object",
                   "properties": {
-                    "success": { "type": "boolean" },
-                    "closedAt": { "type": "string", "format": "date-time" },
-                    "closedBy": { "type": "string" }
+                    "success": {
+                      "type": "boolean"
+                    },
+                    "closedAt": {
+                      "type": "string",
+                      "format": "date-time"
+                    },
+                    "closedBy": {
+                      "type": "string"
+                    }
                   }
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/sales/prospects/{id}/followup": {
+      "post": {
+        "summary": "Guardar seguimiento comercial local y sincronizar; PENDING ante fallo CRM",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Operación completada"
+          },
+          "403": {
+            "description": "Solo Ventas o supervisión general"
+          },
+          "404": {
+            "description": "Prospecto o conversación no encontrados"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "message"
+                ],
+                "properties": {
+                  "message": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4000
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sales/prospects/{id}/conversation": {
+      "get": {
+        "summary": "Consultar hilo comercial sin notas internas de Administración",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Operación completada"
+          },
+          "403": {
+            "description": "Solo Ventas o supervisión general"
+          },
+          "404": {
+            "description": "Prospecto o conversación no encontrados"
+          }
+        }
+      }
+    },
+    "/sales/prospects/{id}/takeover": {
+      "post": {
+        "summary": "Tomar el hilo mediante ConversationsService.takeover",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Operación completada"
+          },
+          "403": {
+            "description": "Solo Ventas o supervisión general"
+          },
+          "404": {
+            "description": "Prospecto o conversación no encontrados"
+          }
+        }
+      }
+    },
+    "/sales/prospects/{id}/reply": {
+      "post": {
+        "summary": "Responder por el canal original con ConversationsService.replyManually",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Operación completada"
+          },
+          "403": {
+            "description": "Solo Ventas o supervisión general"
+          },
+          "404": {
+            "description": "Prospecto o conversación no encontrados"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "message"
+                ],
+                "properties": {
+                  "message": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4000
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sales/prospects/{id}/release": {
+      "post": {
+        "summary": "Liberar el control del hilo propio",
+        "security": [
+          {
+            "bearerAuth": []
+          }
+        ],
+        "parameters": [
+          {
+            "in": "path",
+            "name": "id",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Operación completada"
+          },
+          "403": {
+            "description": "Solo Ventas o supervisión general"
+          },
+          "404": {
+            "description": "Prospecto o conversación no encontrados"
           }
         }
       }
@@ -154,18 +402,37 @@
       "StockItem": {
         "type": "object",
         "properties": {
-          "sku": { "type": "string" },
-          "name": { "type": "string" },
-          "category": { "type": "string" },
-          "stock": { "type": "integer" },
-          "listPrice": { "type": "number" },
-          "cashPrice": { "type": "number" },
-          "urlCredimision": { "type": "string" },
+          "sku": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "category": {
+            "type": "string"
+          },
+          "stock": {
+            "type": "integer"
+          },
+          "listPrice": {
+            "type": "number"
+          },
+          "cashPrice": {
+            "type": "number"
+          },
+          "urlCredimision": {
+            "type": "string"
+          },
           "substituteSkus": {
             "type": "array",
-            "items": { "type": "string" }
+            "items": {
+              "type": "string"
+            }
           },
-          "lastUpdated": { "type": "string", "format": "date-time" }
+          "lastUpdated": {
+            "type": "string",
+            "format": "date-time"
+          }
         }
       },
       "CommercialCreditResult": {
@@ -173,35 +440,85 @@
         "properties": {
           "verdict": {
             "type": "string",
-            "enum": ["APPROVED", "APPROVED_WITH_CONDITIONS", "REJECTED", "UNAVAILABLE"]
+            "enum": [
+              "APPROVED",
+              "APPROVED_WITH_CONDITIONS",
+              "REJECTED",
+              "UNAVAILABLE"
+            ]
           },
-          "commercialCondition": { "type": "string" },
-          "evaluatedAt": { "type": "string", "format": "date-time" }
+          "commercialCondition": {
+            "type": "string"
+          },
+          "evaluatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
         }
       },
       "CrmProspect": {
         "type": "object",
         "properties": {
-          "fechaContacto": { "type": "string" },
-          "nombreApellido": { "type": "string" },
-          "telefono": { "type": "string" },
-          "dni": { "type": "string" },
-          "comercio": { "type": "string" },
-          "rubro": { "type": "string" },
-          "localidad": { "type": "string" },
-          "productoInteres": { "type": "string" },
-          "modalidad": { "type": "string" },
-          "montoEstimado": { "type": "number" },
-          "estado": { "type": "string" },
-          "dictamenCrediticio": { "type": "string" },
-          "vendedorAsignado": { "type": "string" },
-          "canalOrigen": { "type": "string" },
-          "ultimaInteraccion": { "type": "string" },
-          "notasSeguimiento": { "type": "string" },
-          "conversationId": { "type": "string" }
+          "fechaContacto": {
+            "type": "string"
+          },
+          "nombreApellido": {
+            "type": "string"
+          },
+          "telefono": {
+            "type": "string"
+          },
+          "dni": {
+            "type": "string"
+          },
+          "comercio": {
+            "type": "string"
+          },
+          "rubro": {
+            "type": "string"
+          },
+          "localidad": {
+            "type": "string"
+          },
+          "productoInteres": {
+            "type": "string"
+          },
+          "modalidad": {
+            "type": "string"
+          },
+          "montoEstimado": {
+            "type": "number"
+          },
+          "estado": {
+            "type": "string"
+          },
+          "dictamenCrediticio": {
+            "type": "string"
+          },
+          "vendedorAsignado": {
+            "type": "string"
+          },
+          "canalOrigen": {
+            "type": "string"
+          },
+          "ultimaInteraccion": {
+            "type": "string"
+          },
+          "notasSeguimiento": {
+            "type": "string"
+          },
+          "conversationId": {
+            "type": "string"
+          }
         }
+      }
+    },
+    "securitySchemes": {
+      "bearerAuth": {
+        "type": "http",
+        "scheme": "bearer",
+        "bearerFormat": "JWT"
       }
     }
   }
 }
-

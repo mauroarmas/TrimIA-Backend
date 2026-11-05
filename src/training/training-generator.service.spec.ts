@@ -11,6 +11,9 @@ describe('TrainingGeneratorService', () => {
 
   beforeEach(() => {
     mockPrisma = {
+      sector: {
+        findUnique: jest.fn().mockResolvedValue({ agentType: 'COLLECTIONS' }),
+      },
       interviewQuestion: {
         findMany: jest.fn().mockResolvedValue([]),
       },
@@ -19,25 +22,48 @@ describe('TrainingGeneratorService', () => {
     mockStructuredModel = {
       invoke: jest.fn().mockResolvedValue({
         title: 'Verificación de Comprobantes de Pago',
-        objective: 'Aprender a cotejar el código de operación bancario y fecha de impacto.',
+        objective:
+          'Aprender a cotejar el código de operación bancario y fecha de impacto.',
         steps: [
-          { stepNumber: 1, title: 'Recepción del comprobante', instruction: 'Abrir el archivo adjunto y constatar nitidez.' },
-          { stepNumber: 2, title: 'Cotejo en sistema', instruction: 'Verificar monto y cuenta destino en el panel.' },
+          {
+            stepNumber: 1,
+            title: 'Recepción del comprobante',
+            instruction: 'Abrir el archivo adjunto y constatar nitidez.',
+          },
+          {
+            stepNumber: 2,
+            title: 'Cotejo en sistema',
+            instruction: 'Verificar monto y cuenta destino en el panel.',
+          },
+          {
+            stepNumber: 3,
+            title: 'Derivación',
+            instruction: 'Derivar al responsable.',
+          },
         ],
         quiz: [
           {
             id: 1,
             question: '¿Qué se debe hacer si el comprobante es ilegible?',
-            options: ['Rechazar de inmediato', 'Solicitar nuevo envío nítido al cliente', 'Aprobar por las dudas'],
+            options: [
+              'Rechazar de inmediato',
+              'Solicitar nuevo envío nítido al cliente',
+              'Aprobar por las dudas',
+            ],
             correctOptionIndex: 1,
             explanation: 'Se debe pedir una imagen nítida antes de validar.',
           },
           {
             id: 2,
             question: '¿Quién valida el impacto bancario final?',
-            options: ['El bot', 'El cobrador controlador', 'Cualquier empleado'],
+            options: [
+              'El bot',
+              'El cobrador controlador',
+              'Cualquier empleado',
+            ],
             correctOptionIndex: 1,
-            explanation: 'Solo el cobrador controlador o supervisor valida el impacto.',
+            explanation:
+              'Solo el cobrador controlador o supervisor valida el impacto.',
           },
         ],
       }),
@@ -60,16 +86,26 @@ describe('TrainingGeneratorService', () => {
       ]),
     };
 
-    service = new TrainingGeneratorService(mockPrisma, mockLlm, mockKnowledge);
+    service = new TrainingGeneratorService(mockPrisma, mockLlm, mockKnowledge, {
+      get: () => 0.5,
+    } as any);
   });
 
   it('debe generar una píldora estructurada correctamente cuando hay contexto suficiente', async () => {
-    const result = await service.generatePillProposal('Validación de comprobantes', 'sector-1', 'Dar énfasis al código de operación');
+    const result = await service.generatePillProposal(
+      'Validación de comprobantes',
+      'sector-1',
+      'Dar énfasis al código de operación',
+    );
 
-    expect(mockKnowledge.search).toHaveBeenCalledWith('Validación de comprobantes', {
-      audience: Audience.INTERNO,
-      k: 4,
-    });
+    expect(mockKnowledge.search).toHaveBeenCalledWith(
+      'Validación de comprobantes',
+      {
+        audience: Audience.INTERNO,
+        k: 4,
+        agentType: 'COLLECTIONS',
+      },
+    );
     expect(mockStructuredModel.invoke).toHaveBeenCalled();
     expect(result.title).toBe('Verificación de Comprobantes de Pago');
     expect(result.objective).toContain('Aprender a cotejar');
@@ -83,12 +119,15 @@ describe('TrainingGeneratorService', () => {
   it('debe incorporar contexto de entrevistas previas si existen para el sector', async () => {
     mockPrisma.interviewQuestion.findMany.mockResolvedValueOnce([
       {
-        text: '¿Cómo procedés si el banco no coincide?',
+        text: '¿Cómo verificás un comprobante si el banco no coincide?',
         answers: [{ text: 'Se pide constancia CBU adicional.' }],
       },
     ]);
 
-    await service.generatePillProposal('Validación de comprobantes', 'sector-1');
+    await service.generatePillProposal(
+      'Validación de comprobantes',
+      'sector-1',
+    );
 
     expect(mockPrisma.interviewQuestion.findMany).toHaveBeenCalled();
     const promptPassed = mockStructuredModel.invoke.mock.calls[0][0][1].content;
@@ -111,9 +150,15 @@ describe('TrainingGeneratorService', () => {
     mockStructuredModel.invoke.mockResolvedValueOnce({
       title: 'Circuito de Ventas - Episodio a 2 Voces',
       dialogue: [
-        { speaker: 'SPEAKER_1', text: '¡Hola! Hoy repasamos el circuito de ventas.' },
+        {
+          speaker: 'SPEAKER_1',
+          text: '¡Hola! Hoy repasamos el circuito de ventas.',
+        },
         { speaker: 'SPEAKER_2', text: 'Excelente, ¿cuál es el primer paso?' },
-        { speaker: 'SPEAKER_1', text: 'Primero se constata la existencia del cliente.' },
+        {
+          speaker: 'SPEAKER_1',
+          text: 'Primero se constata la existencia del cliente.',
+        },
         { speaker: 'SPEAKER_2', text: 'Perfecto, procedemos con la carga.' },
       ],
     });
@@ -137,7 +182,9 @@ describe('TrainingGeneratorService', () => {
   });
 
   it('debe generar fallback estructurado fidedigno basado en el contenido si el LLM falla', async () => {
-    mockStructuredModel.invoke.mockRejectedValueOnce(new Error('Rate limit or timeout'));
+    mockStructuredModel.invoke.mockRejectedValueOnce(
+      new Error('Rate limit or timeout'),
+    );
 
     const script = await service.generateAudioScript({
       title: 'Recopilación de Datos',
@@ -145,10 +192,12 @@ describe('TrainingGeneratorService', () => {
       content: '### Paso 1: Verificar cliente\n\n### Paso 2: Completar ficha',
     });
 
-    expect(script.title).toBe('Recopilación de Datos - Guion a 2 Voces');
+    expect(script.title).toBe('Recopilación de Datos — Guion');
     expect(script.dialogue.length).toBeGreaterThanOrEqual(4);
     expect(script.dialogue[0].text).toContain('Recopilación de Datos');
-    expect(script.dialogue.some((d) => d.text.includes('Verificar cliente'))).toBe(true);
+    expect(
+      script.dialogue.some((d) => d.text.includes('Verificar cliente')),
+    ).toBe(true);
   });
 
   it('debe calibrar el guion a la duración en segundos solicitada por el supervisor', async () => {
@@ -157,7 +206,10 @@ describe('TrainingGeneratorService', () => {
       dialogue: [
         { speaker: 'SPEAKER_1', text: 'Breve repaso express de cobranzas.' },
         { speaker: 'SPEAKER_2', text: '¿Cuál es el punto central a recordar?' },
-        { speaker: 'SPEAKER_1', text: 'Validar siempre el código de operación bancario.' },
+        {
+          speaker: 'SPEAKER_1',
+          text: 'Validar siempre el código de operación bancario.',
+        },
         { speaker: 'SPEAKER_2', text: 'Impecable, breve y claro.' },
       ],
     });

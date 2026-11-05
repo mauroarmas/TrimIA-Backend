@@ -1,5 +1,7 @@
 # Data Model: 015 — Diagnóstico Inicial y Progresión por Puesto
 
+> Implementación 2026-11-04: El modelo real conserva questionSet privado y activeKey único hasta el reinicio; completedAt es nullable mientras el examen está pendiente. Sesión/exenciones/reinicio son transaccionales. Ver prisma/schema.prisma.
+
 **Feature**: `015-diagnostico-inicial-y-progresion`  
 **Fecha**: 2026-10-04  
 

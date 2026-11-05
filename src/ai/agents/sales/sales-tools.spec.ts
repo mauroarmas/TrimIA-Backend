@@ -12,7 +12,7 @@ describe('SalesGraph - Integrations and Tools', () => {
           tool_calls: [
             {
               name: 'check_stock',
-              args: { query: 'cortadora 330' },
+              args: { query: 'COR-MAR-330' },
             },
           ],
         }),
@@ -65,8 +65,8 @@ describe('SalesGraph - Integrations and Tools', () => {
 
     expect(result.response).toContain('Trinidad 300mm');
     expect(result.response).toContain('https://credimision.com.ar');
-    expect(result.confidence).toBeGreaterThanOrEqual(0.65);
+    expect(result.confidence).toBe(0);
+    expect(result.integrationEvidence.hasFacts).toBe(true);
     expect(result.needsHuman).toBe(false);
   });
 });
-

@@ -1,5 +1,7 @@
 # Quickstart: Validación de Estructura de Capacitación y Generación de Píldoras
 
+> Actualización de implementación (2026-11-04): La implementación de convergencia agrega validación, auditoría y revisión del borrador. Publicar devuelve indexing con estado y similares; la indexación fallida no revierte la publicación. Ver ../../docs/CONVERGENCIA_014_019.md para entorno y verificación.
+
 **Feature**: `014-estructura-y-generacion-de-pildoras`
 **Fecha**: 2026-10-04
 

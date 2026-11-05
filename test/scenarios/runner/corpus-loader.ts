@@ -20,12 +20,17 @@ export class EvaluationCorpusLoader {
       return this.cachedDocuments;
     }
 
-    const fixturesDir = path.resolve(__dirname, '../../fixtures/corpus-evaluacion');
+    const fixturesDir = path.resolve(
+      __dirname,
+      '../../fixtures/corpus-evaluacion',
+    );
     if (!fs.existsSync(fixturesDir)) {
       throw new Error(`Directorio de fixtures no encontrado: ${fixturesDir}`);
     }
 
-    const files = fs.readdirSync(fixturesDir).filter((f) => f.endsWith('.json'));
+    const files = fs
+      .readdirSync(fixturesDir)
+      .filter((f) => f.endsWith('.json'));
     const allDocs: EvaluationDocument[] = [];
 
     for (const file of files) {
@@ -58,9 +63,27 @@ export class EvaluationCorpusLoader {
   /**
    * Búsqueda por similitud de texto simple sobre el corpus de evaluación fijo.
    */
-  static search(query: string, limit = 4): EvaluationDocument[] {
-    const docs = this.loadCorpus();
-    const terms = query.toLowerCase().split(/\s+/).filter((t) => t.length > 2);
+  static search(
+    query: string,
+    options: { audience: 'PUBLICO' | 'INTERNO'; agentType?: string },
+    limit = 4,
+  ): EvaluationDocument[] {
+    const areas = {
+      SALES: 'Ventas',
+      ADMIN: 'Administración',
+      COLLECTIONS: 'Cobranzas',
+      LOGISTICS: 'Logística',
+      DEPOSITS: 'Depósito',
+    };
+    const docs = this.loadCorpus().filter(
+      (doc) =>
+        (options.audience === 'INTERNO' || doc.audience !== 'INTERNO') &&
+        (!options.agentType || doc.area === areas[options.agentType]),
+    );
+    const terms = query
+      .toLowerCase()
+      .split(/[^a-záéíóúñü0-9]+/)
+      .filter((t) => t.length > 2);
 
     const scored = docs.map((doc) => {
       let score = 0;

@@ -1,3 +1,4 @@
+import type { IntegrationEvidence } from '../agents/shared/integration-evidence';
 import { Annotation } from '@langchain/langgraph';
 import { AgentType, UserType } from '@prisma/client';
 import { ConversationTurn } from '../../conversations/conversations.service';
@@ -56,7 +57,8 @@ export const OrchestratorState = Annotation.Root({
 
   // --- Flujo RAG del agente ---
   context: Annotation<string | null>, // chunks recuperados por retrieve_context
-  confidence: Annotation<number | null>, // score del mejor chunk (0-1)
+  confidence: Annotation<number | null>,
+  integrationEvidence: Annotation<IntegrationEvidence | null>, // score del mejor chunk (0-1)
   /**
    * TODOS los candidatos que devolvió el RAG este turno, no solo el que ganó
    * (Sprint 5A, US7, FR-046).

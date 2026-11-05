@@ -14,6 +14,7 @@ export function createCheckStockTool(stockPort: StockPort) {
               result.item.source === 'SIMULATED'
                 ? 'Paljet simulado para pruebas'
                 : 'Paljet',
+            actualizadoEl: result.item.lastUpdated,
             producto: result.item.name,
             sku: result.item.sku,
             precioLista: result.item.listPrice,
@@ -39,6 +40,7 @@ export function createCheckStockTool(stockPort: StockPort) {
             result.item.source === 'SIMULATED'
               ? 'Paljet simulado para pruebas'
               : 'Paljet',
+          actualizadoEl: result.item.lastUpdated,
           productoConsultado: result.item.name,
           motivo: 'Actualmente sin existencia en depósito',
           alternativasSugeridas: sustitutos,

@@ -1,5 +1,8 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common';
 import { Audience } from '@prisma/client';
+import { ConfigService } from '@nestjs/config';
+import { pillQuizSchema } from './pill-validation';
+import { validateAudioScript } from './audio-script-validation';
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { z } from 'zod';
 import { PrismaService } from '../database/prisma.service';
@@ -11,33 +14,30 @@ import { AudioScriptDto, SpeakerRole } from './dto/audio-script.dto';
 const generatedPillSchema = z.object({
   title: z
     .string()
+    .trim()
+    .min(1)
     .describe('Título conciso y profesional del procedimiento o lección'),
   objective: z
     .string()
-    .describe('Objetivo pedagógico claro: qué aprenderá o sabrá ejecutar el empleado'),
+    .trim()
+    .min(1)
+    .describe(
+      'Objetivo pedagógico claro: qué aprenderá o sabrá ejecutar el empleado',
+    ),
   steps: z
     .array(
       z.object({
-        stepNumber: z.number(),
+        stepNumber: z.number().int().positive(),
         title: z.string().describe('Título breve del paso'),
-        instruction: z.string().describe('Explicación detallada de la acción a realizar'),
+        instruction: z
+          .string()
+          .describe('Explicación detallada de la acción a realizar'),
       }),
     )
-    .min(2)
+    .min(3)
     .max(6)
     .describe('Pasos secuenciales del procedimiento'),
-  quiz: z
-    .array(
-      z.object({
-        id: z.number(),
-        question: z.string().describe('Pregunta de opción múltiple sobre las reglas o pasos del procedimiento'),
-        options: z.array(z.string()).min(3).max(4).describe('Opciones posibles (3 o 4)'),
-        correctOptionIndex: z.number().min(0).max(3).describe('Índice de la opción correcta (0 a N-1)'),
-        explanation: z.string().describe('Explicación didáctica de la regla aplicada'),
-      }),
-    )
-    .length(2)
-    .describe('Exactamente dos preguntas de verificación'),
+  quiz: pillQuizSchema,
 });
 
 export type GeneratedPillResult = {
@@ -77,8 +77,10 @@ const generatedAudioScriptSchema = z.object({
       }),
     )
     .min(4)
-    .max(14)
-    .describe('Diálogo conversacional dinámico y alternado entre SPEAKER_1 y SPEAKER_2'),
+    .max(30)
+    .describe(
+      'Diálogo conversacional dinámico y alternado entre SPEAKER_1 y SPEAKER_2',
+    ),
 });
 
 const AUDIO_SCRIPT_SYSTEM_PROMPT = `Sos un pedagogo y guionista experto en capacitación operativa para Credimisión S.R.L. (Misiones, Argentina).
@@ -87,14 +89,15 @@ Tu objetivo es transformar el procedimiento y la base de conocimiento en un podc
 REGLAS ESTRICTAS DE CONTENIDO (Principio II - Cero Alucinación):
 1. Basate EXCLUSIVAMENTE en el procedimiento y la documentación de la base de conocimiento suministrados.
 2. NO inventes pasos, plazos, tasas de interés, montos ni requisitos que no estén en los textos dados.
-3. El diálogo debe explicar con total claridad el procedimiento paso a paso, destacando qué debe hacer el empleado, los errores comunes a evitar y los tips prácticos.
+3. El diálogo debe explicar con claridad el procedimiento paso a paso; mencioná errores o consejos solo si figuran en el material aprobado.
+4. Si el procedimiento es extenso, resumí sus puntos críticos sin omitir condiciones necesarias ni inventar reglas. El guion completo debe caber en 300 segundos (máximo 700 palabras).
 
 ROLES Y DINÁMICA DE CONVERSACIÓN:
 - SPEAKER_1 (Conductor/a / Guía): Introduce el tema brevemente, explica la lógica de los pasos operativos y aclara los puntos críticos.
 - SPEAKER_2 (Colega / Copresentador/a): Formula las dudas típicas del día a día, pide aclaraciones ("¿Y qué pasa si...?", "¿Dónde chequeo eso?", "O sea que primero..."), y sintetiza las conclusiones.
 - Modismos: Español rioplatense profesional y amigable (ej. "fijate", "tené en cuenta", "dale", "impecable").
 - Cada intervención debe tener entre 1 y 3 oraciones (15 a 45 palabras) para que la locución oral suene fluida y espontánea.
-- Alternar constantemente entre SPEAKER_1 y SPEAKER_2 (mínimo 4 y máximo 14 turnos).`;
+- Alternar constantemente entre SPEAKER_1 y SPEAKER_2 (mínimo 4 y máximo 30 turnos).`;
 
 @Injectable()
 export class TrainingGeneratorService {
@@ -104,6 +107,7 @@ export class TrainingGeneratorService {
     private readonly prisma: PrismaService,
     private readonly llm: LlmService,
     private readonly knowledge: KnowledgeService,
+    private readonly config: ConfigService,
   ) {}
 
   /**
@@ -115,10 +119,20 @@ export class TrainingGeneratorService {
     additionalNotes?: string,
   ): Promise<GeneratedPillResult> {
     // 1. Búsqueda de contexto en la base de conocimiento RAG (audiencia INTERNO)
-    const hits = await this.knowledge.search(topic, {
+    const sector = sectorId
+      ? await this.prisma.sector.findUnique({ where: { id: sectorId } })
+      : null;
+    const retrieved = await this.knowledge.search(topic, {
       audience: Audience.INTERNO,
       k: 4,
+      ...(sector?.agentType ? { agentType: sector.agentType } : {}),
     });
+    const threshold = this.config.get<number>(
+      'SUGGESTION_CONFIDENCE_THRESHOLD',
+    )!;
+    const hits = retrieved.filter(
+      (hit) => Number.isFinite(hit.score) && hit.score >= threshold,
+    );
 
     // 2. Búsqueda de entrevistas del sector si corresponde
     let interviewContext = '';
@@ -141,8 +155,34 @@ export class TrainingGeneratorService {
 
       if (interviewQuestions.length > 0) {
         interviewContext = interviewQuestions
-          .filter((iq) => iq.answers.length > 0)
-          .map((iq) => `Pregunta: ${iq.text}\nRespuesta del responsable: ${iq.answers[0].text}`)
+          .filter((iq) => {
+            const text = (
+              iq.text +
+              ' ' +
+              iq.answers.map((answer) => answer.text).join(' ')
+            )
+              .normalize('NFD')
+              .replace(/[\u0300-\u036f]/g, '')
+              .toLowerCase();
+            const terms = topic
+              .normalize('NFD')
+              .replace(/[\u0300-\u036f]/g, '')
+              .toLowerCase()
+              .split(/\W+/)
+              .filter(
+                (term) =>
+                  term.length >= 4 &&
+                  !['como', 'para', 'sobre', 'tema', 'proceso'].includes(term),
+              );
+            return (
+              iq.answers.length > 0 &&
+              terms.some((term) => text.includes(term.replace(/s$/, '')))
+            );
+          })
+          .map(
+            (iq) =>
+              `Pregunta: ${iq.text}\nRespuesta del responsable: ${iq.answers[0].text}`,
+          )
           .join('\n\n');
       }
     }
@@ -159,48 +199,79 @@ export class TrainingGeneratorService {
     }
 
     const knowledgeContext = (hits || [])
-      .map((h, i) => `[Doc ${i + 1}: ${h.title} (Score: ${h.score.toFixed(2)})]\n${h.content}`)
+      .map(
+        (h, i) =>
+          `[Doc ${i + 1}: ${h.title} (Score: ${h.score.toFixed(2)})]\n${h.content}`,
+      )
       .join('\n\n');
 
-    const promptContext = `TEMA SOLICITADO: ${topic}\n\n` +
-      (additionalNotes ? `NOTAS ADICIONALES DEL SUPERVISOR:\n${additionalNotes}\n\n` : '') +
+    const promptContext =
+      `TEMA SOLICITADO: ${topic}\n\n` +
+      (additionalNotes
+        ? `NOTAS ADICIONALES DEL SUPERVISOR:\n${additionalNotes}\n\n`
+        : '') +
       `DOCUMENTACIÓN DISPONIBLE:\n${knowledgeContext}\n\n` +
-      (hasInterviews ? `ENTREVISTAS PREVIAS DEL SECTOR:\n${interviewContext}\n\n` : '');
+      (hasInterviews
+        ? `ENTREVISTAS PREVIAS DEL SECTOR:\n${interviewContext}\n\n`
+        : '');
 
     // 4. Invocación a Gemini con Structured Output
-    const structuredModel = this.llm.chat.withStructuredOutput(generatedPillSchema, {
-      name: 'generate_pill_proposal',
-    });
+    const structuredModel = this.llm.chat.withStructuredOutput(
+      generatedPillSchema,
+      {
+        name: 'generate_pill_proposal',
+      },
+    );
 
-    try {
-      const result = (await structuredModel.invoke([
-        new SystemMessage(SYSTEM_PROMPT),
-        new HumanMessage(promptContext),
-      ])) as z.infer<typeof generatedPillSchema>;
+    for (let attempt = 0; attempt < 2; attempt++) {
+      try {
+        const result = generatedPillSchema.parse(
+          await structuredModel.invoke([
+            new SystemMessage(SYSTEM_PROMPT),
+            new HumanMessage(promptContext),
+          ]),
+        );
+        if (result.steps.some((step, index) => step.stepNumber !== index + 1))
+          throw new z.ZodError([
+            {
+              code: z.ZodIssueCode.custom,
+              path: ['steps'],
+              message: 'Los pasos deben estar numerados secuencialmente.',
+            },
+          ]);
 
-      // Formatear pasos a Markdown estructurado
-      const formattedMarkdown = result.steps
-        .map((s) => `### Paso ${s.stepNumber}: ${s.title}\n\n${s.instruction}`)
-        .join('\n\n');
+        // Formatear pasos a Markdown estructurado
+        const formattedMarkdown = result.steps
+          .map(
+            (s) => `### Paso ${s.stepNumber}: ${s.title}\n\n${s.instruction}`,
+          )
+          .join('\n\n');
 
-      return {
-        title: result.title,
-        objective: result.objective,
-        content: formattedMarkdown,
-        quiz: result.quiz.map((q, idx) => ({
-          id: idx + 1,
-          question: q.question,
-          options: q.options,
-          correctOptionIndex: q.correctOptionIndex,
-          explanation: q.explanation,
-        })),
-      };
-    } catch (err) {
-      this.logger.error(`Error generando propuesta de píldora para tema "${topic}": ${err}`);
-      throw new BadRequestException(
-        `Error al estructurar la píldora con IA: ${err instanceof Error ? err.message : String(err)}`,
-      );
+        return {
+          title: result.title,
+          objective: result.objective,
+          content: formattedMarkdown,
+          quiz: result.quiz.map((q, idx) => ({
+            id: idx + 1,
+            question: q.question,
+            options: q.options,
+            correctOptionIndex: q.correctOptionIndex,
+            explanation: q.explanation,
+          })),
+        };
+      } catch (err) {
+        if (err instanceof z.ZodError && attempt === 0) continue;
+        this.logger.error(
+          `Error generando propuesta de píldora para tema "${topic}": ${err}`,
+        );
+        throw new BadRequestException(
+          `Error al estructurar la píldora con IA: ${err instanceof Error ? err.message : String(err)}`,
+        );
+      }
     }
+    throw new BadRequestException(
+      'No se pudo generar una píldora con estructura válida.',
+    );
   }
 
   async generateAudioScript(params: {
@@ -211,7 +282,7 @@ export class TrainingGeneratorService {
     targetDurationSeconds?: number;
   }): Promise<AudioScriptDto> {
     const targetSeconds = params.targetDurationSeconds
-      ? Math.max(30, Math.min(600, Math.round(params.targetDurationSeconds)))
+      ? Math.max(30, Math.min(300, Math.round(params.targetDurationSeconds)))
       : 90;
     const targetWords = Math.round((targetSeconds / 60) * 140);
     const minTurns = Math.max(4, Math.floor(targetWords / 35));
@@ -226,36 +297,45 @@ export class TrainingGeneratorService {
         k: 4,
       });
     } catch (e) {
-      this.logger.warn(`Error buscando en base de conocimiento para guion de audio: ${e}`);
+      this.logger.warn(
+        `Error buscando en base de conocimiento para guion de audio: ${e}`,
+      );
     }
 
     // 2. Búsqueda de entrevistas previas del sector si corresponde
     let interviewContext = '';
     if (params.sectorId) {
       try {
-        const interviewQuestions = await this.prisma.interviewQuestion.findMany({
-          where: {
-            session: { sectorId: params.sectorId },
-            answers: { some: {} },
-          },
-          take: 3,
-          select: {
-            text: true,
-            answers: {
-              select: { text: true },
-              take: 1,
-              orderBy: { attempt: 'desc' },
+        const interviewQuestions = await this.prisma.interviewQuestion.findMany(
+          {
+            where: {
+              session: { sectorId: params.sectorId },
+              answers: { some: {} },
+            },
+            take: 3,
+            select: {
+              text: true,
+              answers: {
+                select: { text: true },
+                take: 1,
+                orderBy: { attempt: 'desc' },
+              },
             },
           },
-        });
+        );
         if (interviewQuestions.length > 0) {
           interviewContext = interviewQuestions
             .filter((iq) => iq.answers.length > 0)
-            .map((iq) => `Pregunta: ${iq.text}\nRespuesta de referencia: ${iq.answers[0].text}`)
+            .map(
+              (iq) =>
+                `Pregunta: ${iq.text}\nRespuesta de referencia: ${iq.answers[0].text}`,
+            )
             .join('\n\n');
         }
       } catch (e) {
-        this.logger.warn(`Error buscando entrevistas del sector ${params.sectorId}: ${e}`);
+        this.logger.warn(
+          `Error buscando entrevistas del sector ${params.sectorId}: ${e}`,
+        );
       }
     }
 
@@ -282,33 +362,47 @@ export class TrainingGeneratorService {
         : '');
 
     // 3. Invocación a Gemini con Structured Output
-    const structuredModel = this.llm.chat.withStructuredOutput(generatedAudioScriptSchema, {
-      name: 'generate_audio_script',
-    });
+    const structuredModel = this.llm.chat.withStructuredOutput(
+      generatedAudioScriptSchema,
+      {
+        name: 'generate_audio_script',
+      },
+    );
 
     try {
-      const result = (await structuredModel.invoke([
-        new SystemMessage(AUDIO_SCRIPT_SYSTEM_PROMPT),
-        new HumanMessage(promptContext),
-      ])) as z.infer<typeof generatedAudioScriptSchema>;
+      const result = generatedAudioScriptSchema.parse(
+        await structuredModel.invoke([
+          new SystemMessage(AUDIO_SCRIPT_SYSTEM_PROMPT),
+          new HumanMessage(promptContext),
+        ]),
+      );
 
       const totalWords = result.dialogue.reduce(
-        (acc, line) => acc + line.text.trim().split(/\s+/).filter(Boolean).length,
+        (acc, line) =>
+          acc + line.text.trim().split(/\s+/).filter(Boolean).length,
         0,
       );
       const computedDuration = Math.max(30, Math.ceil((totalWords / 140) * 60));
 
-      return {
+      return validateAudioScript({
         title: result.title || `${params.title} - Guion a 2 Voces`,
         estimatedDurationSeconds: computedDuration,
         dialogue: result.dialogue.map((d) => ({
-          speaker: d.speaker === 'SPEAKER_2' ? SpeakerRole.SPEAKER_2 : SpeakerRole.SPEAKER_1,
+          speaker:
+            d.speaker === 'SPEAKER_2'
+              ? SpeakerRole.SPEAKER_2
+              : SpeakerRole.SPEAKER_1,
           text: d.text,
         })),
-      };
+      });
     } catch (err) {
-      this.logger.error(`Error generando guion con IA para "${params.title}": ${err}`);
-      return this.generateFallbackScript({ ...params, targetDurationSeconds: targetSeconds });
+      this.logger.error(
+        `Error generando guion con IA para "${params.title}": ${err}`,
+      );
+      return this.generateFallbackScript({
+        ...params,
+        targetDurationSeconds: targetSeconds,
+      });
     }
   }
 
@@ -318,56 +412,30 @@ export class TrainingGeneratorService {
     content: string;
     targetDurationSeconds?: number;
   }): AudioScriptDto {
-    const rawSteps = params.content
-      .split('\n\n')
-      .map((s) => s.trim())
-      .filter((s) => s.length > 0);
-
-    const fallbackDialogue: { speaker: SpeakerRole; text: string }[] = [
+    // Extraer texto aprobado es un fallback de guion, nunca audio inventado ni reglas nuevas.
+    const sections = params.content
+      .split(/\n\s*\n/)
+      .map((text) => text.replace(/^#{1,6}\s*/gm, '').trim())
+      .filter(Boolean);
+    const dialogue = [
       {
         speaker: SpeakerRole.SPEAKER_1,
-        text: `Hola a todos. Hoy vamos a repasar "${params.title}". Nuestro objetivo central es ${params.objective.toLowerCase().replace(/\.$/, '')}.`,
+        text: 'Repasemos: ' + params.title + '.',
       },
-      {
-        speaker: SpeakerRole.SPEAKER_2,
-        text: '¡Hola! Es un procedimiento clave para nuestra operatoria en Credimisión. ¿Cuál es el primer paso?',
-      },
+      { speaker: SpeakerRole.SPEAKER_2, text: params.objective },
+      ...sections.map((text, index) => ({
+        speaker: index % 2 ? SpeakerRole.SPEAKER_2 : SpeakerRole.SPEAKER_1,
+        text,
+      })),
     ];
-
-    for (let i = 0; i < Math.min(rawSteps.length, 4); i++) {
-      const cleanStep = rawSteps[i].replace(/^###\s+/, '').replace(/\*\*/g, '');
-      if (i % 2 === 0) {
-        fallbackDialogue.push({
-          speaker: SpeakerRole.SPEAKER_1,
-          text: `En primer lugar: ${cleanStep}. Es crucial prestar atención a cada detalle aquí.`,
-        });
-      } else {
-        fallbackDialogue.push({
-          speaker: SpeakerRole.SPEAKER_2,
-          text: `Perfecto. Y sobre ${cleanStep}, ¿qué recomendación debemos tener en cuenta?`,
-        });
-      }
-    }
-
-    fallbackDialogue.push({
-      speaker: SpeakerRole.SPEAKER_1,
-      text: 'Siempre recordar verificar el sistema corporativo y consultar con el supervisor ante cualquier discrepancia.',
-    });
-    fallbackDialogue.push({
-      speaker: SpeakerRole.SPEAKER_2,
-      text: 'Excelente, con estos pasos claros ya estamos listos para aplicarlo en el día a día.',
-    });
-
-    const totalWords = fallbackDialogue.reduce(
-      (acc, l) => acc + l.text.split(/\s+/).filter(Boolean).length,
+    const words = dialogue.reduce(
+      (total, line) => total + line.text.split(/\s+/).filter(Boolean).length,
       0,
     );
-
-    return {
-      title: `${params.title} - Guion a 2 Voces`,
-      estimatedDurationSeconds:
-        params.targetDurationSeconds || Math.max(30, Math.ceil((totalWords / 140) * 60)),
-      dialogue: fallbackDialogue,
-    };
+    return validateAudioScript({
+      title: params.title + ' — Guion',
+      estimatedDurationSeconds: Math.max(1, Math.ceil((words / 140) * 60)),
+      dialogue,
+    });
   }
 }

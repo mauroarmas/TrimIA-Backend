@@ -83,7 +83,7 @@ export interface ScenarioSummary {
   totalRuns: number;
   passedRuns: number;
   passRate: number; // Porcentaje 0 a 100
-  status: 'PASS' | 'WARN' | 'FAIL'; // PASS: 100%, WARN: >= 70%, FAIL: < 70%
+  status: 'PASS' | 'WARN' | 'FAIL'; // PASS: todos, WARN: mixto, FAIL: cero éxitos; calidad: >=80% por escenario
   runs: ScenarioRunResult[];
 }
 

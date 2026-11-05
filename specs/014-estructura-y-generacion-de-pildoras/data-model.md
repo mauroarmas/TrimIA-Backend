@@ -1,5 +1,7 @@
 # Data Model: Estructura de capacitación y generación de píldoras
 
+> Implementación 2026-11-04: La implementación agrega Pill.version y PillAudit (actor, acción, versión, snapshot y fecha) dentro del dominio de capacitación; no crea una plataforma de auditoría. Ver prisma/schema.prisma y docs/CONVERGENCIA_014_019.md.
+
 **Feature**: `014-estructura-y-generacion-de-pildoras`
 **Fecha**: 2026-10-04
 

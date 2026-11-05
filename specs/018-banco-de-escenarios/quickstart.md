@@ -1,5 +1,7 @@
 # Quickstart: 018 — Banco de Escenarios y Medición de Calidad
 
+> Actualización de implementación (2026-11-04): El comando activo delega a cli.ts y usa OrchestratorService/AgentsService reales con corpus/puertos en memoria. Requiere GOOGLE_API_KEY y GEMINI_MODEL explícitos para inferencias. --runs acepta enteros 1..5; el exit code depende del 80% de cada escenario. PASS=todas, WARN=mixto, FAIL=cero éxitos. ESC-07 comprueba pausa sin invocar IA; ESC-08 observa cero casos creados. Errores técnicos nunca aprueban y el reporte imprime respuestas discordantes completas. Las tablas de ejemplo siguientes son ilustrativas, no mediciones. Ver ../../docs/CONVERGENCIA_014_019.md.
+
 Esta guía explica cómo ejecutar y calibrar el banco de escenarios de TrimIA.
 
 ---
