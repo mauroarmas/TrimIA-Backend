@@ -72,9 +72,7 @@ docs/*/*.jsonl
 
 # Caché de compilación local (no pertenece al artefacto fuente)
 *.tsbuildinfo
-/.env.demo.local
 
 # Entornos aislados y credenciales locales
 .env*
 !.env.example
-!.env.demo.example

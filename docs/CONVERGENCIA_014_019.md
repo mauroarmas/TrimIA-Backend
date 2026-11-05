@@ -4,7 +4,7 @@
 
 Fecha: 2026-11-04. Rama de backend y panel: `feat/convergencia-014-019-20261103`.
 
-El checkout estable y el servicio de Tailscale permanecen en su versión previa. Los cambios se prepararon en `/home/mauro/Proyectos/trimIA-convergencia-20261103/trimIA` y su hermano `trimIA-frontend`. No se hizo merge a main ni despliegue en el entorno compartido.
+El checkout estable y el servicio de Tailscale permanecen en su versión previa. Los cambios se prepararon en `/home/mauro/Cursado-2026/Proyecto-Final/contenido-codigo/limpieza-2026-11-04/entorno-convergencia/trimIA` y su hermano `trimIA-frontend`. No se hizo merge a main ni despliegue en el entorno compartido.
 
 ## Alcance aplicado
 
@@ -36,7 +36,7 @@ node scripts/test-simulation-sales-convergence.cjs
 
 Los dos scripts de persistencia fijan la base `trimia_convergence_test` de `127.0.0.1:5543`, verifican su nombre y limpian sus datos efímeros. No leen `DATABASE_URL` del entorno. El segundo sustituye fetch por dobles, sin contacto con n8n.
 
-El preview local usa API `127.0.0.1:3013`, panel `127.0.0.1:4193`, Redis y Chroma propios y una red Docker interna sin salida a proveedores. Su configuración y datos son de prueba; no se copió `.env` de producción. `scripts/seed-convergence-preview.cjs` crea usuarios ficticios en esa base y `scripts/test-convergence-http.cjs` comprueba contratos HTTP, JWT/revocación, diagnóstico/reinicio, historial, seguimiento y takeover/reply sobre canal WEB.
+El preview local usa API `127.0.0.1:3013`, panel `127.0.0.1:4193`, Redis y Chroma propios y una red Docker interna sin salida a proveedores. Su configuración y datos son de prueba; no se copió `.env` de producción. `/home/mauro/Cursado-2026/Proyecto-Final/contenido-codigo/limpieza-2026-11-04/backend/scripts/seed-convergence-preview.cjs` crea usuarios ficticios en esa base y `/home/mauro/Cursado-2026/Proyecto-Final/contenido-codigo/limpieza-2026-11-04/backend/scripts/test-convergence-http.cjs` comprueba contratos HTTP, JWT/revocación, diagnóstico/reinicio, historial, seguimiento y takeover/reply sobre canal WEB.
 
 En el panel aislado:
 

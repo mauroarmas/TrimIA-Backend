@@ -10,7 +10,7 @@ Backend NestJS de una plataforma de agentes de IA (WhatsApp) para una empresa co
 - **Cola:** Redis + BullMQ. El webhook de WhatsApp nunca ejecuta IA dentro del request: valida, encola y responde `202`; el trabajo pesado corre en `MessageProcessor`.
 - **RAG:** ChromaDB, vía `KnowledgeService`. Agentes construidos sobre la fábrica común `buildRagAgentGraph` (`src/ai/agents/shared/rag-agent.graph.ts`): `retrieve_context → evaluate_confidence → generate_response | escalate_to_human`.
 - **Canal:** WhatsApp Business API vía n8n (workflows en `n8n/workflows/`).
-- **Infra:** Docker Compose (dev). Demo académica actual: PC + Tailscale Funnel, ver `docs/DEMO_LOCAL_WHATSAPP.md`. Alternativa preparada para Render + Vercel: `render.yaml`, `Dockerfile` y `docs/DESPLIEGUE_RENDER_VERCEL.md`. Cloud Run queda como alternativa. Producción/CI usan Node 22; el contenedor de desarrollo conserva Node 20.
+- **Infra:** demo vigente en PC + Docker + Tailscale Funnel, ver `docs/DEMO_LOCAL_WHATSAPP.md`. Configuración privada en `.env` y `deploy/local/.env`. MVP con stock/crédito simulados y Google Sheets como CRM; GCP para la versión final. Paperclip excluido. Estado y archivo histórico: `docs/README.md`. Producción/CI usan Node 22; el perfil de desarrollo conserva Node 20.
 - **Toda variable de entorno nueva** se valida con Joi en `config.module.ts` y se documenta en `.env.example`.
 
 ## Arrancar y probar en local

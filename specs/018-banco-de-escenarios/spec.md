@@ -3,7 +3,7 @@
 **Feature Branch**: `018-banco-de-escenarios`  
 **Created**: 2026-10-14  
 **Status**: Draft  
-**Input**: Pre-spec 5 de Sprint 5C (`sprints/5C-capacitacion-audio-medicion/5-banco-de-escenarios.md`) y tareas del plan de trabajo 5C.11–5C.14.
+**Input**: Pre-spec 5 de Sprint 5C (`/home/mauro/Cursado-2026/Proyecto-Final/contenido-codigo/limpieza-2026-11-04/backend/sprints/5C-capacitacion-audio-medicion/5-banco-de-escenarios.md`) y tareas del plan de trabajo 5C.11–5C.14.
 
 ---
 

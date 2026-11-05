@@ -1,0 +1,52 @@
+# Siempre combinar con docker-compose.yml desde la raíz (scripts/demo-local.sh).
+services:
+  postgres:
+    restart: unless-stopped
+    ports: !override ['127.0.0.1:5433:5432']
+  redis:
+    restart: unless-stopped
+    ports: !override ['127.0.0.1:6379:6379']
+    command: ['redis-server', '--appendonly', 'yes', '--maxmemory-policy', 'noeviction']
+  chromadb:
+    restart: unless-stopped
+    ports: !override ['127.0.0.1:8000:8000']
+  n8n:
+    image: n8nio/n8n:2.30.7
+    restart: unless-stopped
+    ports: !override ['127.0.0.1:5678:5678']
+    environment:
+      N8N_HOST: localhost
+      N8N_PROTOCOL: http
+      WEBHOOK_URL: ${DEMO_PUBLIC_URL:?Configurar deploy/local/.env}/
+      N8N_EDITOR_BASE_URL: http://localhost:5678
+      N8N_SECURE_COOKIE: 'false'
+      TRIMIA_API_URL: http://nestjs:3000
+  nestjs:
+    build:
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    command: ['node', 'dist/main.js']
+    entrypoint: ['/usr/bin/tini', '--', '/bin/sh', '/opt/trimia-local-start']
+    ports: !override ['127.0.0.1:3000:3000']
+    volumes: !override
+      - ./storage:/app/storage
+      - ./deploy/local/start-api.sh:/opt/trimia-local-start:ro
+    environment:
+      NODE_ENV: production
+      PORT: '3000'
+      CORS_ORIGINS: ${DEMO_PUBLIC_URL:?Configurar deploy/local/.env}
+      TRUST_PROXY_HOPS: '1'
+      REDIS_URL: redis://redis:6379
+      CHROMA_URL: http://chromadb:8000
+      N8N_BASE_URL: http://n8n:5678
+  gateway:
+    build:
+      context: .
+      dockerfile: deploy/local/Dockerfile
+    restart: unless-stopped
+    env_file: [deploy/local/.env]
+    ports: ['127.0.0.1:8080:8080']
+    volumes:
+      - ../trimIA-frontend/dist:/srv/panel:ro
+    depends_on: [nestjs, n8n]
+    networks: [trimia-net]

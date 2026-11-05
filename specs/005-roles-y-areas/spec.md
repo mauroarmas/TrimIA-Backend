@@ -12,7 +12,7 @@
 le habla al dueño de la empresa como si fuera un cliente, y que le escala consultas
 a la persona a la que habría que escalárselas. El sistema sabe qué rol tiene cada
 uno **para decidir qué puede hacer en el panel**, pero no se lo cuenta al asistente. Ver
-[docs/hallazgos-para-proxima-spec.md](../../docs/hallazgos-para-proxima-spec.md).
+[docs/hallazgos-para-proxima-spec.md](/home/mauro/Cursado-2026/Proyecto-Final/contenido-codigo/limpieza-2026-11-04/backend/docs/hallazgos-para-proxima-spec.md).
 
 ---
 

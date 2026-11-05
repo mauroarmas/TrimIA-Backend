@@ -1,6 +1,8 @@
 # Plan de Trabajo — TrimIA Backend (v5)
 
-> **Fecha:** 2026-08-04 · **Fuentes:** `src/`, `docs/CONTEXTO_TECNICO.md`, `docs/diccionarioEDT.md`, `docs/requisitos.md`, `docs/CRM.xlsx`, `docs/prototipos.pdf`, memoria Claude Code.
+> Documento histórico de planificación. El alcance actual del MVP y las fuentes vigentes están en [docs/README.md](README.md); este plan no certifica aceptación ni despliegue.
+
+> **Fecha:** 2026-08-04 · **Fuentes:** `src/`, `docs/CONTEXTO_TECNICO.md`, `/home/mauro/Cursado-2026/Proyecto-Final/contenido-codigo/limpieza-2026-11-04/backend/docs/diccionarioEDT.md`, `/home/mauro/Cursado-2026/Proyecto-Final/contenido-codigo/limpieza-2026-11-04/backend/docs/requisitos.md`, `docs/CRM.xlsx`, `docs/prototipos.pdf`, memoria Claude Code.
 >
 > **v5 (2026-08-04):** revisión completa contra los prototipos de interfaz del equipo de frontend
 > (`docs/prototipos.pdf`, 22 pantallas). Las decisiones de alcance tomadas en esa revisión están
@@ -465,11 +467,11 @@ el supervisor sepa qué le falta cargar en vez de mirar un porcentaje sin acció
 | RI-03 | S6 | CRM Google Sheets |
 | RI-04 | ✅ + S4 + S8 | WA Business + plantillas + opt-out |
 
-**22/22 requisitos cubiertos.**
+**22/22 requisitos tienen correspondencia en el plan; esto no significa 22/22 implementados, verificados o aceptados.**
 
 ---
 
-## 8. Estado y próximo paso
+## 8. Estado histórico al cerrar el Sprint 5B
 
 > [!IMPORTANT]
 > **Sprints 1, 2, 3, 4, 5A y 5B completos.** El siguiente es el **5C (Capacitación,

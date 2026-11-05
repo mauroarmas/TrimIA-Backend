@@ -9,7 +9,7 @@
 **Input**: User description: "Documentación retrospectiva de la línea base implementada antes de adoptar GitHub Spec Kit / SDD: Núcleo conversacional (Fases 1-4), Sprint 1 (Auth JWT + Whitelist + Sectores) y Sprint 2 (Panel del Supervisor)."
 
 > [!IMPORTANT]
-> **Este spec se escribió el 2026-08-11, después de que el código descrito ya estaba implementado y en producción.** No siguió el flujo `/speckit-specify → /speckit-plan → /speckit-tasks → /speckit-implement`: se redactó para dejar registro histórico completo antes de mostrar el proyecto al tutor de tesis. A diferencia de `specs/001-human-in-the-loop/`, `002-collections-payments/` y `003-archivos-chat-conocimiento/` (spec-first, escritos antes de implementar), este es documentación **as-built**. El contenido fue verificado contra `src/`, `docs/CONTEXTO_TECNICO.md`, `docs/requisitos.md` y `docs/plan_de_trabajo.md` al momento de escribirlo, no inventado.
+> **Este spec se escribió el 2026-08-11, después de que el código descrito ya estaba implementado y en producción.** No siguió el flujo `/speckit-specify → /speckit-plan → /speckit-tasks → /speckit-implement`: se redactó para dejar registro histórico completo antes de mostrar el proyecto al tutor de tesis. A diferencia de `specs/001-human-in-the-loop/`, `002-collections-payments/` y `003-archivos-chat-conocimiento/` (spec-first, escritos antes de implementar), este es documentación **as-built**. El contenido fue verificado contra `src/`, `docs/CONTEXTO_TECNICO.md`, `/home/mauro/Cursado-2026/Proyecto-Final/contenido-codigo/limpieza-2026-11-04/backend/docs/requisitos.md` y `docs/plan_de_trabajo.md` al momento de escribirlo, no inventado.
 
 ## User Scenarios & Testing *(mandatory)*
 

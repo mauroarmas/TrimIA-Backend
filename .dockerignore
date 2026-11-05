@@ -5,9 +5,9 @@ coverage
 .claude
 .agents
 .specify
-.env
-.env.*
-!.env.example
+**/.env
+**/.env.*
+!**/.env.example
 n8n/data
 storage
 graphify-out

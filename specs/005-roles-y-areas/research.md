@@ -5,7 +5,7 @@
 Fase 0 del plan. Cinco decisiones de diseño, todas verificadas contra el código de
 esta rama y citadas con archivo:línea. El *por qué* de las decisiones de producto
 —qué se descartó y con qué argumento— vive en
-[docs/hallazgos-para-proxima-spec.md](../../docs/hallazgos-para-proxima-spec.md).
+[docs/hallazgos-para-proxima-spec.md](/home/mauro/Cursado-2026/Proyecto-Final/contenido-codigo/limpieza-2026-11-04/backend/docs/hallazgos-para-proxima-spec.md).
 
 ---
 
