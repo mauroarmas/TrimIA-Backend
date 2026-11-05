@@ -8,6 +8,7 @@ Ejecutar desde la raíz del backend. Las herramientas que escriben o generan con
 | Despliegue y alta inicial | `check-deployment.cjs`, `create-supervisor.cjs` |
 | QA ciclo 2 | `audit-qa-cycle2.cjs`, `seed-qa-cycle2.cjs`, `verify-qa-cycle2.cjs`, `generate-qa-cycle2-media.py`, `fixtures/` |
 | Regresiones con PostgreSQL aislado | `test-training-convergence.cjs`, `test-simulation-sales-convergence.cjs` |
+| Conocimiento de la demo | `refresh-knowledge-demo.cjs` (solo lectura sin --apply), `verify-knowledge-demo.cjs` (Gemini/Chroma reales, sin mensajes), `fixtures/knowledge-demo-20261105.json` |
 | Medición y mantenimiento RAG | `calibrar-*.ts`, `medir-umbral.ts`, `vectores-huerfanos.ts`, `generar-*.ts` y sus JSON de entrada |
 | Alternativa de despliegue conservada | `prepare-n8n.cjs`, usada por los archivos de `deploy/n8n/` |
 

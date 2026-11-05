@@ -1,0 +1,234 @@
+{
+  "purpose": "Datos ficticios y coherentes para la demo académica; no modifica código, umbrales, cuentas, crédito ni stock.",
+  "documents": [
+    {
+      "title": "Hola, ¿qué venden? Catálogo de productos",
+      "content": "Hola, ¿qué venden? ¿Qué productos tienen? Vendemos Smart TV, balanzas comerciales, cortadoras de fiambre, hornos, amasadoras, sobadoras y heladeras exhibidoras. Equipamos negocios y hogares. ¿Qué producto te interesa? Podés comprar de contado o consultar financiación con revisión humana.\n\nDatos ficticios de demostración académica; no constituyen una oferta comercial real.",
+      "category": "demo-mvp-2026-11",
+      "audience": "PUBLICO",
+      "agentType": "SALES",
+      "id": "72187436-97fb-4b69-bff4-2bf50761b6b3",
+      "expectedContentHash": "8fc2cb08ba4dac924c7a92b8f9d7fda9379fadbc9b1f24da6f4e34554cb91566"
+    },
+    {
+      "title": "Quiénes somos y cómo comprar en Credimisión",
+      "content": "Credimisión es un comercio de Posadas, Misiones, que ayuda a equipar negocios y hogares. Vendemos equipamiento comercial, gastronómico, refrigeración, balanzas, cortadoras y Smart TV. Podés consultar por WhatsApp o recibir atención del equipo en horario comercial. Para comprar, indicá qué producto necesitás y si preferís contado o financiación. Un vendedor confirma el importe y coordina la compra. La entrega, la factura y las condiciones finales se acuerdan con el equipo; el asistente no las confirma automáticamente.\n\nDatos ficticios de demostración académica; no constituyen una oferta comercial real.",
+      "category": "demo-mvp-2026-11",
+      "audience": "PUBLICO",
+      "agentType": null,
+      "id": "7f78d245-c98e-4690-b036-fd2b05683c9d",
+      "expectedContentHash": "b341d7e1302998ff6130135ec1d300ecc744b40032d724a68eadb72b9258558b"
+    },
+    {
+      "title": "Heladeras exhibidoras y refrigeración comercial",
+      "content": "¿Venden heladeras o exhibidoras? Sí, el catálogo de demostración incluye la heladera exhibidora vertical Briket de 390 litros (EXH-BRI-390) y la Inelro de 420 litros (EXH-INH-420), para almacenes y otros comercios. Para confirmar existencias y precios consultamos el inventario simulado. Podés pedir precio de contado o solicitar financiación con revisión de un supervisor. No tenemos un listado confirmado de lavarropas, secarropas o freezers en esta demo; un vendedor debe confirmar cualquier producto fuera del catálogo.\n\nDatos ficticios de demostración académica; no constituyen una oferta comercial real.",
+      "category": "demo-mvp-2026-11",
+      "audience": "PUBLICO",
+      "agentType": "SALES",
+      "id": "c56e0df8-50ed-4685-b5ff-39cfcf71b5a3",
+      "expectedContentHash": "4d324ecaeb0b6eb55939f918992fac2a56e6a7300ea704b3b07a2ba93599b75e"
+    },
+    {
+      "title": "Smart TV Samsung, LG y Philips: modelos y disponibilidad",
+      "content": "¿Venden televisores o Smart TV? Sí: Samsung 55 pulgadas 4K (TV-SAM-55-4K), LG 50 pulgadas Full HD (TV-LG-50-FHD) y Philips 43 pulgadas (TV-PHI-43). El inventario de prueba informa disponibilidad actual; el Philips puede estar sin stock y ofrecerse Samsung o LG como alternativas. Los televisores no tienen precio cargado: un responsable debe confirmar el importe. Se puede consultar financiación, pero no se inventan precios ni cuotas.\n\nDatos ficticios de demostración académica; no constituyen una oferta comercial real.",
+      "category": "demo-mvp-2026-11",
+      "audience": "PUBLICO",
+      "agentType": "SALES"
+    },
+    {
+      "title": "Balanzas comerciales Systel Cuora y Croma",
+      "content": "¿Tienen balanzas para un almacén, verdulería o comercio? Sí: Systel Cuora de 30 kg con impresor (BAL-SYS-CUORA) y Systel Croma de 30 kg con batería (BAL-SYS-CROMA). La Cuora permite imprimir; la Croma incluye batería. El inventario simulado confirma precio de lista, precio de contado y existencias. Por ejemplo, Cuora: lista $420.000 y contado $350.000; Croma: lista $280.000 y contado $235.000. Importes ficticios en pesos argentinos; confirmar el modelo antes de cotizar.\n\nDatos ficticios de demostración académica; no constituyen una oferta comercial real.",
+      "category": "demo-mvp-2026-11",
+      "audience": "PUBLICO",
+      "agentType": "SALES"
+    },
+    {
+      "title": "Cortadoras de fiambre Marani, Trinidad y Berkley",
+      "content": "¿Venden cortadoras de fiambre para fiambrería o almacén? Sí: Marani 330 mm (COR-MAR-330), Trinidad 300 mm (COR-TRI-300) y Berkley 300 mm (COR-BER-300). La disponibilidad se consulta en el inventario simulado. Si la Marani no tiene stock, se pueden ofrecer Trinidad y Berkley según existencias. La Trinidad tiene precio ficticio de lista $580.000 y contado $485.000; la Berkley lista $610.000 y contado $510.000. No se promete fecha de reposición sin confirmación.\n\nDatos ficticios de demostración académica; no constituyen una oferta comercial real.",
+      "category": "demo-mvp-2026-11",
+      "audience": "PUBLICO",
+      "agentType": "SALES"
+    },
+    {
+      "title": "Hornos, amasadoras y sobadoras para panadería y gastronomía",
+      "content": "¿Qué equipos tienen para panadería, pizzería o gastronomía? Ofrecemos sobadora Santini de 20 kg (SOB-SAN-20K), amasadora Santini de 20 kg (AMA-SAN-20K) y horno Morelli de 6 moldes (HOR-PIZ-06M). Sirven como opciones para equipar un emprendimiento gastronómico. Los precios ficticios de contado son $750.000, $790.000 y $435.000 respectivamente. Las existencias y el precio de lista se confirman con el inventario simulado. Indicá qué preparás y qué equipo buscás para orientar la consulta.\n\nDatos ficticios de demostración académica; no constituyen una oferta comercial real.",
+      "category": "demo-mvp-2026-11",
+      "audience": "PUBLICO",
+      "agentType": "SALES"
+    },
+    {
+      "title": "Precios, cotizaciones y diferencia entre contado y financiación",
+      "content": "¿Cuánto cuesta un producto? Para cotizar necesitamos el modelo o nombre del producto. Consultamos el precio y stock del inventario de demostración. El precio de lista y el precio de contado son distintos y se informan por separado, en pesos argentinos. No se aplica otro porcentaje de descuento sobre el precio de contado. Si falta un precio, como en los Smart TV, lo confirma un responsable. La cantidad y el valor de las cuotas no se deducen dividiendo el precio: requieren un acuerdo de financiación revisado por una persona.\n\nDatos ficticios de demostración académica; no constituyen una oferta comercial real.",
+      "category": "demo-mvp-2026-11",
+      "audience": "PUBLICO",
+      "agentType": "SALES"
+    },
+    {
+      "title": "¿Venden en cuotas? Cómo solicitar financiación",
+      "content": "¿Venden en cuotas o tienen financiación? Sí, podés solicitar financiación para un producto. Primero relevamos nombre, DNI y producto; un responsable confirma el importe y después te pedimos confirmar el resumen de la solicitud. La evaluación de crédito es simulada en esta demo y siempre requiere una decisión humana. No hay aprobación automática por pasar el DNI. Un supervisor revisa el caso y puede aprobarlo, rechazarlo o pedir aclaraciones. La cantidad de cuotas, anticipo y vencimientos se acuerdan con el equipo; todavía no están confirmados al iniciar la consulta.\n\nDatos ficticios de demostración académica; no constituyen una oferta comercial real.",
+      "category": "demo-mvp-2026-11",
+      "audience": "PUBLICO",
+      "agentType": "SALES",
+      "id": "b9909e29-5a59-4d23-a93d-e03e95a6d282",
+      "expectedContentHash": "0db0fa3a03349c72ea681fb9877ce2977c614a8fa77cdf00cbd3bdb5bd4e5183"
+    },
+    {
+      "title": "Qué datos necesito para pedir financiación o crédito",
+      "content": "¿Qué datos o requisitos piden para financiar? Para iniciar la solicitud de esta demo necesitamos tu nombre, DNI de 7 u 8 dígitos y el producto que querés comprar. Usá datos ficticios para la evaluación académica. Un responsable confirma el importe y luego confirmás el resumen. No hace falta enviar una foto del DNI, recibos de sueldo ni datos bancarios por iniciativa propia. Si una revisión posterior necesita información adicional, el responsable te indicará cuál y por qué. Entregar datos no significa que el crédito esté aprobado.\n\nDatos ficticios de demostración académica; no constituyen una oferta comercial real.",
+      "category": "demo-mvp-2026-11",
+      "audience": "PUBLICO",
+      "agentType": "SALES",
+      "id": "9fa4fe1d-1ae3-48a7-9f73-1875a63a5729",
+      "expectedContentHash": "c0f884563509248f853639ba88c06de79db73c414b383f091028ddb61f2fcdb8"
+    },
+    {
+      "title": "Horarios de atención, ubicación, sábados y feriados",
+      "content": "¿En qué horario atienden? Atendemos de lunes a viernes de 8:00 a 18:00 y los sábados de 8:00 a 13:00. Estamos en Posadas, Misiones; el equipo confirma la dirección exacta y cómo llegar. ¿Abren los domingos o feriados? No hay atención presencial ni atención del personal los domingos y feriados. Podés dejar una consulta en este WhatsApp en cualquier momento; el asistente está disponible las 24 horas y el personal responde en horario comercial. No se promete atención humana inmediata fuera de horario.\n\nDatos ficticios de demostración académica; no constituyen una oferta comercial real.",
+      "category": "demo-mvp-2026-11",
+      "audience": "PUBLICO",
+      "agentType": null,
+      "id": "fd062a91-c767-491d-9e56-6c7d219854b1",
+      "expectedContentHash": "e488b08ee080b66f3b94dc5a275a88abda5c41e39ca4ff9e1004a912cbf84498"
+    },
+    {
+      "title": "Medios de pago: efectivo, transferencia y tarjetas",
+      "content": "¿Cómo puedo pagar? Para una compra de contado podés consultar pago en efectivo o transferencia. El equipo confirma los datos de pago y la recepción del dinero. Las condiciones para usar tarjetas o combinar medios deben consultarse antes de pagar; no se prometen recargos, descuentos ni cuotas de tarjeta sin confirmación. También podés solicitar financiación propia con revisión humana. El asistente no recibe dinero, no acredita transferencias ni procesa tarjetas desde el chat. No envíes números completos de tarjeta, claves ni códigos de seguridad.\n\nDatos ficticios de demostración académica; no constituyen una oferta comercial real.",
+      "category": "demo-mvp-2026-11",
+      "audience": "PUBLICO",
+      "agentType": null,
+      "id": "1df545e5-b6ae-4a36-b9a8-4e9ea9b1475e",
+      "expectedContentHash": "bf6e70aec83b831ea619226c72b9413f3abb95997fc9a6078a91e9b47fd9a821"
+    },
+    {
+      "title": "Cómo enviar un comprobante de pago de una cuota",
+      "content": "¿Cómo aviso que pagué o envío un comprobante? Si pagaste una cuota, enviá por WhatsApp la imagen del comprobante e indicá a qué cuota o compra corresponde. Deben verse fecha, importe y número de operación; evitá incluir claves o datos innecesarios. El comprobante pasa a revisión del responsable de Cobranzas. Recibir una foto no acredita el pago ni cancela automáticamente la cuota: el equipo debe verificarlo. Si falta un dato o el importe no coincide, Cobranzas te indicará cómo continuar. Guardá tu comprobante hasta que te confirmen la revisión.\n\nDatos ficticios de demostración académica; no constituyen una oferta comercial real.",
+      "category": "demo-mvp-2026-11",
+      "audience": "PUBLICO",
+      "agentType": "COLLECTIONS",
+      "id": "97df438d-b001-4d03-9dc2-c8fec8413000",
+      "expectedContentHash": "364c776aceac14e12b7ac92f6eefbea6786eea638b43f73983be0ab258b8ae36"
+    },
+    {
+      "title": "Envíos, entregas a domicilio y retiro de compras",
+      "content": "¿Hacen envíos o entregan a domicilio? Sí, se coordina reparto en Posadas y Garupá y transporte hacia el interior de Misiones. También se puede consultar retiro. Para organizarlo necesitamos producto, localidad y dirección; el equipo confirma costo y fecha antes de cerrar la compra. Como referencia ficticia se prepara el despacho en 24 a 48 horas hábiles después de la aprobación y coordinación. Despacho no significa entrega. No se promete un horario exacto ni se marca una compra como entregada desde el chat. Si no estás en el domicilio, coordiná con el equipo un nuevo intento.\n\nDatos ficticios de demostración académica; no constituyen una oferta comercial real.",
+      "category": "demo-mvp-2026-11",
+      "audience": "PUBLICO",
+      "agentType": "SALES",
+      "id": "91a4e77e-6751-4cd3-be24-0e625946d6ab",
+      "expectedContentHash": "d6b8c3ebc85af97fca717d17fd9b5fb78f722a037fbc125789fee68f7f4d20b7"
+    },
+    {
+      "title": "Cuánto cuesta el envío y a qué localidades llega",
+      "content": "¿Cuánto sale el envío? El costo depende del producto, el volumen y la localidad de destino. Hay reparto en Posadas y Garupá; para otras localidades de Misiones se consulta transporte. No hay un costo fijo ni envío gratis automático confirmado en esta demo. Antes de pagar, indicá tu localidad para que el equipo cotice el traslado y confirme el plazo. Para otra provincia se consulta caso por caso. No se confirma cobertura internacional ni se asume un costo de envío sin cotización.\n\nDatos ficticios de demostración académica; no constituyen una oferta comercial real.",
+      "category": "demo-mvp-2026-11",
+      "audience": "PUBLICO",
+      "agentType": "SALES",
+      "id": "1f4d05b4-d5c3-4ffb-b8fb-471876ce0284",
+      "expectedContentHash": "22a6edc20e2db5ba6ef5309f05a8d50c99b3fd50eb3aa579c62e8661316e7d44"
+    },
+    {
+      "title": "Garantía, producto dañado y cómo pedir un cambio",
+      "content": "¿Los productos tienen garantía? La garantía y sus condiciones se confirman según el modelo antes de comprar; no hay una extensión automática de garantía en esta demo. Si recibiste un producto dañado o que no funciona, contactanos por este canal con la compra, una descripción del problema y fotos si las tenés. Conservá comprobante y embalaje. El equipo revisará el caso y te indicará la solución y coordinación del retiro o cambio que corresponda. El asistente no aprueba reintegros, no rechaza derechos del consumidor ni promete una devolución automática.\n\nDatos ficticios de demostración académica; no constituyen una oferta comercial real.",
+      "category": "demo-mvp-2026-11",
+      "audience": "PUBLICO",
+      "agentType": "SALES",
+      "id": "ee92c0f0-b6dd-48dc-8086-0e743f32c286",
+      "expectedContentHash": "9d312680efd11aa9b409af696f56cb60252c5eed711c47f3d1ad8acf883e7e71"
+    },
+    {
+      "title": "Qué pasa si un producto está sin stock",
+      "content": "¿Qué pasa si no tienen stock? Consultamos la disponibilidad del modelo solicitado. Si no hay existencias, ofrecemos alternativas similares que sí figuren disponibles en el inventario. Por ejemplo, para una cortadora Marani 330 mm sin stock se pueden consultar Trinidad y Berkley 300 mm. Para Smart TV Philips 43 sin stock se pueden consultar Samsung 55 y LG 50. No prometemos reposición, reserva o compra por encargo sin confirmación del equipo. Si las alternativas no te sirven, podemos consultar a un responsable.\n\nDatos ficticios de demostración académica; no constituyen una oferta comercial real.",
+      "category": "demo-mvp-2026-11",
+      "audience": "PUBLICO",
+      "agentType": "SALES",
+      "id": "cec30211-9e85-4700-b068-8ee045c12d23",
+      "expectedContentHash": "d8b8633e2dd3d4fa9bb60945ac94b89148dbb933697e5c10a034eaec88a5777f"
+    },
+    {
+      "title": "Monto mínimo de compra y pedidos fuera del catálogo",
+      "content": "¿Hay un monto mínimo de compra? En la demo no hay un mínimo general confirmado para retirar o comprar en Posadas. Si el pedido requiere transporte especial o va a otra localidad, el equipo debe confirmar las condiciones antes del pago. Un producto fuera del catálogo simulado requiere cotización de un vendedor; no se promete su disponibilidad, precio o entrega por deducir que la empresa trabaja ese rubro.\n\nDatos ficticios de demostración académica; no constituyen una oferta comercial real.",
+      "category": "demo-mvp-2026-11",
+      "audience": "PUBLICO",
+      "agentType": "SALES",
+      "id": "7fe4c9de-8e00-4675-be55-353b41b6e5cb",
+      "expectedContentHash": "d230b147b12947f20c568a97cdb3b380b38694f56a1743f635676b5eff6e79a2"
+    },
+    {
+      "title": "Promociones y descuentos vigentes en la demostración",
+      "content": "¿Tienen promociones, ofertas o descuentos? En esta demo no hay una campaña promocional activa confirmada. Podés consultar el precio de contado y el precio de lista de cada producto del inventario simulado. No se suman descuentos de campañas antiguas ni se prometen cuotas gratis, descuentos por referido o financiación sin interés. Si buscás una condición especial, un responsable debe confirmarla antes de cerrar la compra.\n\nDatos ficticios de demostración académica; no constituyen una oferta comercial real.",
+      "category": "demo-mvp-2026-11",
+      "audience": "PUBLICO",
+      "agentType": "SALES"
+    },
+    {
+      "title": "Factura de compra y datos para facturación",
+      "content": "¿Me dan factura? El equipo coordina la emisión de la factura de la compra. Si necesitás una factura a nombre de un comercio, informalo al vendedor antes de cerrar y consultá qué datos fiscales necesita. El asistente no emite facturas automáticamente ni garantiza el envío por correo por recibir un comprobante. Una factura de compra y un comprobante de transferencia son documentos distintos.\n\nDatos ficticios de demostración académica; no constituyen una oferta comercial real.",
+      "category": "demo-mvp-2026-11",
+      "audience": "PUBLICO",
+      "agentType": null
+    },
+    {
+      "title": "Cómo consultar mi cuota, vencimiento o saldo pendiente",
+      "content": "¿Cuánto debo, cuándo vence mi cuota o cuántas cuotas me faltan? Para informarte un importe o vencimiento necesitamos revisar tu cuenta y la compra correspondiente. No se calcula un saldo usando precios del catálogo ni se reutiliza el de otra persona. Si el dato no está confirmado en la cuenta, Cobranzas lo verifica y te responde. Si pagaste, podés enviar el comprobante por WhatsApp para revisión. No hay cuotas gratis, descuentos por puntualidad ni cancelación automática por enviar una imagen.\n\nDatos ficticios de demostración académica; no constituyen una oferta comercial real.",
+      "category": "demo-mvp-2026-11",
+      "audience": "PUBLICO",
+      "agentType": "COLLECTIONS"
+    }
+  ],
+  "deactivate": [
+    {
+      "id": "f669948f-5308-445c-9053-c35c9be509ea",
+      "title": "Catálogo ampliado: motos, notebooks y celulares",
+      "expectedContentHash": "36d9d8f3818814ce6a4976a89d00a9f9a353e4bed45f49ff0e9fd6c81b2a015c",
+      "reason": "Referencia anterior incompatible con el catálogo, el flujo MVP o la vigencia de la demostración."
+    },
+    {
+      "id": "1aa9cd25-3fb8-492f-90a5-d39abd5d0f3a",
+      "title": "Promoción vigente: Línea Blanca en 10 cuotas sin interés",
+      "expectedContentHash": "b911bf987a3677b5e3ce34d56b4610c4d045eb9e07fb79aecd3c251973ca06b5",
+      "reason": "Referencia anterior incompatible con el catálogo, el flujo MVP o la vigencia de la demostración."
+    },
+    {
+      "id": "a5995ace-f416-465b-883e-809b3c034428",
+      "title": "Promoción vigente: beneficio por cliente referido",
+      "expectedContentHash": "a217f55be7cf4b50bf58ac346b7f10bafffc244f61a7e5fa54ada4af49575f1b",
+      "reason": "Referencia anterior incompatible con el catálogo, el flujo MVP o la vigencia de la demostración."
+    },
+    {
+      "id": "064c4f57-5e8e-42c9-a31a-1c7e5508396f",
+      "title": "Promoción vigente: cuota 12 gratis por buen historial",
+      "expectedContentHash": "0a4e58631c53827e80f60f3fc0f2673de828e9712bfb34f4dbb107aa1b8a7315",
+      "reason": "Referencia anterior incompatible con el catálogo, el flujo MVP o la vigencia de la demostración."
+    },
+    {
+      "id": "74dc2cb2-4488-4d9b-84c0-2aa684a39621",
+      "title": "Promoción vigente: descuento por pago de contado",
+      "expectedContentHash": "358b441946e3bbff2a7e1f8f43bc10954ffb4a9229422cc89d96be8bf2eceeb0",
+      "reason": "Referencia anterior incompatible con el catálogo, el flujo MVP o la vigencia de la demostración."
+    },
+    {
+      "id": "f819cc75-1f59-434c-b2b4-dbd3ebad5c13",
+      "title": "Beneficio buen pagador: descuento en la próxima cuota",
+      "expectedContentHash": "4d9b770e5b223768e80e18ebba7364de94dbef93e65b0020d2fd6c7de26f1a17",
+      "reason": "Referencia anterior incompatible con el catálogo, el flujo MVP o la vigencia de la demostración."
+    },
+    {
+      "id": "b7beeaaa-0e08-48a6-b0bd-a8e479162b93",
+      "title": "Garantia extendida en electrodomesticos",
+      "expectedContentHash": "4680a8905fbdb6a21e564a25f193e9384689853feb80cee16945d7e426deb8f7",
+      "reason": "Referencia anterior incompatible con el catálogo, el flujo MVP o la vigencia de la demostración."
+    },
+    {
+      "id": "bafeed92-78de-47ec-9c16-91789cfac362",
+      "title": "Exportación Uruguay",
+      "expectedContentHash": "104312245689ebbcd48113c02f66901fff59bf8c3a814a1ed7f6ca80a045e166",
+      "reason": "Referencia anterior incompatible con el catálogo, el flujo MVP o la vigencia de la demostración."
+    },
+    {
+      "id": "51c98ea6-7834-46d7-857f-8c565951146e",
+      "title": "tarjetas y transferencia",
+      "expectedContentHash": "ed68c8e5b47d6dfe3e7aa9513ce6e683a7649d2f1463e056e325693eac5dc638",
+      "reason": "Referencia anterior incompatible con el catálogo, el flujo MVP o la vigencia de la demostración."
+    }
+  ]
+}

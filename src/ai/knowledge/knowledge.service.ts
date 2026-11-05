@@ -19,7 +19,7 @@ import {
   KnowledgeSyncStatus,
   Sector,
 } from '@prisma/client';
-import { createHash } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { PrismaService } from '../../database/prisma.service';
 import { EmployeesService } from '../../employees/employees.service';
 import { esResponsableDeTodasLasAreas } from '../../employees/area-responsibility';
@@ -1215,8 +1215,12 @@ export class KnowledgeService implements OnModuleInit {
 
     await this.collection.delete({ where: { documentId } });
 
+    // Chroma puede conservar el vector anterior al borrar y volver a agregar
+    // el mismo ID. Cada reconstrucción usa IDs nuevos; la identidad estable
+    // del documento y del fragmento sigue en la metadata y en el prefijo.
+    const generation = randomUUID();
     await this.collection.add({
-      ids: chunks.map((_, idx) => `${doc.id}:${idx}`),
+      ids: chunks.map((_, idx) => `${doc.id}:${generation}:${idx}`),
       embeddings: vectors,
       documents: chunks,
       metadatas: chunks.map((_, idx) => ({

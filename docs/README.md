@@ -23,6 +23,7 @@ La 020 está implementada, integrada en los proyectos principales y desplegada e
 |---|---|
 | [Contexto técnico](CONTEXTO_TECNICO.md) | Componentes actuales y dónde está su código |
 | [Contrato API del frontend](CONTRATO_API_Frontend.md) | Referencia de integración del panel; contrastar payloads con controladores/DTO y contratos de cada spec |
+| [Base de conocimiento de la demo](BASE_CONOCIMIENTO_DEMO.md) | Contenido ficticio coherente, carga y verificación con Gemini |
 | [Demo local y WhatsApp](DEMO_LOCAL_WHATSAPP.md) | Configuración y operación del despliegue actual |
 | [Convergencia 014–019](CONVERGENCIA_014_019.md) | Implementación, evidencia, limitaciones y despliegue aprobado |
 | [Plan de trabajo](plan_de_trabajo.md) | Plan histórico de sprints; el estado de implementación se comprueba en código y evidencias |
