@@ -4,7 +4,7 @@
 
 **Created**: 2026-11-04
 
-**Status**: Implementada y validada en ramas aisladas; pendiente de integración y despliegue.
+**Status**: Implementada, validada e integrada; desplegada en la demo Tailscale el 2026-11-05, con avisos simulados.
 
 **Input**: Flujo aprobado por Mauro: cliente solicita financiación → se registra la solicitud → Administración obtiene un dictamen simulado → supervisor decide → cliente recibe el resultado. Stock y crédito simulados; Google Sheets como CRM; GCP para versión final y Paperclip excluido.
 

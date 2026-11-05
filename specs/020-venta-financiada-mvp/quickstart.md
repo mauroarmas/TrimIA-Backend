@@ -2,6 +2,8 @@
 
 Guía ejecutada para la implementación aislada de la 020. Las rutas, el simulador y las suites existen en esta rama; el despliegue estable no fue actualizado. La evidencia determinista y visual se resume al final; no acredita entrega de WhatsApp ni evaluación de crédito reales.
 
+**Actualización operativa**: Mauro autorizó integrar y desplegar la 020 el 2026-11-05. Ya está disponible en https://trimia-demo.tail9126e1.ts.net/, sin cambio de enlace. Las secciones de aislamiento siguientes registran la validación anterior al despliegue.
+
 ## Entorno aislado
 
 Requisitos: Node 22, dependencias del lockfile, Docker, PostgreSQL 16 y Redis 7 propios de prueba. No usar el enlace Tailscale ni credenciales compartidas de base, Sheets o WhatsApp. No copiar el `.env` del despliegue ni ejecutar los scripts QA con destinos implícitos.
@@ -152,3 +154,14 @@ Condicionada y no disponible bloquearon la aprobación sin nota en la interfaz. 
 - Retry explícito FAILED→ACCEPTED/simulated: caso `5e27c7bf-efa2-402b-906c-0acc7c5fea48`. FAILED se indujo como fixture únicamente en la base local; rechazo demostrado y resultado ambiguo del puerto se prueban con integración transaccional, sin red.
 - Defecto real encontrado en la pasada visual: refrescar y abrir otro caso muy rápido podía sobrescribir la nueva selección con la respuesta antigua. Se corrigió invalidando respuestas anteriores y repitiendo el recorrido visual completo de corrección/conflicto/cancelación/avisos. Build final del panel correcto también en Node 22.
 - Frontend conservado en los commits 292d3e8 y el commit de corrección posterior, rama `codex/020-venta-financiada-panel`. No se hizo merge, push ni despliegue.
+
+## Integración y despliegue autorizados (2026-11-05)
+
+- Backend principal actualizado a 87a7cde; se conservaron sin sobrescribir los cambios locales de métricas/búsqueda/detalle del supervisor y auditoría de respuesta manual. Regresión combinada: 8 suites / 108 pruebas aprobadas. Imagen Node 22 construida correctamente desde ese checkout.
+- Frontend principal: merge 84121e9. Conserva las mejoras posteriores de iconos/controles/leyenda; el único conflicto de ConversationControls se resolvió agregando el estado del aviso sobre la estructura visual vigente. Build correcto y hashes de assets servidos por la URL pública verificados.
+- Respaldo previo: storage/backups/demo-20261105-112858.sql. Documentos previos, parche de cambios locales y exportaciones privadas de n8n conservados en el archivo externo contenido-codigo/integracion-020-20261105-112830.
+- Diff Prisma revisado: únicamente enums, campos, índices y relaciones nuevos. db push pidió aceptación genérica para índices únicos de columnas nuevas y fue detenido sin aplicar. Se aplicó el SQL revisado con psql --single-transaction y ON_ERROR_STOP; sin borrados/reset ni accept-data-loss. Diff posterior: No difference detected.
+- Demo con FINANCING_NOTICE_TRANSPORT=simulated en deploy/local/compose.yml. Stock/crédito siguen mock; no se cambiaron destinos de Sheets ni credenciales existentes. Se recreó solo la API y se actualizó/publicó el workflow de recepción para propagar providerMessageId, manteniendo ID, credenciales, URLs y los otros workflows. n8n reiniciado y sus cuatro workflows previos activos.
+- Verificaciones posteriores: health público 200; smoke autenticado por la URL pública de identidad, listado/detalle financiero (7 legados existentes), métricas y conversaciones; privacidad del borrador y ausencia de rawPayload. Panel nuevo y sus assets 200. n8n healthz 200 y versión publicada con ID del proveedor en las cuatro transformaciones y el POST.
+- El smoke de API completo pasó contra localhost:3000 (salud, JWT, webhook protegido, rutas de desarrollo bloqueadas y CORS). Contra el gateway la ruta de desarrollo se bloquea con 405 en lugar del 404 esperado por ese script; no está expuesta. El token de verificación no se guardó ni se imprimió. No se enviaron mensajes a contactos ni se crearon solicitudes de prueba en la base compartida.
+- 021 continúa pendiente. El nuevo aviso financiero es simulado: no acredita entrega real por WhatsApp. Entrada del flujo: WhatsApp; revisión e importe humano: panel existente.

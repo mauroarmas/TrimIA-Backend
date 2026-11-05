@@ -4,7 +4,7 @@
 
 **Ramas de implementación**: backend `codex/020-venta-financiada-implementacion`, panel `codex/020-venta-financiada-panel`. Diseño preparado desde `codex/021-seguimiento-comercial-mvp`; `.specify/feature.json` sigue seleccionando **020**.
 
-**Estado**: implementación y validación aisladas. Las tareas y la evidencia están en [tasks.md](tasks.md) y [quickstart.md](quickstart.md). Sin integración en principal ni actualización de despliegue; 021 continúa fuera de alcance.
+**Estado**: implementación validada, integrada y desplegada en la demo Tailscale el 2026-11-05 por autorización de Mauro. Las tareas y la evidencia están en [tasks.md](tasks.md) y [quickstart.md](quickstart.md); 021 continúa fuera de alcance.
 
 ## Summary
 

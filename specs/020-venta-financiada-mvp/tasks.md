@@ -1,6 +1,6 @@
 # Tasks: 020 — Venta financiada completa para el MVP
 
-**Fecha**: 2026-11-05. **Estado**: 60/60 tareas completadas en implementación aislada; cada marca completada remite a la evidencia de quickstart.md.
+**Fecha**: 2026-11-05. **Estado**: 60/60 tareas completadas, integradas y desplegadas en la demo; cada marca completada remite a la evidencia de quickstart.md.
 
 **Input**: [spec](spec.md), [plan](plan.md), [investigación](research.md), [modelo](data-model.md), [contratos](contracts/README.md), [OpenAPI](contracts/openapi.json) y [validación](quickstart.md).
 

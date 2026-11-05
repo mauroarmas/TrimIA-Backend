@@ -1,6 +1,6 @@
 # Contratos — financiación 020
 
-Contrato objetivo de implementación: [OpenAPI](openapi.json), [modelo e invariantes](../data-model.md). Las rutas están implementadas en la rama aislada; no fueron desplegadas al entorno compartido. Se conserva el prefijo global de API que ya configure la aplicación; los paths de OpenAPI comienzan en `/sales`.
+Contrato objetivo de implementación: [OpenAPI](openapi.json), [modelo e invariantes](../data-model.md). Las rutas están implementadas e integradas en el entorno compartido de demostración desde el 2026-11-05. Se conserva el prefijo global de API que ya configure la aplicación; los paths de OpenAPI comienzan en `/sales`.
 
 ## Identidad y permisos
 
