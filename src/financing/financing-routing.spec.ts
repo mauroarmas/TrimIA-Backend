@@ -250,6 +250,57 @@ describe('financial operation routing boundary', () => {
     await service.handle('c', 'm', 'Quiero financiación', client);
     expect(escalations.create).not.toHaveBeenCalled();
   });
+  it.each([
+    'ok, como seguimos?',
+    '¿Cómo seguimos?',
+    'Quiero continuar con la compra',
+  ])(
+    'mantiene en Ventas la continuación de una financiación aprobada: %s',
+    async (message) => {
+      prisma.conversation.findUnique.mockResolvedValue({
+        channel: 'WEB',
+        status: 'ACTIVE',
+        financingDraft: { stage: 'SUBMITTED' },
+      });
+      getDraft.mockResolvedValue({
+        request: { status: 'APPROVED', closedAt: null },
+      });
+      const result = await service.handle('c', 'm', message, client);
+      expect(result.response).toContain('Tu financiación está aprobada');
+      expect(escalations.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          agentType: 'SALES',
+          reason: expect.stringContaining('Venta:'),
+        }),
+      );
+      expect(invoke).not.toHaveBeenCalled();
+    },
+  );
+  it('informa revisión pendiente sin escalar a Cobranzas', async () => {
+    prisma.conversation.findUnique.mockResolvedValue({
+      channel: 'WEB',
+      status: 'ACTIVE',
+      financingDraft: { stage: 'SUBMITTED' },
+    });
+    getDraft.mockResolvedValue({ request: { status: 'PENDING_REVIEW' } });
+    const result = await service.handle('c', 'm', 'como seguimos?', client);
+    expect(result.response).toContain('espera la revisión');
+    expect(escalations.create).not.toHaveBeenCalled();
+  });
+  it('no vuelve a ofrecer cierre si la venta ya fue cerrada', async () => {
+    prisma.conversation.findUnique.mockResolvedValue({
+      channel: 'WEB',
+      status: 'ACTIVE',
+      financingDraft: { stage: 'SUBMITTED' },
+    });
+    getDraft.mockResolvedValue({
+      request: { status: 'APPROVED', closedAt: '2026-11-06T03:00:00Z' },
+    });
+    expect(
+      (await service.handle('c', 'm', 'como seguimos?', client)).response,
+    ).toContain('ya figura cerrada');
+    expect(escalations.create).not.toHaveBeenCalled();
+  });
   it('no acepta dictamen inyectado por extractor', async () => {
     invoke.mockResolvedValue({
       intent: 'REQUEST',

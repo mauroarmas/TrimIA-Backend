@@ -161,15 +161,24 @@ export class SalesService {
         'Indicá un prospecto o solicitud, monto positivo y comprobante de cierre.',
       );
     return this.prisma.$transaction(async (tx) => {
-      const prospect = dto.prospectId
-        ? await tx.prospect.findUnique({ where: { id: dto.prospectId } })
-        : null;
       const request = dto.purchaseRequestId
         ? await tx.purchaseRequest.findUnique({
             where: { id: dto.purchaseRequestId },
           })
         : null;
-      if (dto.prospectId && !prospect)
+      if (
+        request?.prospectId &&
+        dto.prospectId &&
+        request.prospectId !== dto.prospectId
+      )
+        throw new ConflictException(
+          'La oportunidad no corresponde a esta solicitud.',
+        );
+      const prospectId = dto.prospectId ?? request?.prospectId;
+      const prospect = prospectId
+        ? await tx.prospect.findUnique({ where: { id: prospectId } })
+        : null;
+      if (prospectId && !prospect)
         throw new NotFoundException('Prospecto no encontrado');
       if (dto.purchaseRequestId && !request)
         throw new NotFoundException('Solicitud de compra no encontrada');
@@ -211,6 +220,7 @@ export class SalesService {
           where: { id: prospect.id, closedAt: null },
           data: {
             status: 'VENTA_CERRADA',
+            syncStatus: 'PENDING',
             closedAt,
             sellerId,
             estimatedAmount: dto.finalAmount,

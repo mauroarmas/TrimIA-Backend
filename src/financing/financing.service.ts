@@ -150,8 +150,22 @@ export class FinancingService {
       requestVersion: _requestVersion,
       ...visible
     } = d;
+    const request = d.purchaseRequestId
+      ? await this.prisma.purchaseRequest.findUnique({
+          where: { id: d.purchaseRequestId },
+          select: {
+            id: true,
+            status: true,
+            productSummary: true,
+            amount: true,
+            prospectId: true,
+            closedAt: true,
+          },
+        })
+      : null;
     return {
       ...visible,
+      request,
       conversationId: id,
       version: c.financingVersion,
       missingFields: missing,

@@ -101,3 +101,11 @@ Verificación: 89 pruebas de ruteo/escalado aprobadas y compilación del panel c
 El detalle del escalado de precio integra «Precio confirmado (ARS)» y la respuesta al cliente, con el botón «Confirmar precio, responder y resolver». Primero guarda el precio con versión y actor, luego responde y cierra. Un fallo de cierre conserva el importe e informa que se puede reintentar. El servidor rechaza resolver con solo texto y sin importe confirmado. El supervisor de Ventas puede confirmar precios de borradores sin obtener permisos nuevos de aprobación de crédito.
 
 La especificación 020 agrega FR-015 y su aceptación operativa. Verificación: 102 pruebas aprobadas y prueba real de interfaz con Diego Bazán en la URL pública, incluido bloqueo 409 sin importe y continuación del cliente al resumen tras resolver. Se preservaron los datos y el pedido no se presentó ni aprobó en esa prueba.
+
+## Después de aprobar: continuar y cerrar la venta (2026-11-06)
+
+Se corrigió el desvío a Cobranzas de «ok, como seguimos?» tras una aprobación. La entrada consulta el estado de la solicitud vinculada: pendiente informa revisión; aprobada deriva a Ventas; cerrada informa cierre ya registrado. No vuelve a inferir el agente de ese mensaje aislado.
+
+Casos escalados prioriza estado comercial y acción pendiente. Desde una aprobación se puede registrar cierre manual con referencia y responder/resolver; el cierre actualiza solicitud y oportunidad asociada con el importe aprobado. La alternativa de responder sin cerrar queda plegada. Las notas se consultan desplegándolas y el historial abre en los mensajes recientes; no se repite el aviso técnico de simulación junto al resumen comercial. La financiación presentada deja de mostrarse como formulario en preparación.
+
+Verificación: 106 pruebas unitarias y 16 de integración aislada, compilación y recorrido real de interfaz con Diego. Se cerró solamente una compra ficticia de QA, se resolvió su caso y se comprobó la continuidad posterior sin nueva derivación. El caso real compartido por el usuario se dejó pendiente para su operación humana.

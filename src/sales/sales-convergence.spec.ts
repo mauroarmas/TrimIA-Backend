@@ -99,6 +99,32 @@ describe('Cierre comercial: destino válido y auditoría local', () => {
     expect(data).not.toHaveProperty('reviewedById');
     expect(data).not.toHaveProperty('amount');
   });
+  it('cerrar por solicitud actualiza también su oportunidad vinculada sin duplicar el cierre', async () => {
+    request.prospectId = 'p1';
+    const input = {
+      purchaseRequestId: 'r1',
+      finalAmount: 1500,
+      modality: 'FINANCED',
+      notes: 'Registro de prueba',
+    } as any;
+    await service.closeSale(input, 'seller');
+    expect(prospect.status).toBe('VENTA_CERRADA');
+    expect(prospect.syncStatus).toBe('PENDING');
+    expect(request.closedAt).toEqual(prospect.closedAt);
+    await service.closeSale(input, 'other');
+    expect(db.prospect.updateMany).toHaveBeenCalledTimes(1);
+    expect(request.closedById).toBe('seller');
+  });
+  it('rechaza cerrar una oportunidad ajena a la solicitud', async () => {
+    request.prospectId = 'another';
+    await expect(
+      service.closeSale(
+        { ...dto, purchaseRequestId: 'r1', modality: 'FINANCED' },
+        'seller',
+      ),
+    ).rejects.toThrow(ConflictException);
+    expect(db.prospect.updateMany).not.toHaveBeenCalled();
+  });
   it('el listado de pendientes excluye cerrados pero respeta filtro explícito', async () => {
     await service.getProspects();
     expect(db.prospect.findMany.mock.calls[0][0].where.status).toEqual({

@@ -60,6 +60,54 @@ export class FinancingConversationService {
     if (!c || !['WHATSAPP', 'WEB'].includes(c.channel) || c.status !== 'ACTIVE')
       return { handled: false };
     const draft = c.financingDraft as any;
+    if (
+      draft?.stage === 'SUBMITTED' &&
+      /(?:c[oó]mo\s+(?:seguimos|sigo|continuamos|contin[uú]o)|(?:continuar|seguir|cerrar|finalizar|coordinar)\s+(?:con\s+)?(?:la\s+)?(?:compra|venta))/i.test(
+        message,
+      )
+    ) {
+      const saved = await this.service.getDraft(conversationId);
+      const request = saved.request;
+      if (request?.closedAt)
+        return {
+          handled: true,
+          response:
+            'La venta ya figura cerrada. Si necesitás ayuda con la entrega o tenés otra consulta, contame qué necesitás.',
+        };
+      if (request?.status === 'APPROVED') {
+        await this.escalations.create({
+          conversationId,
+          agentType: 'SALES',
+          reason: 'Venta: continuar compra con financiación aprobada.',
+          internalNote:
+            'Financiación aprobada. Pendiente: coordinar con el cliente y registrar el cierre manual de la venta con su comprobante.',
+        });
+        await this.prisma.conversation.updateMany({
+          where: {
+            id: conversationId,
+            status: { in: ['ACTIVE', 'WAITING_HUMAN'] },
+          },
+          data: { status: 'WAITING_HUMAN', currentAgent: 'SALES' },
+        });
+        return {
+          handled: true,
+          response:
+            'Tu financiación está aprobada. Ya le pasé la conversación al equipo de Ventas para coordinar la compra y registrar su cierre.',
+        };
+      }
+      if (request?.status === 'PENDING_REVIEW')
+        return {
+          handled: true,
+          response:
+            'Tu solicitud ya está presentada y espera la revisión de un supervisor. Todavía no está aprobada; te avisaremos el resultado por este chat.',
+        };
+      if (request?.status === 'REJECTED' || request?.status === 'CANCELLED')
+        return {
+          handled: true,
+          response:
+            'Esta solicitud no tiene una financiación aprobada para continuar la compra. Podés consultar al equipo de Ventas por las alternativas disponibles.',
+        };
+    }
     const active =
       draft && !['CANCELLED', 'IDENTITY_CONFLICT'].includes(draft.stage);
     if (!active && !explicitFinancingRequest(message))

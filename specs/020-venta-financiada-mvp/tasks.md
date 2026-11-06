@@ -215,3 +215,13 @@ Las marcas completadas se apoyan en las comprobaciones descritas en quickstart.m
 - [x] T064 Verificar permisos y bloqueo con pruebas, y el flujo real de Diego desde Casos escalados hasta el resumen al cliente.
 
 Evidencia: 102 pruebas aprobadas (controlador de ventas, escalados y ruteo financiero). Prueba visual con la cuenta real de Diego en la URL pública, caso WEB ficticio `d97d715e-2079-40f9-8928-ba426ac0f92e`: resolver sin precio devuelve 409; desde el panel se ingresó ARS 2000000.00 y se pulsó Confirmar precio, responder y resolver; importe persistido, respuesta WEB, caso RESOLVED y continuación AWAITING_CONFIRMATION, sin presentar solicitud ni generar oportunidad. Captura local `/tmp/trimia-price-resolution-ui.png`.
+
+## Continuación y cierre desde el caso — FR-016 (2026-11-06)
+
+- [x] T065 Consultar el estado persistido ante preguntas de próximos pasos de una solicitud presentada y derivar a Ventas cuando esté aprobada.
+- [x] T066 Mostrar resumen comercial y cierre manual desde Casos escalados, con referencia y respuesta, usando la solicitud aprobada vinculada. Conservar la alternativa de responder sin cerrar.
+- [x] T067 Cerrar solicitud y oportunidad vinculadas en la misma transacción y rechazar asociaciones ajenas; preservar auditoría e idempotencia.
+- [x] T068 Simplificar el contexto visual: notas plegadas, hilo en mensajes recientes, acción principal según etapa, enlace a revisión para permisos habilitados y sin formulario presentado como preparación.
+- [x] T069 Validar estados pendiente/aprobada/cerrada, asociación e idempotencia y recorrido real de interfaz con Diego.
+
+Evidencia: 106 pruebas de ruteo/cierre/escalados y 16 de integración PostgreSQL aislada aprobadas. En la URL pública, solicitud ficticia `5b7bec2b-0001-41e4-9dbf-88838cf143b3`, caso `50321988-92be-4296-afbb-c1dc430d375c`: continuación aprobada deriva a SALES; desde UI de Diego se registra el cierre con referencia, responde WEB y resuelve; una consulta posterior reconoce cierre sin crear otra derivación. Captura `/tmp/trimia-commercial-ui.png`. Se utilizaron datos de QA independientes del caso real del usuario.

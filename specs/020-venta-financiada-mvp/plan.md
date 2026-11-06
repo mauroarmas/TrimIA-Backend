@@ -124,3 +124,9 @@ Sin excepciones constitucionales. Una tabla nueva representa el aviso requerido 
 ## Corrección del flujo de precio en casos escalados (2026-11-06)
 
 El permiso de borrador comercial se separa de la bandeja/dictamen financiero: supervisor de Ventas puede consultar el borrador y confirmar su importe, mientras la aprobación mantiene los permisos existentes. Casos escalados integra precio, respuesta y resolución en un envío del formulario. Reutiliza los endpoints de borrador con CAS y resolución existentes, en ese orden. La resolución valida del lado servidor que el importe se haya guardado. Si guardar funciona y resolver falla, el precio y su versión quedan disponibles para reintento; no se promete una transacción entre envío de mensajes y persistencia. No se publican estas cotizaciones en el RAG.
+
+## Continuación después de aprobar y cierre comercial (2026-11-06)
+
+La entrada de financiación conserva el contexto SUBMITTED para preguntas de próximos pasos usando el estado persistido, sin una nueva clasificación por agente. El borrador privado expone únicamente estado comercial de su solicitud (id, estado, producto, importe, oportunidad y fecha de cierre), sin informe crediticio. La pantalla de casos ofrece el cierre manual existente por purchaseRequestId aprobado; el backend deriva y valida su oportunidad vinculada dentro de la misma transacción. Responder/resolver continúa siendo posterior al cierre, con reintento idempotente si falla ese segundo paso. No crea facturas externas, cuotas ni cobros.
+
+La UI muestra una acción principal según etapa, notas plegadas y mensajes recientes. La revisión pendiente enlaza al detalle existente para usuarios con permiso. La alternativa de responder sin cerrar la venta sigue accesible, plegada para no competir con la acción principal.
