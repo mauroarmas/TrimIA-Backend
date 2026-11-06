@@ -7,7 +7,9 @@ const client = {
   esGerente: false,
 } as any;
 describe('financial operation routing boundary', () => {
-  const prisma: any = { conversation: { findUnique: jest.fn() } };
+  const prisma: any = {
+    conversation: { findUnique: jest.fn(), updateMany: jest.fn() },
+  };
   const invoke = jest.fn();
   const llm: any = {
     classifierChat: { withStructuredOutput: jest.fn(() => ({ invoke })) },
@@ -15,11 +17,23 @@ describe('financial operation routing boundary', () => {
   const applyInput = jest
     .fn()
     .mockResolvedValue({ handled: true, response: 'Datos guardados' });
-  const service = new FinancingConversationService(prisma, llm, {
-    applyInput,
-  } as any);
+  const getDraft = jest.fn();
+  const escalations = { create: jest.fn() };
+  const service = new FinancingConversationService(
+    prisma,
+    llm,
+    {
+      applyInput,
+      getDraft,
+    } as any,
+    escalations as any,
+  );
   beforeEach(() => {
     jest.clearAllMocks();
+    getDraft.mockResolvedValue({
+      stage: 'COLLECTING',
+      missingFields: ['name', 'dni', 'confirmedAmount'],
+    });
     prisma.conversation.findUnique.mockResolvedValue({
       channel: 'WHATSAPP',
       status: 'ACTIVE',
@@ -193,6 +207,48 @@ describe('financial operation routing boundary', () => {
       ),
     ).toEqual({ handled: false });
     expect(applyInput).not.toHaveBeenCalled();
+  });
+  it('deriva a Ventas cuando únicamente falta confirmar el precio', async () => {
+    invoke.mockResolvedValue({ intent: 'REQUEST' });
+    getDraft.mockResolvedValue({
+      stage: 'COLLECTING',
+      productSummary: 'Smart TV LG 50',
+      missingFields: ['confirmedAmount'],
+    });
+    const result = await service.handle(
+      'c',
+      'm',
+      'Quiero financiación',
+      client,
+    );
+    expect(escalations.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        conversationId: 'c',
+        agentType: 'SALES',
+        internalNote: expect.stringContaining('confirmar el importe'),
+      }),
+    );
+    expect(prisma.conversation.updateMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { id: 'c', status: { in: ['ACTIVE', 'WAITING_HUMAN'] } },
+        data: { status: 'WAITING_HUMAN', currentAgent: 'SALES' },
+      }),
+    );
+    expect(result.response).toContain('Tus datos quedaron guardados');
+  });
+  it('no deriva mientras faltan datos del cliente', async () => {
+    invoke.mockResolvedValue({ intent: 'REQUEST' });
+    await service.handle('c', 'm', 'Quiero financiación', client);
+    expect(escalations.create).not.toHaveBeenCalled();
+  });
+  it('no deriva si el precio ya está confirmado', async () => {
+    invoke.mockResolvedValue({ intent: 'REQUEST' });
+    getDraft.mockResolvedValue({
+      stage: 'AWAITING_CONFIRMATION',
+      missingFields: ['customerConfirmation'],
+    });
+    await service.handle('c', 'm', 'Quiero financiación', client);
+    expect(escalations.create).not.toHaveBeenCalled();
   });
   it('no acepta dictamen inyectado por extractor', async () => {
     invoke.mockResolvedValue({

@@ -3,6 +3,7 @@ import {
   isUntranscribableAudio,
 } from '../ai/orchestrator/utils/trivial-filter';
 import { Injectable } from '@nestjs/common';
+import { EscalationsService } from '../escalations/escalations.service';
 import { z } from 'zod';
 import { LlmService } from '../ai/llm/llm.service';
 import { Caller } from '../ai/caller/caller.types';
@@ -38,6 +39,7 @@ export class FinancingConversationService {
     private readonly prisma: PrismaService,
     private readonly llm: LlmService,
     private readonly service: FinancingService,
+    private readonly escalations: EscalationsService,
   ) {}
   async handle(
     conversationId: string,
@@ -132,6 +134,39 @@ export class FinancingConversationService {
       )?.[1]
       .replace(/\D/g, '');
     if (labeledDni && /^\d{7,8}$/.test(labeledDni)) input.dni = labeledDni;
-    return this.service.applyInput(conversationId, messageId, input);
+    const result = await this.service.applyInput(
+      conversationId,
+      messageId,
+      input,
+    );
+    if (!result.handled) return result;
+    const saved = await this.service.getDraft(conversationId);
+    if (
+      saved.stage === 'COLLECTING' &&
+      saved.missingFields.length === 1 &&
+      saved.missingFields[0] === 'confirmedAmount'
+    ) {
+      await this.escalations.create({
+        conversationId,
+        agentType: 'SALES',
+        reason: 'Financiación: un responsable debe confirmar el precio.',
+        internalNote: `Producto: ${saved.productSummary}.\nPendiente: confirmar el importe para continuar la solicitud de financiación. Los datos del cliente ya están guardados en el formulario.`,
+      });
+      // Un caso pendiente reutilizado también debe pausar el asistente; nunca
+      // pisar una toma de control humana que ocurra mientras se crea el caso.
+      await this.prisma.conversation.updateMany({
+        where: {
+          id: conversationId,
+          status: { in: ['ACTIVE', 'WAITING_HUMAN'] },
+        },
+        data: { status: 'WAITING_HUMAN', currentAgent: 'SALES' },
+      });
+      return {
+        ...result,
+        response:
+          'Ya le pasé la consulta a un responsable para que confirme el precio. Tus datos quedaron guardados; cuando tengamos el importe podremos continuar con la financiación.',
+      };
+    }
+    return result;
   }
 }

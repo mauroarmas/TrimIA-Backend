@@ -87,3 +87,11 @@ La frase «quisiera financiar un smart tv» quedaba fuera del filtro de entrada 
 La vista de detalle de casos escalados ocultaba conjuntamente respuesta manual y notas internas. Se separó la opción de ocultar la respuesta manual: las notas se muestran y se pueden agregar en esa vista, mientras el envío/resolución conserva su panel propio.
 
 Verificación: 19 pruebas de ruteo aprobadas y compilación del panel correcta. En la demo con Gemini real, la frase exacta «quisiera financiar un smart tv» inició el borrador WEB `59dd6f7c-174d-4502-b8ca-aee301a732d1`; el mensaje con DNI y nombre se persistió, y se llegó al resumen AWAITING_CONFIRMATION tras informar producto e importe ficticio confirmado por supervisor. No hubo desvío a Cobranzas ni se presentó el pedido.
+
+## Pase a responsable por precio pendiente (2026-11-06)
+
+Cuando el borrador tiene nombre, DNI y producto y su único faltante es confirmedAmount, la entrada conversacional crea o reutiliza un caso de Ventas para confirmar el precio, conserva el borrador y deja WAITING_HUMAN. Una nota breve indica la acción pendiente. Reutilizar un caso pendiente también pausa el asistente, sin pisar HUMAN_HANDLING. No se presenta ni aprueba financiación.
+
+El detalle de casos escalados incluye el editor existente de importe, visible según los permisos financieros habituales. El responsable confirma el precio y resuelve el caso; el cliente puede continuar y confirmar el resumen actualizado.
+
+Verificación: 89 pruebas de ruteo/escalado aprobadas y compilación del panel correcta. En la URL pública con Gemini real, conversación WEB ficticia `b162ad1b-7494-437f-85c6-afc9fed3c352`: un caso pendiente, agente SALES, una nota interna, único faltante precio; luego se confirmó importe ficticio, se resolvió el caso y se retomó AWAITING_CONFIRMATION con los datos originales. Se dejó sin presentar solicitud final.

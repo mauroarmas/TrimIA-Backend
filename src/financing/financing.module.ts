@@ -1,3 +1,4 @@
+import { EscalationsModule } from '../escalations/escalations.module';
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '../database/prisma.module';
 import { IntegrationsModule } from '../ai/integrations/integrations.module';
@@ -8,7 +9,7 @@ import { FinancingNoticeService } from './financing-notice.service';
 import { FINANCING_NOTICE_PORT } from './financing-notice.port';
 import { SimulatedFinancingNoticeAdapter } from './simulated-financing-notice.adapter';
 @Module({
-  imports: [PrismaModule, IntegrationsModule],
+  imports: [PrismaModule, IntegrationsModule, EscalationsModule],
   providers: [
     FinancingService,
     FinancingConversationService,
