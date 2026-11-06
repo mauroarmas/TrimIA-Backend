@@ -40,6 +40,11 @@ function assertCanAccessFinancing(user: any) {
   }
 }
 
+function assertCanAccessFinancingDraft(user: any) {
+  if (user.role === 'SUPERVISOR' && user.sectorName === SALES_SECTOR) return;
+  assertCanAccessFinancing(user);
+}
+
 function assertCanAccessSales(user: any) {
   if (user.sectorName !== SALES_SECTOR && !user.isGeneralSupervisor) {
     throw new ForbiddenException(
@@ -96,7 +101,7 @@ export class SalesController {
   }
   @Get('financing/conversations/:id/draft')
   financingDraft(@Param('id', ParseUUIDPipe) id: string, @Req() req: any) {
-    assertCanAccessFinancing(req.user);
+    assertCanAccessFinancingDraft(req.user);
     return this.salesService.getFinancingDraft(id);
   }
   @Post('financing/conversations/:id/draft')
@@ -106,7 +111,11 @@ export class SalesController {
     @Body() dto: CompleteFinancingDraftDto,
     @Req() req: any,
   ) {
-    this.assertFinancialSupervisor(req.user);
+    assertCanAccessFinancingDraft(req.user);
+    if (req.user.role !== 'SUPERVISOR')
+      throw new ForbiddenException(
+        'Solo un supervisor puede confirmar el importe comercial',
+      );
     return this.salesService.completeFinancingDraft(id, dto, req.user.id);
   }
   @Post('financing/requests/:id/correct')

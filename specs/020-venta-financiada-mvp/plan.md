@@ -120,3 +120,7 @@ Sender histórico intacto; nuevo transporte inicia disabled y simulación se eti
 ## Complexity Tracking
 
 Sin excepciones constitucionales. Una tabla nueva representa el aviso requerido y es su propia salida duradera. JSON de borrador en hilo y eventos/modelos existentes evitan tablas y motores adicionales. Sin infraestructura nueva fuera del stack actual.
+
+## Corrección del flujo de precio en casos escalados (2026-11-06)
+
+El permiso de borrador comercial se separa de la bandeja/dictamen financiero: supervisor de Ventas puede consultar el borrador y confirmar su importe, mientras la aprobación mantiene los permisos existentes. Casos escalados integra precio, respuesta y resolución en un envío del formulario. Reutiliza los endpoints de borrador con CAS y resolución existentes, en ese orden. La resolución valida del lado servidor que el importe se haya guardado. Si guardar funciona y resolver falla, el precio y su versión quedan disponibles para reintento; no se promete una transacción entre envío de mensajes y persistencia. No se publican estas cotizaciones en el RAG.

@@ -206,3 +206,12 @@ Escribir estos tests en paralelo no autoriza ejecutar varias suites contra la mi
 | SC-001…006 | Incrementos US1→US2→US3 + panel | T027,T039,T049,T050,T052,T060 |
 
 Las marcas completadas se apoyan en las comprobaciones descritas en quickstart.md. No marcar por existir el contrato, porque el mock devuelve un dictamen o porque HTTP respondió 200. Validar efectos persistidos, privacidad, permisos y estado real de simulación. La documentación conserva las restricciones de campos del modelo y los requisitos de cada historia; no se redefinen criterios crediticios de negocio.
+
+## Ajuste operativo FR-015 — casos escalados (2026-11-06)
+
+- [x] T061 Separar permisos de borrador/precio comercial para supervisor de Ventas de los permisos de dictamen y aprobación financiera.
+- [x] T062 Integrar precio confirmado y respuesta en el formulario de resolución del caso, con guardado versionado, manejo de error parcial y reintento.
+- [x] T063 Bloquear del lado servidor la resolución de una derivación de precio sin importe guardado; mantener las cotizaciones particulares fuera del aprendizaje desde esa UI.
+- [x] T064 Verificar permisos y bloqueo con pruebas, y el flujo real de Diego desde Casos escalados hasta el resumen al cliente.
+
+Evidencia: 102 pruebas aprobadas (controlador de ventas, escalados y ruteo financiero). Prueba visual con la cuenta real de Diego en la URL pública, caso WEB ficticio `d97d715e-2079-40f9-8928-ba426ac0f92e`: resolver sin precio devuelve 409; desde el panel se ingresó ARS 2000000.00 y se pulsó Confirmar precio, responder y resolver; importe persistido, respuesta WEB, caso RESOLVED y continuación AWAITING_CONFIRMATION, sin presentar solicitud ni generar oportunidad. Captura local `/tmp/trimia-price-resolution-ui.png`.

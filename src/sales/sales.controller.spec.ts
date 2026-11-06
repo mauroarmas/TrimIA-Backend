@@ -32,6 +32,8 @@ describe('SalesController', () => {
       closedAt: new Date().toISOString(),
       closedById: 'emp-1',
     }),
+    getFinancingDraft: jest.fn().mockResolvedValue({ version: 1 }),
+    completeFinancingDraft: jest.fn().mockResolvedValue({ version: 2 }),
     listFinancingRequests: jest.fn().mockResolvedValue([]),
     reviewFinancingRequest: jest.fn().mockResolvedValue({ status: 'APPROVED' }),
   };
@@ -86,6 +88,42 @@ describe('SalesController', () => {
     expect(await controller.listFinancing(supervisorGeneral)).toEqual([]);
   });
 
+  it('Diego como supervisor de Ventas puede confirmar el precio comercial sin acceso a dictámenes', async () => {
+    const diego = {
+      user: {
+        id: 'diego',
+        role: 'SUPERVISOR',
+        sectorName: 'Ventas',
+        isGeneralSupervisor: false,
+      },
+    };
+    const dto = {
+      expectedVersion: 1,
+      confirmedAmount: '2000000.00',
+      note: 'Precio confirmado al cliente',
+    };
+    await controller.financingDraft('conv-1', diego);
+    await controller.completeFinancingDraft('conv-1', dto, diego);
+    expect(mockSalesService.completeFinancingDraft).toHaveBeenCalledWith(
+      'conv-1',
+      dto,
+      'diego',
+    );
+    expect(() => controller.listFinancing(diego)).toThrow(ForbiddenException);
+  });
+  it.each([
+    { role: 'EMPLEADO', sectorName: 'Ventas' },
+    { role: 'SUPERVISOR', sectorName: 'Cobranzas' },
+    { role: 'EMPLEADO', sectorName: 'Administración' },
+  ])('no permite confirmar precios a quien no está autorizado: %p', (user) => {
+    expect(() =>
+      controller.completeFinancingDraft(
+        'conv-1',
+        { expectedVersion: 1, confirmedAmount: '1.00', note: 'Precio' },
+        { user },
+      ),
+    ).toThrow(ForbiddenException);
+  });
   it('un administrativo puede consultar pero solo un supervisor puede decidir', async () => {
     expect(() =>
       controller.reviewFinancing(

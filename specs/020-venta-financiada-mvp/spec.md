@@ -97,6 +97,8 @@ Como cliente quiero recibir la decisión en mi hilo. Como responsable quiero dis
 - **FR-013**: DEBE ofrecer al personal habilitado una trazabilidad de recopilación, evaluación, derivación, decisión, cancelación e intento de aviso, con fechas e identidades humanas cuando corresponda.
 - **FR-014**: DEBE mantener separados aprobación, cierre manual, alta de cuotas y confirmación de pago; ninguno de los tres últimos ocurre automáticamente por aprobar la solicitud.
 
+- **FR-015 — Confirmación comercial desde Casos escalados**: Si el borrador tiene nombre, DNI y producto y falta el precio confirmado, DEBE crear o reutilizar una derivación de Ventas con nota interna. El supervisor de Ventas (incluido Diego Bazán), Administración supervisora o supervisión general DEBE poder ingresar el precio y responder/resolver desde ese mismo caso. Un único envío del formulario guarda primero el importe versionado y después envía la respuesta y resuelve. No se permite resolver enviando solo texto sin un importe guardado. Ante un conflicto no se envía ni cierra; si falla el cierre después de guardar, el importe se conserva y la UI permite reintentar. No se guarda esta cotización particular como conocimiento general. Confirmar el precio no habilita acceso a dictámenes crediticios ni aprueba financiación: el cliente todavía debe confirmar el resumen y Administración revisará la solicitud.
+
 ### Key Entities
 
 - **Solicitud de financiación**: Pedido para un cliente, producto y monto, con oportunidad, hilo, datos revisados y estado.
@@ -132,3 +134,10 @@ Como cliente quiero recibir la decisión en mi hilo. Como responsable quiero dis
 - [Alcance MVP](../../docs/README.md), [matriz original](../../docs/TP2_PMI_MatrizdetrazabilidaddeRequisitos_TrimIA-requisitos.csv) y [spec 019](../019-integraciones-crm-stock-credito/spec.md).
 - Situación actual: [bandeja y revisión](../../src/sales/sales.service.ts), [permisos](../../src/sales/sales.controller.ts), [consulta administrativa](../../src/ai/integrations/administrative-credit.service.ts) y [modelos disponibles](../../prisma/schema.prisma).
 - La planificación debe incluir el mínimo trabajo para ejercitar el flujo desde el panel existente. Escribir esta spec no acredita implementación ni aceptación.
+
+### Aceptación del ajuste operativo (2026-11-06)
+
+1. Como Diego Bazán en Casos escalados, veo producto, precio en ARS y respuesta al cliente en el mismo formulario.
+2. Al confirmar precio y resolver, el importe y su actor quedan registrados; el caso se cierra y el chat vuelve al asistente si nadie tiene el control manual. Si el supervisor tomó control, debe liberarlo para retomar la IA.
+3. Sin precio válido o ante versión obsoleta, no se envía la respuesta ni se resuelve. Si se guardó el precio pero falló el cierre, la UI informa ese estado y permite reintentar sin perder el importe.
+4. El cliente continúa, recibe el resumen y debe confirmarlo para presentar la solicitud. Ventas no obtiene permisos de aprobación de crédito por confirmar un precio.

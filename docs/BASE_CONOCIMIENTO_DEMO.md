@@ -95,3 +95,9 @@ Cuando el borrador tiene nombre, DNI y producto y su único faltante es confirme
 El detalle de casos escalados incluye el editor existente de importe, visible según los permisos financieros habituales. El responsable confirma el precio y resuelve el caso; el cliente puede continuar y confirmar el resumen actualizado.
 
 Verificación: 89 pruebas de ruteo/escalado aprobadas y compilación del panel correcta. En la URL pública con Gemini real, conversación WEB ficticia `b162ad1b-7494-437f-85c6-afc9fed3c352`: un caso pendiente, agente SALES, una nota interna, único faltante precio; luego se confirmó importe ficticio, se resolvió el caso y se retomó AWAITING_CONFIRMATION con los datos originales. Se dejó sin presentar solicitud final.
+
+## Confirmar precio y resolver como Diego (2026-11-06)
+
+El detalle del escalado de precio integra «Precio confirmado (ARS)» y la respuesta al cliente, con el botón «Confirmar precio, responder y resolver». Primero guarda el precio con versión y actor, luego responde y cierra. Un fallo de cierre conserva el importe e informa que se puede reintentar. El servidor rechaza resolver con solo texto y sin importe confirmado. El supervisor de Ventas puede confirmar precios de borradores sin obtener permisos nuevos de aprobación de crédito.
+
+La especificación 020 agrega FR-015 y su aceptación operativa. Verificación: 102 pruebas aprobadas y prueba real de interfaz con Diego Bazán en la URL pública, incluido bloqueo 409 sin importe y continuación del cliente al resumen tras resolver. Se preservaron los datos y el pedido no se presentó ni aprobó en esa prueba.

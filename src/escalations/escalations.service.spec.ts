@@ -19,6 +19,7 @@ import { EmployeesService } from '../employees/employees.service';
 describe('EscalationsService', () => {
   let service: EscalationsService;
   let prisma: {
+    conversation: { findUnique: jest.Mock };
     escalation: {
       findFirst: jest.Mock;
       create: jest.Mock;
@@ -68,6 +69,7 @@ describe('EscalationsService', () => {
 
   beforeEach(() => {
     prisma = {
+      conversation: { findUnique: jest.fn() },
       escalation: {
         findFirst: jest.fn(),
         create: jest.fn(),
@@ -470,6 +472,39 @@ describe('EscalationsService', () => {
       status: 'PENDING',
     };
 
+    it('no envía ni resuelve un caso de precio si el importe no fue guardado', async () => {
+      prisma.escalation.findUnique.mockResolvedValue({
+        ...pending,
+        reason: 'Financiación: un responsable debe confirmar el precio.',
+      });
+      prisma.conversation.findUnique.mockResolvedValue({
+        financingDraft: { stage: 'COLLECTING' },
+      });
+      await expect(
+        service.resolve(
+          'esc-1',
+          { message: 'La TV cuesta 2.000.000' },
+          'diego',
+        ),
+      ).rejects.toThrow(ConflictException);
+      expect(sender.send).not.toHaveBeenCalled();
+      expect(prisma.escalation.update).not.toHaveBeenCalled();
+    });
+    it('permite responder y resolver después de guardar el precio confirmado', async () => {
+      prisma.escalation.findUnique.mockResolvedValue({
+        ...pending,
+        reason: 'Financiación: un responsable debe confirmar el precio.',
+      });
+      prisma.conversation.findUnique.mockResolvedValue({
+        financingDraft: {
+          confirmedAmount: '2000000.00',
+          priceSource: 'SUPERVISOR',
+        },
+      });
+      await service.resolve('esc-1', { message: 'Precio confirmado' }, 'diego');
+      expect(sender.send).toHaveBeenCalled();
+      expect(prisma.escalation.update).toHaveBeenCalled();
+    });
     it('responde al usuario, marca RESOLVED y vuelve la conversación a ACTIVE', async () => {
       prisma.escalation.findUnique.mockResolvedValue(pending);
       prisma.escalation.update.mockResolvedValue({
