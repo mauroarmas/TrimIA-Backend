@@ -109,3 +109,11 @@ Se corrigió el desvío a Cobranzas de «ok, como seguimos?» tras una aprobaci�
 Casos escalados prioriza estado comercial y acción pendiente. Desde una aprobación se puede registrar cierre manual con referencia y responder/resolver; el cierre actualiza solicitud y oportunidad asociada con el importe aprobado. La alternativa de responder sin cerrar queda plegada. Las notas se consultan desplegándolas y el historial abre en los mensajes recientes; no se repite el aviso técnico de simulación junto al resumen comercial. La financiación presentada deja de mostrarse como formulario en preparación.
 
 Verificación: 106 pruebas unitarias y 16 de integración aislada, compilación y recorrido real de interfaz con Diego. Se cerró solamente una compra ficticia de QA, se resolvió su caso y se comprobó la continuidad posterior sin nueva derivación. El caso real compartido por el usuario se dejó pendiente para su operación humana.
+
+## Ver financiación aprobada y registrar cuotas (2026-11-06)
+
+El chat muestra el estado persistido de la solicitud (aprobada, venta cerrada o plan registrado), con acceso directo a Financiación para usuarios habilitados. Ya no presenta una aprobación o venta cerrada como pendiente de revisión ni solicita confirmar otra vez un resumen presentado.
+
+En Financiación, después del cierre, la supervisión financiera registra manualmente el plan semanal: cantidad, primer vencimiento, cobrador y acuerdo. El total se toma de la aprobación y se distribuye sin cargos adicionales ni pérdida de centavos. El alta es transaccional e idempotente y respeta la cartera existente; no se activa por enviar mensajes, aprobar ni cerrar la venta. El plan muestra las cuotas y permite abrir el cliente en Cobranzas. Supervisión general puede consultar cartera e historial, sin cambios a las mutaciones de pagos.
+
+Se verificó con Diego en la URL pública el acceso a la solicitud real del usuario, sin modificar su plan, y el alta de cuotas en una compra ficticia de QA. El alta ficticia se visualizó en Cobranzas y se repitió sin crear duplicados. No se asumieron condiciones para la venta del usuario.

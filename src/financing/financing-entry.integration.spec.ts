@@ -1,3 +1,4 @@
+import { SalesService } from '../sales/sales.service';
 import { financingCustomerFixture } from './testing/financing.fixtures';
 import { ConfigService } from '@nestjs/config';
 import { financingTestPrisma } from './testing/financing-test-harness';
@@ -24,6 +25,7 @@ const enabled = !!process.env.TEST_DATABASE_URL;
     const adapter = new SimulatedFinancingNoticeAdapter();
     const notices = new FinancingNoticeService(prisma as any, config, adapter);
     let supervisor: string;
+    let collector: string;
     async function start(
       dni = '30000008',
       channel: 'WHATSAPP' | 'WEB' = 'WHATSAPP',
@@ -108,6 +110,23 @@ const enabled = !!process.env.TEST_DATABASE_URL;
         },
       });
       supervisor = employee.id;
+      const collectionSector =
+        (await prisma.sector.findFirst({ where: { name: 'Cobranzas' } })) ??
+        (await prisma.sector.create({
+          data: { name: 'Cobranzas', agentType: 'COLLECTIONS' },
+        }));
+      collector = (
+        await prisma.employee.create({
+          data: {
+            name: 'Cobrador de prueba',
+            email: randomUUID() + '@example.invalid',
+            phone: randomUUID(),
+            password: 'unused',
+            role: 'EMPLEADO',
+            sectorId: collectionSector.id,
+          },
+        })
+      ).id;
     });
     afterAll(async () => prisma.$disconnect());
     it.each([
@@ -129,6 +148,136 @@ const enabled = !!process.env.TEST_DATABASE_URL;
       expect(
         await prisma.financing.count({ where: { purchaseRequestId: req.id } }),
       ).toBe(0);
+    });
+    it('registra una sola financiación y sus cuotas después de cerrar, incluso con altas concurrentes', async () => {
+      const { req } = await start();
+      const approved = await service.review(
+        req.id,
+        {
+          expectedVersion: req.version,
+          decision: 'APPROVED',
+          note: 'Aprobación de prueba',
+        },
+        supervisor,
+      );
+      const sales = new SalesService(null, null, prisma as any);
+      await sales.closeSale(
+        {
+          purchaseRequestId: req.id,
+          modality: 'FINANCED',
+          finalAmount: 100000,
+          notes: 'Cierre de prueba',
+        },
+        supervisor,
+      );
+      const dto = {
+        expectedVersion: approved.version,
+        quotaCount: 12,
+        firstDueDate: '2026-11-13',
+        collectorId: collector,
+        note: '12 cuotas semanales acordadas',
+      };
+      const [a, b] = await Promise.all([
+        service.createPlan(req.id, dto, supervisor),
+        service.createPlan(req.id, dto, supervisor),
+      ]);
+      expect(a.id).toBe(b.id);
+      expect(a.quotas).toHaveLength(12);
+      expect(
+        a.quotas.reduce(
+          (sum, q) => sum + Math.round(Number(q.amount) * 100),
+          0,
+        ),
+      ).toBe(10000000);
+      expect(new Set(a.quotas.map((q) => q.clientId))).toEqual(
+        new Set([req.clientId]),
+      );
+      expect(
+        (await prisma.client.findUniqueOrThrow({ where: { id: req.clientId } }))
+          .assignedCollectorId,
+      ).toBe(collector);
+      expect(
+        await prisma.orchestrationEvent.count({
+          where: {
+            eventType: 'FINANCING_PLAN_CREATED',
+            payload: { path: ['requestId'], equals: req.id },
+          },
+        }),
+      ).toBe(1);
+      await expect(
+        service.createPlan(req.id, { ...dto, quotaCount: 10 }, supervisor),
+      ).rejects.toThrow();
+      expect(await prisma.quota.count({ where: { financingId: a.id } })).toBe(
+        12,
+      );
+    });
+    it('no genera cuotas al aprobar sin cierre ni con un cobrador no habilitado', async () => {
+      const { req } = await start();
+      const approved = await service.review(
+        req.id,
+        { expectedVersion: req.version, decision: 'APPROVED', note: 'Prueba' },
+        supervisor,
+      );
+      const dto = {
+        expectedVersion: approved.version,
+        quotaCount: 12,
+        firstDueDate: '2026-11-13',
+        collectorId: collector,
+        note: 'Prueba de permisos',
+      };
+      await expect(
+        service.createPlan(req.id, dto, supervisor),
+      ).rejects.toThrow();
+      await prisma.purchaseRequest.update({
+        where: { id: req.id },
+        data: { closedAt: new Date() },
+      });
+      await expect(
+        service.createPlan(
+          req.id,
+          { ...dto, collectorId: supervisor },
+          supervisor,
+        ),
+      ).rejects.toThrow();
+      await expect(
+        service.createPlan(req.id, { ...dto, expectedVersion: 0 }, supervisor),
+      ).rejects.toThrow();
+      expect(
+        await prisma.financing.count({ where: { purchaseRequestId: req.id } }),
+      ).toBe(0);
+    });
+    it('no reasigna la cartera de un cliente al dar de alta un plan', async () => {
+      const { req } = await start();
+      const approved = await service.review(
+        req.id,
+        { expectedVersion: req.version, decision: 'APPROVED', note: 'Prueba' },
+        supervisor,
+      );
+      await prisma.purchaseRequest.update({
+        where: { id: req.id },
+        data: { closedAt: new Date() },
+      });
+      await prisma.client.update({
+        where: { id: req.clientId },
+        data: { assignedCollectorId: supervisor },
+      });
+      await expect(
+        service.createPlan(
+          req.id,
+          {
+            expectedVersion: approved.version,
+            quotaCount: 12,
+            firstDueDate: '2026-11-13',
+            collectorId: collector,
+            note: 'Prueba',
+          },
+          supervisor,
+        ),
+      ).rejects.toThrow();
+      expect(
+        (await prisma.client.findUniqueOrThrow({ where: { id: req.clientId } }))
+          .assignedCollectorId,
+      ).toBe(supervisor);
     });
     it('reenvío de confirmación conserva un caso', async () => {
       const { conv, req, messageId } = await start();

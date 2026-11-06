@@ -32,6 +32,7 @@ describe('SalesController', () => {
       closedAt: new Date().toISOString(),
       closedById: 'emp-1',
     }),
+    createFinancingPlan: jest.fn().mockResolvedValue({ id: 'plan-1' }),
     getFinancingDraft: jest.fn().mockResolvedValue({ version: 1 }),
     completeFinancingDraft: jest.fn().mockResolvedValue({ version: 2 }),
     listFinancingRequests: jest.fn().mockResolvedValue([]),
@@ -163,6 +164,33 @@ describe('SalesController', () => {
     );
   });
 
+  it('reserva el alta de cuotas a supervisión financiera habilitada', async () => {
+    const dto = {
+      expectedVersion: 2,
+      quotaCount: 12,
+      firstDueDate: '2026-11-13',
+      collectorId: 'collector',
+      note: 'Acuerdo',
+    };
+    expect(() =>
+      controller.createFinancingPlan('r', dto, {
+        user: { role: 'SUPERVISOR', sectorName: 'Ventas' },
+      }),
+    ).toThrow(ForbiddenException);
+    expect(() =>
+      controller.createFinancingPlan('r', dto, {
+        user: { role: 'EMPLEADO', sectorName: 'Administración' },
+      }),
+    ).toThrow(ForbiddenException);
+    await controller.createFinancingPlan('r', dto, {
+      user: { id: 'diego', role: 'SUPERVISOR', isGeneralSupervisor: true },
+    });
+    expect(mockSalesService.createFinancingPlan).toHaveBeenCalledWith(
+      'r',
+      dto,
+      'diego',
+    );
+  });
   it('permite consultar stock a Diego Bazán (supervisor general)', async () => {
     const res = await controller.getStock({}, supervisorGeneral);
     expect(res).toBeDefined();

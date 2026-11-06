@@ -202,14 +202,20 @@ export class CollectionsController {
       'KPIs del panel de cobranzas (cuotas pendientes, comprobantes, pagos)',
   })
   getKpis(@Req() req: any) {
-    return this.collections.getKpis(req.user.id, req.user.isController);
+    return this.collections.getKpis(
+      req.user.id,
+      Boolean(req.user.isController || req.user.isGeneralSupervisor),
+    );
   }
 
   /** GET /collections/clients — Lista de mis clientes. */
   @Get('clients')
   @ApiOperation({ summary: 'Lista de clientes del cobrador logueado' })
   listClients(@Req() req: any) {
-    return this.collections.listClients(req.user.id, req.user.isController);
+    return this.collections.listClients(
+      req.user.id,
+      Boolean(req.user.isController || req.user.isGeneralSupervisor),
+    );
   }
 
   /** GET /collections/clients/:id/history — Historial de un cliente. */
@@ -222,7 +228,7 @@ export class CollectionsController {
     return this.collections.getClientHistory(
       clientId,
       req.user.id,
-      req.user.isController,
+      Boolean(req.user.isController || req.user.isGeneralSupervisor),
     );
   }
 

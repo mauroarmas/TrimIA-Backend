@@ -225,3 +225,13 @@ Evidencia: 102 pruebas aprobadas (controlador de ventas, escalados y ruteo finan
 - [x] T069 Validar estados pendiente/aprobada/cerrada, asociación e idempotencia y recorrido real de interfaz con Diego.
 
 Evidencia: 106 pruebas de ruteo/cierre/escalados y 16 de integración PostgreSQL aislada aprobadas. En la URL pública, solicitud ficticia `5b7bec2b-0001-41e4-9dbf-88838cf143b3`, caso `50321988-92be-4296-afbb-c1dc430d375c`: continuación aprobada deriva a SALES; desde UI de Diego se registra el cierre con referencia, responde WEB y resuelve; una consulta posterior reconoce cierre sin crear otra derivación. Captura `/tmp/trimia-commercial-ui.png`. Se utilizaron datos de QA independientes del caso real del usuario.
+
+## Estado financiero y plan semanal manual — FR-017 (2026-11-06)
+
+- [x] T070 Mostrar en el hilo la solicitud aprobada/venta cerrada/plan registrado según datos persistidos, con enlace a su detalle.
+- [x] T071 Agregar alta manual de plan semanal con total aprobado, cantidad, primer vencimiento, cobrador y acuerdo, exclusiva de supervisión financiera.
+- [x] T072 Persistir financiación/cuotas/auditoría de manera atómica, con centavos exactos, vínculo al cliente, versión e idempotencia. Conservar la cartera asignada.
+- [x] T073 Mostrar plan/cuotas en Financiación y abrir la cartera del cliente; habilitar lectura de cartera e historial para supervisión general sin ampliar mutaciones de pagos.
+- [x] T074 Validar fechas/importes/permisos, concurrencia, reintentos y alta solo tras aprobación/cierre; verificar el recorrido real de Diego y la visibilidad en Cobranzas.
+
+Evidencia: las suites financieras/comerciales y alcance de lectura completaron 130 casos aprobados, incluidas pruebas con PostgreSQL/Redis aislados; el caso de ingreso BullMQ se repitió tras iniciar Redis de pruebas en 6394 (no se modificó Redis de la demo). En la interfaz pública con Diego se abrió en modo lectura la solicitud real aprobada/cerrada del usuario. Solo sobre la solicitud ficticia de QA `5b7bec2b-0001-41e4-9dbf-88838cf143b3` se registró un plan de 12 cuotas semanales, total ARS 2000000, primer vencimiento 2026-11-13 y Roberto Sosa como cobrador. Plan `0fef4beb-446c-4b2d-996c-b9cebcc84e5e`: suma exacta, visible en la cartera y reintento sin duplicar. No se creó el plan del usuario con condiciones supuestas. Captura /tmp/trimia-installments-ui.png.

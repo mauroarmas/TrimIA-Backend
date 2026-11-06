@@ -1,6 +1,9 @@
+import { CreateFinancingPlanDto } from './dto/create-financing-plan.dto';
+import { weeklyPlan } from './weekly-plan';
 import { randomUUID } from 'crypto';
 import {
   BadRequestException,
+  ConflictException,
   Inject,
   Injectable,
   NotFoundException,
@@ -49,6 +52,7 @@ export const financingSelection = {
   status: true,
   createdAt: true,
   reviewedAt: true,
+  closedAt: true,
   reviewNote: true,
   version: true,
   conversationId: true,
@@ -56,9 +60,25 @@ export const financingSelection = {
   evaluationState: true,
   inputSnapshot: true,
   reviewedSnapshot: true,
-  client: { select: { id: true, name: true, dni: true, phone: true } },
+  client: {
+    select: {
+      id: true,
+      name: true,
+      dni: true,
+      phone: true,
+      assignedCollectorId: true,
+    },
+  },
   reviewedBy: { select: { id: true, name: true } },
-  financing: { select: { quotaCount: true, totalAmount: true } },
+  financing: {
+    select: {
+      id: true,
+      status: true,
+      quotaCount: true,
+      totalAmount: true,
+      collectorId: true,
+    },
+  },
   creditAssessments: {
     orderBy: { createdAt: 'desc' as const },
     take: 1,
@@ -160,6 +180,7 @@ export class FinancingService {
             amount: true,
             prospectId: true,
             closedAt: true,
+            financing: { select: { id: true, quotaCount: true, status: true } },
           },
         })
       : null;
@@ -752,6 +773,95 @@ export class FinancingService {
       notice: outboundCommunications?.[0] ?? null,
     };
   }
+  async createPlan(id: string, dto: CreateFinancingPlanDto, actorId: string) {
+    if (!dto.note?.trim())
+      throw new BadRequestException(
+        'Indicá las condiciones acordadas del plan.',
+      );
+    return this.prisma.$transaction(async (tx) => {
+      await tx.$queryRaw`SELECT id FROM "PurchaseRequest" WHERE id = ${id} FOR UPDATE`;
+      const req = await tx.purchaseRequest.findUnique({ where: { id } });
+      if (!req) throw new NotFoundException('Solicitud no encontrada');
+      if (
+        req.modality !== 'FINANCED' ||
+        req.status !== 'APPROVED' ||
+        !req.closedAt ||
+        !req.amount ||
+        req.amount.lte(0)
+      )
+        throw new ConflictException(
+          'Primero se debe aprobar la financiación y registrar el cierre de la venta.',
+        );
+      if (req.version !== dto.expectedVersion)
+        throw financingConflict('STALE_VERSION');
+      const schedule = weeklyPlan(req.amount, dto.quotaCount, dto.firstDueDate);
+      const existing = await tx.financing.findUnique({
+        where: { purchaseRequestId: id },
+        include: { quotas: { orderBy: { number: 'asc' } } },
+      });
+      if (existing) {
+        if (
+          existing.quotaCount !== dto.quotaCount ||
+          existing.collectorId !== dto.collectorId ||
+          existing.quotas[0]?.dueDate.toISOString().slice(0, 10) !==
+            dto.firstDueDate
+        )
+          throw new ConflictException(
+            'La solicitud ya tiene un plan registrado. No se puede reemplazar desde esta acción.',
+          );
+        return existing;
+      }
+      const collector = await tx.employee.findFirst({
+        where: {
+          id: dto.collectorId,
+          isActive: true,
+          sector: { name: 'Cobranzas' },
+        },
+      });
+      if (!collector)
+        throw new BadRequestException('Elegí un cobrador activo de Cobranzas.');
+      await tx.$queryRaw`SELECT id FROM "Client" WHERE id = ${req.clientId} FOR UPDATE`;
+      const client = await tx.client.findUniqueOrThrow({
+        where: { id: req.clientId },
+      });
+      if (
+        client.assignedCollectorId &&
+        client.assignedCollectorId !== dto.collectorId
+      )
+        throw new ConflictException(
+          'El cliente ya tiene otro cobrador. Usá ese responsable o reasigná la cartera desde Cobranzas.',
+        );
+      const plan = await tx.financing.create({
+        data: {
+          purchaseRequestId: id,
+          totalAmount: req.amount,
+          quotaCount: dto.quotaCount,
+          collectorId: dto.collectorId,
+          quotas: {
+            create: schedule.map((q) => ({ ...q, clientId: req.clientId })),
+          },
+        },
+        include: { quotas: { orderBy: { number: 'asc' } } },
+      });
+      if (!client.assignedCollectorId)
+        await tx.client.update({
+          where: { id: req.clientId },
+          data: { assignedCollectorId: dto.collectorId },
+        });
+      await this.event(tx, req.conversationId, 'PLAN_CREATED', {
+        requestId: id,
+        requestVersion: req.version,
+        actorId,
+        financingId: plan.id,
+        quotaCount: dto.quotaCount,
+        firstDueDate: dto.firstDueDate,
+        collectorId: dto.collectorId,
+        note: dto.note.trim(),
+      });
+      return plan;
+    });
+  }
+
   async list() {
     return (
       await this.prisma.purchaseRequest.findMany({
@@ -814,8 +924,16 @@ export class FinancingService {
           (e.payload as any).requestId === id,
       )?.payload as any
     )?.caseKey;
+    const plan = await this.prisma.financing.findUnique({
+      where: { purchaseRequestId: id },
+      include: {
+        collector: { select: { id: true, name: true } },
+        quotas: { orderBy: { number: 'asc' } },
+      },
+    });
     return {
       request,
+      plan,
       assessments: assessments.map(({ rawPayload, ...a }) => ({
         ...a,
         ...((rawPayload as any)?.commercialCondition

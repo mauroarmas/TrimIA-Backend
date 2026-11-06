@@ -58,6 +58,13 @@ export class SalesService {
   getFinancingRequest(id: string) {
     return this.finance!.detail(id);
   }
+  createFinancingPlan(
+    id: string,
+    dto: import('../financing/dto/create-financing-plan.dto').CreateFinancingPlanDto,
+    actorId: string,
+  ) {
+    return this.finance!.createPlan(id, dto, actorId);
+  }
   getFinancingDraft(id: string) {
     return this.finance!.getDraft(id);
   }

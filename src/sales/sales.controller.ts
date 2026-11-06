@@ -1,3 +1,4 @@
+import { CreateFinancingPlanDto } from '../financing/dto/create-financing-plan.dto';
 import { CompleteFinancingDraftDto } from '../financing/dto/complete-financing-draft.dto';
 import { CorrectFinancingDto } from '../financing/dto/correct-financing.dto';
 import { CancelFinancingDto } from '../financing/dto/cancel-financing.dto';
@@ -93,6 +94,16 @@ export class SalesController {
       throw new ForbiddenException(
         'Solo un supervisor financiero puede modificar el caso',
       );
+  }
+  @Post('financing/requests/:id/plan')
+  @HttpCode(200)
+  createFinancingPlan(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CreateFinancingPlanDto,
+    @Req() req: any,
+  ) {
+    this.assertFinancialSupervisor(req.user);
+    return this.salesService.createFinancingPlan(id, dto, req.user.id);
   }
   @Get('financing/requests/:id')
   financingDetail(@Param('id', ParseUUIDPipe) id: string, @Req() req: any) {
