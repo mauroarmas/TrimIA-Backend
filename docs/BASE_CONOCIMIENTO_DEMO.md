@@ -79,3 +79,11 @@ El intercambio con nombre y DNI reveló que Gemini podía incluir campos opciona
 La prueba real de varios turnos detectó además que el extractor no recibía el contexto de formulario abierto y podía clasificar una descripción de producto como OTHER. Ahora se indica explícitamente si existe un formulario activo y cómo reconocer los datos de continuación, sin autorizar condiciones ni completar campos ausentes.
 
 Se preserva además el DNI escrito con etiqueta explícita (`DNI` o `documento`) y formato de 7–8 dígitos aunque el extractor lo omita. No se deduce de otros números. Prueba real en el canal WEB de la demo: conversación `04c2067e-135e-41cb-9f14-9202f06b7db8`, nombre/DNI persistidos, producto «televisor Smart TV de 43 pulgadas», importe ficticio ARS 450000.00 confirmado por supervisor y resumen AWAITING_CONFIRMATION. Se dejó sin confirmación final: no presentó solicitud ni creó oportunidad.
+
+## Solicitud cortés y notas en casos escalados (2026-11-06)
+
+La frase «quisiera financiar un smart tv» quedaba fuera del filtro de entrada (faltaba «quisiera»), por lo que Ventas respondía como consulta general sin crear borrador; el DNI posterior podía derivarse a Cobranzas. El filtro ahora contempla «quisiera» y «me gustaría», manteniendo la clasificación INFORMATION para preguntas de requisitos y la creación de solicitud final únicamente tras confirmación. Se agregaron regresiones de ambas expresiones y de pregunta informativa.
+
+La vista de detalle de casos escalados ocultaba conjuntamente respuesta manual y notas internas. Se separó la opción de ocultar la respuesta manual: las notas se muestran y se pueden agregar en esa vista, mientras el envío/resolución conserva su panel propio.
+
+Verificación: 19 pruebas de ruteo aprobadas y compilación del panel correcta. En la demo con Gemini real, la frase exacta «quisiera financiar un smart tv» inició el borrador WEB `59dd6f7c-174d-4502-b8ca-aee301a732d1`; el mensaje con DNI y nombre se persistió, y se llegó al resumen AWAITING_CONFIRMATION tras informar producto e importe ficticio confirmado por supervisor. No hubo desvío a Cobranzas ni se presentó el pedido.

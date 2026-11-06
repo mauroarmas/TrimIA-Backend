@@ -29,7 +29,7 @@ const extracted = z
   })
   .strict();
 export const explicitFinancingRequest = (s: string) =>
-  /\b(quiero|solicito|necesito|deseo|solicitar|pedir)\b.{0,100}(financi|cuotas)/i.test(
+  /\b(quiero|quisiera|gustar[ií]a|solicito|necesito|deseo|solicitar|pedir)\b.{0,100}(financi|cuotas)/i.test(
     s,
   );
 @Injectable()

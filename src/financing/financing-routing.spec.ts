@@ -167,6 +167,33 @@ describe('financial operation routing boundary', () => {
       dni: '30000008',
     });
   });
+  it.each([
+    'quisiera financiar un smart tv',
+    'me gustaría comprar un televisor en cuotas',
+  ])('inicia formulario con una petición cortés: %s', async (message) => {
+    invoke.mockResolvedValue({
+      intent: 'REQUEST',
+      productSummary: { value: 'televisor', evidence: 'televisor' },
+    });
+    await service.handle('c', 'm', message, client);
+    expect(applyInput).toHaveBeenCalledWith(
+      'c',
+      'm',
+      expect.objectContaining({ intent: 'REQUEST' }),
+    );
+  });
+  it('una pregunta cortés sobre requisitos sigue siendo informativa', async () => {
+    invoke.mockResolvedValue({ intent: 'INFORMATION' });
+    expect(
+      await service.handle(
+        'c',
+        'm',
+        'Quisiera saber los requisitos para financiar',
+        client,
+      ),
+    ).toEqual({ handled: false });
+    expect(applyInput).not.toHaveBeenCalled();
+  });
   it('no acepta dictamen inyectado por extractor', async () => {
     invoke.mockResolvedValue({
       intent: 'REQUEST',
