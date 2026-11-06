@@ -64,6 +64,18 @@ export class TrainingSupervisorController {
     return this.trainingService.generatePillDraft(req.user.id, dto);
   }
 
+  @Put('modules/:moduleId/pills/reorder')
+  @ApiOperation({ summary: 'Reordenar píldoras dentro de un módulo (supervisor)' })
+  @ApiResponse({ status: 200, description: 'Píldoras reordenadas exitosamente' })
+  @ApiResponse({ status: 403, description: 'No autorizado para el sector del módulo' })
+  async reorderPills(
+    @Req() req: AuthenticatedRequest,
+    @Param('moduleId') moduleId: string,
+    @Body() dto: { pillIds: string[] },
+  ) {
+    return this.trainingService.reorderModulePills(req.user.id, moduleId, dto.pillIds);
+  }
+
   @Put('pills/:id')
   @ApiOperation({ summary: 'Editar borrador de píldora (Solo DRAFT)' })
   @ApiResponse({ status: 200, description: 'Píldora actualizada exitosamente' })
@@ -113,6 +125,13 @@ export class TrainingSupervisorController {
     @Param('employeeId') employeeId: string,
   ) {
     return this.trainingService.getSupervisorEmployeeDiagnostic(req.user.id, employeeId);
+  }
+
+  @Get('supervisor/tracking')
+  @ApiOperation({ summary: 'Seguimiento formativo y estado de avance de los ingresantes' })
+  @ApiResponse({ status: 200, description: 'Métricas de resumen y lista de ingresantes' })
+  async getSupervisorTracking(@Req() req: AuthenticatedRequest) {
+    return this.trainingService.getSupervisorTracking(req.user.id);
   }
 
   @Post('supervisor/diagnostic/:employeeId/reset')

@@ -111,6 +111,49 @@ export class SimulationAiService {
   }
 
   /**
+   * Genera una pista orientativa para Trimi en la práctica guiada sin dar la respuesta armada.
+   */
+  async generateHint(params: {
+    goalDescription: string;
+    customerName: string;
+    customerProfile: string;
+    conversationHistory: Array<{ sender: string; content: string }>;
+  }): Promise<{ hint: string }> {
+    const prompt =
+      'Sos Trimi, el simpático personaje y asistente de capacitación de Credimisión en Argentina.\n' +
+      'El empleado nuevo está en una práctica guiada y te pidió una pista para cumplir el siguiente objetivo pedagógico sin darle la respuesta servida ni armada.\n' +
+      'Dale una sugerencia breve (1 o 2 oraciones), cordial y orientativa en español rioplatense (usá voseo: "recordá", "preguntale", "fijate"), que lo guíe sobre qué preguntar o verificar para destrabarse.';
+
+    const hintSchema = z.object({
+      hint: z.string().describe('Pista corta y orientativa redactada por Trimi con voseo sin dar la respuesta armada'),
+    });
+
+    const structured = this.llm.chat.withStructuredOutput(hintSchema, {
+      name: 'generate_hint',
+    });
+
+    try {
+      const historyText = params.conversationHistory
+        .map((m) => `${m.sender === 'EMPLOYEE' ? 'Empleado' : params.customerName}: ${m.content}`)
+        .join('\n');
+
+      const result = (await structured.invoke([
+        new SystemMessage(prompt),
+        new HumanMessage(
+          `Cliente: ${params.customerName}\nPerfil: ${params.customerProfile}\nObjetivo pendiente a cumplir: "${params.goalDescription}"\nConversación hasta ahora:\n${historyText}`,
+        ),
+      ])) as z.infer<typeof hintSchema>;
+
+      return { hint: result.hint };
+    } catch (err) {
+      this.logger.warn(`Error al generar pista con IA, usando fallback: ${err}`);
+      return {
+        hint: `Para cumplir el objetivo «${params.goalDescription}», fijate en consultar con amabilidad los datos del cliente o validar su estado en el sistema antes de avanzar.`,
+      };
+    }
+  }
+
+  /**
    * Genera el turno del cliente simulado.
    * En modo GUIDED, evalúa simultáneamente en una sola llamada los objetivos del checklist.
    */

@@ -57,6 +57,17 @@ export class SimulationController {
     return this.simulationService.getSession(req.user.id, sessionId, isSupervisor);
   }
 
+  @Post('simulations/:sessionId/hint')
+  @ApiOperation({ summary: 'Solicitar una pista a Trimi para el objetivo pendiente' })
+  @ApiResponse({ status: 200, description: 'Pista orientativa generada con éxito' })
+  async getHint(
+    @Param('sessionId') sessionId: string,
+    @Body() body: { goalDescription?: string },
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.simulationService.getHint(req.user.id, sessionId, body?.goalDescription);
+  }
+
   @Post('simulations/:sessionId/conclude')
   @ApiOperation({ summary: 'Concluir la sesión y generar la devolución en 3 tarjetas cualitativas' })
   @ApiResponse({ status: 200, description: 'Sesión concluida y feedback generado' })
