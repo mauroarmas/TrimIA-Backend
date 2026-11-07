@@ -41,7 +41,7 @@ const extracted = z
   })
   .strict();
 export const explicitFinancingRequest = (s: string) =>
-  /\b(quiero|quisiera|gustar[ií]a|solicito|necesito|deseo|solicitar|pedir)\b.{0,100}(financi|cuotas)/i.test(
+  /\b(?:quiero|quisiera|gustar[ií]a|solicito|necesito|deseo)\s+(?:financiar(?:la|lo|le|los|las)?|(?:solicitar|pedir)\s+(?:una\s+)?financiaci[oó]n|financiaci[oó]n|pagar\s+(?:en\s+)?cuotas)|\bme gustar[ií]a\s+(?:comprar|sacar).{0,80}(?:financi|cuotas)|\b(me interesa|estoy interesado en)\s+(?:financiar(?:la|lo|le|los|las)?|pagar.{0,20}en cuotas|la financiaci[oó]n)|\b(?:solicitar|pedir)\s+(?:una\s+)?financiaci[oó]n|\bfinanciar(?:la|lo|le|los|las)\b/i.test(
     s,
   );
 @Injectable()
@@ -133,6 +133,36 @@ export class FinancingConversationService {
       );
       return matches;
     };
+    const previousMessages =
+      modern && this.prisma.message?.findMany
+        ? await this.prisma.message.findMany({
+            where: { conversationId },
+            orderBy: { createdAt: 'desc' },
+            take: 12,
+            select: { role: true, content: true },
+          })
+        : [];
+    const assistantHistory = previousMessages
+      .filter((entry: { role: string }) => entry.role === 'ASSISTANT')
+      .map((entry: { content: string }) => entry.content);
+    const financingContext =
+      !draft?.purchaseRequestId &&
+      assistantHistory.some(
+        (content: string) =>
+          /financi|financiar/i.test(content) &&
+          /(tu nombre|nombre y tu DNI|nombre completo|pas[aá]s.*DNI)/i.test(
+            content,
+          ),
+      );
+    const selectedProduct = assistantHistory
+      .map((content: string) => {
+        if (!/elegiste|seleccionaste/i.test(content)) return null;
+        const matches = catalog.filter((item) =>
+          compact(content).includes(compact(item.name)),
+        );
+        return matches.length === 1 ? matches[0] : null;
+      })
+      .find(Boolean);
     const submitted =
       modern && draft?.purchaseRequestId
         ? await this.prisma.purchaseRequest.findUnique({
@@ -216,7 +246,7 @@ export class FinancingConversationService {
     }
     const active =
       draft && !['CANCELLED', 'IDENTITY_CONFLICT'].includes(draft.stage);
-    if (!active && !explicitFinancingRequest(message))
+    if (!active && !explicitFinancingRequest(message) && !financingContext)
       return { handled: false };
     let proposal: z.infer<typeof extracted>;
     try {
@@ -244,9 +274,16 @@ export class FinancingConversationService {
     if (
       !isModernRequest &&
       !asksCatalog &&
+      !financingContext &&
+      !explicitFinancingRequest(message) &&
       (proposal.intent === 'OTHER' || proposal.intent === 'INFORMATION')
     )
       return { handled: false };
+    if (
+      (financingContext || (active && draft?.flowVersion === 2)) &&
+      (proposal.intent === 'OTHER' || proposal.intent === 'INFORMATION')
+    )
+      proposal.intent = 'PROVIDE_DATA';
     if (proposal.intent === 'REQUEST' && !explicitFinancingRequest(message)) {
       if (active) proposal.intent = 'PROVIDE_DATA';
       else return { handled: false };
@@ -272,6 +309,7 @@ export class FinancingConversationService {
       contactName?: string;
       contactPhone?: string;
     } = { intent: proposal.intent };
+    if (financingContext && !active) input.intent = 'PROVIDE_DATA';
     if (
       modern &&
       (!draft?.purchaseRequestId ||
@@ -279,6 +317,19 @@ export class FinancingConversationService {
           explicitFinancingRequest(message)))
     )
       input.flowVersion = 2;
+    if (
+      modern &&
+      explicitFinancingRequest(message) &&
+      !draft?.purchaseRequestId
+    ) {
+      input.flowVersion = 2;
+      if (!input.productSummary && selectedProduct) {
+        input.sku = selectedProduct.sku;
+        input.productSummary = selectedProduct.name;
+      }
+      if (input.intent === 'INFORMATION' || input.intent === 'OTHER')
+        input.intent = 'REQUEST';
+    }
     for (const key of [
       'name',
       'dni',
@@ -312,6 +363,18 @@ export class FinancingConversationService {
       )?.[1]
       .replace(/\D/g, '');
     if (labeledDni && /^\d{7,8}$/.test(labeledDni)) input.dni = labeledDni;
+    if (financingContext && !input.dni) {
+      const unlabelledDni = message.match(/(?:^|\D)(\d{7,8})(?:\D|$)/)?.[1];
+      if (unlabelledDni) input.dni = unlabelledDni;
+    }
+    if (financingContext && !input.name) {
+      const candidateName = message
+        .replace(/\b\d{7,8}\b/g, '')
+        .replace(/\b(?:DNI|documento)(?:\s+(?:es|n[uú]mero))?\b/gi, '')
+        .replace(/[\s,;:|–—-]+$/g, '')
+        .trim();
+      if (/\p{L}{2}/u.test(candidateName)) input.name = candidateName;
+    }
     if (input.dni && !/^\d{7,8}$/.test(input.dni)) delete input.dni;
     if (input.observedAmount && !/^\d+\.\d{2}$/.test(input.observedAmount))
       delete input.observedAmount;

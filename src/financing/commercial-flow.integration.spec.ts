@@ -62,6 +62,72 @@ const enabled = !!process.env.TEST_DATABASE_URL;
   afterAll(() => prisma.$disconnect());
   const firstDate = () =>
     new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+  it('inicia financiación al decir «me interesa financiarla» y no deriva la respuesta con nombre y DNI', async () => {
+    const conversation = await prisma.conversation.create({
+      data: {
+        externalId: '549' + String(Date.now()).slice(-10) + '77',
+        channel: 'WEB',
+      },
+    });
+    const invoke = jest.fn();
+    const escalate = jest.fn();
+    const handler = new FinancingConversationService(
+      prisma as any,
+      { classifierChat: { withStructuredOutput: () => ({ invoke }) } } as any,
+      financing,
+      { create: escalate } as any,
+      commercial,
+      stock,
+    );
+    const customer = { userType: 'CLIENTE' } as any;
+    await prisma.message.create({
+      data: {
+        conversationId: conversation.id,
+        role: 'ASSISTANT',
+        content:
+          'Elegiste la Heladera Exhibidora Vertical Inelro 420 Litros Forzador. ¿Te interesa financiarla?',
+      },
+    });
+    invoke.mockResolvedValueOnce({ intent: 'INFORMATION' });
+    const started = await handler.handle(
+      conversation.id,
+      randomUUID(),
+      'me interesa financiarla',
+      customer,
+    );
+    expect(started.handled).toBe(true);
+    expect(started.response).toMatch(/nombre.*DNI/i);
+
+    await prisma.message.create({
+      data: {
+        conversationId: conversation.id,
+        role: 'ASSISTANT',
+        content:
+          'Para avanzar con la financiación necesito tu nombre y tu DNI.',
+      },
+    });
+    invoke.mockResolvedValueOnce({ intent: 'OTHER' });
+    const details = await handler.handle(
+      conversation.id,
+      randomUUID(),
+      'Mauro Armas - 90000001',
+      customer,
+    );
+    expect(details.handled).toBe(true);
+    expect(details.response).toMatch(/comercio.*localidad/i);
+    expect(escalate).not.toHaveBeenCalled();
+    const draft = await financing.getDraft(conversation.id);
+    expect(draft.name).toBe('Mauro Armas');
+    expect(draft.dni).toBe('90000001');
+    expect(draft.productSummary).toContain('Inelro 420');
+    expect(draft.confirmedAmount).toBe('840000.00');
+    expect(draft.missingFields).toEqual(['business', 'locality']);
+    expect(
+      await prisma.purchaseRequest.count({
+        where: { conversationId: conversation.id },
+      }),
+    ).toBe(0);
+  });
   async function start() {
     const conversation = await prisma.conversation.create({
       data: {
