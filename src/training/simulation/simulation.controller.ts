@@ -93,6 +93,17 @@ export class SimulationController {
     );
   }
 
+  @Post('simulations/:sessionId/hint')
+  @ApiOperation({ summary: 'Solicitar una pista a Trimi para el objetivo pendiente' })
+  @ApiResponse({ status: 200, description: 'Pista orientativa generada con éxito' })
+  async getHint(
+    @Param('sessionId') sessionId: string,
+    @Body() body: { goalDescription?: string },
+    @Req() req: AuthenticatedRequest,
+  ) {
+    return this.simulationService.getHint(req.user.id, sessionId, body?.goalDescription);
+  }
+
   @Post('simulations/:sessionId/conclude')
   @HttpCode(200)
   @ApiOperation({

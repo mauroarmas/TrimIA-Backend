@@ -57,6 +57,7 @@ describe('Capacitación: contratos y accesos de convergencia', () => {
       pill: {
         findUnique: jest.fn().mockImplementation(async () => pill),
         findFirst: jest.fn().mockResolvedValue(null),
+        findMany: jest.fn().mockResolvedValue([]),
         update: jest.fn().mockImplementation(async ({ data }) => ({
           ...pill,
           ...data,
@@ -64,7 +65,16 @@ describe('Capacitación: contratos y accesos de convergencia', () => {
         })),
       },
       pillAudit: { create: jest.fn().mockResolvedValue({}) },
+      trainingModule: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValue({
+            id: 'module',
+            sector: { agentType: 'COLLECTIONS' },
+          }),
+      },
       employeeProgress: {
+        findMany: jest.fn().mockResolvedValue([]),
         findUnique: jest.fn().mockResolvedValue(null),
         upsert: jest.fn().mockResolvedValue({}),
       },
@@ -114,13 +124,23 @@ describe('Capacitación: contratos y accesos de convergencia', () => {
 
   it('no completa por URL directa una lección bloqueada', async () => {
     pill.orderIndex = 1;
-    prisma.pill.findFirst.mockResolvedValue({ id: 'previous' });
+    prisma.pill.findMany.mockResolvedValue([{ id: 'previous' }]);
     await expect(
       service.verifyQuiz('employee', 'pill', [0, 1]),
     ).rejects.toThrow(ForbiddenException);
     expect(prisma.employeeProgress.upsert).not.toHaveBeenCalled();
   });
 
+  it('no reordena píldoras ajenas al módulo ni ids duplicados', async () => {
+    prisma.pill.findMany.mockResolvedValue([{ id: 'pill' }, { id: 'other' }]);
+    await expect(
+      service.reorderModulePills('supervisor', 'module', ['pill', 'foreign']),
+    ).rejects.toThrow(BadRequestException);
+    await expect(
+      service.reorderModulePills('supervisor', 'module', ['pill', 'pill']),
+    ).rejects.toThrow(BadRequestException);
+    expect(prisma.pill.update).not.toHaveBeenCalled();
+  });
   it('rechaza respuestas extra y fuera de las opciones', async () => {
     await expect(
       service.verifyQuiz('employee', 'pill', [0, 1, 0]),

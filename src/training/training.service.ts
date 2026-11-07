@@ -13,6 +13,10 @@ import {
   PillStatus,
   Prisma,
   TrainingProgressStatus,
+  SimulationMode,
+  SimulationStatus,
+  PerformanceBand,
+  EmployeeRole,
 } from '@prisma/client';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
@@ -127,24 +131,31 @@ export class TrainingService {
       currentProgress?.status === TrainingProgressStatus.COMPLETED ||
       currentProgress?.status === TrainingProgressStatus.EXEMPTED_BY_DIAGNOSTIC;
     if (!supervisor && !approved && pill.orderIndex > 0) {
-      const previous = await this.prisma.pill.findFirst({
+      const previous = await this.prisma.pill.findMany({
         where: {
           moduleId: pill.moduleId,
           status: PillStatus.PUBLISHED,
           orderIndex: { lt: pill.orderIndex },
         },
-        orderBy: { orderIndex: 'desc' },
+        select: { id: true },
       });
-      if (previous) {
-        const progress = await this.prisma.employeeProgress.findUnique({
-          where: { employeeId_pillId: { employeeId, pillId: previous.id } },
+      if (previous.length) {
+        const progress = await this.prisma.employeeProgress.findMany({
+          where: {
+            employeeId,
+            pillId: { in: previous.map((p) => p.id) },
+            status: {
+              in: [
+                TrainingProgressStatus.COMPLETED,
+                TrainingProgressStatus.EXEMPTED_BY_DIAGNOSTIC,
+              ],
+            },
+          },
+          select: { pillId: true },
         });
-        if (
-          progress?.status !== TrainingProgressStatus.COMPLETED &&
-          progress?.status !== TrainingProgressStatus.EXEMPTED_BY_DIAGNOSTIC
-        )
+        if (progress.length < previous.length)
           throw new ForbiddenException(
-            'La píldora está bloqueada. Debe completar la lección previa.',
+            'La píldora está bloqueada. Debe completar las lecciones previas pendientes.',
           );
       }
     }
@@ -430,6 +441,52 @@ export class TrainingService {
   }
 
   /**
+   * Reordena las píldoras de un módulo formativo (supervisor).
+   * Reordenar no le quita avance a nadie: los registros de progreso se conservan intactos.
+   */
+  async reorderModulePills(
+    supervisorId: string,
+    moduleId: string,
+    pillIds: string[],
+  ) {
+    const mod = await this.prisma.trainingModule.findUnique({
+      where: { id: moduleId },
+      include: { sector: true },
+    });
+    if (!mod) throw new NotFoundException('Módulo no encontrado');
+
+    await this.knowledge.assertPuedeEscribir(
+      supervisorId,
+      mod.sector?.agentType ?? null,
+    );
+
+    const modulePills = await this.prisma.pill.findMany({
+      where: { moduleId },
+      select: { id: true },
+    });
+    if (
+      !Array.isArray(pillIds) ||
+      !pillIds.length ||
+      new Set(pillIds).size !== pillIds.length ||
+      pillIds.length !== modulePills.length ||
+      modulePills.some((p) => !pillIds.includes(p.id))
+    )
+      throw new BadRequestException(
+        'El orden debe incluir una vez cada píldora del módulo, sin píldoras ajenas.',
+      );
+    await this.prisma.$transaction(
+      pillIds.map((id, index) =>
+        this.prisma.pill.update({
+          where: { id },
+          data: { orderIndex: index },
+        }),
+      ),
+    );
+
+    return { success: true, count: pillIds.length };
+  }
+
+  /**
    * Lista los módulos y píldoras publicados para un empleado con candados dinámicos (US3).
    */
   async getEmployeeModules(
@@ -485,18 +542,21 @@ export class TrainingService {
     );
 
     return modules.map((mod) => {
-      let previousPillApproved = true; // La primera píldora siempre arranca desbloqueada
+      let allPreviousApproved = true; // Si el supervisor reordena, el bloqueo se calcula solo sobre lo pendiente
 
-      const pillsSummary: EmployeePillSummaryDto[] = mod.pills.map((p, idx) => {
+      const pillsSummary: EmployeePillSummaryDto[] = mod.pills.map((p) => {
         const isApproved = approvedSet.has(p.id);
         const status =
           progressMap.get(p.id) ?? TrainingProgressStatus.NOT_STARTED;
+        // Una píldora ya completada/eximida NUNCA se bloquea al reordenar
         const isLocked = isSupervisor
           ? false
-          : idx === 0
+          : isApproved
             ? false
-            : !previousPillApproved;
-        previousPillApproved = isApproved;
+            : !allPreviousApproved;
+        if (!isApproved) {
+          allPreviousApproved = false;
+        }
 
         return {
           id: p.id,
@@ -1022,6 +1082,199 @@ export class TrainingService {
       });
     });
     return { success: true, message: 'Diagnóstico reiniciado exitosamente' };
+  }
+
+  async getSupervisorTracking(supervisorId: string) {
+    const supervisor = await this.prisma.employee.findUnique({
+      where: { id: supervisorId },
+      select: { role: true },
+    });
+    if (supervisor?.role !== 'SUPERVISOR') {
+      throw new ForbiddenException(
+        'Solo los supervisores pueden consultar el seguimiento de ingresantes',
+      );
+    }
+
+    // 1. Obtener todos los colaboradores no supervisores
+    const employees = await this.prisma.employee.findMany({
+      where: {
+        role: { not: EmployeeRole.SUPERVISOR },
+        isActive: true,
+      },
+      include: {
+        sector: true,
+      },
+      orderBy: { name: 'asc' },
+    });
+
+    // 2. Obtener todas las píldoras publicadas agrupadas por sector y transversales
+    const publishedPills = await this.prisma.pill.findMany({
+      where: { status: PillStatus.PUBLISHED },
+      include: { module: true },
+      orderBy: [{ module: { orderIndex: 'asc' } }, { orderIndex: 'asc' }],
+    });
+
+    // 3. Obtener el progreso de todos los empleados
+    const allProgress = await this.prisma.employeeProgress.findMany({});
+    const progressByEmployee = new Map<string, typeof allProgress>();
+    for (const pr of allProgress) {
+      if (!progressByEmployee.has(pr.employeeId)) {
+        progressByEmployee.set(pr.employeeId, []);
+      }
+      progressByEmployee.get(pr.employeeId)!.push(pr);
+    }
+
+    // 4. Obtener las sesiones de simulación libres concluidas
+    const freeSimulations = await this.prisma.simulationSession.findMany({
+      where: {
+        mode: SimulationMode.FREE,
+        status: SimulationStatus.COMPLETED,
+      },
+      select: {
+        employeeId: true,
+        feedback: {
+          select: { band: true },
+        },
+        completedAt: true,
+        createdAt: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    const freeSimsByEmployee = new Map<string, typeof freeSimulations>();
+    for (const s of freeSimulations) {
+      if (!freeSimsByEmployee.has(s.employeeId)) {
+        freeSimsByEmployee.set(s.employeeId, []);
+      }
+      freeSimsByEmployee.get(s.employeeId)!.push(s);
+    }
+
+    // 5. Mapear cada empleado y calcular sus métricas
+    const now = new Date();
+    const trackingList = employees.map((emp) => {
+      // Píldoras relevantes para este empleado (su sector o transversal general)
+      const relevantPills = publishedPills.filter(
+        (p) => !p.module.sectorId || p.module.sectorId === emp.sectorId,
+      );
+      const totalPills = relevantPills.length;
+
+      const empProg = progressByEmployee.get(emp.id) || [];
+      const completedPillsCount = relevantPills.filter((p) =>
+        empProg.some(
+          (pr) =>
+            pr.pillId === p.id &&
+            (pr.status === TrainingProgressStatus.COMPLETED ||
+              pr.status === TrainingProgressStatus.EXEMPTED_BY_DIAGNOSTIC),
+        ),
+      ).length;
+
+      const percentage =
+        totalPills > 0
+          ? Math.round((completedPillsCount / totalPills) * 100)
+          : 0;
+
+      // Parada actual: primera píldora no completada
+      const nextPendingPill = relevantPills.find(
+        (p) =>
+          !empProg.some(
+            (pr) =>
+              pr.pillId === p.id &&
+              (pr.status === TrainingProgressStatus.COMPLETED ||
+                pr.status === TrainingProgressStatus.EXEMPTED_BY_DIAGNOSTIC),
+          ),
+      );
+
+      const currentParada = nextPendingPill
+        ? `${nextPendingPill.title}`
+        : totalPills > 0
+          ? 'Ruta completada'
+          : 'Sin paradas asignadas';
+
+      // Simulaciones libres
+      const empSims = freeSimsByEmployee.get(emp.id) || [];
+      const failedFreeSimulationsCount = empSims.filter(
+        (s) => s.feedback?.band === PerformanceBand.NOT_ACHIEVED,
+      ).length;
+
+      // Última actividad
+      const lastProgDate = empProg.reduce<Date | null>((max, p) => {
+        const d = p.updatedAt ? new Date(p.updatedAt) : null;
+        if (!d) return max;
+        return !max || d > max ? d : max;
+      }, null);
+
+      const lastSimDate =
+        empSims[0]?.completedAt || empSims[0]?.createdAt || null;
+      const dates = [
+        lastProgDate,
+        lastSimDate ? new Date(lastSimDate) : null,
+      ].filter(Boolean) as Date[];
+      const lastActivity =
+        dates.length > 0
+          ? new Date(Math.max(...dates.map((d) => d.getTime())))
+          : null;
+
+      const daysWithoutProgress = lastActivity
+        ? Math.floor(
+            (now.getTime() - lastActivity.getTime()) / (1000 * 60 * 60 * 24),
+          )
+        : null;
+
+      // Estado según requerimiento:
+      // "Necesita ayuda" si: lleva más de 3 días sin avance, o desaprobó 2 veces la simulación libre.
+      let trackingStatus: 'IN_TRAINING' | 'NEEDS_HELP' | 'READY' =
+        'IN_TRAINING';
+      let trackingStatusLabel = 'En capacitación';
+
+      if (percentage === 100 && failedFreeSimulationsCount === 0) {
+        trackingStatus = 'READY';
+        trackingStatusLabel = 'Listo para atender';
+      } else if (
+        (daysWithoutProgress !== null && daysWithoutProgress >= 3) ||
+        failedFreeSimulationsCount >= 2
+      ) {
+        trackingStatus = 'NEEDS_HELP';
+        trackingStatusLabel = 'Necesita ayuda';
+      } else {
+        trackingStatus = 'IN_TRAINING';
+        trackingStatusLabel = 'En capacitación';
+      }
+
+      return {
+        id: emp.id,
+        name: emp.name,
+        email: emp.email || emp.phone || '',
+        role: emp.sector?.name
+          ? `Asesor/a comercial (${emp.sector.name})`
+          : 'Ingresante comercial',
+        sectorId: emp.sectorId,
+        sectorName: emp.sector?.name || 'General / Transversal',
+        currentParada,
+        completedPills: completedPillsCount,
+        totalPills,
+        percentage,
+        lastActivity: lastActivity ? lastActivity.toISOString() : null,
+        daysWithoutProgress,
+        failedFreeSimulationsCount,
+        trackingStatus,
+        trackingStatusLabel,
+      };
+    });
+
+    const summary = {
+      inTraining: trackingList.filter((t) => t.trackingStatus === 'IN_TRAINING')
+        .length,
+      needsHelp: trackingList.filter((t) => t.trackingStatus === 'NEEDS_HELP')
+        .length,
+      readyToServe: trackingList.filter((t) => t.trackingStatus === 'READY')
+        .length,
+      total: trackingList.length,
+    };
+
+    return {
+      summary,
+      employees: trackingList,
+    };
   }
 
   // ==========================================================================

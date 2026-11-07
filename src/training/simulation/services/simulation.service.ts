@@ -263,6 +263,39 @@ export class SimulationService {
   }
 
   /**
+   * Genera una pista orientativa con Trimi para el objetivo pendiente.
+   */
+  async getHint(employeeId: string, sessionId: string, goalDescription?: string) {
+    const session = await this.prisma.simulationSession.findUnique({
+      where: { id: sessionId },
+      include: {
+        goals: { orderBy: { order: 'asc' } },
+        messages: { orderBy: { turnIndex: 'asc' } },
+      },
+    });
+
+    if (!session) {
+      throw new NotFoundException('Sesión de simulación no encontrada');
+    }
+    if (session.employeeId !== employeeId) {
+      throw new ForbiddenException('No tienes acceso a esta sesión');
+    }
+
+    const pending = session.goals.filter((g) => !g.isCompleted);
+    const targetGoal = goalDescription || pending[0]?.description || 'Avanzar en la conversación';
+
+    return this.simulationAi.generateHint({
+      goalDescription: targetGoal,
+      customerName: session.customerName,
+      customerProfile: session.customerProfile,
+      conversationHistory: session.messages.map((m) => ({
+        sender: m.sender,
+        content: m.content,
+      })),
+    });
+  }
+
+  /**
    * Concluye la simulación y genera la devolución en 3 tarjetas cualitativas.
    */
   async concludeSimulation(employeeId: string, sessionId: string) {
