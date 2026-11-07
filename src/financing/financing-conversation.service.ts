@@ -324,7 +324,39 @@ export class FinancingConversationService {
       )
     )
       delete input.sku;
-    if (asksCatalog) {
+    // Una referencia a la disponibilidad no identifica por sí sola un modelo.
+    // Resolverla contra el producto que ya se estaba eligiendo, sin guardar
+    // frases como «la que está disponible» como si fueran nombres del catálogo.
+    const availabilitySelection =
+      modern &&
+      !isModernRequest &&
+      /^(?:(?:quiero|prefiero|elijo|dame)\s+)?(?:la|el|una|uno)\s+(?:que\s+(?:est[aá]|haya)|disponible|con\s+stock)(?:\s+(?:disponible|en\s+stock|stock))?[.!?\s]*$/i.test(
+        message.trim(),
+      );
+    if (availabilitySelection) {
+      const available = draft?.productSummary
+        ? matchProduct(draft.productSummary).filter((item) => item.stock > 0)
+        : [];
+      delete input.productSummary;
+      delete input.sku;
+      input.intent = 'PROVIDE_DATA';
+      if (available.length === 1) {
+        input.sku = available[0].sku;
+        input.productSummary = available[0].name;
+      } else {
+        await this.service.applyInput(conversationId, messageId, input);
+        return {
+          handled: true,
+          response:
+            available.length > 1
+              ? 'Hay más de un modelo disponible: ' +
+                available.map((item) => item.name).join('; ') +
+                '. ¿Cuál de estos preferís?'
+              : '¿Qué modelo querés comprar? Decime su nombre para verificar la disponibilidad.',
+        };
+      }
+    }
+    if (asksCatalog && !availabilitySelection) {
       if (input.productSummary) {
         const matching = matchProduct(input.productSummary);
         if (matching.length === 1) {

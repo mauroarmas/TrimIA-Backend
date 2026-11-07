@@ -191,6 +191,77 @@ const enabled = !!process.env.TEST_DATABASE_URL;
     });
     expect(row.commercialFlow).toBeTruthy();
   });
+  it.each([2, 1, 0])(
+    'interpreta «la que está disponible» con %s alternativas sin inventar un producto ni escalar',
+    async (availableCount) => {
+      const conversation = await prisma.conversation.create({
+        data: {
+          externalId:
+            '549' + String(Date.now()).slice(-10) + String(availableCount),
+          channel: 'WEB',
+        },
+      });
+      await financing.applyInput(conversation.id, randomUUID(), {
+        intent: 'REQUEST',
+        flowVersion: 2,
+        dni: '30000008',
+        productSummary: 'cortadora de fiambre',
+      });
+      const options = (await stock.listCatalog())
+        .filter((item) => item.name.includes('Cortadora') && item.stock > 0)
+        .slice(0, availableCount);
+      expect(options).toHaveLength(availableCount);
+      const escalate = jest.fn();
+      const handler = new FinancingConversationService(
+        prisma as any,
+        {
+          classifierChat: {
+            withStructuredOutput: () => ({
+              invoke: jest.fn().mockResolvedValue({
+                intent: 'PROVIDE_DATA',
+                productSummary: {
+                  value: 'la que está disponible',
+                  evidence: 'la que está disponible',
+                },
+              }),
+            }),
+          },
+        } as any,
+        financing,
+        { create: escalate } as any,
+        commercial,
+        { listCatalog: async () => options } as any,
+      );
+      const result = await handler.handle(
+        conversation.id,
+        randomUUID(),
+        'la que está disponible',
+        { userType: 'CLIENTE' } as any,
+      );
+      expect(result.handled).toBe(true);
+      expect(escalate).not.toHaveBeenCalled();
+      const saved = await financing.getDraft(conversation.id);
+      expect(saved.dni).toBe('30000008');
+      expect(saved.productSummary).not.toBe('la que está disponible');
+      if (availableCount === 1) {
+        expect(saved.sku).toBe(options[0].sku);
+        expect(saved.productSummary).toBe(options[0].name);
+      } else {
+        expect(saved.productSummary).toBe('cortadora de fiambre');
+        expect(saved.sku).toBeUndefined();
+        expect(result.response).toMatch(
+          availableCount > 1 ? /más de un modelo/ : /Qué modelo/,
+        );
+      }
+      expect(
+        (
+          await prisma.conversation.findUniqueOrThrow({
+            where: { id: conversation.id },
+          })
+        ).status,
+      ).toBe('ACTIVE');
+    },
+  );
   it('crea pedido completo sin confirmación inicial ni escalado, con 48 horas desde la creación', async () => {
     const { conversation, request, response } = await start();
     expect(response.response).toMatch(/Administración/);
