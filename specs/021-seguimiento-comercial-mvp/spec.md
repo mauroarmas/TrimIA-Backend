@@ -4,139 +4,146 @@
 
 **Created**: 2026-11-04
 
-**Status**: Draft — lista para planificación; no implementada.
+**Updated**: 2026-11-06
 
-**Input**: Segundo flujo aprobado por Mauro: retomar automáticamente una oportunidad que no concretó venta con una única regla de seguimiento, registrar su gestión en el CRM y detener el contacto al cerrar, ante intervención humana o cuando el cliente pide no recibir más mensajes. Transporte simulado para la demostración; Google Sheets como CRM. Sin campañas, audio web, unificación de hilos ni GCP.
+**Status**: Especificada para planificar. No implementada por esta revisión.
+
+**Input**: Retomar una consulta comercial que no concretó una venta mediante un solo seguimiento automático por oportunidad. Reutilizar el hilo de empresa y el registro comercial en Google Sheets. Mantener los límites acordados en la venta financiada de la spec 020. Los controles comunes de resultado del mensaje y no contacto se especifican en 022.
 
 ## Contexto y alcance
 
-Actualmente se registran prospectos, se agregan notas comerciales y el vendedor puede retomar la conversación. El reintento de sincronización del CRM no contacta al cliente. Esta spec añade el contacto programado y los controles mínimos para que no se duplique ni se envíe después de perder vigencia.
+Actualmente existen prospectos, notas de seguimiento y atención manual desde Ventas. Registrar una nota o reintentar la sincronización con Google Sheets no equivale a contactar automáticamente al cliente. Esta spec completa únicamente esa diferencia.
 
-Cubre RF03, los criterios de no contacto y estados de comunicación de RI-04 y parte del registro comercial de RI-03; objetivos OE-1/OE-2/OE-9/OE-11, entregables E2/E7. Reutiliza la [spec 019](../019-integraciones-crm-stock-credito/spec.md), los prospectos, el hilo de empresa y el registro comercial existentes. La validación integral de Google Sheets continúa en 019.
+El recorrido mínimo es: **consulta pendiente → transcurre el plazo sin interacción → se comprueba que corresponde contactar → un seguimiento simulado → resultado visible y registro comercial**. Si el cliente responde, continúa el flujo de atención existente; no se diseña otro agente ni otro circuito de cierre.
 
-La regla del MVP será **un único seguimiento automático por oportunidad**, con un plazo global inicial de 48 horas sin interacción comercial. El supervisor puede ajustar ese plazo y activar o suspender la regla. El valor inicial es una decisión de prueba, no una política relevada de Credimisión.
+Habrá una única regla global, inicialmente desactivada, con **48 horas de inactividad como valor inicial configurable de demostración** y un máximo de un seguimiento aceptado por oportunidad. No se atribuye ese plazo a una política comercial de Credimisión.
+
+**Ese plazo no es el vencimiento de financiación de la 020.** Allí las 48 horas empiezan al crear el pedido/evaluación preliminar y no se renuevan por conversar. Aquí el plazo se calcula desde la última interacción comercial real. Un seguimiento nunca renueva, aprueba ni extiende condiciones financieras.
+
+### Reparto con las otras specs
+
+| Spec | Responsabilidad |
+|---|---|
+| 019 | Configuración, acceso y sincronización del CRM en Google Sheets. |
+| 020 | Pedido, revisión administrativa, ofertas vigentes, aceptación y cierre con cuotas. |
+| 021 | Elegibilidad, plazo y límite de un seguimiento por oportunidad; registro comercial. |
+| 022 | No contacto, resultado del envío, reintentos acotados y evidencia de entrega simulada. |
+
+Cubre el seguimiento automático de **RF03**, el registro comercial de **RI-03** y su relación con **RI-04**. Se vincula con OE-1/OE-2/OE-9/OE-11 y E2/E7. No declara terminadas las integraciones productivas ni la aceptación global del proyecto.
 
 ## User Scenarios & Testing *(mandatory)*
 
-### User Story 1 — Recordar un interés comercial pendiente (Priority: P1)
+### User Story 1 — Retomar una consulta que quedó pendiente (Priority: P1)
 
-Como vendedor quiero que se retome una consulta pendiente después del plazo establecido, sin tener que enviar cada recordatorio a mano ni duplicar conversaciones.
+Como integrante de Ventas quiero que el sistema recuerde una consulta abandonada una sola vez, para no depender de recordar manualmente a cada interesado.
 
-**Why this priority**: Completa el seguimiento automático prometido por el proyecto con una sola regla demostrable.
+**Why this priority**: Completa el seguimiento automático prometido en el proyecto con una sola regla demostrable.
 
-**Independent Test**: Crear una oportunidad ficticia, habilitar la regla en un entorno de prueba y adelantar el tiempo de evaluación sin esperar 48 horas reales. Comprobar un solo contacto simulado en el mismo hilo y su registro comercial.
+**Independent Test**: Crear una oportunidad ficticia sin pedido en revisión, habilitar la regla y adelantar el tiempo de prueba. Ver un seguimiento simulado en su mismo hilo y su registro en la oportunidad.
 
 **Acceptance Scenarios**:
 
-1. **Given** una oportunidad identificada, abierta y sin venta, con teléfono e hilo de cliente externo válidos, **When** vence el plazo sin interacción comercial ni otros bloqueos, **Then** se intenta un único mensaje de seguimiento y el vendedor puede consultar su resultado.
-2. **Given** un seguimiento aún no enviado, **When** el cliente o una persona del equipo retoma la conversación antes del vencimiento, **Then** el seguimiento anterior pierde vigencia y el plazo se cuenta desde esa interacción real, sin crear otra programación para el mismo pedido.
-3. **Given** que ya se aceptó por el canal un seguimiento de esa oportunidad, **When** pasa otro plazo o el cliente responde, **Then** no se genera un segundo seguimiento automático de esa oportunidad.
-4. **Given** varias oportunidades abiertas del mismo teléfono, **When** se programa el seguimiento, **Then** solo se mantiene el correspondiente al pedido explícito más reciente; no se contacta dos veces por registros duplicados o anteriores.
-5. **Given** el CRM externo no disponible, **When** se registra la gestión, **Then** se conserva localmente y queda pendiente de sincronizar, sin repetir por ese motivo el mensaje al cliente.
+1. **Given** una oportunidad abierta con producto de interés, teléfono verificable e hilo de cliente externo, **When** se cumple el plazo sin interacción ni bloqueos, **Then** se solicita un único seguimiento y Ventas puede consultar su resultado.
+2. **Given** un seguimiento aún pendiente, **When** cliente o personal retoman la conversación, **Then** el plazo vuelve a contarse desde esa interacción y no se mantiene un envío con el vencimiento anterior.
+3. **Given** un seguimiento ya aceptado por el canal, **When** pasan más horas o llega una respuesta, **Then** no se programa un segundo seguimiento automático de esa oportunidad.
+4. **Given** varias oportunidades del mismo teléfono, **When** se elige a cuál dar seguimiento, **Then** solo se considera la compra explícita más reciente; los registros anteriores no provocan contactos paralelos.
+5. **Given** un envío fallido o incierto, **When** Ventas consulta el caso, **Then** ve el resultado definido por 022; un reintento conserva la misma gestión y no habilita otro seguimiento comercial.
 
 ---
 
-### User Story 2 — Detener contactos que ya no corresponden (Priority: P1)
+### User Story 2 — Respetar la revisión administrativa y el trabajo humano (Priority: P1)
 
-Como cliente quiero que se respete mi pedido de no recibir más mensajes. Como vendedor quiero que el automatismo se aparte cuando el caso ya se cerró o lo está atendiendo una persona.
+Como responsable quiero que el seguimiento no interrumpa una gestión interna ni prometa condiciones que ya vencieron.
 
-**Why this priority**: Es parte del mismo seguimiento; sin esos límites se contactaría de nuevo a clientes que compraron, rechazaron el contacto o esperan una decisión humana.
+**Why this priority**: El cliente que espera una decisión o un cierre no tiene una consulta abandonada que deba perseguirse automáticamente.
 
-**Independent Test**: Programar un caso ficticio y, antes del envío, cerrar la venta, marcar pérdida, tomar el hilo o registrar una solicitud de baja. Comprobar que no sale el contacto y que se puede consultar el motivo.
+**Independent Test**: Preparar oportunidades con revisión administrativa, condiciones vencidas, cierre listo, escalado y control manual. Adelantar el tiempo y comprobar que no se contactan mientras exista el bloqueo.
 
 **Acceptance Scenarios**:
 
-1. **Given** un seguimiento pendiente, **When** se cierra o cancela la oportunidad o se marca perdida, **Then** deja de ser elegible y un trabajo atrasado tampoco envía el mensaje.
-2. **Given** un hilo tomado por una persona, un escalado pendiente o una financiación pendiente de decisión, **When** vence el plazo, **Then** se suspende el seguimiento y no se invade esa atención. Al terminar el bloqueo, si la oportunidad sigue abierta, comienza un plazo nuevo sin recuperar envíos vencidos.
-3. **Given** un cliente con uno o varios registros comerciales, **When** pide explícitamente no recibir más mensajes, **Then** se registra la baja para su teléfono y se detienen sus contactos automáticos proactivos pendientes, incluidos los recordatorios de cuotas existentes; sus datos e historial no se borran.
-4. **Given** una baja registrada, **When** el cliente hace una consulta nueva, **Then** puede recibir la respuesta solicitada, pero eso no reactiva el seguimiento proactivo.
-5. **Given** una baja registrada, **When** el cliente solicita expresamente volver a recibir seguimiento y una persona autorizada confirma la reactivación con esa evidencia, **Then** se conserva el historial de ambas decisiones; no se recuperan recordatorios vencidos ni se reinicia el cupo ya consumido de una oportunidad.
+1. **Given** una revisión de Administración pendiente o condiciones vencidas que requieren renovación, **When** vence el plazo de seguimiento, **Then** se bloquea el contacto con su motivo; no se renueva el pedido ni se vuelve a ofrecer una aprobación anterior.
+2. **Given** un resumen aceptado y una ficha lista para el cierre humano de Ventas, **When** transcurre el plazo, **Then** no se pide al cliente que vuelva a elegir ni se lo contacta por una espera que corresponde al equipo.
+3. **Given** un escalado pendiente o una conversación bajo control humano, **When** se evalúa el seguimiento, **Then** queda suspendido. Al terminar el bloqueo comienza un plazo nuevo si aún corresponde contactar.
+4. **Given** una venta cerrada, pedido cancelado u oportunidad perdida, **When** se intenta un seguimiento atrasado, **Then** queda cancelado y no se envía.
+5. **Given** una baja de contacto registrada según 022, **When** se evalúa cualquier oportunidad del mismo teléfono, **Then** se bloquea aunque otra oportunidad o una fila de la hoja sigan abiertas.
+6. **Given** una oferta habilitada que todavía requiere elección del cliente, **When** un seguimiento resulte elegible dentro de su vigencia, **Then** utiliza un texto neutral que no fija precio ni garantiza stock. Si la oferta venció, requiere la gestión administrativa de 020.
 
 ---
 
-### User Story 3 — Saber qué ocurrió con el contacto (Priority: P2)
+### User Story 3 — Consultar la gestión desde Ventas y el CRM (Priority: P2)
 
-Como responsable quiero distinguir lo programado, bloqueado, enviado, entregado y fallido y consultar esa gestión junto al prospecto, sin interpretar una falla del CRM como una falla del mensaje.
+Como vendedor quiero ver si el seguimiento está programado, bloqueado o ya se intentó, y que esa gestión quede en el registro comercial existente.
 
-**Why this priority**: Permite demostrar y atender el seguimiento, y evita marcar como entregado algo que el canal solo aceptó.
+**Why this priority**: Permite atender excepciones sin crear otro panel ni confundir una caída de la hoja con una falla del mensaje.
 
-**Independent Test**: Simular aceptación, entrega, rechazo y resultado incierto, incluidos avisos repetidos o fuera de orden. Consultar el resultado desde el prospecto y comprobar que la gestión se actualiza en la misma fila comercial de prueba.
+**Independent Test**: Consultar desde Ventas una oportunidad seguida y otra bloqueada. Repetir la sincronización con una hoja de prueba caída y recuperada; comprobar que no se repite el contacto ni se crean filas por intento.
 
 **Acceptance Scenarios**:
 
-1. **Given** un mensaje aceptado por el canal, **When** aún no llegó confirmación de entrega, **Then** se muestra como aceptado, sin afirmar que el destinatario lo recibió.
-2. **Given** una confirmación posterior, repetida o fuera de orden, **When** corresponde al mismo mensaje, **Then** actualiza su historial sin crear otro envío ni borrar una entrega ya confirmada por un aviso anterior menos avanzado.
-3. **Given** un rechazo confirmado como transitorio antes de aceptar el mensaje, **When** se reintenta dentro del límite, **Then** se conserva la misma gestión. Si no se sabe si el canal aceptó, se marca incierta y requiere atención, sin reenvío automático ciego.
-4. **Given** la gestión registrada, **When** el vendedor consulta el prospecto, **Then** ve el último resultado, fecha, motivo de suspensión o cancelación y la próxima fecha si corresponde. El registro comercial no incluye datos crediticios ni notas internas.
+1. **Given** una oportunidad con seguimiento, **When** se abre en Ventas, **Then** se ve próxima fecha cuando corresponda, último resultado y motivo comprensible de suspensión o cancelación.
+2. **Given** una gestión nueva, **When** se registra en el CRM, **Then** se actualiza la oportunidad correspondiente con sus fechas y seguimiento, sin informes crediticios ni notas internas.
+3. **Given** Google Sheets inaccesible, **When** se intenta sincronizar, **Then** la gestión se conserva pendiente y puede sincronizarse después sin repetir el mensaje.
+4. **Given** la regla global desactivada, **When** se habilita para una demostración, **Then** solo aplica a oportunidades elegibles; no reproduce en lote todos los contactos vencidos durante la suspensión.
+5. **Given** una persona de Ventas sin supervisión general, **When** intenta cambiar o habilitar la regla global, **Then** no modifica la configuración; conserva el permiso de consultar sus gestiones.
 
 ### Edge Cases
 
-- Reinicio del servicio o evaluación concurrente: no programar ni aceptar dos seguimientos para la misma oportunidad.
-- Cierre, baja o toma de control entre selección y envío: comprobar vigencia nuevamente antes de contactar.
-- Mensaje “no quiero comprar ese producto”: no confundir rechazo de una oportunidad con baja general de comunicaciones.
-- Un seguimiento automático no se considera una nueva interacción para programarse a sí mismo.
-- Teléfono compartido por registros duplicados: la baja se aplica al contacto, no solo a una fila o una oportunidad.
-- Canal o plantilla requerida no habilitados: no enviar un texto alternativo para eludir el bloqueo; mostrar el motivo.
-- Una oportunidad sin teléfono o hilo verificable permanece visible con el motivo de no elegibilidad; no se inventa el contacto para poder programarla.
-- Un envío ya aceptado antes de hacerse efectiva la baja no puede retirarse. Se conserva ese antecedente y se bloquean los intentos posteriores; no se promete una cancelación retroactiva.
-- Confirmación sin correspondencia verificable con un mensaje conocido: no cambiar otra conversación ni crear una entrega ficticia.
-- Hoja externa inaccesible o con registros ambiguos: mantener la gestión local pendiente de reconciliar, sin sobrescribir otro contacto ni fabricar una sincronización correcta.
-- Cambiar el plazo global reprograma únicamente oportunidades elegibles aún no aceptadas por el canal. Si su vencimiento calculado ya pasó, se consideran en el próximo ciclo; las bajas y suspensiones siguen teniendo prioridad.
+- Reinicio o dos evaluaciones simultáneas: no crear gestiones ni contactos duplicados.
+- Cierre, baja, intervención o vencimiento de financiación entre la evaluación inicial y el envío: comprobar nuevamente antes de contactar.
+- Un mensaje automático no cuenta como interacción para programarse a sí mismo. Una nota privada o una sincronización tampoco reinician el plazo.
+- El seguimiento no crea oportunidades nuevas para recuperar el cupo de un contacto anterior.
+- Sin teléfono o hilo verificable: mostrar la causa y no inventar un destinatario.
+- Un rechazo de un producto no equivale a una baja general. Una financiación rechazada sin alternativa habilitada no se presenta como oferta disponible.
+- Con el plazo inicial de 48 horas, una oferta financiera puede haber vencido antes de un posible seguimiento: prevalece la revisión administrativa. No se reduce el plazo ni se amplía la vigencia silenciosamente para forzar el envío.
+- Cambiar el plazo o habilitar la regla comienza un plazo nuevo para pendientes elegibles sin contacto aceptado; no reinicia el cupo consumido ni recupera envíos atrasados.
 
 ## Requirements *(mandatory)*
 
 ### Functional Requirements
 
-- **FR-001**: El supervisor general DEBE poder activar/suspender una única regla global de seguimiento y ajustar su plazo positivo expresado en horas. El valor inicial de demostración es 48 horas; no se agregan campañas, segmentos ni reglas por vendedor.
-- **FR-002**: La regla DEBE estar inicialmente desactivada y su demostración utilizar transporte simulado, sin contactar clientes reales por la mera instalación o despliegue. Debe quedar visible qué comunicaciones son simuladas.
-- **FR-003**: DEBE elegirse una oportunidad abierta de cliente externo con producto de interés, teléfono verificado e hilo existente. Solo la oportunidad explícita más reciente de ese contacto es elegible para evitar seguimientos paralelos de registros anteriores.
-- **FR-004**: DEBE calcularse el plazo desde la última interacción comercial del cliente o del personal en el hilo, excluyendo los avisos automáticos. Una interacción anterior al envío reprograma el mismo seguimiento; un envío aceptado consume el único seguimiento automático de esa oportunidad.
-- **FR-005**: DEBE emplearse un mensaje comercial aprobado y limitado al interés conocido, sin inventar precio, stock, promoción ni condiciones financieras. Se usa el mismo hilo de empresa; no se abre un contacto por WhatsApp personal del vendedor.
-- **FR-006**: DEBEN cancelar el seguimiento el cierre, pérdida o cancelación de la oportunidad. Toma de control, escalado pendiente, revisión financiera pendiente y suspensión global bloquean el envío; al levantarse esos bloqueos comienza un plazo nuevo si todavía es elegible, sin recuperar contactos atrasados.
-- **FR-007**: DEBE procesarse una baja explícita del contacto, conservando fecha y origen. Para la aceptación se incluyen “BAJA”, “no me contacten más” y “no quiero recibir más mensajes”, sin depender de mayúsculas o tildes. Un rechazo comercial aislado no implica baja general.
-- **FR-008**: La baja DEBE impedir todos los contactos automáticos proactivos posteriores al mismo teléfono, incluidos recordatorios de cuotas y avisos pendientes que ya no estén autorizados. Debe comprobarse también justo antes del envío. No elimina historial ni impide responder una consulta nueva solicitada por el cliente.
-- **FR-009**: DEBE conservarse la baja hasta una solicitud explícita de reactivación del cliente confirmada por un supervisor general, con evidencia y fecha. Una nueva conversación o un cambio manual en la hoja no la revocan; reactivar no revive envíos vencidos ni el cupo ya consumido.
-- **FR-010**: DEBE existir un registro identificable de cada gestión y de sus intentos: programada, suspendida/cancelada con motivo, pendiente, aceptada, entregada, fallida o incierta según la evidencia disponible. No es obligatorio mostrar lectura del mensaje en el MVP.
-- **FR-011**: DEBEN distinguirse aceptación del canal, entrega confirmada y sincronización comercial. Una confirmación debe asociarse al mensaje correcto; repeticiones y eventos fuera de orden no crean contactos nuevos ni sustituyen una entrega confirmada por un estado previo.
-- **FR-012**: Los fallos transitorios que confirmen no aceptación PUEDEN tener hasta tres intentos técnicos totales del mismo seguimiento; antes de cada uno se comprueban nuevamente su vigencia y restricciones. Los resultados inciertos requieren atención humana y no se reenvían automáticamente.
-- **FR-013**: La gestión DEBE ser consultable desde los prospectos existentes, mostrando última acción, resultado, motivo de bloqueo y fecha próxima cuando corresponda. La regla global requiere solo sus controles mínimos; no se crea un panel de campañas.
-- **FR-014**: DEBEN actualizarse el seguimiento y las fechas de último/próximo contacto del registro comercial existente, con las 17 columnas acordadas, sin crear una fila por intento ni exportar DNI, scoring o notas internas. Una caída externa deja pendiente la sincronización, no repite el contacto ni modifica la preferencia de baja.
-- **FR-015**: Los controles de restricción de contacto y resultado de comunicación DEBEN poder aplicarse al aviso de decisión de financiación de la spec 020 sin crear una segunda preferencia de baja o un segundo historial de envío. La comunicación queda pendiente si ya no está autorizada.
+- **FR-001**: Supervisión general DEBE poder activar/suspender una única regla global y ajustar un plazo positivo en horas. La regla comienza desactivada y su valor inicial propuesto es 48 horas.
+- **FR-002**: La demostración DEBE usar contactos y transporte simulados, claramente identificables. Habilitar la regla no contacta por sí solo a personas reales.
+- **FR-003**: DEBE considerar una oportunidad abierta de cliente externo con interés conocido, teléfono e hilo verificables. Por teléfono solo es candidata la compra explícita más reciente.
+- **FR-004**: DEBE contar inactividad desde el último mensaje comercial del cliente o del personal en el hilo, excluyendo avisos automáticos, notas privadas y sincronizaciones. Una interacción anterior al envío reemplaza su vencimiento pendiente. Al habilitar la regla, cambiar su plazo o terminar un bloqueo temporal, el nuevo período comienza desde ese evento si es posterior a la última interacción; no se reescribe la fecha real del último mensaje.
+- **FR-005**: DEBE existir como máximo un seguimiento aceptado por oportunidad. Los reintentos de esa misma gestión se rigen por 022 y no crean un segundo seguimiento.
+- **FR-006**: DEBE cancelar por cierre, pérdida o cancelación y bloquear por baja de contacto, intervención humana, escalado, revisión administrativa, condiciones financieras vencidas o cierre pendiente del equipo. Al terminar un bloqueo temporal comienza un plazo nuevo si corresponde.
+- **FR-007**: DEBE comprobar elegibilidad y restricciones de nuevo inmediatamente antes de contactar. No recupera automáticamente contactos vencidos durante un bloqueo o suspensión global.
+- **FR-008**: DEBE usar un texto de seguimiento aprobado y limitado al interés conocido, sin inventar precio, promoción, disponibilidad ni condiciones. No renueva el pedido de 020 ni sustituye revisión o aceptación del cliente.
+- **FR-009**: DEBE conservar el hilo de empresa de origen. Si el cliente responde, continúa la atención existente; no abre el WhatsApp personal del vendedor ni fusiona canales.
+- **FR-010**: Ventas y supervisión general DEBEN consultar la programación, causa de bloqueo y resultado de cada oportunidad desde las pantallas actuales. Solo supervisión general modifica la regla global.
+- **FR-011**: DEBE actualizar seguimiento y fechas del registro comercial existente en las 17 columnas acordadas, sin crear una fila por intento ni exportar DNI, dictámenes, deudas o notas privadas. Un fallo de sincronización no repite el contacto.
+- **FR-012**: DEBE reutilizar los controles y estados comunes de 022, conservando una sola preferencia de contacto por teléfono y una gestión identificable por seguimiento. No duplicará esas reglas dentro del flujo comercial.
 
 ### Key Entities
 
-- **Oportunidad comercial**: Interés registrado con cliente, teléfono, producto, hilo y estado de venta.
-- **Regla de seguimiento**: Una habilitación global y un plazo para oportunidades elegibles.
-- **Gestión de seguimiento**: Un contacto automático previsto por oportunidad, con vencimiento, motivo de suspensión/cancelación e intentos relacionados.
-- **Preferencia de contacto**: Baja y eventual reactivación explícita para un teléfono, con origen, fechas y confirmación humana cuando corresponde.
-- **Registro de comunicación**: Mensaje identificable y evidencia de aceptación, entrega, fallo o incertidumbre; puede corresponder a seguimiento o aviso de decisión.
-- **Registro comercial**: Antecedente del contacto y su seguimiento compartido con el equipo, separado de datos internos y del detalle crediticio.
+- **Oportunidad comercial**: Consulta o interés con producto, contacto, hilo y estado de venta.
+- **Regla de seguimiento**: Una habilitación global y un plazo de inactividad.
+- **Gestión de seguimiento**: Único contacto previsto para una oportunidad; conserva fechas, bloqueos e intentos relacionados.
+- **Registro comercial**: Antecedente y seguimiento de la oportunidad, sincronizable con la hoja existente.
+- **Preferencia y resultado de comunicación**: Conceptos compartidos definidos por 022.
 
 ## Success Criteria *(mandatory)*
 
 ### Measurable Outcomes
 
-- **SC-001**: En la batería de aceptación, cada oportunidad elegible alcanza como máximo un seguimiento aceptado por el canal; repetir ciclos, reiniciar o procesar en paralelo no genera otro.
-- **SC-002**: En el entorno de prueba disponible, el seguimiento se intenta dentro de los cinco minutos posteriores a su vencimiento si no hay bloqueos; el plazo de 48 horas se valida con tiempo de prueba controlado.
-- **SC-003**: En todos los casos de cierre, baja o intervención humana efectivos antes de iniciar el intento de salida, salen cero contactos proactivos que contradigan ese estado, incluidos los previamente programados. Se comprueba la vigencia nuevamente antes de iniciar cada intento; no se promete retirar una salida ya aceptada.
-- **SC-004**: Cada aceptación, entrega, rechazo o incertidumbre simulados se distingue correctamente desde el prospecto; ningún caso sin confirmación se muestra como entregado.
-- **SC-005**: Con el servicio comercial disponible, la gestión y fechas de la oportunidad ensayada se reflejan en su hoja de prueba en menos de cinco minutos, sin nueva fila por intento. Con el servicio caído, queda pendiente localmente sin repetir el mensaje.
-- **SC-006**: La baja del contacto bloquea también un recordatorio de cuota y un aviso proactivo de financiación pendientes en los casos cruzados de aceptación, y una consulta entrante posterior no la revoca.
-- **SC-007**: La demostración completa genera cero envíos a teléfonos reales; una persona puede observar los casos de vencimiento, cancelación, baja, fallo y entrega mediante contactos ficticios.
+- **SC-001**: En todos los casos de repetición, reinicio y concurrencia de la aceptación hay como máximo un seguimiento aceptado por oportunidad.
+- **SC-002**: En el entorno de prueba, una oportunidad elegible alcanza su intento de seguimiento dentro de cinco minutos de cumplirse el plazo. La espera de 48 horas se prueba con tiempo controlado.
+- **SC-003**: En el 100 % de casos de revisión pendiente, vencimiento, cierre, baja, escalado e intervención efectivos antes de iniciar el envío no sale un seguimiento contrario a ese estado.
+- **SC-004**: Ventas identifica para cada caso probado próxima fecha o motivo de bloqueo y último resultado sin consultar registros técnicos.
+- **SC-005**: Con la hoja de prueba disponible, la gestión se refleja en su oportunidad dentro de cinco minutos; al recuperarse de una caída, no aparecen contactos ni filas duplicados por sus reintentos.
+- **SC-006**: La demostración completa produce cero mensajes a teléfonos reales y no expone reportes crediticios ni notas privadas en mensajes o registros comerciales.
 
 ## Assumptions
 
-- El plazo de 48 horas es un valor inicial ajustable para la demo, no una conclusión extraída de los documentos del negocio. No se requieren calendarios por zona, horarios por vendedor ni múltiples cadencias.
-- Una oportunidad nueva explícita puede tener su seguimiento; no se crean nuevas oportunidades únicamente para volver a contactar a quien no respondió.
-- La preferencia de no contacto se aplica al contacto de WhatsApp usado por la empresa. No se desarrolla gestión de suscripciones multicanal ni una plataforma de consentimiento.
-- En el MVP, la salida y las confirmaciones de entrega nuevas se simulan de forma controlada. No se sustituye el recorrido manual de WhatsApp que ya funciona ni se exige una aprobación real de plantillas para la demostración simulada. Si se habilita transporte real posteriormente, debe respetar la configuración y condiciones del canal, sin cambiar estos límites de negocio.
-- Google Sheets se mantiene como CRM real de prueba y la fuente local conserva el seguimiento mientras no se sincronice. No hay sincronización bidireccional ni programación derivada de ediciones manuales de la hoja. La configuración y verificación del conector pertenecen a la spec 019.
-- La restricción común se integra con los recordatorios existentes sin rediseñar cobranzas. Responder consultas entrantes y la atención manual existente se conservan; no se automatizan decisiones financieras.
-- La spec 020 es la primera prioridad de implementación; esta spec amplía después su comunicación, pero puede probar el seguimiento con prospectos ficticios independientes de una financiación.
-- Quedan fuera: campañas, varios mensajes comerciales por oportunidad, editor avanzado de plantillas, segmentación, negociación, scoring comercial, llamadas, nuevos canales, audio web, mezcla de historiales, proveedores reales de stock/crédito, GCP y Paperclip.
+- Se conserva la prioridad de la 020: mientras el cliente espera trabajo interno, el seguimiento no reemplaza esa tarea con un mensaje de venta.
+- Las 48 horas configurables de inactividad son un valor de prueba de esta spec, distinto de las 48 horas de vigencia del pedido ya acordadas con Mauro.
+- Se reutilizan las oportunidades y formularios existentes. No se exige otra bandeja, un panel de campañas ni una regla por vendedor.
+- La configuración y validación de Google Sheets continúa en 019. No hay sincronización bidireccional ni programación de mensajes por editar una celda.
+- La 022 es requisito para habilitar el envío automático de esta spec. Ambos recorridos pueden demostrarse con resultados simulados; no se requiere un proveedor productivo.
+- Quedan fuera: campañas, segmentos, múltiples contactos por oportunidad, negociación autónoma, cambios en aprobación/cierre, audio web, mezcla automática de historiales, nuevos canales, GCP y Paperclip.
 
 ## Referencias de continuidad
 
-- [Alcance MVP](../../docs/README.md), [matriz original](../../docs/TP2_PMI_MatrizdetrazabilidaddeRequisitos_TrimIA-requisitos.csv), [spec 019](../019-integraciones-crm-stock-credito/spec.md) y [spec 020](../020-venta-financiada-mvp/spec.md).
-- Evidencia actual: [seguimiento manual del prospecto](../../src/sales/sales.service.ts), [registro y sincronización comercial](../../src/ai/integrations/adapters/n8n-crm.adapter.ts), [columnas existentes](../../src/ai/integrations/crm-sheet.mapper.ts), [envío actual](../../src/messaging/whatsapp-sender.service.ts) y [recordatorios de cuotas](../../src/queue/processors/reminders.processor.ts).
-- La planificación debe enumerar el mínimo trabajo de panel para activar la regla y revisar sus resultados desde las pantallas actuales. No se declara implementado ni probado el automatismo por escribir esta spec.
+- [Alcance MVP](../../docs/README.md), [plan de trabajo](../../docs/plan_de_trabajo.md), RF03/RI-03/RI-04 de la [matriz original](../../docs/TP2_PMI_MatrizdetrazabilidaddeRequisitos_TrimIA-requisitos.csv).
+- [019 — Integraciones](../019-integraciones-crm-stock-credito/spec.md), [020 — Venta financiada](../020-venta-financiada-mvp/spec.md), [022 — Mensajería del MVP](../022-mensajeria-mvp/spec.md).
+- La planificación debe incluir los controles mínimos de la regla y su consulta desde Ventas, validación de límites, concurrencia y recuperación. Escribir esta spec no acredita implementación ni aceptación del producto.

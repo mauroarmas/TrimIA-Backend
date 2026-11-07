@@ -1,13 +1,16 @@
 # Specs — estado del producto
 
-## Próximo trabajo del MVP — 2026-11-04
+## Flujos del MVP — 2026-11-06
 
-| Orden | Spec | Estado y alcance |
+| Orden de referencia | Spec | Estado y alcance |
 |---|---|---|
-| 1 | [020 — Venta financiada completa](020-venta-financiada-mvp/spec.md) | Especificada y validada para planificar. Conversación → solicitud → dictamen simulado → revisión humana → aviso. |
-| 2 | [021 — Seguimiento comercial automático](021-seguimiento-comercial-mvp/spec.md) | Especificada y validada para planificar. Una regla, un seguimiento por oportunidad, bajas y resultado de comunicación. |
+| 1 | [020 — Venta financiada completa](020-venta-financiada-mvp/spec.md) | Implementada y desplegada. Recopilación → Administración → elección y aceptación → ficha de cierre y cuotas en Ventas. Rediseño del 2026-11-06 validado técnicamente; pendiente prueba del usuario. |
+| 2 | [021 — Seguimiento comercial automático](021-seguimiento-comercial-mvp/spec.md) | Especificada para planificar; sin implementar. Una regla y un seguimiento por oportunidad, con bloqueos del circuito comercial y registro en CRM. |
+| 3 | [022 — Mensajería del MVP](022-mensajeria-mvp/spec.md) | Especificada para planificar; sin implementar. No contacto, estado de salida y entrega simulada, reintentos y vigencia. Separa los controles comunes antes incluidos en 021. |
 
-Google Sheets se configura y valida dentro de la [019](019-integraciones-crm-stock-credito/spec.md). Audio web, mezcla de hilos y proveedores reales no se incorporan a estas dos specs. Las specs 014–019 están en el repositorio y su implementación de convergencia fue desplegada; ver [registro](../docs/CONVERGENCIA_014_019.md). La tabla histórica que sigue no representa por sí sola el estado actual del despliegue.
+Para habilitar los envíos automáticos de 021 se necesitan los controles de 022. La 022 puede validarse con avisos de 020 y casos ficticios, sin esperar al programador de seguimientos. Google Sheets se configura y valida dentro de [019](019-integraciones-crm-stock-credito/spec.md). Audio web, mezcla automática de hilos y proveedores reales no entran en estas specs. La demo y el foco de trabajo de 020 se conservan durante esta redacción.
+
+Las specs 014–019 y su convergencia ya fueron desplegadas; ver [registro](../docs/CONVERGENCIA_014_019.md). La tabla histórica siguiente no representa por sí sola el estado actual del despliegue.
 
 
 Una carpeta por feature, con el flujo de GitHub Spec Kit

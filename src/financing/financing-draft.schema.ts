@@ -15,11 +15,14 @@ export const fieldsSchema = z
       .optional(),
     productSummary: z.string().trim().min(1).max(500).optional(),
     sku: z.string().min(1).max(120).optional(),
+    business: z.string().trim().min(1).max(160).optional(),
+    locality: z.string().trim().min(1).max(120).optional(),
   })
   .strict();
 export const financingDraftSchema = fieldsSchema
   .extend({
     schemaVersion: z.literal(1),
+    flowVersion: z.literal(2).optional(),
     caseKey: z.string().uuid().optional(),
     stage: z.enum([
       'COLLECTING',

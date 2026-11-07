@@ -35,6 +35,7 @@ describe('Cierre comercial: destino válido y auditoría local', () => {
         }),
       },
       purchaseRequest: {
+        findFirst: jest.fn(async () => null),
         findUnique: jest.fn(async () => request),
         updateMany: jest.fn(async ({ data }) => {
           Object.assign(request, data);

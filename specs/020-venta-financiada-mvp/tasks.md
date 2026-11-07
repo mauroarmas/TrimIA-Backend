@@ -235,3 +235,16 @@ Evidencia: 106 pruebas de ruteo/cierre/escalados y 16 de integración PostgreSQL
 - [x] T074 Validar fechas/importes/permisos, concurrencia, reintentos y alta solo tras aprobación/cierre; verificar el recorrido real de Diego y la visibilidad en Cobranzas.
 
 Evidencia: las suites financieras/comerciales y alcance de lectura completaron 130 casos aprobados, incluidas pruebas con PostgreSQL/Redis aislados; el caso de ingreso BullMQ se repitió tras iniciar Redis de pruebas en 6394 (no se modificó Redis de la demo). En la interfaz pública con Diego se abrió en modo lectura la solicitud real aprobada/cerrada del usuario. Solo sobre la solicitud ficticia de QA `5b7bec2b-0001-41e4-9dbf-88838cf143b3` se registró un plan de 12 cuotas semanales, total ARS 2000000, primer vencimiento 2026-11-13 y Roberto Sosa como cobrador. Plan `0fef4beb-446c-4b2d-996c-b9cebcc84e5e`: suma exacta, visible en la cartera y reintento sin duplicar. No se creó el plan del usuario con condiciones supuestas. Captura /tmp/trimia-installments-ui.png.
+
+## Rediseño comercial acordado el 2026-11-06
+
+- [x] T075 Reconciliar decisiones de entrevista y criterios de aceptación del recorrido nuevo.
+- [x] T076 Persistir estado comercial opcional y catálogo mock de ofertas/entrega, preservando registros anteriores.
+- [x] T077 Conservar selección de producto y recopilar comercio/localidad; crear pedido completo sin escalado normal.
+- [x] T078 Habilitar revisión por personal administrativo/general, con ofertas permitidas, cobrador y primer vencimiento.
+- [x] T079 Continuar chat con elección de oferta, entrega y aceptación explícita del resumen vigente.
+- [x] T080 Aplicar vigencia de 48 horas, renovación explícita y revalidación de condiciones.
+- [x] T081 Crear cierre y cuotas atómicos e idempotentes para Ventas/general; impedir atajos por endpoints anteriores.
+- [x] T082 Incorporar revisión administrativa y ficha unificada de cierre con chat/intervención y edición controlada.
+- [x] T083 Verificar recorrido financiado, contado tras rechazo, permisos, modificaciones, caducidad y concurrencia en base aislada.
+- [x] T084 Construir y actualizar demo conservando URL; comprobar recorrido WEB ficticio e historial anterior.

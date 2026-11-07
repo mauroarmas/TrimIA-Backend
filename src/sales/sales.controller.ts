@@ -16,6 +16,7 @@ import {
   Query,
   Req,
   UseGuards,
+  Optional,
 } from '@nestjs/common';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
@@ -27,6 +28,13 @@ import { CreditCheckDto } from './dto/credit-check.dto';
 import { StockQueryDto } from './dto/stock-query.dto';
 import { CloseSaleDto } from './dto/close-sale.dto';
 import { ReviewFinancingDto } from './dto/review-financing.dto';
+import { CommercialFlowService } from '../financing/commercial-flow.service';
+import {
+  CloseCommercialDto,
+  CommercialVersionDto,
+  EditCommercialDto,
+  ReviewCommercialDto,
+} from '../financing/dto/commercial.dto';
 
 const SALES_SECTOR = 'Ventas';
 
@@ -64,7 +72,66 @@ export class SalesController {
   constructor(
     private readonly onboarding: ClientOnboardingService,
     private readonly salesService: SalesService,
+    @Optional() private readonly commercial?: CommercialFlowService,
   ) {}
+
+  @Get('commercial/orders')
+  commercialOrders(@Req() req: any) {
+    assertCanAccessSales(req.user);
+    return this.commercial!.list();
+  }
+  @Get('commercial/orders/:id')
+  commercialOrder(@Param('id', ParseUUIDPipe) id: string, @Req() req: any) {
+    if (req.user.sectorName !== SALES_SECTOR)
+      assertCanAccessFinancing(req.user);
+    return this.commercial!.commercial(id);
+  }
+  @Get('commercial/orders/:id/offers')
+  commercialOffers(@Param('id', ParseUUIDPipe) id: string, @Req() req: any) {
+    assertCanAccessFinancing(req.user);
+    return this.commercial!.catalog(id);
+  }
+  @Post('commercial/orders/:id/review')
+  @HttpCode(200)
+  commercialReview(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: ReviewCommercialDto,
+    @Req() req: any,
+  ) {
+    assertCanAccessFinancing(req.user);
+    return this.commercial!.review(id, dto, req.user.id);
+  }
+  @Post('commercial/orders/:id/renew')
+  @HttpCode(200)
+  commercialRenew(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CommercialVersionDto,
+    @Req() req: any,
+  ) {
+    assertCanAccessFinancing(req.user);
+    return this.commercial!.renew(id, dto.expectedVersion, req.user.id);
+  }
+  @Post('commercial/orders/:id/edit')
+  @HttpCode(200)
+  commercialEdit(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: EditCommercialDto,
+    @Req() req: any,
+  ) {
+    if (req.user.sectorName !== SALES_SECTOR)
+      assertCanAccessFinancing(req.user);
+    return this.commercial!.edit(id, dto, req.user.id);
+  }
+  @Post('commercial/orders/:id/close')
+  @HttpCode(200)
+  commercialClose(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: CloseCommercialDto,
+    @Req() req: any,
+  ) {
+    assertCanAccessSales(req.user);
+    return this.commercial!.close(id, dto, req.user.id);
+  }
 
   @Get('financing/requests')
   listFinancing(@Req() req: any) {

@@ -1,3 +1,4 @@
+import { CommercialFlowService } from './commercial-flow.service';
 import { EscalationsModule } from '../escalations/escalations.module';
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '../database/prisma.module';
@@ -11,6 +12,7 @@ import { SimulatedFinancingNoticeAdapter } from './simulated-financing-notice.ad
 @Module({
   imports: [PrismaModule, IntegrationsModule, EscalationsModule],
   providers: [
+    CommercialFlowService,
     FinancingService,
     FinancingConversationService,
     FinancingEvaluationService,
@@ -21,6 +23,7 @@ import { SimulatedFinancingNoticeAdapter } from './simulated-financing-notice.ad
     },
   ],
   exports: [
+    CommercialFlowService,
     FinancingService,
     FinancingConversationService,
     FinancingEvaluationService,

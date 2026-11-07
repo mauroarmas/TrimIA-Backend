@@ -1,6 +1,6 @@
 # Documentación vigente de TrimIA
 
-Actualizado el 2026-11-05. Este índice distingue las fuentes del proyecto, la operación actual y el material histórico archivado.
+Actualizado el 2026-11-06. Este índice distingue las fuentes del proyecto, la operación actual y el material histórico archivado.
 
 ## Alcance acordado para el MVP
 
@@ -12,10 +12,13 @@ Actualizado el 2026-11-05. Este índice distingue las fuentes del proyecto, la o
 
 ## Estado de los flujos del MVP
 
-1. [020 — Venta financiada completa](../specs/020-venta-financiada-mvp/spec.md): solicitud desde la conversación, evaluación simulada, revisión humana y aviso al cliente.
-2. [021 — Seguimiento comercial automático](../specs/021-seguimiento-comercial-mvp/spec.md): una regla de seguimiento, bajas y estado de la comunicación.
+1. [020 — Venta financiada completa](../specs/020-venta-financiada-mvp/spec.md): datos desde el chat → Administración habilita ofertas → el cliente elige y confirma → Ventas registra cierre y cuotas desde una ficha con chat. Vigencia de 48 horas desde la creación del pedido/evaluación preliminar.
+2. [021 — Seguimiento comercial automático](../specs/021-seguimiento-comercial-mvp/spec.md): una regla y un seguimiento por oportunidad, respetando revisión administrativa, cierre y vigencia. Plazo inicial configurable de 48 horas de inactividad, independiente del vencimiento de financiación.
+3. [022 — Mensajería del MVP](../specs/022-mensajeria-mvp/spec.md): controles comunes de no contacto y resultado de los envíos, con entregas simuladas verificables y reintentos acotados.
 
-La 020 está implementada, integrada en los proyectos principales y desplegada en la demo Tailscale desde el 2026-11-05, con avisos simulados. Su [guía de validación](../specs/020-venta-financiada-mvp/quickstart.md) contiene comandos y evidencia. La 021 continúa especificada y pendiente de implementación. La configuración de Google Sheets permanece en la 019; no se abre una tercera spec de audio o historial.
+La 020 está implementada y desplegada en la demo Tailscale, incluido el rediseño acordado el 2026-11-06. Su spec registra evidencia técnica; sigue pendiente la prueba del usuario. Las 021 y 022 están redactadas con sus listas de calidad revisadas, sin implementar por esta redacción. Para habilitar el seguimiento de 021 deben estar disponibles los controles de 022; esta última puede probarse con los avisos existentes de 020.
+
+La configuración de Google Sheets permanece en 019. La 022 separa controles antes agrupados dentro de 021; no incorpora audio web ni mezcla automática de historiales. Las salidas simuladas no acreditan entrega real ni aprobación de plantillas de WhatsApp. El MVP y la aceptación final del proyecto no se declaran completos por redactar estas specs.
 
 ## Para trabajar y operar
 

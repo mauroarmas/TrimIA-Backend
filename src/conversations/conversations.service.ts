@@ -495,12 +495,21 @@ export class ConversationsService {
     // a mano sobre un caso escalado— era la única que NO llegaba al chat abierto
     // de la otra persona: la pestaña se quedaba muda para siempre (spec 004,
     // US2). Ahora emite como cualquier otro mensaje.
-    return this.addMessage(
+    const created = await this.addMessage(
       conversationId,
       'ASSISTANT',
       message,
       conversation.currentAgent ?? undefined,
     );
+
+    await this.orchestrationLogger.logEvent({
+      conversationId,
+      eventType: 'conversation_manual_reply',
+      agentType: conversation.currentAgent ?? undefined,
+      payload: { employeeId, messageId: created.id },
+    });
+
+    return created;
   }
 
   /**

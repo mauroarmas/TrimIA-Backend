@@ -8,6 +8,7 @@ import {
   FinancingNoticeResult,
 } from './financing-notice.port';
 import { financingConflict } from './financing.types';
+import { asCommercialFlow } from './commercial-flow';
 export const FINANCING_CLAIM_TTL_MS = 60000;
 export const FINANCING_RECOVERY_MS = 30000;
 @Injectable()
@@ -25,6 +26,20 @@ export class FinancingNoticeService {
         include: { conversation: true, purchaseRequest: true },
       });
       if (!notice || notice.status !== 'PENDING') return null;
+      const flow = asCommercialFlow(notice.purchaseRequest.commercialFlow);
+      if (
+        flow &&
+        notice.purpose === 'FINANCING_DECISION' &&
+        (flow.stage === 'REVIEW' ||
+          flow.stage === 'CLOSED' ||
+          Date.now() >= Date.parse(flow.expiresAt))
+      ) {
+        await tx.outboundCommunication.updateMany({
+          where: { id, status: 'PENDING' },
+          data: { status: 'FAILED', lastErrorCode: 'CONDITIONS_CHANGED' },
+        });
+        return null;
+      }
       if (
         this.config.get('FINANCING_NOTICE_TRANSPORT', 'disabled') !==
           'simulated' ||

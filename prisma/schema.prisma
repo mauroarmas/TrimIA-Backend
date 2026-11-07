@@ -303,6 +303,7 @@ model PurchaseRequest {
   version                Int                       @default(1)
   inputSnapshot          Json?
   reviewedSnapshot       Json?
+  commercialFlow         Json?
   activeKey              String?                   @unique
   evaluationState        FinancingEvaluationState?
   cancelledAt            DateTime?

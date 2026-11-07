@@ -28,7 +28,7 @@ import {
 } from '../ai/integrations/ports/crm.port';
 import { ConversationsService } from '../conversations/conversations.service';
 import { salesHandoffSchema } from '../ai/agents/sales/sales-handoff.schema';
-import { PurchaseRequestStatus } from '@prisma/client';
+import { Prisma, PurchaseRequestStatus } from '@prisma/client';
 import { ReviewFinancingDto } from './dto/review-financing.dto';
 
 @Injectable()
@@ -205,6 +205,16 @@ export class SalesService {
             );
         }
       }
+      if (
+        request?.commercialFlow ||
+        (prospectId &&
+          (await tx.purchaseRequest.findFirst({
+            where: { prospectId, commercialFlow: { not: Prisma.DbNull } },
+          })))
+      )
+        throw new ConflictException(
+          'Este pedido requiere el cierre unificado con la aceptación del cliente y sus cuotas.',
+        );
       const existing = prospect?.closedAt
         ? { closedAt: prospect.closedAt, closedById: prospect.sellerId }
         : request?.closedAt

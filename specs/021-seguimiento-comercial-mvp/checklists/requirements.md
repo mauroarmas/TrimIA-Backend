@@ -1,34 +1,39 @@
 # Specification Quality Checklist: 021 — Seguimiento comercial automático para el MVP
 
-**Purpose**: Validar la regla mínima de seguimiento y sus límites antes de planificar.
+**Purpose**: Validar la única regla de seguimiento, sus bloqueos y su registro comercial antes de planificar.
 **Created**: 2026-11-04
+**Updated**: 2026-11-06
 **Feature**: [spec.md](../spec.md)
 
 ## Content Quality
 
-- [X] No prescribe lenguajes, frameworks, endpoints ni cambios de esquema.
-- [X] Se enfoca en el contacto comercial y el control del responsable.
-- [X] Las historias y requisitos usan lenguaje de negocio.
-- [X] Todas las secciones obligatorias están completas.
+- [x] No prescribe lenguajes, frameworks, endpoints ni cambios de esquema.
+- [x] Se enfoca en el valor para cliente y personal responsable.
+- [x] Utiliza lenguaje de negocio comprensible.
+- [x] Completa las secciones obligatorias de escenarios, requisitos y resultados.
 
 ## Requirement Completeness
 
-- [X] No quedan marcadores de aclaración pendientes.
-- [X] Los requisitos son comprobables y tienen límites explícitos.
-- [X] Los resultados de éxito son medibles.
-- [X] Los resultados de éxito no dependen de una tecnología.
-- [X] Se definen escenarios de aceptación para los recorridos principales.
-- [X] Se contemplan bajas, cierres concurrentes, fallos, duplicados y eventos fuera de orden.
-- [X] El alcance se limita a una regla y un seguimiento por oportunidad.
-- [X] Dependencias y supuestos están identificados.
+- [x] No quedan marcadores de aclaración ni texto de plantilla.
+- [x] Los requisitos son comprobables y tienen límites explícitos.
+- [x] Los resultados de éxito son medibles.
+- [x] Los resultados de éxito describen comportamientos observables y no una arquitectura.
+- [x] Los recorridos principales tienen escenarios de aceptación.
+- [x] Se contemplan concurrencia, fallos, bloqueos y eventos atrasados.
+- [x] El alcance y las exclusiones están delimitados.
+- [x] Los supuestos y las dependencias están identificados.
 
 ## Feature Readiness
 
-- [X] Cada requisito funcional se puede verificar con historias y casos límite.
-- [X] Los escenarios cubren programación, suspensión, cancelación, baja y resultado.
-- [X] Los objetivos se corresponden con los resultados medibles.
-- [X] Las referencias al código describen evidencia existente y no prescriben implementación.
+- [x] Cada requisito se puede verificar mediante escenarios y casos límite.
+- [x] Las historias cubren el recorrido normal y sus excepciones principales.
+- [x] Los resultados medibles corresponden a las necesidades descritas.
+- [x] La spec define qué debe ocurrir sin prescribir su implementación.
 
 ## Notes
 
-Revisión de especificación completada; no acredita un automatismo implementado ni una entrega real. Las 48 horas son un supuesto de demo ajustable, no una regla financiera o comercial atribuida al negocio. El límite de tres intentos solo aplica a fallos que confirman no aceptación; los resultados inciertos no habilitan reenvíos automáticos. La baja no puede retirar un mensaje ya aceptado. El CRM continúa en la spec 019 y la financiación en 020. La futura planificación debe incluir los controles mínimos del panel y las pruebas con confirmaciones simuladas y una hoja de prueba.
+Cobertura revisada: US1 verifica FR-003/004/005/009; US2 verifica FR-006/007/008/012; US3 verifica FR-001/002/010/011. Los casos límite cubren concurrencia, reprogramación y el conflicto entre inactividad y vigencia de financiación.
+
+La revisión conserva el límite de un seguimiento y traslada los controles comunes a 022, sin duplicarlos. Las 48 horas de inactividad son un valor inicial de demo configurable; no modifican la vigencia del pedido de 020. La sincronización de la hoja sigue en 019. Los criterios SC-001 a SC-006 son objetivos de aceptación, no resultados ya medidos.
+
+Lista para planificación con dependencia explícita de los controles comunes de 022 antes de habilitar salidas. No se implementó ni desplegó esta spec.

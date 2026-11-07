@@ -1,3 +1,5 @@
+import { CommercialFlowService } from './commercial-flow.service';
+import { OFFER_VALIDITY_MS } from './commercial-flow';
 import { CreateFinancingPlanDto } from './dto/create-financing-plan.dto';
 import { weeklyPlan } from './weekly-plan';
 import { randomUUID } from 'crypto';
@@ -7,6 +9,7 @@ import {
   Inject,
   Injectable,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { Prisma, PurchaseRequest } from '@prisma/client';
@@ -21,6 +24,9 @@ import {
 import { financingConflict } from './financing.types';
 import { financingNoticeBody } from './financing-notice.template';
 export interface FinancingInput {
+  flowVersion?: 2;
+  business?: string;
+  locality?: string;
   intent:
     | 'INFORMATION'
     | 'REQUEST'
@@ -58,6 +64,7 @@ export const financingSelection = {
   conversationId: true,
   prospectId: true,
   evaluationState: true,
+  commercialFlow: true,
   inputSnapshot: true,
   reviewedSnapshot: true,
   client: {
@@ -103,6 +110,7 @@ export class FinancingService {
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
     @Inject(STOCK_PORT) private readonly stock: StockPort,
+    @Optional() private readonly commercial?: CommercialFlowService,
   ) {}
   private userInput<T>(
     schema: { parse(value: unknown): T },
@@ -141,9 +149,13 @@ export class FinancingService {
     );
   }
   private missing(d: FinancingDraft) {
-    return ['name', 'dni', 'productSummary', 'confirmedAmount'].filter(
-      (k) => !d[k as keyof FinancingDraft],
-    );
+    return [
+      'name',
+      'dni',
+      'productSummary',
+      'confirmedAmount',
+      ...(d.flowVersion === 2 ? ['business', 'locality'] : []),
+    ].filter((k) => !d[k as keyof FinancingDraft]);
   }
   private summary(d: FinancingDraft) {
     return `Solicitud: ${d.name}, DNI ${d.dni}; ${d.productSummary}, ARS ${d.confirmedAmount}. ¿Confirmás estos datos y que querés solicitar financiación? Un supervisor decidirá.`;
@@ -180,13 +192,24 @@ export class FinancingService {
             amount: true,
             prospectId: true,
             closedAt: true,
+            commercialFlow: true,
             financing: { select: { id: true, quotaCount: true, status: true } },
           },
         })
       : null;
     return {
       ...visible,
-      request,
+      request: request
+        ? {
+            ...request,
+            commercialFlow: request.commercialFlow
+              ? {
+                  stage: (request.commercialFlow as any).stage,
+                  expiresAt: (request.commercialFlow as any).expiresAt,
+                }
+              : null,
+          }
+        : null,
       conversationId: id,
       version: c.financingVersion,
       missingFields: missing,
@@ -198,7 +221,14 @@ export class FinancingService {
       .parse(
         Object.fromEntries(
           Object.entries(dto).filter(([k]) =>
-            ['name', 'dni', 'productSummary', 'sku'].includes(k),
+            [
+              'name',
+              'dni',
+              'productSummary',
+              'sku',
+              'business',
+              'locality',
+            ].includes(k),
           ),
         ),
       );
@@ -211,6 +241,15 @@ export class FinancingService {
       if (c.financingVersion !== dto.expectedVersion)
         throw financingConflict('STALE_VERSION');
       const d = this.parsed(c.financingDraft);
+      if (d.purchaseRequestId) {
+        const linked = await tx.purchaseRequest.findUnique({
+          where: { id: d.purchaseRequestId },
+        });
+        if (linked?.commercialFlow)
+          throw new ConflictException(
+            'Modificá el pedido desde su ficha comercial; requiere nueva revisión y aceptación.',
+          );
+      }
       if (d.stage === 'CANCELLED') throw financingConflict('ALREADY_RESOLVED');
       const next = {
         ...d,
@@ -281,6 +320,7 @@ export class FinancingService {
           replayed: true,
         };
       let d = this.parsed(c.financingDraft);
+      if (input.flowVersion === 2 && !d.purchaseRequestId) d.flowVersion = 2;
       let active = d.purchaseRequestId
         ? await tx.purchaseRequest.findUnique({
             where: { id: d.purchaseRequestId },
@@ -289,10 +329,13 @@ export class FinancingService {
       if (active && active.status !== 'PENDING_REVIEW') {
         if (input.intent !== 'REQUEST') return { handled: false };
         d = this.parsed(null);
+        if (input.flowVersion === 2) d.flowVersion = 2;
         active = null;
       }
-      if (d.stage === 'CANCELLED' && input.intent === 'REQUEST')
+      if (d.stage === 'CANCELLED' && input.intent === 'REQUEST') {
         d = this.parsed(null);
+        if (input.flowVersion === 2) d.flowVersion = 2;
+      }
       if (
         active?.status === 'PENDING_REVIEW' &&
         d.requestVersion !== active.version &&
@@ -363,7 +406,14 @@ export class FinancingService {
       const changes = fieldsSchema.parse(
         Object.fromEntries(
           Object.entries(input).filter(([k]) =>
-            ['name', 'dni', 'productSummary', 'sku'].includes(k),
+            [
+              'name',
+              'dni',
+              'productSummary',
+              'sku',
+              'business',
+              'locality',
+            ].includes(k),
           ),
         ),
       );
@@ -398,12 +448,13 @@ export class FinancingService {
       }
       const version = c.financingVersion + 1;
       if (
-        input.intent === 'CONFIRM' &&
-        !changed &&
-        !priceChanged &&
-        d.stage === 'AWAITING_CONFIRMATION' &&
-        d.summaryVersion === c.financingVersion &&
-        this.missing(d).length === 0
+        this.missing(d).length === 0 &&
+        ((d.flowVersion === 2 && !active) ||
+          (input.intent === 'CONFIRM' &&
+            !changed &&
+            !priceChanged &&
+            d.stage === 'AWAITING_CONFIRMATION' &&
+            d.summaryVersion === c.financingVersion))
       ) {
         const existing = await tx.client.findUnique({
           where: { phone: c.externalId },
@@ -433,6 +484,8 @@ export class FinancingService {
           };
         }
         const snapshot = {
+          business: d.business,
+          locality: d.locality,
           name: d.name!,
           dni: d.dni!,
           productSummary: d.productSummary!,
@@ -460,12 +513,21 @@ export class FinancingService {
             data: {
               name: d.name!,
               dni: d.dni,
+              comercio: d.business,
+              localidad: d.locality,
+              originChannel: c.channel,
               phone: c.externalId,
               productInterest: d.productSummary!,
               estimatedAmount: d.confirmedAmount!,
               modality: 'FINANCED',
               conversationId: c.id,
               syncStatus: 'PENDING',
+              crmData: this.json({
+                sheet: {
+                  Comercio: d.business || '',
+                  Localidad: d.locality || '',
+                },
+              }),
             },
           });
           const req = await tx.purchaseRequest.create({
@@ -480,6 +542,20 @@ export class FinancingService {
               evaluationState: 'PENDING',
               activeKey: `financing:${prospect.id}`,
               inputSnapshot: this.json(snapshot),
+              ...(d.flowVersion === 2
+                ? {
+                    commercialFlow: this.json({
+                      version: 2,
+                      stage: 'REVIEW',
+                      revision: 0,
+                      offers: [],
+                      startedAt: new Date().toISOString(),
+                      expiresAt: new Date(
+                        Date.now() + OFFER_VALIDITY_MS,
+                      ).toISOString(),
+                    }),
+                  }
+                : {}),
             },
           });
           requestId = req.id;
@@ -511,7 +587,9 @@ export class FinancingService {
         return {
           handled: true,
           response:
-            'Recibimos tu solicitud. Quedó pendiente de la revisión de un supervisor; todavía no es una aprobación.',
+            d.flowVersion === 2
+              ? 'Recibimos tus datos y creamos el pedido de financiación. Administración revisará tu solicitud y habilitará las opciones disponibles. La vigencia del pedido es de 48 horas desde ahora; todavía no está aprobado.'
+              : 'Recibimos tu solicitud. Quedó pendiente de la revisión de un supervisor; todavía no es una aprobación.',
         };
       }
       if (changed || priceChanged) delete d.summaryVersion;
@@ -520,6 +598,8 @@ export class FinancingService {
       if (missing.length) {
         d.stage = 'COLLECTING';
         const labels: Record<string, string> = {
+          business: 'el nombre de tu comercio',
+          locality: 'tu localidad',
           name: 'tu nombre',
           dni: 'tu DNI',
           productSummary: 'el producto',
@@ -613,6 +693,10 @@ export class FinancingService {
       throw new BadRequestException('Confirmación y nota obligatorias');
     await this.prisma.$transaction(async (tx) => {
       const req = await this.pending(tx, id, dto.expectedVersion);
+      if (req.commercialFlow)
+        throw new ConflictException(
+          'Modificá este pedido desde su ficha comercial para conservar entrega, ofertas y aceptación.',
+        );
       const c = req.conversationId
         ? await tx.conversation.findUnique({
             where: { id: req.conversationId },
@@ -675,6 +759,10 @@ export class FinancingService {
   ) {
     await this.prisma.$transaction(async (tx) => {
       const req = await this.pending(tx, id, dto.expectedVersion);
+      if (req.commercialFlow)
+        throw new ConflictException(
+          'Revisá las ofertas desde la ficha comercial del pedido.',
+        );
       if (!req.inputSnapshot)
         throw financingConflict('LEGACY_CONFIRMATION_REQUIRED');
       if (req.evaluationState !== 'READY')
@@ -782,6 +870,10 @@ export class FinancingService {
       await tx.$queryRaw`SELECT id FROM "PurchaseRequest" WHERE id = ${id} FOR UPDATE`;
       const req = await tx.purchaseRequest.findUnique({ where: { id } });
       if (!req) throw new NotFoundException('Solicitud no encontrada');
+      if (req.commercialFlow)
+        throw new ConflictException(
+          'Las cuotas de este pedido se registran junto con el cierre desde Ventas.',
+        );
       if (
         req.modality !== 'FINANCED' ||
         req.status !== 'APPROVED' ||
@@ -880,6 +972,8 @@ export class FinancingService {
     return this.project(row);
   }
   async detail(id: string) {
+    const raw = await this.prisma.purchaseRequest.findUnique({ where: { id } });
+    if (raw?.commercialFlow) await this.commercial?.revalidate(id);
     const request = await this.get(id);
     const assessments = await this.prisma.creditAssessment.findMany({
       where: { purchaseRequestId: id },

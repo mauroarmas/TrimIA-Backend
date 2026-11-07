@@ -74,7 +74,7 @@ export class SupervisorController {
 
   /**
    * GET /supervisor/conversations
-   * Query params: status, channel, userType, agentType, page, limit
+   * Query params: status, channel, userType, agentType, search, page, limit
    */
   @Get('conversations')
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -84,6 +84,7 @@ export class SupervisorController {
   @ApiQuery({ name: 'channel', enum: Channel, required: false })
   @ApiQuery({ name: 'userType', enum: UserType, required: false })
   @ApiQuery({ name: 'agentType', enum: AgentType, required: false })
+  @ApiQuery({ name: 'search', type: String, required: false })
   @ApiQuery({ name: 'page', type: Number, required: false })
   @ApiQuery({ name: 'limit', type: Number, required: false })
   getConversations(
@@ -92,6 +93,7 @@ export class SupervisorController {
     @Query('channel') channel?: Channel,
     @Query('userType') userType?: UserType,
     @Query('agentType') agentType?: AgentType,
+    @Query('search') search?: string,
     @Query('page') page?: string,
     @Query('limit') limit?: string,
   ) {
@@ -101,6 +103,7 @@ export class SupervisorController {
         channel,
         userType,
         agentType,
+        search,
         page: page ? parseInt(page, 10) : undefined,
         limit: limit ? parseInt(limit, 10) : undefined,
       },
