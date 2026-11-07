@@ -1,3 +1,4 @@
+import { formatCatalogPage } from '../ai/integrations/catalog-page';
 import { Optional } from '@nestjs/common';
 import { CommercialFlowService } from './commercial-flow.service';
 import { STOCK_PORT, StockPort } from '../ai/integrations/ports/stock.port';
@@ -349,9 +350,8 @@ export class FinancingConversationService {
           handled: true,
           response:
             available.length > 1
-              ? 'Hay más de un modelo disponible: ' +
-                available.map((item) => item.name).join('; ') +
-                '. ¿Cuál de estos preferís?'
+              ? 'Hay más de un modelo disponible.\n' +
+                formatCatalogPage(available)
               : '¿Qué modelo querés comprar? Decime su nombre para verificar la disponibilidad.',
         };
       }
@@ -373,16 +373,7 @@ export class FinancingConversationService {
       if (candidates.length)
         return {
           handled: true,
-          response:
-            'Estas son las opciones del catálogo de prueba:\n' +
-            candidates
-              .slice(0, 5)
-              .map(
-                (item) =>
-                  `${item.name}: ${item.stock > 0 ? (item.listPrice ? '$' + item.listPrice.toLocaleString('es-AR') + ' de lista' : 'precio a confirmar por un responsable') : 'sin stock'}`,
-              )
-              .join('\n') +
-            '\n¿Cuál modelo preferís?',
+          response: formatCatalogPage(candidates),
         };
     }
     if (
@@ -465,15 +456,7 @@ export class FinancingConversationService {
         return {
           ...saved,
           handled: true,
-          response:
-            'Para elegir el modelo, estas son las opciones: ' +
-            found
-              .map(
-                (i) =>
-                  `${i.name} (${i.stock > 0 ? 'disponible' : 'sin stock'})`,
-              )
-              .join('; ') +
-            '. ¿Cuál preferís?',
+          response: formatCatalogPage(found),
         };
       } else {
         await this.service.applyInput(conversationId, messageId, input);

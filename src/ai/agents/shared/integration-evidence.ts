@@ -1,3 +1,4 @@
+import { formatCatalogPage } from '../../integrations/catalog-page';
 import { z } from 'zod';
 
 const price = z.number().finite().nonnegative().nullable();
@@ -7,6 +8,21 @@ const item = z.object({
   precioLista: price,
   precioContado: price,
   stock: z.number().int().nonnegative(),
+});
+const catalogSchema = z.object({
+  tipo: z.literal('catalogo'),
+  total: z.number().int().positive(),
+  offset: z.number().int().nonnegative(),
+  hayMas: z.boolean(),
+  productos: z
+    .array(
+      item.extend({
+        enlaceWeb: z.string().nullable(),
+        actualizadoEl: z.string().datetime(),
+      }),
+    )
+    .min(1)
+    .max(5),
 });
 const stockSchema = z.union([
   item.extend({
@@ -32,6 +48,7 @@ export interface IntegrationEvidence {
   hasFacts: boolean;
   stockPrices: number[];
   creditVerdict?: string;
+  catalogReply?: string;
 }
 export function integrationEvidence(
   name: string,
@@ -44,6 +61,39 @@ export function integrationEvidence(
     return { hasFacts: false, stockPrices: [] };
   }
   if (name === 'check_stock') {
+    const catalog = catalogSchema.safeParse(data);
+    if (catalog.success) {
+      const page = catalog.data;
+      const rows = page.productos.map((i) => ({
+        sku: i.sku,
+        name: i.producto,
+        category: 'ACCESORIOS' as const,
+        stock: i.stock,
+        listPrice: i.precioLista,
+        cashPrice: i.precioContado,
+        substituteSkus: [],
+        urlCredimision: i.enlaceWeb,
+        lastUpdated: i.actualizadoEl,
+      }));
+      // El formateador recibe solo la página validada; los metadatos indican si hay más.
+      let reply = formatCatalogPage(rows);
+      reply = reply.replace(
+        /^(\d+)\./gm,
+        (_, n) => `${Number(n) + page.offset}.`,
+      );
+      if (page.hayMas)
+        reply = reply.replace(
+          '\n¿Cuál modelo',
+          '\nTengo más opciones. Si querés verlas, decime «mostrame más». ¿Cuál modelo',
+        );
+      return {
+        hasFacts: true,
+        stockPrices: rows
+          .flatMap((i) => [i.listPrice, i.cashPrice])
+          .filter((p): p is number => typeof p === 'number'),
+        catalogReply: reply,
+      };
+    }
     const parsed = stockSchema.safeParse(data);
     if (parsed.success) {
       const items =

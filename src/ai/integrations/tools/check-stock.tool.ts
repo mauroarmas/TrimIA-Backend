@@ -1,12 +1,41 @@
 import { tool } from '@langchain/core/tools';
 import { z } from 'zod';
+import { searchCatalog, CATALOG_PAGE_SIZE } from '../catalog-page';
 import { StockPort } from '../ports/stock.port';
 
 export function createCheckStockTool(stockPort: StockPort) {
   return tool(
-    async ({ query }) => {
+    async ({ query, offset = 0 }) => {
       try {
-        const result = await stockPort.checkAvailability(query);
+        const matches = searchCatalog(await stockPort.listCatalog(), query);
+        if (matches.length > 1) {
+          const start = offset < matches.length ? offset : 0;
+          return JSON.stringify({
+            tipo: 'catalogo',
+            fuente: 'Inventario conectado',
+            total: matches.length,
+            offset: start,
+            hayMas: start + CATALOG_PAGE_SIZE < matches.length,
+            siguienteOffset:
+              start + CATALOG_PAGE_SIZE < matches.length
+                ? start + CATALOG_PAGE_SIZE
+                : null,
+            productos: matches
+              .slice(start, start + CATALOG_PAGE_SIZE)
+              .map((item) => ({
+                producto: item.name,
+                sku: item.sku,
+                stock: item.stock,
+                precioLista: item.listPrice,
+                precioContado: item.cashPrice,
+                enlaceWeb: item.urlCredimision,
+                actualizadoEl: item.lastUpdated,
+              })),
+          });
+        }
+        const result = await stockPort.checkAvailability(
+          matches[0]?.sku || query,
+        );
         if (result.available) {
           return JSON.stringify({
             disponible: true,
@@ -55,8 +84,16 @@ export function createCheckStockTool(stockPort: StockPort) {
     {
       name: 'check_stock',
       description:
-        'Consulta disponibilidad, existencias reales y precios de maquinarias comerciales o gastronómicas. Si no hay stock disponible, retorna automáticamente hasta 2 productos sustitutos con stock.',
+        'Consulta SIEMPRE esta herramienta para listar productos, modelos, precios o stock del catálogo actual; no uses ejemplos de la base de conocimiento como catálogo completo. Busca familias como heladeras, televisores o balanzas y devuelve hasta 5 opciones por página. Si el cliente pide más opciones, reutilizá la consulta anterior con siguienteOffset. Para un modelo sin stock devuelve hasta 2 sustitutos.',
       schema: z.object({
+        offset: z
+          .number()
+          .int()
+          .nonnegative()
+          .optional()
+          .describe(
+            'Inicio de página; 0 para primera consulta. Usá siguienteOffset de la respuesta previa cuando pidan más opciones.',
+          ),
         query: z
           .string()
           .describe(

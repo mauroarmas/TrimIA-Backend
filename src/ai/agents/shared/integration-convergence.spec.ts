@@ -91,6 +91,21 @@ describe('Grafos: evidencia de integraciones y resumen comercial', () => {
     expect(result.confidence).toBe(0);
     expect(result.integrationEvidence.hasFacts).toBe(true);
   });
+  it('muestra la página completa aunque el generador resuma solo dos heladeras', async () => {
+    const f = fixture(
+      [createCheckStockTool(new MockStockAdapter())],
+      [{ name: 'check_stock', args: { query: 'heladeras' } }],
+      { response: 'Tenemos Briket 390 e Inelro 420.', needsHuman: false },
+    );
+    const result = await f.graph.invoke({
+      message: 'hola! tienen heladeras?',
+      history: [],
+      userType: 'CLIENTE',
+    });
+    expect(result.response).toMatch(/1\..*Briket/);
+    expect(result.response).toMatch(/\n3\..*600/);
+    expect(result.escalated).not.toBe(true);
+  });
   it('valida y persiste el resumen en la nota del escalado sin precio inventado', async () => {
     const f = fixture(
       [],

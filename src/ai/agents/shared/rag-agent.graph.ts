@@ -136,7 +136,7 @@ export function buildRagAgentGraph(
         const modelWithTools = llm.chat.bindTools(config.tools);
         const toolCheckPrompt = [
           new SystemMessage(
-            `Sos el componente de integraciones del agente ${agentType}. Tu única tarea es decidir si la consulta del usuario necesita invocar una herramienta (como consultar existencias de stock, registrar un prospecto o evaluar crédito). Si la consulta NO requiere herramientas, no invoques ninguna.`,
+            `Sos el componente de integraciones del agente ${agentType}. Tu única tarea es decidir si la consulta del usuario necesita invocar una herramienta (como consultar existencias de stock, registrar un prospecto o evaluar crédito). Para consultas de productos disponibles, modelos, catálogo o precios, consultá siempre check_stock con la familia o modelo solicitado; no respondas con ejemplos del conocimiento. Para «más opciones», recuperá del historial la familia y usá el siguiente offset (5, 10, etc.). Si la consulta NO requiere herramientas, no invoques ninguna.`,
           ),
           ...(state.history ?? []).map((turn) =>
             turn.role === 'USER'
@@ -175,6 +175,8 @@ export function buildRagAgentGraph(
               });
               const facts = integrationEvidence(tc.name, res);
               evidence.hasFacts ||= facts.hasFacts;
+              if (facts.catalogReply)
+                evidence.catalogReply = facts.catalogReply;
               evidence.stockPrices.push(...facts.stockPrices);
               if (facts.creditVerdict)
                 evidence.creditVerdict = facts.creditVerdict;
@@ -308,7 +310,10 @@ export function buildRagAgentGraph(
     );
 
     return {
-      response: parsed.response,
+      response:
+        !parsed.needsHuman && state.integrationEvidence?.catalogReply
+          ? state.integrationEvidence.catalogReply
+          : parsed.response,
       needsHuman: parsed.needsHuman,
       handoffReason: parsed.handoffReason ?? null,
       internalNote,
