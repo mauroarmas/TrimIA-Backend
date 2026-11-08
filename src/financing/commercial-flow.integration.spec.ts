@@ -1,3 +1,6 @@
+import { FinancingNoticeService } from './financing-notice.service';
+import { SimulatedFinancingNoticeAdapter } from './simulated-financing-notice.adapter';
+import { CollectionsService } from '../collections/collections.service';
 import { buildSalesGraph } from '../ai/agents/sales/sales.graph';
 import { randomUUID } from 'crypto';
 import { ConfigService } from '@nestjs/config';
@@ -779,6 +782,173 @@ const enabled = !!process.env.TEST_DATABASE_URL;
         where: { dedupeKey: `commercial-close:${request.id}` },
       }),
     ).toBe(1);
+  });
+  it('cierra desde control propio, registra cartera y envía el mensaje revisado sin liberar manualmente', async () => {
+    const { request, conversation } = await start();
+    await approve(request.id);
+    await choose(request.id);
+    await prisma.conversation.update({
+      where: { id: conversation.id },
+      data: {
+        status: 'HUMAN_HANDLING',
+        handledById: actor,
+        handledAt: new Date(),
+      },
+    });
+    const notices = new FinancingNoticeService(
+      prisma as any,
+      new ConfigService({ FINANCING_NOTICE_TRANSPORT: 'simulated' }),
+      new SimulatedFinancingNoticeAdapter(),
+    );
+    const realtime = { publish: jest.fn(async () => {}) };
+    const service = new CommercialFlowService(
+      prisma as any,
+      stock,
+      notices,
+      realtime as any,
+    );
+    const row = await service.commercial(request.id);
+    const dto = {
+      expectedVersion: row.version,
+      reference: 'Acuerdo QA',
+      customerMessage:
+        'Hola, confirmamos tu compra. Te esperamos para el retiro acordado.',
+    };
+    const result = await service.close(request.id, dto, actor);
+    expect(result.controlReleased).toBe(true);
+    expect(
+      await prisma.conversation.findUnique({ where: { id: conversation.id } }),
+    ).toMatchObject({ status: 'ACTIVE', handledById: null, handledAt: null });
+    const closed = await service.commercial(request.id);
+    expect(closed.financing?.quotas).toHaveLength(12);
+    expect(closed.closingNotice).toMatchObject({ status: 'ACCEPTED' });
+    const portfolio = await new CollectionsService(
+      prisma as any,
+      {} as any,
+    ).listClients(collector, false);
+    expect(
+      portfolio.find((c) => c.id === closed.client.id)?.quotas,
+    ).toHaveLength(12);
+    const n = await prisma.outboundCommunication.findUniqueOrThrow({
+      where: { dedupeKey: `commercial-close:${request.id}` },
+    });
+    expect(n.body).toBe(dto.customerMessage);
+    expect(n.lastErrorCode).toBeNull();
+    expect(realtime.publish).toHaveBeenCalledWith(
+      conversation.id,
+      expect.objectContaining({
+        type: 'message',
+        data: expect.objectContaining({
+          id: n.messageId,
+          content: dto.customerMessage,
+        }),
+      }),
+    );
+    const author = await prisma.orchestrationEvent.findFirst({
+      where: {
+        conversationId: conversation.id,
+        eventType: 'conversation_manual_reply',
+      },
+    });
+    expect(author?.payload).toMatchObject({
+      employeeId: actor,
+      messageId: n.messageId,
+    });
+    await service.close(request.id, dto, actor);
+    expect(
+      await prisma.financing.count({
+        where: { purchaseRequestId: request.id },
+      }),
+    ).toBe(1);
+    expect(
+      await prisma.outboundCommunication.count({
+        where: { purpose: 'SALE_CLOSED', purchaseRequestId: request.id },
+      }),
+    ).toBe(1);
+    expect(
+      await prisma.message.count({
+        where: {
+          conversationId: conversation.id,
+          content: dto.customerMessage,
+        },
+      }),
+    ).toBe(1);
+  });
+  it('no cierra ni libera el chat que está atendiendo otra persona', async () => {
+    const { request, conversation } = await start();
+    await approve(request.id);
+    await choose(request.id);
+    await prisma.conversation.update({
+      where: { id: conversation.id },
+      data: {
+        status: 'HUMAN_HANDLING',
+        handledById: collector,
+        handledAt: new Date(),
+      },
+    });
+    const row = await commercial.commercial(request.id);
+    await expect(
+      commercial.close(
+        request.id,
+        {
+          expectedVersion: row.version,
+          reference: 'QA',
+          customerMessage: 'Confirmamos tu compra.',
+        },
+        actor,
+      ),
+    ).rejects.toThrow('Otra persona tiene el control');
+    expect(
+      await prisma.financing.count({
+        where: { purchaseRequestId: request.id },
+      }),
+    ).toBe(0);
+    expect(
+      await prisma.conversation.findUnique({ where: { id: conversation.id } }),
+    ).toMatchObject({ status: 'HUMAN_HANDLING', handledById: collector });
+  });
+  it('un fallo del aviso queda visible y no revierte ni duplica la venta y las cuotas', async () => {
+    const { request, conversation } = await start();
+    await approve(request.id);
+    await choose(request.id);
+    await prisma.conversation.update({
+      where: { id: conversation.id },
+      data: {
+        status: 'HUMAN_HANDLING',
+        handledById: actor,
+        handledAt: new Date(),
+      },
+    });
+    const send = jest.fn(async () => ({
+      kind: 'NOT_ACCEPTED' as const,
+      code: 'TEST_FAILURE',
+    }));
+    const notices = new FinancingNoticeService(
+      prisma as any,
+      new ConfigService({ FINANCING_NOTICE_TRANSPORT: 'simulated' }),
+      { send },
+    );
+    const service = new CommercialFlowService(prisma as any, stock, notices);
+    const row = await service.commercial(request.id);
+    const dto = {
+      expectedVersion: row.version,
+      reference: 'QA',
+      customerMessage: 'Compra confirmada.',
+    };
+    await service.close(request.id, dto, actor);
+    const closed = await service.commercial(request.id);
+    expect(closed.closedAt).toBeTruthy();
+    expect(closed.financing?.quotas).toHaveLength(12);
+    expect(closed.closingNotice?.status).toBe('FAILED');
+    expect(
+      (
+        await prisma.conversation.findUniqueOrThrow({
+          where: { id: conversation.id },
+        })
+      ).status,
+    ).toBe('ACTIVE');
+    await service.close(request.id, dto, actor);
+    expect(send).toHaveBeenCalledTimes(1);
   });
   it('rechazo permite contado habilitado sin crear cuotas ni filtrar dictamen', async () => {
     const { request } = await start();

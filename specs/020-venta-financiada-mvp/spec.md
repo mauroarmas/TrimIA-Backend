@@ -203,3 +203,9 @@ Como cliente quiero recibir la decisión en mi hilo. Como responsable quiero dis
 - «Es para financiación» debe iniciar y persistir el formulario aunque aún falte elegir modelo. Los datos posteriores con etiquetas Nombre, DNI y Modelo se incorporan sin depender del texto del extractor.
 - Si aún no se conoce el destino de compra, el agente consulta si es personal o pide el nombre del comercio. Una compra personal no requiere comercio; conserva localidad para determinar la entrega.
 - El agente solo anuncia que creó un pedido después de persistir una solicitud en Administración; mientras faltan datos, solicita únicamente los pendientes.
+
+### Cierre guiado confirmado — 2026-11-07
+
+- El vendedor revisa o escribe el mensaje final y ejecuta «Cerrar venta y enviar aviso» en un solo paso. La transacción registra venta, cuotas y liberación del control propio; luego intenta el aviso. Si otra persona controla el hilo o existe un escalado pendiente, se bloquea el cierre con una explicación.
+- La ficha distingue registro comercial y entrega del mensaje. Un fallo o resultado incierto del envío no revierte las cuotas ni habilita duplicar el cierre. El mensaje revisado se atribuye al vendedor.
+- La cartera del cobrador incluye al cliente y las cuotas desde el cierre, sin depender del control manual ni del aviso. La UI actualiza cartera al recuperar el foco y periódicamente.

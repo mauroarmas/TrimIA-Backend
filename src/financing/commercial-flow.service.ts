@@ -1,9 +1,13 @@
+import { FinancingNoticeService } from './financing-notice.service';
+import { RealtimeService } from '../realtime/realtime.service';
 import {
   BadRequestException,
   ConflictException,
   Inject,
   Injectable,
   NotFoundException,
+  Optional,
+  Logger,
 } from '@nestjs/common';
 import { Prisma, PurchaseRequest } from '@prisma/client';
 import { PrismaService } from '../database/prisma.service';
@@ -35,9 +39,12 @@ const json = (value: unknown) =>
   JSON.parse(JSON.stringify(value)) as Prisma.InputJsonObject;
 @Injectable()
 export class CommercialFlowService {
+  private readonly logger = new Logger(CommercialFlowService.name);
   constructor(
     private readonly prisma: PrismaService,
     @Inject(STOCK_PORT) private readonly stock: StockPort,
+    @Optional() private readonly notices?: FinancingNoticeService,
+    @Optional() private readonly realtime?: RealtimeService,
   ) {}
   private flow(request: PurchaseRequest) {
     const flow = asCommercialFlow(request.commercialFlow);
@@ -379,6 +386,17 @@ export class CommercialFlowService {
           },
         },
         financing: { include: { quotas: { orderBy: { number: 'asc' } } } },
+        outboundCommunications: {
+          where: { purpose: 'SALE_CLOSED' },
+          take: 1,
+          select: {
+            id: true,
+            status: true,
+            transportMode: true,
+            lastErrorCode: true,
+            acceptedAt: true,
+          },
+        },
       },
     });
     const flow = this.flow(row);
@@ -403,6 +421,10 @@ export class CommercialFlowService {
       prospectId: row.prospectId,
       client: { ...row.client, name: snapshot.name, dni: snapshot.dni },
       collector,
+      closingNotice: row.outboundCommunications[0] ?? null,
+      suggestedClosingMessage: flow.selectedOfferId
+        ? this.closingMessage(row, flow)
+        : '',
       sku: snapshot.sku,
       purchaseUse:
         snapshot.purchaseUse ?? (snapshot.business ? 'BUSINESS' : null),
@@ -686,6 +708,11 @@ export class CommercialFlowService {
     });
     return this.commercial(id);
   }
+  private closingMessage(row: PurchaseRequest, flow: CommercialFlow) {
+    const offer = flow.offers.find((o) => o.id === flow.selectedOfferId);
+    if (!offer) return '';
+    return `Registramos el cierre de tu compra de ${row.productSummary}. ${offerText(offer)}. ${flow.deliveryMode === 'PICKUP' ? 'Retiro en sucursal.' : `Envío a ${flow.deliveryAddress}; costo separado al contado: $${flow.shippingCost}.`} Este registro no acredita un pago.`;
+  }
   async close(id: string, dto: CloseCommercialDto, actorId: string) {
     await this.revalidate(id); // Persistir el bloqueo aun si la operación de cierre se rechaza.
     const initial = await this.prisma.purchaseRequest.findUniqueOrThrow({
@@ -693,6 +720,9 @@ export class CommercialFlowService {
     });
     const item = await this.item(initial);
     const result = await this.prisma.$transaction(async (tx) => {
+      // El ingreso de mensajes también bloquea primero el hilo y luego el pedido.
+      if (initial.conversationId)
+        await tx.$queryRaw`SELECT id FROM "Conversation" WHERE id = ${initial.conversationId} FOR UPDATE`;
       const row = await this.lock(tx, id);
       const flow = this.flow(row);
       if (row.status === 'CANCELLED')
@@ -719,6 +749,37 @@ export class CommercialFlowService {
         );
       if (!dto.reference?.trim())
         throw new BadRequestException('Ingresá la constancia del cierre.');
+      if (dto.customerMessage !== undefined && !dto.customerMessage.trim())
+        throw new BadRequestException(
+          'Escribí el mensaje final para el cliente.',
+        );
+      const conversation = row.conversationId
+        ? await tx.conversation.findUnique({
+            where: { id: row.conversationId },
+          })
+        : null;
+      if (!conversation)
+        throw new ConflictException(
+          'No se encuentra la conversación del pedido.',
+        );
+      if (
+        conversation.status === 'HUMAN_HANDLING' &&
+        conversation.handledById !== actorId
+      )
+        throw new ConflictException(
+          'Otra persona tiene el control del chat. Debe liberarlo antes de cerrar la venta.',
+        );
+      if (
+        !['ACTIVE', 'HUMAN_HANDLING'].includes(conversation.status) ||
+        (await tx.escalation.count({
+          where: { conversationId: conversation.id, status: 'PENDING' },
+        }))
+      )
+        throw new ConflictException(
+          'Resolvé la atención pendiente del chat antes de cerrar la venta.',
+        );
+      const controlReleased = conversation.status === 'HUMAN_HANDLING';
+
       if (offer.modality === 'FINANCED') {
         await tx.$queryRaw`SELECT id FROM "Client" WHERE id = ${row.clientId} FOR UPDATE`;
         await this.collector(tx, row.clientId, offer.collectorId!);
@@ -769,6 +830,7 @@ export class CommercialFlowService {
       await this.event(tx, row, 'SALE_CLOSED', {
         actorId,
         reference: dto.reference.trim(),
+        controlReleased,
         quotaCount: offer.quotaCount,
         offerId: offer.id,
       });
@@ -780,18 +842,102 @@ export class CommercialFlowService {
         },
         data: { status: 'FAILED', lastErrorCode: 'SALE_ALREADY_CLOSED' },
       });
+      if (controlReleased) {
+        await tx.conversation.update({
+          where: { id: conversation.id },
+          data: { status: 'ACTIVE', handledById: null, handledAt: null },
+        });
+        await tx.orchestrationEvent.create({
+          data: {
+            conversationId: conversation.id,
+            eventType: 'conversation_release',
+            payload: {
+              employeeId: actorId,
+              requestId: id,
+              reason: 'SALE_CLOSED',
+            },
+          },
+        });
+      }
+      const body =
+        dto.customerMessage?.trim() || this.closingMessage(row, flow);
+      let messageId: string | undefined;
+      if (dto.customerMessage !== undefined) {
+        messageId = (
+          await tx.message.create({
+            data: {
+              conversationId: conversation.id,
+              role: 'ASSISTANT',
+              agentType: 'SALES',
+              content: body,
+            },
+          })
+        ).id;
+        await tx.orchestrationEvent.create({
+          data: {
+            conversationId: conversation.id,
+            eventType: 'conversation_manual_reply',
+            payload: { employeeId: actorId, messageId, source: 'SALE_CLOSED' },
+          },
+        });
+      }
       await tx.outboundCommunication.create({
         data: {
           purchaseRequestId: id,
-          conversationId: row.conversationId!,
+          conversationId: conversation.id,
           dedupeKey: `commercial-close:${id}`,
           purpose: 'SALE_CLOSED',
-          body: `Registramos el cierre de tu compra de ${row.productSummary}. ${offerText(offer)}. ${flow.deliveryMode === 'PICKUP' ? 'Retiro en sucursal.' : `Envío a ${flow.deliveryAddress}; costo separado al contado: $${flow.shippingCost}.`} Este registro no acredita un pago.`,
+          body,
+          messageId,
           transportMode: 'simulated',
         },
       });
-      return { id, closedAt, replayed: false };
+      return { id, closedAt, replayed: false, controlReleased };
     });
+    if (initial.conversationId && result.controlReleased && this.realtime) {
+      const current = await this.prisma.conversation.findUnique({
+        where: { id: initial.conversationId },
+        select: { status: true, currentAgent: true },
+      });
+      if (current)
+        await this.realtime.publish(initial.conversationId, {
+          type: 'status',
+          conversationId: initial.conversationId,
+          data: current,
+        });
+    }
+    const notice = await this.prisma.outboundCommunication.findUnique({
+      where: { dedupeKey: `commercial-close:${id}` },
+    });
+    if (notice && this.notices) {
+      try {
+        await this.notices.dispatch(notice.id);
+      } catch (error) {
+        this.logger.warn(
+          `Venta ${id} registrada; el aviso continúa pendiente de recuperación.`,
+        );
+      }
+    }
+    if (!result.replayed && notice && this.realtime) {
+      const sent = await this.prisma.outboundCommunication.findUnique({
+        where: { id: notice.id },
+        include: { message: true },
+      });
+      if (sent?.message && ['ACCEPTED', 'DELIVERED'].includes(sent.status)) {
+        const message = sent.message;
+        await this.realtime.publish(sent.conversationId, {
+          type: 'message',
+          conversationId: sent.conversationId,
+          data: {
+            id: message.id,
+            role: 'ASSISTANT',
+            content: message.content,
+            agentType: message.agentType,
+            createdAt: message.createdAt.toISOString(),
+          },
+        });
+      }
+    }
     return result;
   }
 }

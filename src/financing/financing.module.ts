@@ -1,3 +1,4 @@
+import { RealtimeModule } from '../realtime/realtime.module';
 import { CommercialFlowService } from './commercial-flow.service';
 import { EscalationsModule } from '../escalations/escalations.module';
 import { Module } from '@nestjs/common';
@@ -12,6 +13,7 @@ import { ChannelFinancingNoticeAdapter } from './channel-financing-notice.adapte
 import { WhatsappSenderModule } from '../messaging/whatsapp-sender.module';
 @Module({
   imports: [
+    RealtimeModule,
     PrismaModule,
     IntegrationsModule,
     EscalationsModule,

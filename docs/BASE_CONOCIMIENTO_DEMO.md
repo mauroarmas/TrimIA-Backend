@@ -133,3 +133,7 @@ La fuente completa del proceso vigente es [Proceso de venta financiada del MVP](
 ### Selección exacta después del catálogo — 2026-11-07
 
 Una selección explícita que coincide con un nombre completo o SKU único se consulta por ese SKU. Se confirma únicamente el modelo elegido con precios del inventario y se ofrece continuar de contado o solicitar financiación. El listado completo no sustituye esa confirmación. Se verificó el recorrido catálogo → elección Inelro 600 → financiación → datos → pedido administrativo, incluyendo un selector de herramientas que intentaría consultar otra vez «heladeras». Pasaron 83 pruebas del catálogo, grafo y circuito administrativo en base aislada.
+
+### Cierre sin liberación manual posterior — 2026-11-07
+
+La prueba reportada registraba venta y cuotas inmediatamente, pero retenía el aviso mientras seguía tomado el chat. Se unificó el último paso: mensaje final revisado por el vendedor, cierre y cuotas, liberación del control propio e intento inmediato del aviso. Se bloquea el control ajeno y se muestran por separado registro comercial y estado del aviso. La ficha conserva el resumen comercial y pliega datos de identificación repetidos; Cobranzas actualiza cartera al volver a la pestaña y cada 10 segundos. Se verifican idempotencia y fallo de transporte sin revertir venta/cuotas.

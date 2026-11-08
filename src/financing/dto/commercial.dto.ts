@@ -28,6 +28,11 @@ export class CommercialVersionDto {
   @IsInt() @Min(1) expectedVersion: number;
 }
 export class CloseCommercialDto extends CommercialVersionDto {
+  @IsOptional()
+  @IsString()
+  @MinLength(1)
+  @MaxLength(4000)
+  customerMessage?: string;
   @IsString() @MinLength(1) @MaxLength(2000) reference: string;
 }
 export class EditCommercialDto extends CommercialVersionDto {
