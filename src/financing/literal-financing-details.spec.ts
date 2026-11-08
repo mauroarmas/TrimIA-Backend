@@ -22,6 +22,21 @@ describe('datos literales del formulario', () => {
     ).toEqual({ business: 'Maurito', locality: 'Concepción' });
   });
   it.each([
+    'Nombre: Mauro Armas\nDNI: 90000001\nComercio: Mauricio Electrodomesticos\nLocalidad: Concepción, Tucumán',
+    'Nombre: Mauro Armas - DNI: 90.000.001 - Comercio: Mauricio Electrodomesticos - Localidad: Concepción, Tucumán',
+    'Nombre: Mauro Armas DNI: 90000001 Comercio: Mauricio Electrodomesticos Localidad: Concepción, Tucumán',
+  ])(
+    'recoge todas las etiquetas sin exigir una forma de redacción: %s',
+    (message) => {
+      expect(literalFinancingDetails(message)).toEqual({
+        name: 'Mauro Armas',
+        dni: '90000001',
+        business: 'Mauricio Electrodomesticos',
+        locality: 'Concepción, Tucumán',
+      });
+    },
+  );
+  it.each([
     'La heladera cuesta 90000005',
     'Mi comercio',
     'Comercio:',

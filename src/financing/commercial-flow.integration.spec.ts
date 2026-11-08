@@ -243,6 +243,93 @@ const enabled = !!process.env.TEST_DATABASE_URL;
       ).toBe(1);
     },
   );
+  it('registra el prospecto incompleto y completa el mensaje etiquetado incluso si falla Gemini', async () => {
+    const c = await prisma.conversation.create({
+      data: {
+        externalId: '549' + String(Date.now()).slice(-10) + '89',
+        channel: 'WHATSAPP',
+      },
+    });
+    await financing.applyInput(c.id, randomUUID(), {
+      intent: 'REQUEST',
+      flowVersion: 2,
+      sku: 'EXH-BRI-390',
+      productSummary: 'Heladera Exhibidora Vertical Briket 390 Litros Led',
+    });
+    const lead = await prisma.prospect.findFirstOrThrow({
+      where: { conversationId: c.id },
+    });
+    expect(lead.syncStatus).toBe('PENDING');
+    expect(
+      await prisma.purchaseRequest.count({ where: { conversationId: c.id } }),
+    ).toBe(0);
+    const handler = new FinancingConversationService(
+      prisma as any,
+      {
+        classifierChat: {
+          withStructuredOutput: () => ({
+            invoke: jest
+              .fn()
+              .mockRejectedValue(new Error('classifier unavailable')),
+          }),
+        },
+      } as any,
+      financing,
+      { create: jest.fn() } as any,
+      commercial,
+      stock,
+    );
+    const result = await handler.handle(
+      c.id,
+      randomUUID(),
+      'Nombre: Mauro Armas\nDNI: 90000001\nComercio: Mauricio Electrodomesticos\nLocalidad: Concepción, Tucumán',
+      { userType: 'CLIENTE' } as any,
+    );
+    expect(result.response).toContain('creamos el pedido');
+    const request = await prisma.purchaseRequest.findFirstOrThrow({
+      where: { conversationId: c.id },
+    });
+    expect(request.prospectId).toBe(lead.id);
+    const updated = await prisma.prospect.findUniqueOrThrow({
+      where: { id: lead.id },
+    });
+    expect(updated).toMatchObject({
+      name: 'Mauro Armas',
+      comercio: 'Mauricio Electrodomesticos',
+      localidad: 'Concepción, Tucumán',
+      syncStatus: 'PENDING',
+    });
+    const { toCrmSheet, localCrmRecord } =
+      await import('../ai/integrations/crm-sheet.mapper');
+    expect(toCrmSheet(localCrmRecord(updated))).toMatchObject({
+      Nombre: 'Mauro Armas',
+      Comercio: 'Mauricio Electrodomesticos',
+      Localidad: 'Concepción, Tucumán',
+    });
+    expect(
+      await prisma.prospect.count({ where: { conversationId: c.id } }),
+    ).toBe(1);
+  });
+  it('cancela el prospecto de una financiación aún incompleta', async () => {
+    const c = await prisma.conversation.create({
+      data: {
+        externalId: '549' + String(Date.now()).slice(-10) + '90',
+        channel: 'WEB',
+      },
+    });
+    await financing.applyInput(c.id, randomUUID(), {
+      intent: 'REQUEST',
+      flowVersion: 2,
+      sku: 'EXH-BRI-390',
+      productSummary: 'Heladera Exhibidora Vertical Briket 390 Litros Led',
+    });
+    await financing.applyInput(c.id, randomUUID(), { intent: 'CANCEL' });
+    expect(
+      await prisma.prospect.findFirstOrThrow({
+        where: { conversationId: c.id },
+      }),
+    ).toMatchObject({ status: 'CANCELADO', syncStatus: 'PENDING' });
+  });
   async function start() {
     const conversation = await prisma.conversation.create({
       data: {

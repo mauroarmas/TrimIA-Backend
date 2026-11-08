@@ -34,5 +34,39 @@ export function literalFinancingDetails(message: string) {
     if (locality && /^[\p{L} .'’,]+$/u.test(locality) && locality.length <= 120)
       result.locality = locality;
   }
+  // Los formularios con etiquetas tienen valores literales, aunque el modelo
+  // normalice comas, tildes o nombres de provincia de una forma distinta.
+  const labels = [
+    ...message.matchAll(
+      /(?:^|[\n;]|[ \t]+(?:[-–—][ \t]+)?)(?:mi[ \t]+)?(nombre(?: y apellido)?|dni|documento|comercio|negocio|localidad|ciudad)[ \t]*(?::|=|[ \t]+es[ \t]*:?)[ \t]*/giu,
+    ),
+  ];
+  for (let i = 0; i < labels.length; i++) {
+    const match = labels[i];
+    let value = message
+      .slice(
+        match.index! + match[0].length,
+        labels[i + 1]?.index ?? message.length,
+      )
+      .trim()
+      .replace(/[;\n]+$/g, '')
+      .trim();
+    if (!value) continue;
+    const label = match[1].toLowerCase();
+    if (label === 'dni' || label === 'documento') {
+      const dni = value.replace(/[. \t]/g, '');
+      if (/^\d{7,8}$/.test(dni)) result.dni = dni;
+    } else if (/^nombre/.test(label)) {
+      if (value.length <= 120 && /\p{L}/u.test(value)) result.name = value;
+    } else if (label === 'comercio' || label === 'negocio') {
+      if (result.locality && value.endsWith(result.locality)) {
+        value = value
+          .slice(0, -result.locality.length)
+          .replace(/\s+[-–—]\s*$/, '')
+          .trim();
+      }
+      if (value.length <= 160) result.business = value;
+    } else if (value.length <= 120) result.locality = value;
+  }
   return result;
 }

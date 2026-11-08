@@ -291,6 +291,55 @@ export class FinancingService {
       return null;
     }
   }
+  private async saveDraftProspect(
+    tx: Tx,
+    c: { id: string; externalId: string; channel: any },
+    d: FinancingDraft,
+  ) {
+    const previousProspect = await tx.prospect.findFirst({
+      where: {
+        conversationId: c.id,
+        phone: c.externalId,
+        closedAt: null,
+        status: { in: ['NUEVO', 'EN_CONTACTO', 'CALIFICA'] },
+        ...(d.prospectId
+          ? { id: d.prospectId }
+          : { productInterest: d.productSummary! }),
+        purchaseRequests: { none: {} },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    const prospectData = {
+      name: d.name || previousProspect?.name || 'Cliente',
+      dni: d.dni,
+      comercio: d.business,
+      localidad: d.locality,
+      originChannel: c.channel,
+      phone: c.externalId,
+      productInterest: d.productSummary!,
+      estimatedAmount: d.confirmedAmount || null,
+      modality: 'FINANCED' as const,
+      conversationId: c.id,
+      syncStatus: 'PENDING' as const,
+      crmData: this.json({
+        ...((previousProspect?.crmData as any) || {}),
+        sheet: {
+          ...((previousProspect?.crmData as any)?.sheet || {}),
+          Nombre: d.name || previousProspect?.name || 'Cliente',
+          Teléfono: c.externalId,
+          'Producto/s': d.productSummary!,
+          Comercio: d.business ?? previousProspect?.comercio ?? '',
+          Localidad: d.locality ?? previousProspect?.localidad ?? '',
+        },
+      }),
+    };
+    return previousProspect
+      ? await tx.prospect.update({
+          where: { id: previousProspect.id },
+          data: prospectData,
+        })
+      : await tx.prospect.create({ data: prospectData });
+  }
   async applyInput(
     conversationId: string,
     messageId: string,
@@ -378,6 +427,15 @@ export class FinancingService {
           });
           if (changed.count !== 1) throw financingConflict('STALE_VERSION');
         }
+        if (!active && d.prospectId)
+          await tx.prospect.updateMany({
+            where: {
+              id: d.prospectId,
+              conversationId: c.id,
+              phone: c.externalId,
+            },
+            data: { status: 'CANCELADO', syncStatus: 'PENDING' },
+          });
         d.stage = 'CANCELLED';
         delete d.summaryVersion;
         await tx.conversation.update({
@@ -446,6 +504,10 @@ export class FinancingService {
         d.priceSource = 'STOCK';
         d.priceConfirmedAt = new Date().toISOString();
       }
+      if (!active && d.flowVersion === 2 && d.sku && d.productSummary) {
+        const prospect = await this.saveDraftProspect(tx, c, d);
+        d.prospectId = prospect.id;
+      }
       const version = c.financingVersion + 1;
       if (
         this.missing(d).length === 0 &&
@@ -509,46 +571,12 @@ export class FinancingService {
             (await tx.client.create({
               data: { name: d.name!, dni: d.dni, phone: c.externalId },
             }));
-          // Reutilizar el interés recogido en el mismo hilo para esta compra.
-          // Una oportunidad con otro pedido o ya cerrada conserva su historia.
-          const previousProspect = await tx.prospect.findFirst({
-            where: {
-              conversationId: c.id,
-              phone: c.externalId,
-              closedAt: null,
-              status: { in: ['NUEVO', 'EN_CONTACTO', 'CALIFICA'] },
-              productInterest: d.productSummary!,
-              purchaseRequests: { none: {} },
-            },
-            orderBy: { createdAt: 'desc' },
-          });
-          const prospectData = {
-            name: d.name!,
-            dni: d.dni,
-            comercio: d.business,
-            localidad: d.locality,
-            originChannel: c.channel,
-            phone: c.externalId,
-            productInterest: d.productSummary!,
-            estimatedAmount: d.confirmedAmount!,
-            modality: 'FINANCED' as const,
-            conversationId: c.id,
-            syncStatus: 'PENDING' as const,
-            crmData: this.json({
-              ...((previousProspect?.crmData as any) || {}),
-              sheet: {
-                ...((previousProspect?.crmData as any)?.sheet || {}),
-                Comercio: d.business || '',
-                Localidad: d.locality || '',
-              },
-            }),
-          };
-          const prospect = previousProspect
-            ? await tx.prospect.update({
-                where: { id: previousProspect.id },
-                data: prospectData,
+          const prospect = d.prospectId
+            ? await tx.prospect.findUniqueOrThrow({
+                where: { id: d.prospectId },
               })
-            : await tx.prospect.create({ data: prospectData });
+            : await this.saveDraftProspect(tx, c, d);
+          d.prospectId = prospect.id;
           const startedAt = new Date();
           const req = await tx.purchaseRequest.create({
             data: {

@@ -282,6 +282,10 @@ export class FinancingConversationService {
       draft && !['CANCELLED', 'IDENTITY_CONFLICT'].includes(draft.stage);
     if (!active && !explicitFinancingRequest(message) && !financingContext)
       return { handled: false };
+    const literalDetails =
+      financingContext || (active && draft?.flowVersion === 2)
+        ? literalFinancingDetails(message)
+        : {};
     let proposal: z.infer<typeof extracted>;
     try {
       proposal = extracted.parse(
@@ -299,12 +303,16 @@ export class FinancingConversationService {
         ]),
       );
     } catch {
-      return {
-        handled: true,
-        response:
-          'No pude identificar los datos con seguridad. Repetilos para continuar la solicitud, sin incluir información de terceros.',
-      };
+      if (Object.keys(literalDetails).length)
+        proposal = { intent: 'PROVIDE_DATA' };
+      else
+        return {
+          handled: true,
+          response:
+            'No pude identificar los datos con seguridad. Repetilos para continuar la solicitud, sin incluir información de terceros.',
+        };
     }
+
     if (
       !isModernRequest &&
       !asksCatalog &&
@@ -398,12 +406,11 @@ export class FinancingConversationService {
       .replace(/\D/g, '');
     if (labeledDni && /^\d{7,8}$/.test(labeledDni)) input.dni = labeledDni;
     if (financingContext || (active && draft?.flowVersion === 2)) {
-      const literal = literalFinancingDetails(message);
+      const literal = literalDetails;
       if (literal.dni && (literal.name || !draft?.dni)) input.dni = literal.dni;
       if (literal.name) input.name = literal.name;
       if (literal.business) input.business = literal.business;
-      if (literal.locality && !input.locality)
-        input.locality = literal.locality;
+      if (literal.locality) input.locality = literal.locality;
     }
     // Un producto o un comercio no es el nombre de la persona. El fallback
     // de identidad solo se usa en mensajes que también aportan el DNI.

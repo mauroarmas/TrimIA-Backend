@@ -39,6 +39,7 @@ export const financingDraftSchema = fieldsSchema
     priceConfirmationNote: z.string().max(2000).optional(),
     summaryVersion: z.number().int().nonnegative().optional(),
     sourceMessageIds: z.array(z.string().uuid()).default([]),
+    prospectId: z.string().uuid().optional(),
     purchaseRequestId: z.string().uuid().optional(),
     requestVersion: z.number().int().positive().optional(),
   })
