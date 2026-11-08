@@ -95,6 +95,12 @@ export async function executeRuntime(
   }
   const failures: Error[] = [];
   const llm = {
+    // Preserve the model context used by the orchestrator while keeping the
+    // isolated, provider-free doubles supported by this evaluation harness.
+    withModelSnapshot: (operation: () => Promise<unknown>) =>
+      typeof base.withModelSnapshot === 'function'
+        ? base.withModelSnapshot(operation)
+        : operation(),
     model: base.model,
     chat: boundedModel(base.chat, failures),
     classifierChat: boundedModel(base.classifierChat, failures),
