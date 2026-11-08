@@ -1,3 +1,5 @@
+import { LlmService } from '../ai/llm/llm.service';
+import { Optional } from '@nestjs/common';
 import { Injectable, ForbiddenException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
@@ -140,6 +142,7 @@ export class SupervisorService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
+    @Optional() private readonly llm?: LlmService,
   ) {}
 
   /**
@@ -365,7 +368,7 @@ export class SupervisorService {
         avgDurationMs: totalCalls > 0 ? Math.round(totalDurationMs / totalCalls) : null,
         conversationsCount: distinctTokenConvs.length,
         configuredModel:
-          this.config.get<string>('GEMINI_MODEL') ?? 'gemini-3.5-flash-lite',
+          this.llm?.activeModel ?? this.config.get<string>('GEMINI_MODEL') ?? 'gemini-3.5-flash-lite',
         embeddingModel:
           this.config.get<string>('EMBEDDING_MODEL') ?? 'gemini-embedding-001',
         ttsModel: this.config.get<string>('GEMINI_TTS_MODEL') ?? null,

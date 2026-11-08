@@ -79,6 +79,6 @@ export class OrchestratorService implements OnModuleInit {
       outputTokens: null,
     };
 
-    return this.graph.invoke(state);
+    return this.llm.withModelSnapshot(() => this.graph.invoke(state));
   }
 }

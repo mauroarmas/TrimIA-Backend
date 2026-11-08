@@ -1,5 +1,11 @@
+import { LlmService } from '../ai/llm/llm.service';
+import { IsString, IsIn } from 'class-validator';
+import { CHAT_MODELS } from '../ai/llm/llm.service';
 import {
   Body,
+  ForbiddenException,
+  Optional,
+  Put,
   Controller,
   Get,
   NotFoundException,
@@ -36,6 +42,11 @@ import { ManualReplyDto } from '../conversations/dto/manual-reply.dto';
 import { CreateInternalNoteDto } from '../conversations/dto/create-internal-note.dto';
 import { RealtimeService } from '../realtime/realtime.service';
 
+class SelectChatModelDto {
+  @IsIn(CHAT_MODELS.map((m) => m.id)) model!: string;
+  @IsString() expectedModel!: string;
+}
+
 /**
  * Lo que JwtStrategy deja en `req.user`. El resto de este controller usa `any`;
  * acá hace falta tipado porque el stream necesita `exp` (spec 004, RF-022) y el
@@ -70,7 +81,32 @@ export class SupervisorController {
     private readonly conversations: ConversationsService,
     private readonly employees: EmployeesService,
     private readonly realtime: RealtimeService,
+    @Optional() private readonly llm?: LlmService,
   ) {}
+
+  private assertModelAdmin(req: AuthenticatedRequest) {
+    if (
+      !req.user.isGeneralSupervisor &&
+      req.user.email !== 'diego.bazan@credimision.com'
+    )
+      throw new ForbiddenException(
+        'Solo supervisión general puede cambiar el modelo de IA.',
+      );
+  }
+  @Get('ai-model')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('SUPERVISOR')
+  getModel(@Req() req: AuthenticatedRequest) {
+    this.assertModelAdmin(req);
+    return this.llm!.getSettings();
+  }
+  @Put('ai-model')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('SUPERVISOR')
+  setModel(@Req() req: AuthenticatedRequest, @Body() body: SelectChatModelDto) {
+    this.assertModelAdmin(req);
+    return this.llm!.selectModel(body.model, body.expectedModel, req.user.id);
+  }
 
   /**
    * GET /supervisor/conversations
