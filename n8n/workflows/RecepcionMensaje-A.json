@@ -3,7 +3,7 @@
   "nodes": [
     {
       "parameters": {
-        "jsCode": "const body = $input.first().json.body;\n\n// Formato directo (Postman/WEB): { phone, message }\nif (body?.phone && body?.message) {\n  return [{ json: { phone: body.phone, message: body.message, channel: 'WEB', mediaKind: '' } }];\n}\n\n// Formato real de WhatsApp Business API\nconst message = body?.entry?.[0]?.changes?.[0]?.value?.messages?.[0];\nif (!message) return [];\n\nif (message.type === 'text') {\n  return [{ json: { phone: message.from, message: message.text.body, channel: 'WHATSAPP', mediaKind: '' } }];\n}\n\n// Comprobante de pago (Sprint 4): acá solo extraemos el mediaId/mimeType.\n// La resolución+descarga contra la Graph API de Meta la hacen los nodos\n// HTTP Request de abajo — el Code Node de n8n (Task Runner) NO soporta\n// this.helpers.httpRequestWithAuthentication (confirmado en vivo, n8n 2.30.7).\nif (message.type === 'image') {\n  return [{\n    json: {\n      phone: message.from,\n      message: message.image.caption ?? '',\n      channel: 'WHATSAPP',\n      mediaKind: 'image',\n      mediaId: message.image.id,\n      mimeType: message.image.mime_type,\n    },\n  }];\n}\n\n// Nota de voz (Sprint 5A, US5 / RF-14). Se baja igual que la imagen —mismos\n// dos nodos HTTP— y recién después se bifurca para transcribir.\n// WhatsApp manda las notas de voz como audio/ogg (codec Opus), que Gemini\n// acepta; el mime_type real viaja igual por si Meta cambia el contenedor.\nif (message.type === 'audio') {\n  return [{\n    json: {\n      phone: message.from,\n      message: '',\n      channel: 'WHATSAPP',\n      mediaKind: 'audio',\n      mediaId: message.audio.id,\n      mimeType: message.audio.mime_type,\n    },\n  }];\n}\n\n// Otros tipos (video, documento, sticker...) quedan fuera de alcance.\nreturn [];\n"
+        "jsCode": "const body = $input.first().json.body;\n\n// Formato directo (Postman/WEB): { phone, message }\nif (body?.phone && body?.message) {\n  return [{ json: { phone: body.phone, message: body.message, channel: 'WEB', mediaKind: '' } }];\n}\n\n// Formato real de WhatsApp Business API\nconst message = body?.entry?.[0]?.changes?.[0]?.value?.messages?.[0];\nif (!message) return [];\n\nif (message.type === 'text') {\n  return [{ json: { providerMessageId: message.id, phone: message.from, message: message.text.body, channel: 'WHATSAPP', mediaKind: '' } }];\n}\n\n// Comprobante de pago (Sprint 4): acá solo extraemos el mediaId/mimeType.\n// La resolución+descarga contra la Graph API de Meta la hacen los nodos\n// HTTP Request de abajo — el Code Node de n8n (Task Runner) NO soporta\n// this.helpers.httpRequestWithAuthentication (confirmado en vivo, n8n 2.30.7).\nif (message.type === 'image') {\n  return [{\n    json: {\n      providerMessageId: message.id, phone: message.from,\n      message: message.image.caption ?? '',\n      channel: 'WHATSAPP',\n      mediaKind: 'image',\n      mediaId: message.image.id,\n      mimeType: message.image.mime_type,\n    },\n  }];\n}\n\n// Nota de voz (Sprint 5A, US5 / RF-14). Se baja igual que la imagen —mismos\n// dos nodos HTTP— y recién después se bifurca para transcribir.\n// WhatsApp manda las notas de voz como audio/ogg (codec Opus), que Gemini\n// acepta; el mime_type real viaja igual por si Meta cambia el contenedor.\nif (message.type === 'audio') {\n  return [{\n    json: {\n      providerMessageId: message.id, phone: message.from,\n      message: '',\n      channel: 'WHATSAPP',\n      mediaKind: 'audio',\n      mediaId: message.audio.id,\n      mimeType: message.audio.mime_type,\n    },\n  }];\n}\n\n// Otros tipos (video, documento, sticker...) quedan fuera de alcance.\nreturn [];\n"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -102,7 +102,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// getBinaryDataBuffer resuelve el binario sin importar el modo de\n// almacenamiento de n8n (memoria/filesystem/S3) — leer item.binary.data.data\n// directo solo funciona en modo memoria y en modo filesystem devuelve el ID\n// de referencia interno, no el contenido (bug encontrado en prueba real).\nconst binaryDataBuffer = await this.helpers.getBinaryDataBuffer(0, 'data');\nconst mediaBase64 = binaryDataBuffer.toString('base64');\nconst original = $('Code in JavaScript').item.json;\n\nreturn [{\n  json: {\n    phone: original.phone,\n    message: original.message,\n    channel: original.channel,\n    mediaBase64,\n    mimeType: original.mimeType,\n  },\n}];\n"
+        "jsCode": "// getBinaryDataBuffer resuelve el binario sin importar el modo de\n// almacenamiento de n8n (memoria/filesystem/S3) — leer item.binary.data.data\n// directo solo funciona en modo memoria y en modo filesystem devuelve el ID\n// de referencia interno, no el contenido (bug encontrado en prueba real).\nconst binaryDataBuffer = await this.helpers.getBinaryDataBuffer(0, 'data');\nconst mediaBase64 = binaryDataBuffer.toString('base64');\nconst original = $('Code in JavaScript').item.json;\n\nreturn [{\n  json: {\n    providerMessageId: original.providerMessageId,\n    phone: original.phone,\n    message: original.message,\n    channel: original.channel,\n    mediaBase64,\n    mimeType: original.mimeType,\n  },\n}];\n"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -152,6 +152,10 @@
             {
               "name": "mimeType",
               "value": "={{ $json.mimeType }}"
+            },
+            {
+              "name": "providerMessageId",
+              "value": "={{ $json.providerMessageId }}"
             }
           ]
         },
@@ -249,7 +253,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// getBinaryDataBuffer resuelve el binario sin importar el modo de\n// almacenamiento de n8n (memoria/filesystem/S3) — leer item.binary.data.data\n// directo solo funciona en modo memoria (mismo bug que documenta\n// \"Armar payload final\").\nconst buffer = await this.helpers.getBinaryDataBuffer(0, 'data');\nconst original = $('Code in JavaScript').item.json;\n\nreturn [{\n  json: {\n    phone: original.phone,\n    channel: original.channel,\n    mimeType: original.mimeType || 'audio/ogg',\n    audioBase64: buffer.toString('base64'),\n  },\n}];\n"
+        "jsCode": "// getBinaryDataBuffer resuelve el binario sin importar el modo de\n// almacenamiento de n8n (memoria/filesystem/S3) — leer item.binary.data.data\n// directo solo funciona en modo memoria (mismo bug que documenta\n// \"Armar payload final\").\nconst buffer = await this.helpers.getBinaryDataBuffer(0, 'data');\nconst original = $('Code in JavaScript').item.json;\n\nreturn [{\n  json: {\n    providerMessageId: original.providerMessageId,\n    phone: original.phone,\n    channel: original.channel,\n    mimeType: original.mimeType || 'audio/ogg',\n    audioBase64: buffer.toString('base64'),\n  },\n}];\n"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
@@ -299,7 +303,7 @@
     },
     {
       "parameters": {
-        "jsCode": "// Contrato con el backend (FR-009): si no hay transcripción usable, se manda\n// un marcador y el orquestador responde pidiendo reformulación SIN llamar al\n// LLM ni escalar a una persona. El literal tiene que coincidir exactamente con\n// UNTRANSCRIBABLE_AUDIO_MARKER de src/ai/orchestrator/utils/trivial-filter.ts.\nconst MARKER = '__AUDIO_NO_TRANSCRIBIBLE__';\n\nconst original = $('Code in JavaScript').item.json;\nconst res = $input.first().json;\n\n// neverError:true en el nodo HTTP → un 4xx/5xx de Gemini llega acá como body,\n// no como excepción. Se trata igual que \"no se entendió\": el usuario recibe un\n// pedido de reformulación en vez de quedarse sin respuesta.\nconst text = res?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? '';\n\nconst usable = text && !text.includes('SIN_CONTENIDO');\n\nreturn [{\n  json: {\n    phone: original.phone,\n    message: usable ? text : MARKER,\n    channel: original.channel,\n    // Sin mediaBase64/mimeType a propósito: el backend recibe TEXTO.\n    // El binario del audio muere acá (FR-011) — no se guarda en ningún lado.\n  },\n}];\n"
+        "jsCode": "// Contrato con el backend (FR-009): si no hay transcripción usable, se manda\n// un marcador y el orquestador responde pidiendo reformulación SIN llamar al\n// LLM ni escalar a una persona. El literal tiene que coincidir exactamente con\n// UNTRANSCRIBABLE_AUDIO_MARKER de src/ai/orchestrator/utils/trivial-filter.ts.\nconst MARKER = '__AUDIO_NO_TRANSCRIBIBLE__';\n\nconst original = $('Code in JavaScript').item.json;\nconst res = $input.first().json;\n\n// neverError:true en el nodo HTTP → un 4xx/5xx de Gemini llega acá como body,\n// no como excepción. Se trata igual que \"no se entendió\": el usuario recibe un\n// pedido de reformulación en vez de quedarse sin respuesta.\nconst text = res?.candidates?.[0]?.content?.parts?.[0]?.text?.trim() ?? '';\n\nconst usable = text && !text.includes('SIN_CONTENIDO');\n\nreturn [{\n  json: {\n    providerMessageId: original.providerMessageId,\n    phone: original.phone,\n    message: usable ? text : MARKER,\n    channel: original.channel,\n    // Sin mediaBase64/mimeType a propósito: el backend recibe TEXTO.\n    // El binario del audio muere acá (FR-011) — no se guarda en ningún lado.\n  },\n}];\n"
       },
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,

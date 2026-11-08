@@ -1,5 +1,5 @@
 import { Module } from '@nestjs/common';
-import { APP_GUARD } from '@nestjs/core';
+import { APP_GUARD, DiscoveryModule } from '@nestjs/core';
 import { LoggerModule } from 'nestjs-pino';
 import { BullModule } from '@nestjs/bullmq';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
@@ -24,10 +24,14 @@ import { SalesModule } from './sales/sales.module';
 import { DevToolsModule } from './dev-tools/dev-tools.module';
 import { InterviewsModule } from './interviews/interviews.module';
 import { ImprovementsModule } from './improvements/improvements.module';
+import { TrainingModule } from './training/training.module';
 import { ConfigService } from '@nestjs/config';
+import { redisOptions } from './redis/redis-options';
+import { QueueShutdownService } from './common/queue-shutdown.service';
 
 @Module({
   imports: [
+    DiscoveryModule,
     AppConfigModule,
     LoggerModule.forRoot({
       pinoHttp: {
@@ -45,7 +49,7 @@ import { ConfigService } from '@nestjs/config';
               }
             : undefined,
         serializers: {
-          req: (req) => ({ method: req.method, url: req.url }),
+          req: (req) => ({ method: req.method, url: req.url?.split('?')[0] }),
           res: (res) => ({ statusCode: res.statusCode }),
         },
       },
@@ -54,10 +58,7 @@ import { ConfigService } from '@nestjs/config';
     BullModule.forRootAsync({
       inject: [ConfigService],
       useFactory: (config: ConfigService) => ({
-        connection: {
-          host: config.get<string>('REDIS_HOST'),
-          port: config.get<number>('REDIS_PORT'),
-        },
+        connection: redisOptions(config),
       }),
     }),
     PrismaModule,
@@ -80,8 +81,10 @@ import { ConfigService } from '@nestjs/config';
     DevToolsModule,
     InterviewsModule,
     ImprovementsModule,
+    TrainingModule,
   ],
   providers: [
+    QueueShutdownService,
     {
       provide: APP_GUARD,
       useClass: ThrottlerGuard,

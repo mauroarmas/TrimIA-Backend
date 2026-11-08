@@ -1,3 +1,6 @@
+import { Optional } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import { createHash } from 'crypto';
 import { ConflictException, Injectable, Logger } from '@nestjs/common';
 import { InjectQueue } from '@nestjs/bullmq';
 import { Queue } from 'bullmq';
@@ -23,6 +26,7 @@ export class MessagingService {
     private readonly media: WhatsappMediaService,
     private readonly paymentProofs: PaymentProofsService,
     private readonly employees: EmployeesService,
+    @Optional() private readonly config?: ConfigService,
   ) {}
 
   private async prepareConversation(dto: WebhookMessageDto, channel: Channel) {
@@ -35,17 +39,30 @@ export class MessagingService {
       channel,
       client?.id,
     );
-    const message = await this.conversations.addMessage(
-      conversation.id,
-      'USER',
-      // Lo que se GUARDA puede diferir de lo que se PROCESA: el marcador de
-      // audio no transcribible se persiste como un texto legible, mientras
-      // que el job sigue llevando el marcador crudo para que el orquestador
-      // lo detecte. Sin esto, el centinela terminaba en el panel del
-      // supervisor y —peor— en el historial que se le pasa al LLM.
-      messageForStorage(dto.message ?? ''),
-    );
-    return { conversation, message };
+    const ingressKey =
+      dto.providerMessageId && channel === Channel.WHATSAPP
+        ? `meta:${createHash('sha256').update(this.config!.get<string>('N8N_BASE_URL')!).digest('hex').slice(0, 16)}:${channel}:${dto.providerMessageId}`
+        : undefined;
+    const message = ingressKey
+      ? await this.conversations.addMessage(
+          conversation.id,
+          'USER',
+          messageForStorage(dto.message ?? ''),
+          undefined,
+          ingressKey,
+        )
+      : await this.conversations.addMessage(
+          conversation.id,
+          'USER',
+          messageForStorage(dto.message ?? ''),
+        );
+    return {
+      conversation:
+        message.conversationId && message.conversationId !== conversation.id
+          ? (await this.conversations.findById(message.conversationId))!
+          : conversation,
+      message,
+    };
   }
 
   /**
@@ -88,6 +105,7 @@ export class MessagingService {
       },
       {
         // Reintentos ante fallos transitorios (Gemini/Chroma/red) con backoff.
+        jobId: dto.providerMessageId ? `incoming-${message.id}` : undefined,
         attempts: 3,
         backoff: { type: 'exponential', delay: 2000 },
         // Higiene de Redis: no acumular jobs terminados indefinidamente.

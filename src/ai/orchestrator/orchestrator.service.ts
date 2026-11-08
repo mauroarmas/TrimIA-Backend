@@ -63,6 +63,7 @@ export class OrchestratorService implements OnModuleInit {
       response: null,
       context: null,
       confidence: null,
+      integrationEvidence: null,
       retrievedDocs: null,
       escalated: null,
       escalationId: null,
@@ -78,6 +79,6 @@ export class OrchestratorService implements OnModuleInit {
       outputTokens: null,
     };
 
-    return this.graph.invoke(state);
+    return this.llm.withModelSnapshot(() => this.graph.invoke(state));
   }
 }

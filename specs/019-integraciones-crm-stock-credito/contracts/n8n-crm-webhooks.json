@@ -1,0 +1,126 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "title": "CRM: 17 columnas de la hoja de referencia",
+  "description": "Exports inactivos. x-n8n-secret en Header Auth; no importar a instancia compartida automáticamente. La metadata interna no sale a Sheets. Crear/seguimiento son upserts del snapshot comercial, idempotentes por teléfono en Sheets. PostgreSQL mantiene cada oportunidad por ID.",
+  "definitions": {
+    "CrmRow": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "Fecha primer contacto",
+        "Nombre",
+        "Teléfono",
+        "Comercio",
+        "Rubro",
+        "Localidad",
+        "Canal origen",
+        "Producto/s",
+        "Consulta/Venta",
+        "Medio de pago",
+        "Planes",
+        "Objeciones",
+        "Observaciones",
+        "Rebatir Objeción",
+        "Seguimiento",
+        "Fecha último contacto",
+        "Fecha próximo contacto"
+      ],
+      "properties": {
+        "Fecha primer contacto": {
+          "type": "string"
+        },
+        "Nombre": {
+          "type": "string"
+        },
+        "Teléfono": {
+          "type": "string"
+        },
+        "Comercio": {
+          "type": "string"
+        },
+        "Rubro": {
+          "type": "string"
+        },
+        "Localidad": {
+          "type": "string"
+        },
+        "Canal origen": {
+          "type": "string"
+        },
+        "Producto/s": {
+          "type": "string"
+        },
+        "Consulta/Venta": {
+          "type": "string"
+        },
+        "Medio de pago": {
+          "type": "string"
+        },
+        "Planes": {
+          "type": "string"
+        },
+        "Objeciones": {
+          "type": "string"
+        },
+        "Observaciones": {
+          "type": "string"
+        },
+        "Rebatir Objeción": {
+          "type": "string"
+        },
+        "Seguimiento": {
+          "type": "string"
+        },
+        "Fecha último contacto": {
+          "type": "string"
+        },
+        "Fecha próximo contacto": {
+          "type": "string"
+        }
+      }
+    },
+    "ProspectCreatePayload": {
+      "type": "object",
+      "required": [
+        "row"
+      ],
+      "properties": {
+        "row": {
+          "$ref": "#/definitions/CrmRow"
+        }
+      }
+    },
+    "ProspectFollowUpPayload": {
+      "$ref": "#/definitions/ProspectCreatePayload"
+    },
+    "WriteAcknowledgment": {
+      "type": "object",
+      "required": [
+        "success"
+      ],
+      "properties": {
+        "success": {
+          "const": true
+        }
+      }
+    },
+    "SearchResponse": {
+      "type": "object",
+      "properties": {
+        "found": {
+          "type": "boolean"
+        },
+        "prospect": {
+          "anyOf": [
+            {
+              "$ref": "#/definitions/CrmRow"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    }
+  }
+}

@@ -163,9 +163,10 @@ export class KnowledgeController {
   // === Gestión (Sprint 5A) ===
 
   @Get()
+  @UseGuards(JwtAuthGuard)
   @ApiOperation({ summary: 'Lista documentos por área (FR-019)' })
-  list(@Query() query: ListKnowledgeQueryDto) {
-    return this.knowledge.list(query);
+  list(@Query() query: ListKnowledgeQueryDto, @Req() req: AuthenticatedRequest) {
+    return this.knowledge.list(query, req.user?.id);
   }
 
   // === Archivos (Sprint 5A, US1) ===

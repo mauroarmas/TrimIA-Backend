@@ -91,10 +91,13 @@ Además del mensaje de respuesta, completá estos campos:
 
 - handoffReason: si needsHuman es true, el motivo en una línea.
 
-- internalNote: si needsHuman es true, un resumen para el supervisor que tome
-  el caso, para que no tenga que leer toda la conversación. Incluí qué se
-  pidió, qué datos ya se dieron, qué quedó pendiente y qué se prometió.
-  Este texto NO se le envía a quien escribió.
+- internalNote: si needsHuman es true, un resumen breve para quien atienda el
+  caso. Máximo 3 frases cortas, unas 300 letras: qué pidió la persona, el dato
+  importante que ya dio y qué falta confirmar o hacer. Usá lenguaje cotidiano,
+  sin puntajes, umbrales, RAG ni explicaciones del funcionamiento de la IA.
+  No repitas toda la conversación ni inventes datos, decisiones o promesas.
+  Si el último mensaje es solo una confirmación, usá el historial para explicar
+  qué estaba confirmando. Este texto NO se le envía a quien escribió.
 `;
 
 /**

@@ -1,0 +1,272 @@
+{
+  "id": "CrmFollowUpPr01",
+  "name": "CRM: Seguimiento comercial (17 columnas)",
+  "active": true,
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "crm-prospect-followup",
+        "responseMode": "responseNode",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -512,
+        112
+      ],
+      "id": "webhook-crm-prospect-followup",
+      "name": "Webhook CRM"
+    },
+    {
+      "parameters": {
+        "operation": "appendOrUpdate",
+        "documentId": {
+          "__rl": true,
+          "value": "1eU8lXoA6mcSh-s02NElqr8EWl1R2rR3TZAIFX1cENu4",
+          "mode": "id"
+        },
+        "sheetName": {
+          "__rl": true,
+          "value": "CRM",
+          "mode": "name"
+        },
+        "columns": {
+          "mappingMode": "defineBelow",
+          "matchingColumns": [
+            "Teléfono"
+          ],
+          "value": {
+            "Fecha primer contacto": "={{ $json.body.row[\"Fecha primer contacto\"] }}",
+            "Nombre": "={{ $json.body.row[\"Nombre\"] }}",
+            "Teléfono": "={{ $json.body.row[\"Teléfono\"] }}",
+            "Comercio": "={{ $json.body.row[\"Comercio\"] }}",
+            "Rubro": "={{ $json.body.row[\"Rubro\"] }}",
+            "Localidad": "={{ $json.body.row[\"Localidad\"] }}",
+            "Canal origen": "={{ $json.body.row[\"Canal origen\"] }}",
+            "Producto/s": "={{ $json.body.row[\"Producto/s\"] }}",
+            "Consulta/Venta": "={{ $json.body.row[\"Consulta/Venta\"] }}",
+            "Medio de pago": "={{ $json.body.row[\"Medio de pago\"] }}",
+            "Planes": "={{ $json.body.row[\"Planes\"] }}",
+            "Objeciones": "={{ $json.body.row[\"Objeciones\"] }}",
+            "Observaciones": "={{ $json.body.row[\"Observaciones\"] }}",
+            "Rebatir Objeción": "={{ $json.body.row[\"Rebatir Objeción\"] }}",
+            "Seguimiento": "={{ $json.body.row[\"Seguimiento\"] }}",
+            "Fecha último contacto": "={{ $json.body.row[\"Fecha último contacto\"] }}",
+            "Fecha próximo contacto": "={{ $json.body.row[\"Fecha próximo contacto\"] }}"
+          },
+          "schema": [
+            {
+              "id": "Fecha primer contacto",
+              "displayName": "Fecha primer contacto",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Nombre",
+              "displayName": "Nombre",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Teléfono",
+              "displayName": "Teléfono",
+              "required": false,
+              "defaultMatch": true,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Comercio",
+              "displayName": "Comercio",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Rubro",
+              "displayName": "Rubro",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Localidad",
+              "displayName": "Localidad",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Canal origen",
+              "displayName": "Canal origen",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Producto/s",
+              "displayName": "Producto/s",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Consulta/Venta",
+              "displayName": "Consulta/Venta",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Medio de pago",
+              "displayName": "Medio de pago",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Planes",
+              "displayName": "Planes",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Objeciones",
+              "displayName": "Objeciones",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Observaciones",
+              "displayName": "Observaciones",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Rebatir Objeción",
+              "displayName": "Rebatir Objeción",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Seguimiento",
+              "displayName": "Seguimiento",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Fecha último contacto",
+              "displayName": "Fecha último contacto",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            },
+            {
+              "id": "Fecha próximo contacto",
+              "displayName": "Fecha próximo contacto",
+              "required": false,
+              "defaultMatch": false,
+              "display": true,
+              "type": "string",
+              "canBeUsedToMatch": true
+            }
+          ]
+        },
+        "options": {}
+      },
+      "type": "n8n-nodes-base.googleSheets",
+      "typeVersion": 4.5,
+      "position": [
+        -256,
+        112
+      ],
+      "id": "sheets-crm-prospect-followup",
+      "name": "Escribir CRM",
+      "credentials": {
+        "googleSheetsOAuth2Api": {
+          "id": "PSBd2QQ3ePFjvOeF",
+          "name": "Google Sheets account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "respondWith": "json",
+        "responseBody": "={{ { success: true } }}",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.1,
+      "position": [
+        0,
+        112
+      ],
+      "id": "ack-crm-prospect-followup",
+      "name": "Confirmar escritura"
+    }
+  ],
+  "connections": {
+    "Webhook CRM": {
+      "main": [
+        [
+          {
+            "node": "Escribir CRM",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Escribir CRM": {
+      "main": [
+        [
+          {
+            "node": "Confirmar escritura",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  }
+}

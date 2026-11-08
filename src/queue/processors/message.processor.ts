@@ -1,3 +1,12 @@
+import { Optional } from '@nestjs/common';
+import { FinancingConversationService } from '../../financing/financing-conversation.service';
+import {
+  AMBIGUOUS_OPT_OUT_CLARIFICATION_MESSAGE,
+   classifyIncomingOptOutText,
+  ContactPreferenceService,
+  OPT_OUT_CONFIRMATION_MESSAGE,
+} from '../../financing/contact-preference.service';
+import { botMayRespond } from '../bot-response-policy';
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
 import { Job } from 'bullmq';
@@ -8,6 +17,7 @@ import { OrchestratorService } from '../../ai/orchestrator/orchestrator.service'
 import { EmployeesService } from '../../employees/employees.service';
 import { CallerResolver } from '../../ai/caller/caller.resolver';
 import { OrchestrationLogger } from '../../ai/orchestrator/orchestration-logger.service';
+import { isClosingCourtesy } from '../../ai/orchestrator/utils/trivial-filter';
 
 interface MessageJob {
   conversationId: string;
@@ -52,6 +62,8 @@ export class MessageProcessor extends WorkerHost {
     private readonly employees: EmployeesService,
     private readonly orchestrationLogger: OrchestrationLogger,
     private readonly callerResolver: CallerResolver,
+    @Optional() private readonly financing?: FinancingConversationService,
+    @Optional() private readonly contactPreference?: ContactPreferenceService,
   ) {
     super();
   }
@@ -113,19 +125,66 @@ export class MessageProcessor extends WorkerHost {
       // Sticky + historial: una sola query trae todo lo que necesita el orquestador.
       const conversation = await this.conversations.findById(conversationId);
 
+      // Spec 022 (US1, FR-001..FR-003): detectar solicitud explícita de no contacto
+      // sobre el teléfono titular del hilo antes de invocar automatismos.
+      const optOutIntent = classifyIncomingOptOutText(message, externalId);
+      if (optOutIntent === 'OPT_OUT' && this.contactPreference) {
+        await this.contactPreference.recordOptOut({
+          phone: externalId,
+          reason: message,
+          sourceMessageId: messageId ?? null,
+          sourceConversationId: conversationId,
+        });
+        if (!conversation || botMayRespond(conversation.status)) {
+          await this.conversations.addMessage(
+            conversationId,
+            'ASSISTANT',
+            OPT_OUT_CONFIRMATION_MESSAGE,
+            'SALES',
+          );
+          await this.sender.send(
+            externalId,
+            OPT_OUT_CONFIRMATION_MESSAGE,
+            channel,
+          );
+        }
+        return;
+      }
+      if (
+        optOutIntent === 'AMBIGUOUS_OPT_OUT' &&
+        this.contactPreference &&
+        (!conversation || botMayRespond(conversation.status))
+      ) {
+        await this.conversations.addMessage(
+          conversationId,
+          'ASSISTANT',
+          AMBIGUOUS_OPT_OUT_CLARIFICATION_MESSAGE,
+          'SALES',
+        );
+        await this.sender.send(
+          externalId,
+          AMBIGUOUS_OPT_OUT_CLARIFICATION_MESSAGE,
+          channel,
+        );
+        return;
+      }
+
       // Human-in-the-loop (Sprint 3): mientras un caso está pendiente de un
       // supervisor (WAITING_HUMAN) o alguien tiene el control manual
       // (HUMAN_HANDLING), el agente de IA no responde. El mensaje ya quedó
       // persistido por MessagingService.prepareConversation() antes de
       // encolar — el supervisor lo ve en el contexto sin acción adicional.
-      if (conversation && conversation.status !== 'ACTIVE') {
+      if (conversation && !botMayRespond(conversation.status)) {
         this.logger.log(
           `Conversación [${conversationId}] en estado ${conversation.status}: no se invoca al agente.`,
         );
         // Solo en WAITING_HUMAN: si un supervisor ya tomó el control
         // (HUMAN_HANDLING) está mirando la conversación y va a contestar él,
         // un aviso automático ahí sobra y confunde.
-        if (conversation.status === 'WAITING_HUMAN') {
+        if (
+          conversation.status === 'WAITING_HUMAN' &&
+          !isClosingCourtesy(message)
+        ) {
           await this.acknowledgeWaitingHuman(
             conversationId,
             externalId,
@@ -173,6 +232,30 @@ export class MessageProcessor extends WorkerHost {
           `userType de ${externalId}: ${conversation?.userType ?? 'nuevo'} → ${userType}` +
             (employee?.isActive ? ` (${employee.sector.name})` : ''),
         );
+      }
+
+      if (this.financing) {
+        const financial = await this.financing.handle(
+          conversationId,
+          messageId,
+          message,
+          caller,
+        );
+        if (financial.handled) {
+          if (
+            !('replayed' in financial && financial.replayed) &&
+            financial.response
+          ) {
+            await this.conversations.addMessage(
+              conversationId,
+              'ASSISTANT',
+              financial.response,
+              'SALES',
+            );
+            await this.sender.send(externalId, financial.response, channel);
+          }
+          return;
+        }
       }
 
       // El orquestador clasifica (o saltea, si hay sticky), deriva y registra.

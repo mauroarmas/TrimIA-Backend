@@ -1,0 +1,343 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "TrimIA — 021 Seguimiento comercial automático MVP",
+    "version": "1.0.0",
+    "description": "Contratos del módulo de Ventas para la regla global de seguimiento comercial, consulta de estado por oportunidad, simulación de vencimiento en modo demo y resincronización con Google Sheets."
+  },
+  "paths": {
+    "/sales/followup-rule": {
+      "get": {
+        "summary": "Consulta la única regla global de seguimiento comercial",
+        "operationId": "getFollowUpRule",
+        "responses": {
+          "200": {
+            "description": "Estado actual de la regla global",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FollowUpRuleResponse"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Usuario sin acceso al módulo de Ventas ni supervisión general"
+          }
+        }
+      },
+      "put": {
+        "summary": "Activa/suspende la regla global o modifica el plazo en horas (solo supervisión general)",
+        "operationId": "updateFollowUpRule",
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UpdateFollowUpRuleRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Regla global actualizada",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/FollowUpRuleResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Plazo inválido (debe ser un entero positivo)"
+          },
+          "403": {
+            "description": "Solo supervisión general puede modificar la regla global"
+          },
+          "409": {
+            "description": "Conflicto de versión (STALE_VERSION)"
+          }
+        }
+      }
+    },
+    "/sales/prospects/{id}/followup-status": {
+      "get": {
+        "summary": "Consulta el estado detallado de seguimiento de una oportunidad comercial",
+        "operationId": "getProspectFollowUpStatus",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Estado de seguimiento de la oportunidad",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProspectFollowUpStatus"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Oportunidad no encontrada"
+          }
+        }
+      }
+    },
+    "/sales/prospects/{id}/followup/simulate-due": {
+      "post": {
+        "summary": "Simula en modo demostración el cumplimiento del plazo de inactividad y evalúa la oportunidad sin alterar las 48 h de la regla global",
+        "operationId": "simulateProspectFollowUpDue",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Resultado de la evaluación de seguimiento (enviado simulado, bloqueado o cancelado con motivo)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProspectFollowUpStatus"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Oportunidad no encontrada"
+          },
+          "409": {
+            "description": "Transporte simulado no habilitado o conflicto de concurrencia"
+          }
+        }
+      }
+    },
+    "/sales/prospects/{id}/crm-sync": {
+      "post": {
+        "summary": "Reintenta manualmente la sincronización pendiente de la oportunidad con Google Sheets sin repetir el mensaje al cliente",
+        "operationId": "syncProspectCrm",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Estado de sincronización actualizado",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": ["prospectId", "syncStatus", "remoteSynced"],
+                  "properties": {
+                    "prospectId": {
+                      "type": "string",
+                      "format": "uuid"
+                    },
+                    "syncStatus": {
+                      "type": "string",
+                      "enum": ["SYNCED", "PENDING", "FAILED"]
+                    },
+                    "remoteSynced": {
+                      "type": "boolean"
+                    },
+                    "lastSyncedAt": {
+                      "type": "string",
+                      "format": "date-time",
+                      "nullable": true
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "FollowUpRuleResponse": {
+        "type": "object",
+        "required": [
+          "id",
+          "enabled",
+          "inactivityHours",
+          "version",
+          "transportMode",
+          "updatedAt"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "example": "default"
+          },
+          "enabled": {
+            "type": "boolean",
+            "example": false
+          },
+          "inactivityHours": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 720,
+            "example": 48
+          },
+          "version": {
+            "type": "integer",
+            "minimum": 1,
+            "example": 1
+          },
+          "effectiveSince": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "transportMode": {
+            "type": "string",
+            "enum": ["disabled", "simulated"]
+          },
+          "updatedAt": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "UpdateFollowUpRuleRequest": {
+        "type": "object",
+        "required": ["enabled", "inactivityHours", "expectedVersion"],
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "inactivityHours": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 720
+          },
+          "expectedVersion": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      },
+      "ProspectFollowUpStatus": {
+        "type": "object",
+        "required": [
+          "prospectId",
+          "status",
+          "crmSyncStatus"
+        ],
+        "properties": {
+          "prospectId": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "status": {
+            "type": "string",
+            "enum": ["SCHEDULED", "BLOCKED", "SENDING", "COMPLETED", "CANCELLED"]
+          },
+          "reasonCode": {
+            "type": "string",
+            "nullable": true
+          },
+          "reasonLabel": {
+            "type": "string",
+            "nullable": true
+          },
+          "lastInteractionAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "scheduledFor": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "completedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "cancelledAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "crmSyncStatus": {
+            "type": "string",
+            "enum": ["SYNCED", "PENDING", "FAILED"]
+          },
+          "lastSyncedAt": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "communication": {
+            "type": "object",
+            "nullable": true,
+            "required": ["id", "status", "transportMode", "attemptCount"],
+            "properties": {
+              "id": {
+                "type": "string",
+                "format": "uuid"
+              },
+              "status": {
+                "type": "string",
+                "enum": ["PENDING", "SENDING", "ACCEPTED", "DELIVERED", "FAILED", "UNCERTAIN"]
+              },
+              "transportMode": {
+                "type": "string",
+                "enum": ["disabled", "simulated"]
+              },
+              "providerMessageId": {
+                "type": "string",
+                "nullable": true
+              },
+              "attemptCount": {
+                "type": "integer"
+              },
+              "lastErrorCode": {
+                "type": "string",
+                "nullable": true
+              },
+              "acceptedAt": {
+                "type": "string",
+                "format": "date-time",
+                "nullable": true
+              },
+              "deliveredAt": {
+                "type": "string",
+                "format": "date-time",
+                "nullable": true
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

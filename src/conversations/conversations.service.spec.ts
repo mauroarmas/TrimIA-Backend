@@ -61,6 +61,7 @@ describe('ConversationsService — takeover/release/replyManually', () => {
       await service.getOrCreate('549123', 'WHATSAPP', 'client-1');
 
       expect(prisma.conversation.create).toHaveBeenCalledWith({
+        omit: { financingDraft: true, financingVersion: true },
         data: {
           externalId: '549123',
           channel: 'WHATSAPP',
@@ -86,6 +87,7 @@ describe('ConversationsService — takeover/release/replyManually', () => {
       );
 
       expect(prisma.conversation.update).toHaveBeenCalledWith({
+        omit: { financingDraft: true, financingVersion: true },
         where: { id: 'conv-1' },
         data: { clientId: 'client-1' },
       });
@@ -115,6 +117,7 @@ describe('ConversationsService — takeover/release/replyManually', () => {
       await service.getOrCreate('549999', 'WHATSAPP', undefined);
 
       expect(prisma.conversation.create).toHaveBeenCalledWith({
+        omit: { financingDraft: true, financingVersion: true },
         data: {
           externalId: '549999',
           channel: 'WHATSAPP',
@@ -609,6 +612,7 @@ describe('ConversationsService — takeover/release/replyManually', () => {
       await service.close('conv-1');
 
       expect(prisma.conversation.update).toHaveBeenCalledWith({
+        omit: { financingDraft: true, financingVersion: true },
         where: { id: 'conv-1' },
         data: { status: 'CLOSED' },
       });
@@ -664,6 +668,7 @@ describe('ConversationsService — takeover/release/replyManually', () => {
 
       // El filtro es el mecanismo: sin él, cerrar no tendría ningún efecto.
       expect(prisma.conversation.findFirst).toHaveBeenCalledWith({
+        omit: { financingDraft: true, financingVersion: true },
         where: expect.objectContaining({ status: { not: 'CLOSED' } }),
       });
       expect(nueva).toEqual({ id: 'conv-2' });

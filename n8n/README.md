@@ -1,5 +1,10 @@
 # n8n — integración con WhatsApp Business (Meta)
 
+> Demo local, 2026-11-05: Mauro autorizó temporalmente el historial de ejecuciones nuevas con retención de 24 horas. El override `deploy/local/compose.yml` habilita su guardado, incluidos payloads, mientras dure QA. Ver [diagnóstico y cómo volver a desactivarlo](../docs/DEMO_LOCAL_WHATSAPP.md#diagnóstico-temporal-habilitado-el-2026-11-05). La configuración base sin historial sigue siendo la habitual; las secciones históricas de privacidad siguientes describen esa política.
+
+
+Para la demo en Render, seguir [la guía de despliegue](../docs/DESPLIEGUE_RENDER_VERCEL.md) e importar los seis exports preparados de `deploy/n8n/workflows/`. Lo que sigue documenta el entorno local y sus antecedentes.
+
 Este directorio contiene los workflows de n8n que hacen de puente entre WhatsApp
 Business API (Meta) y el backend NestJS. **Nada de esto se configura solo** al
 levantar `docker compose up` — hay pasos manuales, ninguno documentado antes de

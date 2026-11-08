@@ -1,12 +1,12 @@
 {
-  "version": "0.13.4",
+  "version": "1.0.13",
   "integration_state_schema": 1,
   "installed_integrations": [
     "agy"
   ],
   "integration_settings": {
     "agy": {
-      "script": "sh",
+      "script": "ps",
       "invoke_separator": "-"
     }
   },

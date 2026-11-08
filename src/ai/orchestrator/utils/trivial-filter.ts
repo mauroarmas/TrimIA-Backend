@@ -11,10 +11,19 @@
 // backtracking cuadrático (agravado si el mensaje no tiene un tope de
 // longitud — ver MaxLength en WebhookMessageDto).
 const GREETING_RE =
-  /^\s*(hola+|buenas|buen[oa]s?\s*(d[ií]as?|tardes|noches)?|hey|holis|que\s*tal|qué\s*tal|cómo\s*andan?|como\s*andan?)[\s!.¿?]*$/i;
+  /^[\s¡¿]*(hola+|buenas|buen[oa]s?\s*(d[ií]as?|tardes|noches)?|hey|holis|que\s*tal|qué\s*tal|cómo\s*andan?|como\s*andan?)[\s!.¿?]*$/i;
 
 const CLOSING_RE =
-  /^\s*(gracias|muchas\s*gracias|mil\s*gracias|ok+|oka+|okey+|dale|listo|perfecto|joya|barbaro|bárbaro|chau+|chao|adi[oó]s|nos\s*vemos|hasta\s*luego|👍|🙏|👌)[\s!.]*$/i;
+  /^\s*(gracias(?:[\s,!;.]+(?:quedo|quedamos)\s+atent[oa]s?)?|muchas\s*gracias|mil\s*gracias|ok+|oka+|okey+|dale|listo|perfecto|joya|barbaro|bárbaro|chau+|chao|adi[oó]s|nos\s*vemos|hasta\s*luego|👍|🙏|👌)[\s!.]*$/i;
+
+export function isClosingCourtesy(message: string): boolean {
+  return CLOSING_RE.test(message);
+}
+
+/** Un saludo aislado no confirma una acción pendiente, incluso con agente fijado. */
+export function isOpeningGreeting(message: string): boolean {
+  return GREETING_RE.test(message);
+}
 
 /** True si el mensaje es un saludo/despedida obvio que no requiere LLM. */
 export function isTrivial(message: string): boolean {

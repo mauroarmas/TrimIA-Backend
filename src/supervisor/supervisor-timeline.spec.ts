@@ -8,9 +8,12 @@ import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ROLES_KEY, RolesGuard } from '../auth/guards/roles.guard';
 import { SupervisorController } from './supervisor.controller';
 
+const request = { user: { id: 'sup-1' } } as never;
+
 function buildController(
   options: {
     timeline?: { conversations: unknown[]; timeline: unknown[] } | null;
+    allowedAgents?: string[] | null;
     employee?: { id: string; name: string } | null;
   } = {},
 ) {
@@ -34,8 +37,13 @@ function buildController(
       ),
   };
 
+  const supervisor = {
+    resolveAllowedAgents: jest
+      .fn()
+      .mockResolvedValue(options.allowedAgents ?? null),
+  };
   const controller = new SupervisorController(
-    {} as never, // SupervisorService: no lo toca este endpoint
+    supervisor as never,
     {} as never, // EscalationsService
     {} as never, // EscalationSuggestionService
     conversations as never,
@@ -43,7 +51,7 @@ function buildController(
     {} as never, // RealtimeService: no lo toca este endpoint
   );
 
-  return { controller, conversations, employees };
+  return { controller, conversations, employees, supervisor };
 }
 
 describe('SupervisorController — timeline unificado: solo SUPERVISOR', () => {
@@ -71,14 +79,14 @@ describe('SupervisorController.getContactTimeline', () => {
     const { controller } = buildController({ timeline: null });
 
     await expect(
-      controller.getContactTimeline('5493865505362'),
+      controller.getContactTimeline('5493865505362', request),
     ).rejects.toBeInstanceOf(NotFoundException);
   });
 
   it('normaliza el externalId antes de buscar', async () => {
     const { controller, conversations, employees } = buildController();
 
-    await controller.getContactTimeline('54 9 386 550-5362');
+    await controller.getContactTimeline('54 9 386 550-5362', request);
 
     expect(conversations.getUnifiedTimeline).toHaveBeenCalledWith(
       '5493865505362',
@@ -91,7 +99,10 @@ describe('SupervisorController.getContactTimeline', () => {
     // teléfono) pero la whitelist no lo reconoce, o dejó de ser empleado.
     const { controller } = buildController({ employee: null });
 
-    const result = await controller.getContactTimeline('5493865505362');
+    const result = await controller.getContactTimeline(
+      '5493865505362',
+      request,
+    );
 
     expect(result.contact.employee).toBeNull();
   });
@@ -99,7 +110,10 @@ describe('SupervisorController.getContactTimeline', () => {
   it('arma la respuesta con contact/conversations/timeline', async () => {
     const { controller } = buildController();
 
-    const result = await controller.getContactTimeline('5493865505362');
+    const result = await controller.getContactTimeline(
+      '5493865505362',
+      request,
+    );
 
     expect(result).toEqual({
       contact: {
@@ -109,5 +123,33 @@ describe('SupervisorController.getContactTimeline', () => {
       conversations: [{ id: 'conv-1' }],
       timeline: [{ conversationId: 'conv-1' }],
     });
+  });
+  it('filtra conversaciones y mensajes por las áreas vigentes del supervisor', async () => {
+    const { controller, supervisor } = buildController({
+      allowedAgents: ['SALES'],
+      timeline: {
+        conversations: [
+          { id: 'ventas', currentAgent: 'SALES' },
+          { id: 'cobros', currentAgent: 'COLLECTIONS' },
+        ],
+        timeline: [{ conversationId: 'ventas' }, { conversationId: 'cobros' }],
+      },
+    });
+    const result = await controller.getContactTimeline(
+      '5493865505362',
+      request,
+    );
+    expect(supervisor.resolveAllowedAgents).toHaveBeenCalledWith('sup-1');
+    expect(result.conversations).toEqual([
+      { id: 'ventas', currentAgent: 'SALES' },
+    ]);
+    expect(result.timeline).toEqual([{ conversationId: 'ventas' }]);
+  });
+
+  it('no revela un contacto si ninguna conversación pertenece al área supervisada', async () => {
+    const { controller } = buildController({ allowedAgents: [] });
+    await expect(
+      controller.getContactTimeline('5493865505362', request),
+    ).rejects.toBeInstanceOf(NotFoundException);
   });
 });

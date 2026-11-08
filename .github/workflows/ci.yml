@@ -1,0 +1,32 @@
+name: Backend CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+concurrency:
+  group: backend-ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - run: npm ci --no-audit --no-fund
+      - run: npx prisma generate
+      - run: npm run build
+      - run: npm test -- --runInBand
+      - run: npm run test:gateway
+      - name: Build production container
+        run: docker build -t trimia-ci .
+      - name: Verify container artifact
+        run: docker run --rm --entrypoint node trimia-ci -e "require('node:fs').accessSync('/app/dist/main.js');require('bcrypt');require('@prisma/client');require('prisma/package.json');"
+      - name: Build n8n wrapper
+        run: docker build -f deploy/n8n/Dockerfile -t trimia-n8n-ci .
+      - name: Verify n8n wrapper
+        run: docker run --rm --network none trimia-n8n-ci --version

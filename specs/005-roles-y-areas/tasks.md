@@ -150,7 +150,7 @@ puertas y dos están en otro módulo. Ver [contracts/escritura-de-conocimiento.m
 ## Phase 8: Polish & Cross-Cutting Concerns
 
 - [X] T038 [P] Actualizar `docs/CONTEXTO_TECNICO.md` con el `Caller`, la relación N:M, la tercera rama de confianza y la regla de escritura (constitución: documentación viva en el mismo trabajo)
-- [X] T039 [P] Actualizar `docs/hallazgos-para-proxima-spec.md` marcando qué quedó implementado, para que no se lea como pendiente
+- [X] T039 [P] Actualizar `/home/mauro/Cursado-2026/Proyecto-Final/contenido-codigo/limpieza-2026-11-04/backend/docs/hallazgos-para-proxima-spec.md` marcando qué quedó implementado, para que no se lea como pendiente
 - [X] T040 Correr `docker compose exec nestjs npm test` y `npm run lint` — puerta de calidad obligatoria
 - [X] T041 Recorrer los 10 escenarios de [quickstart.md](./quickstart.md) a mano
 - [X] T042 Verificar la **paridad por WhatsApp** con el Simulador de Chat (escenario 10 del quickstart): la misma persona con la misma pregunta recibe el mismo trato por los dos canales. Debería salir gratis porque la identidad se resuelve por teléfono, pero conviene comprobarlo y no suponerlo (SC-009)

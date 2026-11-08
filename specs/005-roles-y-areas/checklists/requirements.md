@@ -2,7 +2,7 @@
 
 **Purpose**: Validar completitud y calidad de la especificación antes de planificar
 **Created**: 2026-08-19
-**Feature**: [spec.md](../spec.md) · **Insumo**: [hallazgos](../../../docs/hallazgos-para-proxima-spec.md)
+**Feature**: [spec.md](../spec.md) · **Insumo**: [hallazgos](/home/mauro/Cursado-2026/Proyecto-Final/contenido-codigo/limpieza-2026-11-04/backend/docs/hallazgos-para-proxima-spec.md)
 
 ## Content Quality
 
@@ -75,7 +75,7 @@ CL-2 y por el circuito completo de US2 — anotado a propósito, no es un olvido
 ## Notes
 
 **Decisiones que llegaron ya tomadas**, de la conversación del 2026-08-18/19
-registrada en [docs/hallazgos-para-proxima-spec.md](../../../docs/hallazgos-para-proxima-spec.md):
+registrada en [docs/hallazgos-para-proxima-spec.md](/home/mauro/Cursado-2026/Proyecto-Final/contenido-codigo/limpieza-2026-11-04/backend/docs/hallazgos-para-proxima-spec.md):
 
 1. **No restringir la lectura por área** (evaluado y descartado): para eso está la
    orquestación de agentes, y restringirla chocaría con la capacitación del Sprint 5B.

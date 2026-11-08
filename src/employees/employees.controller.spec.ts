@@ -18,15 +18,21 @@ import { ConfigService } from '@nestjs/config';
 import { JwtAuthGuard } from '../auth/guards/jwt-auth.guard';
 import { ROLES_KEY, RolesGuard } from '../auth/guards/roles.guard';
 import { JwtStrategy } from '../auth/strategies/jwt.strategy';
-import { JwtPayload } from '../auth/auth.service';
+import { AuthService, JwtPayload } from '../auth/auth.service';
+import { Request } from 'express';
 import { EmployeesController } from './employees.controller';
 import { EmployeesService } from './employees.service';
 
-function contextConRol(role: string): ExecutionContext {
+function contextConRol(
+  role: string,
+  areasSupervisadas: JwtPayload['areasSupervisadas'] = [],
+): ExecutionContext {
   return {
     getHandler: () => EmployeesController.prototype.setSupervisedAreas,
     getClass: () => EmployeesController,
-    switchToHttp: () => ({ getRequest: () => ({ user: { role } }) }),
+    switchToHttp: () => ({
+      getRequest: () => ({ user: { role, areasSupervisadas } }),
+    }),
   } as unknown as ExecutionContext;
 }
 
@@ -64,30 +70,58 @@ describe('EmployeesController — control de acceso', () => {
 
 describe('⭐ SC-005 — el acceso NO puede depender de las áreas', () => {
   /**
-   * La garantía de raíz: las áreas **no viajan en la sesión**, así que ningún guard
-   * puede ramificar por ellas ni por accidente. Un supervisor de una área y el
-   * gerente presentan exactamente la misma credencial.
+   * Las áreas viajan como metadata desde Sprint 6. La autorización de esta
+   * ruta sigue dependiendo del rol: ampliar áreas no puede quitar el acceso.
    */
-  it('la sesión no expone las áreas supervisadas', () => {
-    const strategy = new JwtStrategy({
-      get: () => 'un-secreto-de-al-menos-32-caracteres!!',
-    } as unknown as ConfigService);
+  it.each([[[]], [[{ id: 's1', name: 'Ventas', agentType: 'SALES' }]]])(
+    'las áreas de la sesión no cambian el acceso por rol: %j',
+    async (...areas) => {
+      const supervisedAreas = areas[0] as JwtPayload['areasSupervisadas'];
+      const identity = {
+        id: 'emp-1',
+        email: 'diego.bazan@credimision.com',
+        role: 'SUPERVISOR',
+        sectorId: 's1',
+        sectorName: 'Ventas',
+        isController: false,
+        areasSupervisadas: supervisedAreas,
+      };
+      const strategy = new JwtStrategy(
+        {
+          get: () => 'un-secreto-de-al-menos-32-caracteres!!',
+        } as unknown as ConfigService,
+        {
+          isSessionRevoked: jest.fn().mockResolvedValue(false),
+          currentIdentity: jest.fn().mockResolvedValue(identity),
+        } as unknown as AuthService,
+      );
 
-    const payload: JwtPayload = {
-      sub: 'emp-1',
-      email: 'diego.bazan@credimision.com',
-      role: 'SUPERVISOR',
-      sectorId: 's1',
-      sectorName: 'Ventas',
-      isController: false,
-    };
+      const payload: JwtPayload = {
+        sub: 'emp-1',
+        email: 'diego.bazan@credimision.com',
+        role: 'SUPERVISOR',
+        sectorId: 's1',
+        sectorName: 'Ventas',
+        isController: false,
+        areasSupervisadas: supervisedAreas,
+        exp: Math.floor(Date.now() / 1000) + 3600,
+      };
 
-    const user = strategy.validate(payload);
+      const user = await strategy.validate(
+        { headers: { authorization: 'Bearer test-session' } } as Request,
+        payload,
+      );
 
-    expect(Object.keys(user)).not.toContain('areas');
-    expect(Object.keys(user)).not.toContain('areasSupervisadas');
-    expect(JSON.stringify(user)).not.toMatch(/gerente/i);
-  });
+      expect(Object.keys(user)).not.toContain('areas');
+      expect(user.areasSupervisadas).toEqual(supervisedAreas);
+      expect(
+        new RolesGuard(new Reflector()).canActivate(
+          contextConRol(user.role, user.areasSupervisadas),
+        ),
+      ).toBe(true);
+      expect(JSON.stringify(user)).not.toMatch(/gerente/i);
+    },
+  );
 });
 
 describe('EmployeesController.setSupervisedAreas', () => {

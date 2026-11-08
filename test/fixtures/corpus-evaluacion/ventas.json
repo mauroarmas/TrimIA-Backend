@@ -1,0 +1,17 @@
+{
+  "area": "Ventas",
+  "documents": [
+    {
+      "id": "eval-vta-001",
+      "title": "Catálogo General de Productos y Servicios - Qué vendemos",
+      "content": "Vendemos y comercializamos maquinaria industrial, herramientas de corte, tornillos de alta resistencia, compresores de aire y equipamiento para talleres mecánicos. La venta se realiza de forma directa o financiada.",
+      "audience": "TODOS"
+    },
+    {
+      "id": "eval-vta-002",
+      "title": "Circuito Interno de Proceso de Ventas",
+      "content": "Procedimiento interno para empleados: El vendedor carga la orden en el ERP, solicita validación crediticia al área de Administración si supera los $500.000, y una vez aprobada, remite la solicitud a Logística para la coordinación de despacho.",
+      "audience": "INTERNO"
+    }
+  ]
+}

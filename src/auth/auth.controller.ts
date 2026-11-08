@@ -43,4 +43,12 @@ export class AuthController {
   me(@Req() req: any) {
     return req.user;
   }
+
+  @Post('logout')
+  @HttpCode(HttpStatus.OK)
+  @UseGuards(JwtAuthGuard)
+  async logout(@Req() req: any) {
+    await this.authService.revokeSession(req.user.sessionId, req.user.exp);
+    return { message: 'Sesión cerrada' };
+  }
 }

@@ -1,165 +1,73 @@
-# TrimIA — Backend
+# TrimIA
 
-Backend del sistema de agentes IA para empresas comerciales. Construido con NestJS + LangGraph + Gemini. Desarrollado como tesis de grado.
+Plataforma de asistencia con IA para Credimisión S.R.L., desarrollada como proyecto final. Backend NestJS/LangGraph, panel React en el repositorio hermano `trimIA-frontend`.
 
-## Stack
+## Entorno vigente
 
-| Servicio   | Descripción                              | Puerto (host) |
-|-----------|------------------------------------------|---------------|
-| NestJS    | API principal (hot reload en dev)        | 3000          |
-| PostgreSQL | Base de datos relacional (Prisma)         | 5433 |
-| Redis     | Cola de mensajes (BullMQ)               | 6379          |
-| ChromaDB  | Vector store para RAG                    | 8000          |
-| n8n       | Orquestador de workflows (WhatsApp)      | 5678          |
+La demo corre en esta PC con Docker y Tailscale Funnel:
 
-## Requisitos previos
+**https://trimia-demo.tail9126e1.ts.net/**
 
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/) instalado y corriendo
-- Git
-
-No se necesita Node.js ni npm instalados localmente — todo corre dentro de Docker.
-
-## Instalación (primera vez)
-
-### 1. Clonar el repositorio
+La guía operativa está en [docs/DEMO_LOCAL_WHATSAPP.md](docs/DEMO_LOCAL_WHATSAPP.md). Los datos se conservan en los volúmenes Docker, `storage/` y `n8n/data/`.
 
 ```bash
-git clone <url-del-repo>
-cd trim-ia-backend
+bash scripts/demo-local.sh status
+bash scripts/demo-local.sh logs
+bash scripts/demo-local.sh backup
 ```
 
-### 2. Configurar variables de entorno
+Para reconstruir y actualizar la demo, con la configuración ya completada:
+
+```bash
+bash scripts/demo-local.sh up
+```
+
+Ese comando compila el panel, construye las imágenes, respalda la base y comprueba el esquema antes de actualizar los servicios. Revisar cualquier advertencia de Prisma antes de continuar.
+
+## Configuración
+
+| Archivo | Uso |
+|---|---|
+| `.env` | Configuración privada de API, datos y proveedores |
+| `.env.example` | Plantilla de esas variables; sin credenciales reales |
+| `deploy/local/.env` | Configuración privada del gateway y URL pública de la demo |
+| `deploy/local/.env.example` | Plantilla de demo |
+
+Los archivos privados no se versionan. Las credenciales de Meta configuradas en n8n permanecen en su almacenamiento actual.
+
+## Desarrollo local
+
+Requiere Docker Compose. Para ejecutar herramientas en el host: Node 22 o posterior y `npm ci`.
 
 ```bash
 cp .env.example .env
-```
-
-Editar `.env` y completar los valores necesarios. El único que **no tiene default** es:
-
-```
-GOOGLE_API_KEY=your_google_api_key_here   # Obtener en https://aistudio.google.com/apikey
-```
-
-El resto de los valores del `.env.example` funcionan tal cual para desarrollo local.
-
-### 3. Levantar los servicios
-
-```bash
+# Completar credenciales, modelos y secretos indicados en la plantilla.
 docker compose up -d --build
-```
-
-La primera vez descarga las imágenes y construye el contenedor de NestJS (~2-3 min). Las siguientes veces es mucho más rápido gracias al caché de npm.
-
-### 4. Crear las tablas de la base de datos
-
-Solo se hace **una vez** (o cuando cambia el `schema.prisma`):
-
-```bash
+# En una base nueva, preparar el esquema antes de usar la API:
 docker compose exec nestjs npx prisma db push
 ```
 
-Esto sincroniza las tablas de negocio (Prisma) con el `schema.prisma`. Debe decir
-"Your database is now in sync with your Prisma schema".
+El perfil de desarrollo y la demo comparten nombres de servicios y datos: usar el comando correspondiente al entorno elegido.
 
-### 5. Verificar que todo funciona
-
-```bash
-curl http://localhost:3000/health
-```
-
-Respuesta esperada:
-
-```json
-{
-  "status": "ok",
-  "info": {
-    "postgres": { "status": "up" },
-    "redis": { "status": "up" },
-    "memory_heap": { "status": "up" }
-  }
-}
-```
-
-También se puede acceder al Swagger en [http://localhost:3000/api](http://localhost:3000/api).
-
-## Uso diario
-
-### Levantar todo
+## Comprobaciones
 
 ```bash
-docker compose up -d
+npm test -- --runInBand
+npm run build
+npm run test:gateway
 ```
 
-### Ver logs de NestJS en tiempo real
+API: `http://localhost:3000/health`. Swagger: `http://localhost:3000/api`.
 
-```bash
-docker compose logs nestjs -f
-```
+## Documentación y alcance
 
-### Detener todo
+- [Índice y alcance del MVP](docs/README.md).
+- [Contexto técnico vigente](docs/CONTEXTO_TECNICO.md).
+- [Contrato del panel](docs/CONTRATO_API_Frontend.md).
+- [Especificaciones](specs/README.md).
+- [Scripts de mantenimiento y pruebas](scripts/README.md).
 
-```bash
-docker compose down
-```
+El MVP utiliza stock y crédito simulados, con Google Sheets como CRM. GCP queda para la versión final. Paperclip está fuera del alcance acordado.
 
-### Detener y borrar volúmenes (reset completo de DB)
-
-```bash
-docker compose down -v
-```
-
-## Comandos útiles
-
-### Prisma
-
-```bash
-# Crear una nueva migración después de modificar schema.prisma
-docker compose exec nestjs npx prisma migrate dev --name nombre_de_la_migracion
-
-# Abrir Prisma Studio (explorador visual de la DB)
-docker compose exec nestjs npx prisma studio
-
-# Sincronizar la DB tras cambiar schema.prisma
-docker compose exec nestjs npx prisma db push
-```
-
-### Docker
-
-```bash
-# Ver el estado de todos los contenedores
-docker compose ps
-
-# Reconstruir solo el contenedor de NestJS (tras cambios en Dockerfile o package.json)
-docker compose up -d --build nestjs
-
-# Entrar al contenedor de NestJS
-docker compose exec nestjs sh
-```
-
-## Estructura del proyecto
-
-Resumen de alto nivel. Para el detalle completo (responsabilidad de cada carpeta,
-flujo de un mensaje, agentes, RAG, modelo de datos) ver **`docs/CONTEXTO_TECNICO.md`**.
-
-```
-src/
-├── config/        # Variables de entorno con validación Joi
-├── database/      # PrismaService (cliente Prisma global)
-├── redis/         # RedisService (ioredis)
-├── health/        # GET /health — estado de postgres, redis y memoria
-├── common/        # Guards compartidos (webhook-secret)
-├── messaging/     # Entrada: webhook + DTO + envío de respuestas
-├── queue/         # Worker BullMQ que procesa cada mensaje
-├── conversations/ # Conversaciones, mensajes, historial, sticky agent
-└── ai/
-    ├── llm/          # Cliente Gemini compartido
-    ├── knowledge/    # RAG: ChromaDB + embeddings (ingest / search)
-    ├── orchestrator/ # Grafo LangGraph: ruteo sticky + clasificación
-    └── agents/       # Los 5 agentes (fábrica RAG compartida) + dominios
-```
-
-## Notas importantes
-
-- **`DATABASE_URL` en Docker**: el `docker-compose.yml` inyecta `postgres:5432` automáticamente para que NestJS se conecte por la red interna. El valor en `.env` (`localhost:5433`) es para conectarse desde herramientas externas como pgAdmin.
-- **Tablas `checkpoint_*`**: si aparecen en la DB son remanentes del checkpointer de LangGraph (hoy desconectado; vuelve en Fase 5 para interrupt/resume). Prisma no las gestiona; no dependas de ellas por ahora.
-- **Hot reload**: NestJS corre en modo `--watch`. Cualquier cambio en `src/` se compila y recarga automáticamente sin reiniciar el contenedor.
+Los históricos y archivos retirados se guardan, con inventario, en:
+`/home/mauro/Cursado-2026/Proyecto-Final/contenido-codigo/limpieza-2026-11-04/`.

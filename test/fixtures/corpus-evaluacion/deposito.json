@@ -1,0 +1,11 @@
+{
+  "area": "Depósito",
+  "documents": [
+    {
+      "id": "eval-dep-001",
+      "title": "Disponibilidad Física de Stock y Embalaje",
+      "content": "El stock físico se actualiza diariamente al cierre de turno. Los bultos pesados de maquinaria requieren preparación especial en pallets y retiro coordinado con grúa.",
+      "audience": "TODOS"
+    }
+  ]
+}

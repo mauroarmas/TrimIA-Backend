@@ -115,6 +115,28 @@ describe('ingest() — no escribe vectores inválidos', () => {
 });
 
 describe('reindex() — validar ANTES de borrar', () => {
+  it('no reutiliza IDs borrados al reindexar de nuevo el mismo documento', async () => {
+    const { service, collectionAdd, collectionDelete } = buildService([
+      VECTOR_OK,
+    ]);
+    await service.reindex(DOC_ID);
+    await service.reindex(DOC_ID);
+
+    const firstIds = collectionAdd.mock.calls[0][0].ids as string[];
+    const secondIds = collectionAdd.mock.calls[1][0].ids as string[];
+    expect(secondIds.every((id) => !firstIds.includes(id))).toBe(true);
+    expect(collectionDelete).toHaveBeenLastCalledWith({
+      where: { documentId: DOC_ID },
+    });
+    expect(collectionAdd.mock.calls[1][0].metadatas[0]).toEqual(
+      expect.objectContaining({
+        documentId: DOC_ID,
+        chunkIndex: 0,
+        version: 1,
+      }),
+    );
+  });
+
   it('un vector vacío NO borra los fragmentos que ya estaban', async () => {
     const { service, collectionDelete, collectionAdd } = buildService([[]]);
 

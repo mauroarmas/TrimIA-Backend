@@ -191,5 +191,18 @@ describe('SupervisorService', () => {
         currentAgent: 'SALES',
       });
     });
+
+    it('construye cláusula OR insensible a mayúsculas cuando se pasa search', async () => {
+      prisma.conversation.findMany.mockResolvedValue([]);
+      prisma.conversation.count.mockResolvedValue(0);
+
+      await service.getConversations({ search: '  comprobante  ' });
+
+      const arg = prisma.conversation.findMany.mock.calls[0][0];
+      expect(arg.where.OR).toHaveLength(4);
+      expect(arg.where.OR[0]).toEqual({
+        externalId: { contains: 'comprobante', mode: 'insensitive' },
+      });
+    });
   });
 });

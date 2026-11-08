@@ -28,6 +28,7 @@ describe('buildOrchestratorGraph — ruteo sticky vs. greeting', () => {
     response: null,
     context: null,
     confidence: null,
+    integrationEvidence: null,
     retrievedDocs: null,
     escalated: null,
     escalationId: null,
@@ -190,6 +191,7 @@ describe('buildOrchestratorGraph — atajo trivial vs. agente sticky', () => {
     response: null,
     context: null,
     confidence: null,
+    integrationEvidence: null,
     retrievedDocs: null,
     escalated: null,
     escalationId: null,
@@ -242,6 +244,40 @@ describe('buildOrchestratorGraph — atajo trivial vs. agente sticky', () => {
     );
     return { graph, collectionsNode, invoke, orchestrationLogger };
   }
+
+  it.each(['hola', '¡hola!', 'buenas tardes'])(
+    'con agente sticky, el saludo aislado "%s" no consulta Gemini',
+    async (message) => {
+      const { graph, invoke, collectionsNode, orchestrationLogger } =
+        buildGraph({
+          decision: 'mismo',
+          isGreeting: false,
+        });
+
+      const result = await graph.invoke({ ...baseState, message });
+
+      expect(invoke).not.toHaveBeenCalled();
+      expect(collectionsNode).not.toHaveBeenCalled();
+      expect(result.isTrivial).toBe(true);
+      expect(result.response).toContain('¿En qué puedo ayudarte hoy?');
+      expect(orchestrationLogger.trackTokens).toHaveBeenCalledWith(
+        expect.objectContaining({ inputTokens: 0, outputTokens: 0 }),
+      );
+    },
+  );
+
+  it('un saludo con consulta conserva el ruteo contextual', async () => {
+    const { graph, invoke, collectionsNode } = buildGraph({
+      decision: 'mismo',
+      isGreeting: false,
+    });
+    await graph.invoke({
+      ...baseState,
+      message: 'Hola, quiero pagar una cuota',
+    });
+    expect(invoke).toHaveBeenCalledTimes(1);
+    expect(collectionsNode).toHaveBeenCalled();
+  });
 
   it('con agente sticky, "dale" pasa por scope_check (LLM) en vez del atajo regex', async () => {
     const { graph, invoke, collectionsNode } = buildGraph({
@@ -365,6 +401,7 @@ describe('buildOrchestratorGraph — greeting_response usa greetingType', () => 
     response: null,
     context: null,
     confidence: null,
+    integrationEvidence: null,
     retrievedDocs: null,
     escalated: null,
     escalationId: null,
@@ -459,6 +496,7 @@ describe('buildOrchestratorGraph — handoff colapsado (targetAgent de scope_che
     response: null,
     context: null,
     confidence: null,
+    integrationEvidence: null,
     retrievedDocs: null,
     escalated: null,
     escalationId: null,
@@ -588,6 +626,7 @@ describe('buildOrchestratorGraph — trivial_response deja auditoría', () => {
       response: null,
       context: null,
       confidence: null,
+      integrationEvidence: null,
       retrievedDocs: null,
       escalated: null,
       escalationId: null,
@@ -671,6 +710,7 @@ describe('buildOrchestratorGraph — candidatos del turno en el payload (spec 00
     response: null,
     context: null,
     confidence: null,
+    integrationEvidence: null,
     retrievedDocs: null,
     escalated: null,
     escalationId: null,

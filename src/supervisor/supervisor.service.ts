@@ -1,4 +1,6 @@
-import { Injectable } from '@nestjs/common';
+import { LlmService } from '../ai/llm/llm.service';
+import { Optional } from '@nestjs/common';
+import { Injectable, ForbiddenException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import {
   AgentType,
@@ -15,6 +17,7 @@ export interface GetConversationsFilter {
   channel?: Channel;
   userType?: UserType;
   agentType?: AgentType;
+  search?: string;
   page?: number; // 1-indexed
   limit?: number; // default 20, max 100
 }
@@ -28,23 +31,52 @@ export interface GetEventsFilter {
   limit?: number; // default 20, max 100
 }
 
+export interface TokenModelSummary {
+  model: string;
+  calls: number;
+  input: number;
+  output: number;
+  avgDurationMs: number;
+}
+
+export interface TokenAgentDetail {
+  calls: number;
+  input: number;
+  output: number;
+  avgDurationMs: number;
+  models: string[];
+}
+
 /**
  * Métricas que consume el Panel del Supervisor (módulo de gobernanza del frontend).
  * Son agregados de datos que el sistema YA genera en cada mensaje:
- *  - TokenUsage         → consumo por agente
+ *  - TokenUsage         → consumo por agente y modelo
  *  - OrchestrationEvent → ruteos y handoffs (auditoría)
- *  - Conversation       → conversaciones activas y por agente
+ *  - Conversation       → conversaciones activas, por estado y por agente
  */
 export interface SupervisorMetrics {
   conversations: {
     total: number;
     active: number;
+    waitingHuman: number;
+    humanHandling: number;
+    closed: number;
     byAgent: Record<string, number>;
   };
   tokens: {
     totalInput: number;
     totalOutput: number;
+    totalCalls: number;
+    avgDurationMs: number | null;
+    conversationsCount: number;
+    configuredModel: string;
+    embeddingModel: string;
+    ttsModel: string | null;
+    periodFrom: Date | null;
+    periodTo: Date | null;
+    byModel: TokenModelSummary[];
     byAgent: Record<string, { input: number; output: number }>;
+    byAgentDetailed: Record<string, TokenAgentDetail>;
   };
   events: { byType: Record<string, number> };
   recentEvents: {
@@ -110,40 +142,111 @@ export class SupervisorService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
+    @Optional() private readonly llm?: LlmService,
   ) {}
 
-  async getMetrics(): Promise<SupervisorMetrics> {
+  /**
+   * Resuelve los AgentTypes permitidos para el supervisor.
+   * - Si es Diego Bazán o supervisa todos los sectores -> devuelve `null` (acceso irrestricto).
+   * - Si es un supervisor de área específica (ej. Silvia Ríos) -> devuelve sus AgentTypes asociados.
+   */
+  async resolveAllowedAgents(callerId?: string): Promise<AgentType[] | null> {
+    if (!callerId) return null;
+
+    const [totalSectors, employee] = await Promise.all([
+      this.prisma.sector.count(),
+      this.prisma.employee.findUnique({
+        where: { id: callerId },
+        include: {
+          areasSupervisadas: {
+            select: { id: true, name: true, agentType: true },
+          },
+        },
+      }),
+    ]);
+
+    if (!employee) return [];
+
+    // Diego Bazán o quien supervise todos los sectores tiene acceso global
+    if (
+      employee.email === 'diego.bazan@credimision.com' ||
+      (employee.areasSupervisadas?.length ?? 0) >= totalSectors
+    ) {
+      return null;
+    }
+
+    const allowed = (employee.areasSupervisadas ?? [])
+      .map((a) => a.agentType)
+      .filter((t): t is AgentType => t !== null);
+
+    return allowed;
+  }
+
+  async getMetrics(callerId?: string): Promise<SupervisorMetrics> {
+    const allowedAgents = await this.resolveAllowedAgents(callerId);
+
+    const convWhere: any = {};
+    const tokensWhere: any = {};
+    const eventsWhere: any = {};
+
+    if (allowedAgents !== null) {
+      convWhere.currentAgent = { in: allowedAgents };
+      tokensWhere.agentType = { in: allowedAgents };
+      eventsWhere.agentType = { in: allowedAgents };
+    }
+
     // Una sola tanda de queries en paralelo (no dependen entre sí).
     const [
-      total,
-      active,
+      convByStatus,
       convByAgent,
-      tokensByAgent,
+      tokensByModelAndAgent,
+      distinctTokenConvs,
       eventsByType,
       recentEvents,
     ] = await Promise.all([
-      this.prisma.conversation.count(),
-      this.prisma.conversation.count({ where: { status: 'ACTIVE' } }),
+      this.prisma.conversation.groupBy({
+        by: ['status'],
+        where: convWhere,
+        _count: { _all: true },
+      }),
       this.prisma.conversation.groupBy({
         by: ['currentAgent'],
+        where: convWhere,
         _count: { _all: true },
       }),
       this.prisma.tokenUsage.groupBy({
-        by: ['agentType'],
-        _sum: { inputTokens: true, outputTokens: true },
+        by: ['model', 'agentType'],
+        where: tokensWhere,
+        _sum: { inputTokens: true, outputTokens: true, durationMs: true },
+        _count: { _all: true },
+        _min: { createdAt: true },
+        _max: { createdAt: true },
+      }),
+      this.prisma.tokenUsage.groupBy({
+        by: ['conversationId'],
+        where: { ...tokensWhere, conversationId: { not: null } },
       }),
       this.prisma.orchestrationEvent.groupBy({
         by: ['eventType'],
+        where: eventsWhere,
         _count: { _all: true },
       }),
       // Solo metadatos del evento — NO el payload (puede tener contenido del
       // mensaje). El drill-down con contenido llega con el panel completo + auth.
       this.prisma.orchestrationEvent.findMany({
+        where: eventsWhere,
         orderBy: { createdAt: 'desc' },
         take: 10,
         select: { createdAt: true, eventType: true, agentType: true },
       }),
     ]);
+
+    const statusCounts: Record<string, number> = {};
+    let total = 0;
+    for (const row of convByStatus) {
+      statusCounts[row.status] = row._count._all;
+      total += row._count._all;
+    }
 
     const convAgentMap: Record<string, number> = {};
     for (const row of convByAgent) {
@@ -152,12 +255,101 @@ export class SupervisorService {
 
     const tokensAgentMap: Record<string, { input: number; output: number }> =
       {};
-    for (const row of tokensByAgent) {
-      tokensAgentMap[row.agentType] = {
-        input: row._sum.inputTokens ?? 0,
-        output: row._sum.outputTokens ?? 0,
+    const agentAccMap: Record<
+      string,
+      {
+        calls: number;
+        input: number;
+        output: number;
+        durationSum: number;
+        models: Set<string>;
+      }
+    > = {};
+    const modelAccMap = new Map<
+      string,
+      { calls: number; input: number; output: number; durationSum: number }
+    >();
+
+    let totalCalls = 0;
+    let totalDurationMs = 0;
+    let periodFrom: Date | null = null;
+    let periodTo: Date | null = null;
+
+    for (const row of tokensByModelAndAgent) {
+      const calls = row._count._all;
+      const input = row._sum.inputTokens ?? 0;
+      const output = row._sum.outputTokens ?? 0;
+      const duration = row._sum.durationMs ?? 0;
+
+      totalCalls += calls;
+      totalDurationMs += duration;
+
+      if (
+        row._min.createdAt &&
+        (!periodFrom || row._min.createdAt < periodFrom)
+      ) {
+        periodFrom = row._min.createdAt;
+      }
+      if (row._max.createdAt && (!periodTo || row._max.createdAt > periodTo)) {
+        periodTo = row._max.createdAt;
+      }
+
+      if (!tokensAgentMap[row.agentType]) {
+        tokensAgentMap[row.agentType] = { input: 0, output: 0 };
+      }
+      tokensAgentMap[row.agentType].input += input;
+      tokensAgentMap[row.agentType].output += output;
+
+      if (!agentAccMap[row.agentType]) {
+        agentAccMap[row.agentType] = {
+          calls: 0,
+          input: 0,
+          output: 0,
+          durationSum: 0,
+          models: new Set(),
+        };
+      }
+      agentAccMap[row.agentType].calls += calls;
+      agentAccMap[row.agentType].input += input;
+      agentAccMap[row.agentType].output += output;
+      agentAccMap[row.agentType].durationSum += duration;
+      agentAccMap[row.agentType].models.add(row.model);
+
+      const mPrev = modelAccMap.get(row.model) ?? {
+        calls: 0,
+        input: 0,
+        output: 0,
+        durationSum: 0,
+      };
+      mPrev.calls += calls;
+      mPrev.input += input;
+      mPrev.output += output;
+      mPrev.durationSum += duration;
+      modelAccMap.set(row.model, mPrev);
+    }
+
+    const byAgentDetailed: Record<string, TokenAgentDetail> = {};
+    for (const [agent, acc] of Object.entries(agentAccMap)) {
+      byAgentDetailed[agent] = {
+        calls: acc.calls,
+        input: acc.input,
+        output: acc.output,
+        avgDurationMs:
+          acc.calls > 0 ? Math.round(acc.durationSum / acc.calls) : 0,
+        models: Array.from(acc.models),
       };
     }
+
+    const byModel: TokenModelSummary[] = Array.from(modelAccMap.entries())
+      .map(([model, acc]) => ({
+        model,
+        calls: acc.calls,
+        input: acc.input,
+        output: acc.output,
+        avgDurationMs:
+          acc.calls > 0 ? Math.round(acc.durationSum / acc.calls) : 0,
+      }))
+      .sort((a, b) => b.calls - a.calls);
 
     const eventsTypeMap: Record<string, number> = {};
     for (const row of eventsByType) {
@@ -166,11 +358,33 @@ export class SupervisorService {
 
     const totals = Object.values(tokensAgentMap);
     return {
-      conversations: { total, active, byAgent: convAgentMap },
+      conversations: {
+        total,
+        active: statusCounts.ACTIVE ?? 0,
+        waitingHuman: statusCounts.WAITING_HUMAN ?? 0,
+        humanHandling: statusCounts.HUMAN_HANDLING ?? 0,
+        closed: statusCounts.CLOSED ?? 0,
+        byAgent: convAgentMap,
+      },
       tokens: {
         totalInput: totals.reduce((a, b) => a + b.input, 0),
         totalOutput: totals.reduce((a, b) => a + b.output, 0),
+        totalCalls,
+        avgDurationMs:
+          totalCalls > 0 ? Math.round(totalDurationMs / totalCalls) : null,
+        conversationsCount: distinctTokenConvs.length,
+        configuredModel:
+          this.llm?.activeModel ??
+          this.config.get<string>('GEMINI_MODEL') ??
+          'gemini-3.5-flash-lite',
+        embeddingModel:
+          this.config.get<string>('EMBEDDING_MODEL') ?? 'gemini-embedding-001',
+        ttsModel: this.config.get<string>('GEMINI_TTS_MODEL') ?? null,
+        periodFrom,
+        periodTo,
+        byModel,
         byAgent: tokensAgentMap,
+        byAgentDetailed,
       },
       events: { byType: eventsTypeMap },
       recentEvents,
@@ -178,10 +392,15 @@ export class SupervisorService {
   }
 
   /**
-   * Lista conversaciones con paginación (para el panel de supervisor).
+   * Lista conversaciones con paginación y filtros (para el panel de supervisor).
    * Devuelve { data, total, page, limit, hasMore }.
    */
-  async getConversations(filter: GetConversationsFilter = {}) {
+  async getConversations(
+    filter: GetConversationsFilter = {},
+    callerId?: string,
+  ) {
+    const allowedAgents = await this.resolveAllowedAgents(callerId);
+
     const page = Math.max(1, filter.page ?? 1);
     const limit = Math.min(100, Math.max(1, filter.limit ?? 20));
     const skip = (page - 1) * limit;
@@ -190,7 +409,41 @@ export class SupervisorService {
     if (filter.status) where.status = filter.status;
     if (filter.channel) where.channel = filter.channel;
     if (filter.userType) where.userType = filter.userType;
-    if (filter.agentType) where.currentAgent = filter.agentType;
+
+    if (allowedAgents !== null) {
+      if (filter.agentType) {
+        if (!allowedAgents.includes(filter.agentType)) {
+          return {
+            data: [],
+            total: 0,
+            page,
+            limit,
+            hasMore: false,
+          };
+        }
+        where.currentAgent = filter.agentType;
+      } else {
+        where.currentAgent = { in: allowedAgents };
+      }
+    } else if (filter.agentType) {
+      where.currentAgent = filter.agentType;
+    }
+
+    const trimmedSearch = filter.search?.trim();
+    if (trimmedSearch) {
+      where.OR = [
+        { externalId: { contains: trimmedSearch, mode: 'insensitive' } },
+        { client: { name: { contains: trimmedSearch, mode: 'insensitive' } } },
+        { client: { phone: { contains: trimmedSearch, mode: 'insensitive' } } },
+        {
+          messages: {
+            some: {
+              content: { contains: trimmedSearch, mode: 'insensitive' },
+            },
+          },
+        },
+      ];
+    }
 
     const [data, total] = await Promise.all([
       this.prisma.conversation.findMany({
@@ -200,14 +453,25 @@ export class SupervisorService {
         take: limit,
         select: {
           id: true,
-          externalId: true,
           channel: true,
+          externalId: true,
           status: true,
           userType: true,
           currentAgent: true,
           agentLockedAt: true,
           createdAt: true,
           updatedAt: true,
+          client: {
+            select: { id: true, name: true, phone: true },
+          },
+          handledBy: {
+            select: { id: true, name: true },
+          },
+          messages: {
+            orderBy: { createdAt: 'desc' },
+            take: 1,
+            select: { content: true, role: true, createdAt: true },
+          },
           _count: { select: { messages: true } },
         },
       }),
@@ -227,18 +491,29 @@ export class SupervisorService {
    * Detalle completo de una conversación para el panel del supervisor.
    * Incluye mensajes, eventos de orquestación y totales de tokens.
    * Retorna null si no existe (el controller devuelve 404).
+   * Lanza ForbiddenException si el supervisor no tiene asignada esa área.
    */
-  async getConversationDetail(conversationId: string) {
+  async getConversationDetail(conversationId: string, callerId?: string) {
+    const allowedAgents = await this.resolveAllowedAgents(callerId);
+
     const [conversation, messages, events, tokenTotals, internalNotes] =
       await Promise.all([
         this.prisma.conversation.findUnique({
+          omit: { financingDraft: true, financingVersion: true },
           where: { id: conversationId },
+          include: {
+            client: { select: { id: true, name: true, phone: true } },
+            handledBy: { select: { id: true, name: true, role: true } },
+          },
         }),
 
         this.prisma.message.findMany({
           where: { conversationId },
           orderBy: { createdAt: 'asc' },
           select: {
+            outboundCommunication: {
+              select: { id: true, status: true, transportMode: true },
+            },
             id: true,
             role: true,
             content: true,
@@ -252,10 +527,10 @@ export class SupervisorService {
           orderBy: { createdAt: 'asc' },
           select: {
             id: true,
+            createdAt: true,
             eventType: true,
             agentType: true,
             payload: true,
-            createdAt: true,
           },
         }),
 
@@ -265,11 +540,6 @@ export class SupervisorService {
           _count: { _all: true },
         }),
 
-        // Notas internas (Sprint 3) — nunca visibles para el usuario final,
-        // solo se agregan acá porque este endpoint ya exige SUPERVISOR.
-        // El autor es o un Employee (author) o un agente de IA (authorAgentType)
-        // — nunca ambos, ver el comentario del modelo en schema.prisma — así que
-        // el frontend decide el ícono/color mirando cuál de los dos vino.
         this.prisma.internalNote.findMany({
           where: { conversationId },
           orderBy: { createdAt: 'asc' },
@@ -284,6 +554,23 @@ export class SupervisorService {
       ]);
 
     if (!conversation) return null;
+
+    if (
+      allowedAgents !== null &&
+      conversation.currentAgent &&
+      !allowedAgents.includes(conversation.currentAgent)
+    ) {
+      const hasAdminFinancingAccess =
+        allowedAgents.includes(AgentType.ADMIN) &&
+        (await this.prisma.purchaseRequest?.count?.({
+          where: { conversationId },
+        })) > 0;
+      if (!hasAdminFinancingAccess) {
+        throw new ForbiddenException(
+          'No tiene permisos para ver conversaciones fuera de su área supervisada',
+        );
+      }
+    }
 
     return {
       ...conversation,
@@ -338,25 +625,14 @@ export class SupervisorService {
    *  - Conversation  → cuántas conversaciones atiende cada agente y su actividad
    *    (siempre histórico: es sobre a quién está asignado HOY, no un turno).
    *  - OrchestrationEvent (ROUTED_TO_AGENT) → cobertura, margen y escalados,
-   *    ahora acotados a una VENTANA. Antes agregaba sobre toda la historia sin
-   *    ventana ni mínimo de muestra: 7 turnos de un agente pesaban lo mismo que
-   *    7000. Medido en specs/009-que-falta-para-responder-mejor/research.md
-   *    (D0): con la base real, ese cálculo mostraba `avgConfidence: 0.674`
-   *    sobre 7 turnos y lo pintaba como "apenas aprueba" — la mitad del
-   *    problema que esa spec vino a arreglar.
+   *    ahora acotados a una VENTANA.
    */
-  async getAgentsStatus(): Promise<AgentsStatusResponse> {
-    // Sin default en código, a propósito: el umbral se pinea por variable de
-    // entorno (CLAUDE.md, y Joi ya lo valida con su propio default en
-    // config.module.ts). Un segundo default acá era una segunda fuente de
-    // verdad: si alguien cambiaba el de Joi, el panel seguía pintando contra
-    // 0.65 y mostraba un umbral distinto del que el agente aplicaba.
+  async getAgentsStatus(callerId?: string): Promise<AgentsStatusResponse> {
+    const allowedAgents = await this.resolveAllowedAgents(callerId);
+
     const confidenceThreshold = this.config.get<number>(
       'RAG_CONFIDENCE_THRESHOLD',
     )!;
-    // Mínimo POR AGENTE (spec 009, FR-015). Distinto de
-    // COVERAGE_SCAN_MIN_QUERIES, que es el mínimo GLOBAL de la corrida de
-    // cobertura (US1) — cuentan poblaciones distintas, ver data-model.md.
     const minimumSample = this.config.get<number>('COVERAGE_MIN_SAMPLE')!;
     const windowDays = this.config.get<number>('COVERAGE_WINDOW_DAYS')!;
     const windowTo = new Date();
@@ -364,9 +640,7 @@ export class SupervisorService {
       windowTo.getTime() - windowDays * 24 * 60 * 60 * 1000,
     );
 
-    // Cobertura, margen y escalados por agente, agregados en Postgres sobre el
-    // JSON del payload, acotados a la ventana. `covered` cuenta los turnos que
-    // alcanzaron el umbral — es la cobertura de FR-017, no una calificación.
+    // Cobertura, margen y escalados por agente, agregados en Postgres sobre el JSON
     const eventStatsPromise = this.prisma.$queryRaw<
       {
         agentType: AgentType;
@@ -408,7 +682,12 @@ export class SupervisorService {
     );
     const statsMap = new Map(eventStats.map((r) => [r.agentType, r]));
 
-    const agents: AgentStatus[] = ALL_AGENTS.map((agentType) => {
+    const targetAgents =
+      allowedAgents !== null
+        ? ALL_AGENTS.filter((a) => allowedAgents.includes(a))
+        : ALL_AGENTS;
+
+    const agents: AgentStatus[] = targetAgents.map((agentType) => {
       const total = totalMap.get(agentType);
       const active = activeMap.get(agentType) ?? 0;
       const stats = statsMap.get(agentType);
@@ -416,9 +695,6 @@ export class SupervisorService {
       const routedTurns = stats ? Number(stats.routed) : 0;
       const escalations = stats ? Number(stats.escalations) : 0;
       const covered = stats ? Number(stats.covered) : 0;
-      // `hasData` es la puerta: por debajo del mínimo, `coverage` y
-      // `marginPoints` NO se publican (spec 009, FR-015) — un agente sin
-      // muestra no comparte el cero con uno que contestó mal siempre.
       const hasData = routedTurns >= minimumSample;
       const coverage = hasData
         ? Math.round((covered / routedTurns) * 1000) / 1000

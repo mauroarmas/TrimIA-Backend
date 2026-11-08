@@ -30,7 +30,10 @@ export class WhatsappSenderService {
     const baseUrl = this.config.get<string>('N8N_BASE_URL');
     const res = await fetch(`${baseUrl}/webhook/send-whatsapp`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'x-n8n-secret': this.config.get<string>('N8N_WEBHOOK_SECRET')!,
+      },
       body: JSON.stringify({ phone: normalizePhone(phone), message, channel }),
     });
     if (!res.ok) {
@@ -57,7 +60,10 @@ export class WhatsappSenderService {
     const baseUrl = this.config.get<string>('N8N_BASE_URL');
     const res = await fetch(`${baseUrl}/webhook/send-whatsapp-template`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'x-n8n-secret': this.config.get<string>('N8N_WEBHOOK_SECRET')!,
+      },
       body: JSON.stringify({
         phone: normalizePhone(phone),
         templateName,

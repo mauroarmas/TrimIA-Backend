@@ -368,7 +368,9 @@ export class EscalationsService {
     const escalation = await this.prisma.escalation.findUnique({
       where: { id },
       include: {
-        conversation: true,
+        conversation: {
+          omit: { financingDraft: true, financingVersion: true },
+        },
         // Spec 007: para poder mostrar "se corrigió «título»" / "ya existía
         // como «título»" sin que el panel tenga que pedir el documento aparte.
         resolvedWithDocument: { select: { id: true, title: true } },
@@ -657,6 +659,19 @@ export class EscalationsService {
     resolvedById: string,
   ) {
     const { conversation, escalation } = await this.loadPending(id);
+
+    if (escalation.reason?.startsWith('Financiación:')) {
+      const record = await this.prisma.conversation.findUnique({
+        where: { id: conversation.id },
+        select: { financingDraft: true },
+      });
+      const draft = record?.financingDraft as any;
+      if (!draft?.confirmedAmount || !(Number(draft.confirmedAmount) > 0)) {
+        throw new ConflictException(
+          'Confirmá el importe en el formulario de este caso antes de responder y resolver.',
+        );
+      }
+    }
 
     // ⚠️ Spec 005, US5 — la otra puerta de atrás: "enseñarle al agente" ingesta un
     // documento, así que vale la misma regla de área que la pantalla de gestión.

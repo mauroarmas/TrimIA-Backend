@@ -1,0 +1,243 @@
+{
+  "purpose": "Datos ficticios y coherentes para la demo académica; no modifica código, umbrales, cuentas, crédito ni stock.",
+  "documents": [
+    {
+      "title": "Hola, ¿qué venden? Catálogo de productos",
+      "content": "Hola, ¿qué venden? ¿Qué productos tienen? Vendemos Smart TV, balanzas comerciales, cortadoras de fiambre, hornos, amasadoras, sobadoras y heladeras exhibidoras. Equipamos negocios y hogares. ¿Qué producto te interesa? Podés comprar de contado o consultar financiación con revisión humana.\n\nDatos ficticios de demostración académica; no constituyen una oferta comercial real.",
+      "category": "demo-mvp-2026-11",
+      "audience": "PUBLICO",
+      "agentType": "SALES",
+      "id": "72187436-97fb-4b69-bff4-2bf50761b6b3",
+      "expectedContentHash": "8fc2cb08ba4dac924c7a92b8f9d7fda9379fadbc9b1f24da6f4e34554cb91566"
+    },
+    {
+      "title": "Quiénes somos y cómo comprar en Credimisión",
+      "content": "Credimisión es un comercio de Posadas, Misiones, que ayuda a equipar negocios y hogares. Vendemos equipamiento comercial, gastronómico, refrigeración, balanzas, cortadoras y Smart TV. Podés consultar por WhatsApp o recibir atención del equipo en horario comercial. Para comprar, indicá qué producto necesitás y si preferís contado o financiación. Un vendedor confirma el importe y coordina la compra. La entrega, la factura y las condiciones finales se acuerdan con el equipo; el asistente no las confirma automáticamente.\n\nDatos ficticios de demostración académica; no constituyen una oferta comercial real.",
+      "category": "demo-mvp-2026-11",
+      "audience": "PUBLICO",
+      "agentType": null,
+      "id": "7f78d245-c98e-4690-b036-fd2b05683c9d",
+      "expectedContentHash": "b341d7e1302998ff6130135ec1d300ecc744b40032d724a68eadb72b9258558b"
+    },
+    {
+      "title": "Heladeras exhibidoras y refrigeración comercial",
+      "content": "¿Venden heladeras o exhibidoras? Sí, el catálogo de demostración incluye la heladera exhibidora vertical Briket de 390 litros (EXH-BRI-390) y la Inelro de 420 litros (EXH-INH-420), para almacenes y otros comercios. Para confirmar existencias y precios consultamos el inventario simulado. Podés pedir precio de contado o solicitar financiación con revisión de un supervisor. No tenemos un listado confirmado de lavarropas, secarropas o freezers en esta demo; un vendedor debe confirmar cualquier producto fuera del catálogo.\n\nDatos ficticios de demostración académica; no constituyen una oferta comercial real.",
+      "category": "demo-mvp-2026-11",
+      "audience": "PUBLICO",
+      "agentType": "SALES",
+      "id": "c56e0df8-50ed-4685-b5ff-39cfcf71b5a3",
+      "expectedContentHash": "4d324ecaeb0b6eb55939f918992fac2a56e6a7300ea704b3b07a2ba93599b75e"
+    },
+    {
+      "title": "Smart TV Samsung, LG y Philips: modelos y disponibilidad",
+      "content": "¿Venden televisores o Smart TV? Sí: Samsung 55 pulgadas 4K (TV-SAM-55-4K), LG 50 pulgadas Full HD (TV-LG-50-FHD) y Philips 43 pulgadas (TV-PHI-43). El inventario de prueba informa disponibilidad actual; el Philips puede estar sin stock y ofrecerse Samsung o LG como alternativas. Los televisores no tienen precio cargado: un responsable debe confirmar el importe. Se puede consultar financiación, pero no se inventan precios ni cuotas.\n\nDatos ficticios de demostración académica; no constituyen una oferta comercial real.",
+      "category": "demo-mvp-2026-11",
+      "audience": "PUBLICO",
+      "agentType": "SALES"
+    },
+    {
+      "title": "Balanzas comerciales Systel Cuora y Croma",
+      "content": "¿Tienen balanzas para un almacén, verdulería o comercio? Sí: Systel Cuora de 30 kg con impresor (BAL-SYS-CUORA) y Systel Croma de 30 kg con batería (BAL-SYS-CROMA). La Cuora permite imprimir; la Croma incluye batería. El inventario simulado confirma precio de lista, precio de contado y existencias. Por ejemplo, Cuora: lista $420.000 y contado $350.000; Croma: lista $280.000 y contado $235.000. Importes ficticios en pesos argentinos; confirmar el modelo antes de cotizar.\n\nDatos ficticios de demostración académica; no constituyen una oferta comercial real.",
+      "category": "demo-mvp-2026-11",
+      "audience": "PUBLICO",
+      "agentType": "SALES"
+    },
+    {
+      "title": "Cortadoras de fiambre Marani, Trinidad y Berkley",
+      "content": "¿Venden cortadoras de fiambre para fiambrería o almacén? Sí: Marani 330 mm (COR-MAR-330), Trinidad 300 mm (COR-TRI-300) y Berkley 300 mm (COR-BER-300). La disponibilidad se consulta en el inventario simulado. Si la Marani no tiene stock, se pueden ofrecer Trinidad y Berkley según existencias. La Trinidad tiene precio ficticio de lista $580.000 y contado $485.000; la Berkley lista $610.000 y contado $510.000. No se promete fecha de reposición sin confirmación.\n\nDatos ficticios de demostración académica; no constituyen una oferta comercial real.",
+      "category": "demo-mvp-2026-11",
+      "audience": "PUBLICO",
+      "agentType": "SALES"
+    },
+    {
+      "title": "Hornos, amasadoras y sobadoras para panadería y gastronomía",
+      "content": "¿Qué equipos tienen para panadería, pizzería o gastronomía? Ofrecemos sobadora Santini de 20 kg (SOB-SAN-20K), amasadora Santini de 20 kg (AMA-SAN-20K) y horno Morelli de 6 moldes (HOR-PIZ-06M). Sirven como opciones para equipar un emprendimiento gastronómico. Los precios ficticios de contado son $750.000, $790.000 y $435.000 respectivamente. Las existencias y el precio de lista se confirman con el inventario simulado. Indicá qué preparás y qué equipo buscás para orientar la consulta.\n\nDatos ficticios de demostración académica; no constituyen una oferta comercial real.",
+      "category": "demo-mvp-2026-11",
+      "audience": "PUBLICO",
+      "agentType": "SALES"
+    },
+    {
+      "title": "Precios, cotizaciones y diferencia entre contado y financiación",
+      "content": "¿Cuánto cuesta un producto? Para cotizar necesitamos el modelo o nombre del producto. Consultamos el precio y stock del inventario de demostración. El precio de lista y el precio de contado son distintos y se informan por separado, en pesos argentinos. No se aplica otro porcentaje de descuento sobre el precio de contado. Si falta un precio, como en los Smart TV, lo confirma un responsable. La cantidad y el valor de las cuotas no se deducen dividiendo el precio: requieren un acuerdo de financiación revisado por una persona.\n\nDatos ficticios de demostración académica; no constituyen una oferta comercial real.",
+      "category": "demo-mvp-2026-11",
+      "audience": "PUBLICO",
+      "agentType": "SALES"
+    },
+    {
+      "title": "¿Venden en cuotas? Cómo solicitar financiación",
+      "content": "¿Venden en cuotas o tienen financiación? Sí. Indicá el modelo elegido, tu nombre, DNI y localidad. Si la compra es para un comercio, necesitamos su nombre; si es personal, no hace falta comercio. El teléfono se toma del chat. Podés enviar los datos juntos o por partes. Al completar los datos y confirmar el producto con precio conocido se crea el pedido para Administración, sin un escalado de la conversación. Administración decide y habilita las ofertas disponibles: dar datos o consultar riesgo no aprueba el crédito. Una vez aprobado, elegís una oferta habilitada y retiro o envío según cobertura, y aceptás el resumen. Ventas revisa y confirma el cierre; si elegiste financiación, registra las cuotas en ese cierre. El pedido tiene 48 horas de vigencia desde su creación, no desde la aprobación. Si vence o cambian las condiciones, se revisa y se pide nueva aceptación. No se inventan precios, planes ni aprobaciones. Podés pedir atención humana.\n\nDatos y condiciones ficticias de demostración académica.",
+      "category": "demo-mvp-2026-11",
+      "audience": "PUBLICO",
+      "agentType": "SALES",
+      "id": "b9909e29-5a59-4d23-a93d-e03e95a6d282",
+      "expectedContentHash": "0db0fa3a03349c72ea681fb9877ce2977c614a8fa77cdf00cbd3bdb5bd4e5183"
+    },
+    {
+      "title": "Qué datos necesito para pedir financiación o crédito",
+      "content": "### Quiero comprar con financiación: ¿cómo empiezo?\n\nPodés indicar «quiero financiación», «es para financiación» o «quiero financiar este producto». Elegí un producto y un modelo concreto del catálogo. Cuando elegís un modelo exacto, se consulta ese modelo y se confirma su precio y disponibilidad; no se vuelve a mostrar la lista de toda la familia. Luego se consulta si preferís contado o financiación. Cada pedido corresponde a una unidad de un producto. El inventario informa los productos, existencias y precios vigentes; no se inventan modelos, precios ni cuotas. Las opciones se muestran en una lista con un máximo de cinco por respuesta; si quedan más, se informa que hay otras opciones.\n\n### ¿Qué datos se necesitan? ¿Hace falta tener un comercio?\n\nPara iniciar el pedido se necesitan nombre y apellido, DNI de 7 u 8 dígitos, localidad y el modelo elegido con precio conocido. El teléfono se toma de esta conversación. La compra puede ser personal o para un comercio. Si es personal, podés decir «es para mi casa», «compra personal» o «no tengo comercio»: no se exige nombre de comercio. Si es comercial, se pide el nombre del comercio. Si no se conoce el destino de la compra, se consulta si es personal o comercial.\n\nLos datos pueden enviarse juntos o en mensajes separados. Por ejemplo: «Nombre: Ana Demo», «DNI: 90000001», «Modelo: [nombre exacto del catálogo]» y «Localidad: Posadas». El asistente conserva los datos recibidos y pide solamente lo que falta. No hace falta repetir datos válidos. Para esta demo no se solicitan fotos del DNI, recibos de sueldo ni datos bancarios.\n\n### ¿Dar mis datos significa que me aprobaron?\n\nNo. Cuando se completan los datos y se identifica el producto con precio, se crea el pedido para revisión de Administración. Antes de completar esa información, todavía se están reuniendo datos: no corresponde anunciar que el pedido fue presentado ni que está aprobado. La revisión normal no requiere pasar la conversación a un supervisor. La decisión es humana; el asistente no aprueba créditos.\n\n### ¿Qué pasa después de la revisión?\n\nSe informa la decisión por el mismo canal de la conversación. Si se aprueba, el cliente elige únicamente entre las ofertas de contado o cuotas habilitadas por Administración. No se inventan planes ni se calculan cuotas por dividir el precio. Si se rechaza, se informa sin revelar motivos crediticios internos; se ofrece contado solo cuando Administración lo habilitó.\n\nLuego se elige retiro o envío. El envío depende de la cobertura y costo disponibles para la localidad; cuando corresponde se solicita dirección y contacto de entrega. El costo de envío se paga aparte al contado y no aumenta el importe financiado. Se presenta un resumen con producto, precio, pago y entrega para que el cliente lo acepte. La aprobación por sí sola no significa que la venta esté cerrada. Ventas revisa la ficha, revisa o escribe el mensaje final para el cliente y confirma «Cerrar venta y enviar aviso». El registro de la venta y el estado de entrega del aviso se muestran por separado: un aviso pendiente o aceptado para envío no significa que ya fue recibido.\n\n### ¿Cuánto dura el pedido? ¿Puedo cambiar algo o pedir una persona?\n\nLa vigencia es de 48 horas desde que se completan los datos y se crea el pedido con la evaluación preliminar, no desde la aprobación. La vigencia no promete una reserva de stock. Si vence, se conservan los datos, se revisan las condiciones y se pide aceptar el resumen actualizado. Los cambios de producto, precio o plan requieren una nueva revisión y aceptación; los cambios de dirección o contacto también requieren aceptar el resumen actualizado. El cliente puede pedir una persona en cualquier momento. Si no se encuentra producto o precio, se consulta con un responsable del área.",
+      "category": "demo-mvp-2026-11",
+      "audience": "PUBLICO",
+      "agentType": "SALES",
+      "id": "9fa4fe1d-1ae3-48a7-9f73-1875a63a5729",
+      "expectedContentHash": "c0f884563509248f853639ba88c06de79db73c414b383f091028ddb61f2fcdb8"
+    },
+    {
+      "title": "Horarios de atención, ubicación, sábados y feriados",
+      "content": "¿En qué horario atienden? Atendemos de lunes a viernes de 8:00 a 18:00 y los sábados de 8:00 a 13:00. Estamos en Posadas, Misiones; el equipo confirma la dirección exacta y cómo llegar. ¿Abren los domingos o feriados? No hay atención presencial ni atención del personal los domingos y feriados. Podés dejar una consulta en este WhatsApp en cualquier momento; el asistente está disponible las 24 horas y el personal responde en horario comercial. No se promete atención humana inmediata fuera de horario.\n\nDatos ficticios de demostración académica; no constituyen una oferta comercial real.",
+      "category": "demo-mvp-2026-11",
+      "audience": "PUBLICO",
+      "agentType": null,
+      "id": "fd062a91-c767-491d-9e56-6c7d219854b1",
+      "expectedContentHash": "e488b08ee080b66f3b94dc5a275a88abda5c41e39ca4ff9e1004a912cbf84498"
+    },
+    {
+      "title": "Medios de pago: efectivo, transferencia y tarjetas",
+      "content": "¿Cómo puedo pagar? Para una compra de contado podés consultar pago en efectivo o transferencia. El equipo confirma los datos de pago y la recepción del dinero. Las condiciones para usar tarjetas o combinar medios deben consultarse antes de pagar; no se prometen recargos, descuentos ni cuotas de tarjeta sin confirmación. También podés solicitar financiación propia con revisión humana. El asistente no recibe dinero, no acredita transferencias ni procesa tarjetas desde el chat. No envíes números completos de tarjeta, claves ni códigos de seguridad.\n\nDatos ficticios de demostración académica; no constituyen una oferta comercial real.",
+      "category": "demo-mvp-2026-11",
+      "audience": "PUBLICO",
+      "agentType": null,
+      "id": "1df545e5-b6ae-4a36-b9a8-4e9ea9b1475e",
+      "expectedContentHash": "bf6e70aec83b831ea619226c72b9413f3abb95997fc9a6078a91e9b47fd9a821"
+    },
+    {
+      "title": "Cómo enviar un comprobante de pago de una cuota",
+      "content": "¿Cómo aviso que pagué o envío un comprobante? Si pagaste una cuota, enviá por WhatsApp la imagen del comprobante e indicá a qué cuota o compra corresponde. Deben verse fecha, importe y número de operación; evitá incluir claves o datos innecesarios. El comprobante pasa a revisión del responsable de Cobranzas. Recibir una foto no acredita el pago ni cancela automáticamente la cuota: el equipo debe verificarlo. Si falta un dato o el importe no coincide, Cobranzas te indicará cómo continuar. Guardá tu comprobante hasta que te confirmen la revisión.\n\nDatos ficticios de demostración académica; no constituyen una oferta comercial real.",
+      "category": "demo-mvp-2026-11",
+      "audience": "PUBLICO",
+      "agentType": "COLLECTIONS",
+      "id": "97df438d-b001-4d03-9dc2-c8fec8413000",
+      "expectedContentHash": "364c776aceac14e12b7ac92f6eefbea6786eea638b43f73983be0ab258b8ae36"
+    },
+    {
+      "title": "Envíos, entregas a domicilio y retiro de compras",
+      "content": "¿Hacen envíos o entregan a domicilio? Sí, se coordina reparto en Posadas y Garupá y transporte hacia el interior de Misiones. También se puede consultar retiro. Para organizarlo necesitamos producto, localidad y dirección; el equipo confirma costo y fecha antes de cerrar la compra. Como referencia ficticia se prepara el despacho en 24 a 48 horas hábiles después de la aprobación y coordinación. Despacho no significa entrega. No se promete un horario exacto ni se marca una compra como entregada desde el chat. Si no estás en el domicilio, coordiná con el equipo un nuevo intento.\n\nDatos ficticios de demostración académica; no constituyen una oferta comercial real.",
+      "category": "demo-mvp-2026-11",
+      "audience": "PUBLICO",
+      "agentType": "SALES",
+      "id": "91a4e77e-6751-4cd3-be24-0e625946d6ab",
+      "expectedContentHash": "d6b8c3ebc85af97fca717d17fd9b5fb78f722a037fbc125789fee68f7f4d20b7"
+    },
+    {
+      "title": "Cuánto cuesta el envío y a qué localidades llega",
+      "content": "¿Cuánto sale el envío? El costo depende del producto, el volumen y la localidad de destino. Hay reparto en Posadas y Garupá; para otras localidades de Misiones se consulta transporte. No hay un costo fijo ni envío gratis automático confirmado en esta demo. Antes de pagar, indicá tu localidad para que el equipo cotice el traslado y confirme el plazo. Para otra provincia se consulta caso por caso. No se confirma cobertura internacional ni se asume un costo de envío sin cotización.\n\nDatos ficticios de demostración académica; no constituyen una oferta comercial real.",
+      "category": "demo-mvp-2026-11",
+      "audience": "PUBLICO",
+      "agentType": "SALES",
+      "id": "1f4d05b4-d5c3-4ffb-b8fb-471876ce0284",
+      "expectedContentHash": "22a6edc20e2db5ba6ef5309f05a8d50c99b3fd50eb3aa579c62e8661316e7d44"
+    },
+    {
+      "title": "Garantía, producto dañado y cómo pedir un cambio",
+      "content": "¿Los productos tienen garantía? La garantía y sus condiciones se confirman según el modelo antes de comprar; no hay una extensión automática de garantía en esta demo. Si recibiste un producto dañado o que no funciona, contactanos por este canal con la compra, una descripción del problema y fotos si las tenés. Conservá comprobante y embalaje. El equipo revisará el caso y te indicará la solución y coordinación del retiro o cambio que corresponda. El asistente no aprueba reintegros, no rechaza derechos del consumidor ni promete una devolución automática.\n\nDatos ficticios de demostración académica; no constituyen una oferta comercial real.",
+      "category": "demo-mvp-2026-11",
+      "audience": "PUBLICO",
+      "agentType": "SALES",
+      "id": "ee92c0f0-b6dd-48dc-8086-0e743f32c286",
+      "expectedContentHash": "9d312680efd11aa9b409af696f56cb60252c5eed711c47f3d1ad8acf883e7e71"
+    },
+    {
+      "title": "Qué pasa si un producto está sin stock",
+      "content": "¿Qué pasa si no tienen stock? Consultamos la disponibilidad del modelo solicitado. Si no hay existencias, ofrecemos alternativas similares que sí figuren disponibles en el inventario. Por ejemplo, para una cortadora Marani 330 mm sin stock se pueden consultar Trinidad y Berkley 300 mm. Para Smart TV Philips 43 sin stock se pueden consultar Samsung 55 y LG 50. No prometemos reposición, reserva o compra por encargo sin confirmación del equipo. Si las alternativas no te sirven, podemos consultar a un responsable.\n\nDatos ficticios de demostración académica; no constituyen una oferta comercial real.",
+      "category": "demo-mvp-2026-11",
+      "audience": "PUBLICO",
+      "agentType": "SALES",
+      "id": "cec30211-9e85-4700-b068-8ee045c12d23",
+      "expectedContentHash": "d8b8633e2dd3d4fa9bb60945ac94b89148dbb933697e5c10a034eaec88a5777f"
+    },
+    {
+      "title": "Monto mínimo de compra y pedidos fuera del catálogo",
+      "content": "¿Hay un monto mínimo de compra? En la demo no hay un mínimo general confirmado para retirar o comprar en Posadas. Si el pedido requiere transporte especial o va a otra localidad, el equipo debe confirmar las condiciones antes del pago. Un producto fuera del catálogo simulado requiere cotización de un vendedor; no se promete su disponibilidad, precio o entrega por deducir que la empresa trabaja ese rubro.\n\nDatos ficticios de demostración académica; no constituyen una oferta comercial real.",
+      "category": "demo-mvp-2026-11",
+      "audience": "PUBLICO",
+      "agentType": "SALES",
+      "id": "7fe4c9de-8e00-4675-be55-353b41b6e5cb",
+      "expectedContentHash": "d230b147b12947f20c568a97cdb3b380b38694f56a1743f635676b5eff6e79a2"
+    },
+    {
+      "title": "Promociones y descuentos vigentes en la demostración",
+      "content": "¿Tienen promociones, ofertas o descuentos? En esta demo no hay una campaña promocional activa confirmada. Podés consultar el precio de contado y el precio de lista de cada producto del inventario simulado. No se suman descuentos de campañas antiguas ni se prometen cuotas gratis, descuentos por referido o financiación sin interés. Si buscás una condición especial, un responsable debe confirmarla antes de cerrar la compra.\n\nDatos ficticios de demostración académica; no constituyen una oferta comercial real.",
+      "category": "demo-mvp-2026-11",
+      "audience": "PUBLICO",
+      "agentType": "SALES"
+    },
+    {
+      "title": "Factura de compra y datos para facturación",
+      "content": "¿Me dan factura? El equipo coordina la emisión de la factura de la compra. Si necesitás una factura a nombre de un comercio, informalo al vendedor antes de cerrar y consultá qué datos fiscales necesita. El asistente no emite facturas automáticamente ni garantiza el envío por correo por recibir un comprobante. Una factura de compra y un comprobante de transferencia son documentos distintos.\n\nDatos ficticios de demostración académica; no constituyen una oferta comercial real.",
+      "category": "demo-mvp-2026-11",
+      "audience": "PUBLICO",
+      "agentType": null
+    },
+    {
+      "title": "Cómo consultar mi cuota, vencimiento o saldo pendiente",
+      "content": "¿Cuánto debo, cuándo vence mi cuota o cuántas cuotas me faltan? Para informarte un importe o vencimiento necesitamos revisar tu cuenta y la compra correspondiente. No se calcula un saldo usando precios del catálogo ni se reutiliza el de otra persona. Si el dato no está confirmado en la cuenta, Cobranzas lo verifica y te responde. Si pagaste, podés enviar el comprobante por WhatsApp para revisión. No hay cuotas gratis, descuentos por puntualidad ni cancelación automática por enviar una imagen.\n\nDatos ficticios de demostración académica; no constituyen una oferta comercial real.",
+      "category": "demo-mvp-2026-11",
+      "audience": "PUBLICO",
+      "agentType": "COLLECTIONS"
+    },
+    {
+      "id": "e8f694c4-41a4-4337-925f-a241272e4d02",
+      "title": "Proceso de venta financiada",
+      "content": "# Proceso de venta financiada del MVP\n\nVigente desde el 7 de noviembre de 2026. Describe el circuito acordado para la demo de TrimIA. El catálogo, la consulta crediticia y las condiciones comerciales son de prueba. Los estados de cada pedido, los mensajes y la sincronización del CRM se registran en el sistema.\n\n## Guía para conversar con el cliente\n\n### Quiero comprar con financiación: ¿cómo empiezo?\n\nPodés indicar «quiero financiación», «es para financiación» o «quiero financiar este producto». Elegí un producto y un modelo concreto del catálogo. Cuando elegís un modelo exacto, se consulta ese modelo y se confirma su precio y disponibilidad; no se vuelve a mostrar la lista de toda la familia. Luego se consulta si preferís contado o financiación. Cada pedido corresponde a una unidad de un producto. El inventario informa los productos, existencias y precios vigentes; no se inventan modelos, precios ni cuotas. Las opciones se muestran en una lista con un máximo de cinco por respuesta; si quedan más, se informa que hay otras opciones.\n\n### ¿Qué datos se necesitan? ¿Hace falta tener un comercio?\n\nPara iniciar el pedido se necesitan nombre y apellido, DNI de 7 u 8 dígitos, localidad y el modelo elegido con precio conocido. El teléfono se toma de esta conversación. La compra puede ser personal o para un comercio. Si es personal, podés decir «es para mi casa», «compra personal» o «no tengo comercio»: no se exige nombre de comercio. Si es comercial, se pide el nombre del comercio. Si no se conoce el destino de la compra, se consulta si es personal o comercial.\n\nLos datos pueden enviarse juntos o en mensajes separados. Por ejemplo: «Nombre: Ana Demo», «DNI: 90000001», «Modelo: [nombre exacto del catálogo]» y «Localidad: Posadas». El asistente conserva los datos recibidos y pide solamente lo que falta. No hace falta repetir datos válidos. Para esta demo no se solicitan fotos del DNI, recibos de sueldo ni datos bancarios.\n\n### ¿Dar mis datos significa que me aprobaron?\n\nNo. Cuando se completan los datos y se identifica el producto con precio, se crea el pedido para revisión de Administración. Antes de completar esa información, todavía se están reuniendo datos: no corresponde anunciar que el pedido fue presentado ni que está aprobado. La revisión normal no requiere pasar la conversación a un supervisor. La decisión es humana; el asistente no aprueba créditos.\n\n### ¿Qué pasa después de la revisión?\n\nSe informa la decisión por el mismo canal de la conversación. Si se aprueba, el cliente elige únicamente entre las ofertas de contado o cuotas habilitadas por Administración. No se inventan planes ni se calculan cuotas por dividir el precio. Si se rechaza, se informa sin revelar motivos crediticios internos; se ofrece contado solo cuando Administración lo habilitó.\n\nLuego se elige retiro o envío. El envío depende de la cobertura y costo disponibles para la localidad; cuando corresponde se solicita dirección y contacto de entrega. El costo de envío se paga aparte al contado y no aumenta el importe financiado. Se presenta un resumen con producto, precio, pago y entrega para que el cliente lo acepte. La aprobación por sí sola no significa que la venta esté cerrada. Ventas revisa la ficha, revisa o escribe el mensaje final para el cliente y confirma «Cerrar venta y enviar aviso». El registro de la venta y el estado de entrega del aviso se muestran por separado: un aviso pendiente o aceptado para envío no significa que ya fue recibido.\n\n### ¿Cuánto dura el pedido? ¿Puedo cambiar algo o pedir una persona?\n\nLa vigencia es de 48 horas desde que se completan los datos y se crea el pedido con la evaluación preliminar, no desde la aprobación. La vigencia no promete una reserva de stock. Si vence, se conservan los datos, se revisan las condiciones y se pide aceptar el resumen actualizado. Los cambios de producto, precio o plan requieren una nueva revisión y aceptación; los cambios de dirección o contacto también requieren aceptar el resumen actualizado. El cliente puede pedir una persona en cualquier momento. Si no se encuentra producto o precio, se consulta con un responsable del área.\n\n## Procedimiento interno de Administración, Ventas y supervisión\n\n### Recopilación y CRM\n\nEl formulario de financiación conserva la intención, el producto elegido y los datos a medida que llegan. Una frase como «es para financiación» inicia el formulario aunque aún no se haya elegido un modelo. Un mensaje etiquetado con nombre, DNI y modelo aporta datos: no es una consulta de catálogo ni motivo suficiente para escalar. La localidad sigue siendo necesaria para una compra personal; el comercio solo es obligatorio para compras comerciales.\n\nEl prospecto del CRM se crea o actualiza durante la recopilación cuando ya hay un producto exacto identificado. El envío a Google Sheets se sincroniza aparte y puede demorar; un registro local no prueba por sí solo que la fila ya esté sincronizada. La misma compra reutiliza su prospecto al presentar el pedido. En una compra personal la columna Comercio queda vacía. No se exportan el DNI ni los detalles del análisis crediticio a la hoja comercial. El CRM no sustituye la solicitud de Administración ni acredita una aprobación.\n\nSolo se debe anunciar una acción efectivamente registrada: crear un pedido, aprobarlo, enviar un aviso o cerrar una venta son hechos distintos. La redacción de un mensaje o la intención del modelo no crean esos registros.\n\n### Revisión y ofertas\n\nLa solicitud completa figura en Aprobación de financiación. Administración y supervisión general pueden revisar los datos y la evaluación crediticia preliminar, aprobar o rechazar y habilitar las ofertas comerciales precargadas. La evaluación de riesgo orienta la decisión humana y no la reemplaza. El resultado detallado y los motivos internos no se muestran al cliente.\n\nPara habilitar ofertas en cuotas, Administración define cobrador y primer vencimiento. El cliente elige solo entre ofertas habilitadas; no define libremente cantidad, importe, interés o fechas. El rechazo puede conservar una alternativa de contado cuando así se autoriza. La decisión debe originar el aviso correspondiente por el canal de la conversación. La aceptación del envío por el gateway y la entrega efectiva al destinatario son estados distintos; no se debe afirmar recepción sin evidencia.\n\n### Confirmación y cierre\n\nTras elegir oferta y entrega, el cliente acepta el resumen vigente. El pedido pasa a la ficha de cierre de Ventas con los datos precargados y acceso al chat, notas e intervención humana. Ventas o supervisión general revisa o escribe el mensaje final y ejecuta «Cerrar venta y enviar aviso». En esa operación se registra la venta y, si el cliente eligió financiación, el plan de cuotas. Si el vendedor tiene el control manual, el cierre lo libera en la misma transacción; no requiere un paso posterior. Si otra persona tiene el control o queda un caso escalado pendiente, se bloquea el cierre y se explica qué resolver. Las cuotas quedan disponibles en la cartera del cobrador asignado desde que se registra el cierre, independientemente de la entrega del aviso. Aprobar la financiación, tomar control del chat o mandar un mensaje manual aislado no cierra la venta ni da de alta cuotas. El aviso se intenta enviar después de confirmar el registro; si el envío falla o no puede confirmarse, la venta y las cuotas permanecen registradas y la ficha muestra ese estado sin fingir una entrega. Repetir la solicitud de cierre no duplica ventas, planes ni avisos.\n\nAntes del cierre se revalidan precio, stock, vigencia y primer vencimiento. Producto, precio o plan modificados vuelven a Administración y requieren nueva aceptación del cliente. Dirección o contacto modificados requieren nueva aceptación. El sistema advierte al empleado que comunique los cambios al cliente. Si vencieron las 48 horas, se bloquea el cierre, se conservan los datos y se devuelve el pedido a Administración para renovar condiciones; el cliente debe aceptar el nuevo resumen.\n\n### Casos escalados e intervención\n\nLos casos excepcionales siguen en Casos escalados para supervisores del área: pedido explícito de atención humana, producto o precio no encontrado, u otra situación que necesite una decisión fuera del circuito normal. Reunir datos, consultar riesgo y esperar la revisión administrativa no son motivos de escalado por sí mismos. Cuando un empleado toma el control, responde mediante el chat manual; el asistente automático queda pausado hasta que se libere ese control. La respuesta manual y la resolución del caso no sustituyen las acciones comerciales de revisión o cierre.\n\n### Alcance\n\nNo se agregan al MVP requisitos de documentación física, umbrales de ingresos, anticipos, planes arbitrarios ni verificaciones presenciales automáticas provenientes de procedimientos generales históricos. Los documentos generales de la empresa pueden describir otras operaciones; este documento define el circuito de demostración acordado. El catálogo y las ofertas habilitadas del pedido son la fuente para las condiciones concretas de cada compra.\n",
+      "category": "demo-mvp-2026-11",
+      "audience": "INTERNO",
+      "agentType": "SALES",
+      "expectedContentHash": "b743a7d8fe2512f7bf6b7856508876791b03dd0559f885794c450033a7b9a62b"
+    }
+  ],
+  "deactivate": [
+    {
+      "id": "f669948f-5308-445c-9053-c35c9be509ea",
+      "title": "Catálogo ampliado: motos, notebooks y celulares",
+      "expectedContentHash": "36d9d8f3818814ce6a4976a89d00a9f9a353e4bed45f49ff0e9fd6c81b2a015c",
+      "reason": "Referencia anterior incompatible con el catálogo, el flujo MVP o la vigencia de la demostración."
+    },
+    {
+      "id": "1aa9cd25-3fb8-492f-90a5-d39abd5d0f3a",
+      "title": "Promoción vigente: Línea Blanca en 10 cuotas sin interés",
+      "expectedContentHash": "b911bf987a3677b5e3ce34d56b4610c4d045eb9e07fb79aecd3c251973ca06b5",
+      "reason": "Referencia anterior incompatible con el catálogo, el flujo MVP o la vigencia de la demostración."
+    },
+    {
+      "id": "a5995ace-f416-465b-883e-809b3c034428",
+      "title": "Promoción vigente: beneficio por cliente referido",
+      "expectedContentHash": "a217f55be7cf4b50bf58ac346b7f10bafffc244f61a7e5fa54ada4af49575f1b",
+      "reason": "Referencia anterior incompatible con el catálogo, el flujo MVP o la vigencia de la demostración."
+    },
+    {
+      "id": "064c4f57-5e8e-42c9-a31a-1c7e5508396f",
+      "title": "Promoción vigente: cuota 12 gratis por buen historial",
+      "expectedContentHash": "0a4e58631c53827e80f60f3fc0f2673de828e9712bfb34f4dbb107aa1b8a7315",
+      "reason": "Referencia anterior incompatible con el catálogo, el flujo MVP o la vigencia de la demostración."
+    },
+    {
+      "id": "74dc2cb2-4488-4d9b-84c0-2aa684a39621",
+      "title": "Promoción vigente: descuento por pago de contado",
+      "expectedContentHash": "358b441946e3bbff2a7e1f8f43bc10954ffb4a9229422cc89d96be8bf2eceeb0",
+      "reason": "Referencia anterior incompatible con el catálogo, el flujo MVP o la vigencia de la demostración."
+    },
+    {
+      "id": "f819cc75-1f59-434c-b2b4-dbd3ebad5c13",
+      "title": "Beneficio buen pagador: descuento en la próxima cuota",
+      "expectedContentHash": "4d9b770e5b223768e80e18ebba7364de94dbef93e65b0020d2fd6c7de26f1a17",
+      "reason": "Referencia anterior incompatible con el catálogo, el flujo MVP o la vigencia de la demostración."
+    },
+    {
+      "id": "b7beeaaa-0e08-48a6-b0bd-a8e479162b93",
+      "title": "Garantia extendida en electrodomesticos",
+      "expectedContentHash": "4680a8905fbdb6a21e564a25f193e9384689853feb80cee16945d7e426deb8f7",
+      "reason": "Referencia anterior incompatible con el catálogo, el flujo MVP o la vigencia de la demostración."
+    },
+    {
+      "id": "bafeed92-78de-47ec-9c16-91789cfac362",
+      "title": "Exportación Uruguay",
+      "expectedContentHash": "104312245689ebbcd48113c02f66901fff59bf8c3a814a1ed7f6ca80a045e166",
+      "reason": "Referencia anterior incompatible con el catálogo, el flujo MVP o la vigencia de la demostración."
+    },
+    {
+      "id": "51c98ea6-7834-46d7-857f-8c565951146e",
+      "title": "tarjetas y transferencia",
+      "expectedContentHash": "ed68c8e5b47d6dfe3e7aa9513ce6e683a7649d2f1463e056e325693eac5dc638",
+      "reason": "Referencia anterior incompatible con el catálogo, el flujo MVP o la vigencia de la demostración."
+    }
+  ]
+}

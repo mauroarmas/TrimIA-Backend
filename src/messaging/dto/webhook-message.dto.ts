@@ -3,6 +3,7 @@ import { Transform } from 'class-transformer';
 import {
   IsEnum,
   IsNotEmpty,
+  MinLength,
   IsOptional,
   IsString,
   MaxLength,
@@ -12,6 +13,11 @@ import { Channel } from '@prisma/client';
 import { normalizePhone } from '../../common/phone';
 
 export class WebhookMessageDto {
+  @IsOptional()
+  @IsString()
+  @MaxLength(200)
+  @MinLength(1)
+  providerMessageId?: string;
   // Se normaliza acá, en el borde: es lo que termina en
   // Conversation.externalId y lo que se cruza contra Employee.phone y
   // Client.phone. Un solo punto de entrada = un solo formato en la base.

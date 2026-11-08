@@ -1,0 +1,170 @@
+# Entorno de demostración con persistencia. Revisar el costo en Render antes de crearlo.
+services:
+  - type: web
+    name: trimia-api
+    runtime: docker
+    branch: main
+    region: virginia
+    plan: 1c-2g
+    dockerfilePath: ./Dockerfile
+    autoDeployTrigger: checksPass
+    preDeployCommand: npm run db:deploy
+    healthCheckPath: /health
+    numInstances: 1
+    disk:
+      name: trimia-files
+      mountPath: /app/storage
+      sizeGB: 1
+    envVars:
+      - fromGroup: trimia-shared
+      - key: NODE_ENV
+        value: production
+      - key: PORT
+        value: '3000'
+      - key: TRUST_PROXY_HOPS
+        value: '1'
+      - key: CORS_ORIGINS
+        sync: false
+      - key: GOOGLE_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        sync: false
+      - key: EMBEDDING_MODEL
+        sync: false
+      - key: JWT_SECRET
+        generateValue: true
+      - key: KNOWLEDGE_ADMIN_SECRET
+        generateValue: true
+      - key: DATABASE_URL
+        fromDatabase:
+          name: trimia-postgres
+          property: connectionString
+      - key: POSTGRES_USER
+        fromDatabase:
+          name: trimia-postgres
+          property: user
+      - key: POSTGRES_PASSWORD
+        fromDatabase:
+          name: trimia-postgres
+          property: password
+      - key: POSTGRES_DB
+        fromDatabase:
+          name: trimia-postgres
+          property: database
+      - key: REDIS_URL
+        fromService:
+          type: keyvalue
+          name: trimia-redis
+          property: connectionString
+      - key: CHROMA_HOSTPORT
+        fromService:
+          type: pserv
+          name: trimia-chroma
+          property: hostport
+      - key: N8N_HOSTPORT
+        fromService:
+          type: web
+          name: trimia-n8n
+          property: hostport
+
+  - type: keyvalue
+    name: trimia-redis
+    region: virginia
+    plan: 256mb
+    maxmemoryPolicy: noeviction
+    persistenceMode: journal-snapshot
+    ipAllowList: []
+
+  - type: pserv
+    name: trimia-chroma
+    runtime: image
+    region: virginia
+    plan: 0.5c-512mb
+    image:
+      url: docker.io/chromadb/chroma:0.5.20
+    disk:
+      name: trimia-vectors
+      mountPath: /chroma/chroma
+      sizeGB: 1
+    envVars:
+      - key: PORT
+        value: '8000'
+      - key: IS_PERSISTENT
+        value: 'TRUE'
+      - key: PERSIST_DIRECTORY
+        value: /chroma/chroma
+      - key: ANONYMIZED_TELEMETRY
+        value: 'FALSE'
+
+  - type: web
+    name: trimia-n8n
+    runtime: docker
+    branch: main
+    region: virginia
+    plan: 0.5c-512mb
+    dockerfilePath: ./deploy/n8n/Dockerfile
+    autoDeployTrigger: checksPass
+    healthCheckPath: /healthz
+    disk:
+      name: trimia-workflows
+      mountPath: /home/node/.n8n
+      sizeGB: 1
+    envVars:
+      - fromGroup: trimia-shared
+      - key: N8N_PORT
+        value: '5678'
+      - key: PORT
+        value: '5678'
+      - key: N8N_LISTEN_ADDRESS
+        value: 0.0.0.0
+      - key: N8N_PROXY_HOPS
+        value: '1'
+      - key: GENERIC_TIMEZONE
+        value: America/Argentina/Tucuman
+      - key: TZ
+        value: America/Argentina/Tucuman
+      - key: N8N_ENCRYPTION_KEY
+        generateValue: true
+      - key: N8N_ENFORCE_SETTINGS_FILE_PERMISSIONS
+        value: 'true'
+      - key: N8N_DIAGNOSTICS_ENABLED
+        value: 'false'
+      - key: N8N_BLOCK_ENV_ACCESS_IN_NODE
+        value: 'false'
+      - key: N8N_DEFAULT_BINARY_DATA_MODE
+        value: default
+      - key: EXECUTIONS_DATA_SAVE_ON_SUCCESS
+        value: none
+      - key: EXECUTIONS_DATA_SAVE_ON_ERROR
+        value: none
+      - key: EXECUTIONS_DATA_SAVE_MANUAL_EXECUTIONS
+        value: 'false'
+      - key: EXECUTIONS_DATA_SAVE_ON_PROGRESS
+        value: 'false'
+      - key: GOOGLE_API_KEY
+        sync: false
+      - key: GEMINI_MODEL
+        sync: false
+      - key: WHATSAPP_PHONE_NUMBER_ID
+        sync: false
+      - key: TRIMIA_API_HOSTPORT
+        fromService:
+          type: web
+          name: trimia-api
+          property: hostport
+
+databases:
+  - name: trimia-postgres
+    region: virginia
+    plan: 0.1c-256mb
+    postgresMajorVersion: '16'
+    databaseName: trimia
+    user: trimia
+    diskSizeGB: 5
+    ipAllowList: []
+
+envVarGroups:
+  - name: trimia-shared
+    envVars:
+      - key: N8N_WEBHOOK_SECRET
+        generateValue: true

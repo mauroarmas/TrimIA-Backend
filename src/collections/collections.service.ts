@@ -7,6 +7,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../database/prisma.service';
 import { EscalationsService } from '../escalations/escalations.service';
+import { Prisma } from '@prisma/client';
 
 /**
  * Panel del cobrador: KPIs, listado de clientes, historial unificado (Sprint 4 — US4).
@@ -82,13 +83,40 @@ export class CollectionsService {
   }
 
   async listClients(employeeId: string, isController: boolean) {
-    return this.prisma.client.findMany({
+    const clients = await this.prisma.client.findMany({
       where: isController ? {} : { assignedCollectorId: employeeId },
       include: {
         quotas: { orderBy: { dueDate: 'asc' } },
-        assignedCollector: true,
+        assignedCollector: { select: { id: true, name: true } },
       },
       orderBy: { name: 'asc' },
+    });
+    const today = new Intl.DateTimeFormat('en-CA', {
+      timeZone: 'America/Argentina/Tucuman',
+    }).format(new Date());
+    return clients.map((client) => {
+      const unpaid = client.quotas.filter((quota) => quota.status !== 'PAID');
+      const overdueQuotaCount = unpaid.filter(
+        (quota) => quota.dueDate.toISOString().slice(0, 10) < today,
+      ).length;
+      return {
+        ...client,
+        accountSummary: {
+          overdueQuotaCount,
+          totalDebt: unpaid
+            .reduce(
+              (total, quota) => total.plus(quota.amount),
+              new Prisma.Decimal(0),
+            )
+            .toFixed(2),
+          status:
+            unpaid.length === 0
+              ? 'SIN_DEUDA'
+              : overdueQuotaCount > 0
+                ? 'EN_MORA'
+                : 'AL_DIA',
+        },
+      };
     });
   }
 

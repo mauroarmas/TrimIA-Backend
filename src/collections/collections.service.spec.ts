@@ -6,6 +6,7 @@ import {
 import { CollectionsService } from './collections.service';
 import { PrismaService } from '../database/prisma.service';
 import { EscalationsService } from '../escalations/escalations.service';
+import { Prisma } from '@prisma/client';
 
 /**
  * Tests de CollectionsService (Sprint 4 — Historia 4: panel del cobrador).
@@ -91,6 +92,71 @@ describe('CollectionsService', () => {
         { id: 'emp-1', name: 'Ana Cobradora', isController: false },
       ]);
     });
+  });
+
+  it('calcula la deuda exacta y las cuotas vencidas con el día de Argentina (DM-004)', async () => {
+    jest.useFakeTimers().setSystemTime(new Date('2026-11-03T01:00:00Z')); // 2/11 local
+    try {
+      prisma.client.findMany.mockResolvedValue([
+        {
+          id: 'client-1',
+          quotas: [
+            {
+              status: 'PENDING',
+              dueDate: new Date('2026-11-01T00:00:00Z'),
+              amount: new Prisma.Decimal('0.10'),
+            },
+            {
+              status: 'AWAITING_CONFIRMATION',
+              dueDate: new Date('2026-11-02T00:00:00Z'),
+              amount: new Prisma.Decimal('0.20'),
+            },
+            {
+              status: 'MANUAL',
+              dueDate: new Date('2026-11-04T00:00:00Z'),
+              amount: new Prisma.Decimal('0.30'),
+            },
+            {
+              status: 'PAID',
+              dueDate: new Date('2026-10-01T00:00:00Z'),
+              amount: new Prisma.Decimal('120000'),
+            },
+          ],
+        },
+      ]);
+      const result = await service.listClients('collector-1', false);
+      expect(result[0].accountSummary).toEqual({
+        overdueQuotaCount: 1,
+        totalDebt: '0.60',
+        status: 'EN_MORA',
+      });
+      expect(prisma.client.findMany.mock.calls[0][0].where).toEqual({
+        assignedCollectorId: 'collector-1',
+      });
+    } finally {
+      jest.useRealTimers();
+    }
+  });
+
+  it('distingue un cliente sin deuda de otro al día con cuotas pendientes', async () => {
+    prisma.client.findMany.mockResolvedValue([
+      { id: 'empty', quotas: [] },
+      {
+        id: 'future',
+        quotas: [
+          {
+            status: 'PENDING',
+            dueDate: new Date('2099-01-01T00:00:00Z'),
+            amount: new Prisma.Decimal(100),
+          },
+        ],
+      },
+    ]);
+    const result = await service.listClients('collector-1', true);
+    expect(result.map((client) => client.accountSummary.status)).toEqual([
+      'SIN_DEUDA',
+      'AL_DIA',
+    ]);
   });
 
   describe('getClientHistory', () => {
