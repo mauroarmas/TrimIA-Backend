@@ -509,27 +509,47 @@ export class FinancingService {
             (await tx.client.create({
               data: { name: d.name!, dni: d.dni, phone: c.externalId },
             }));
-          const prospect = await tx.prospect.create({
-            data: {
-              name: d.name!,
-              dni: d.dni,
-              comercio: d.business,
-              localidad: d.locality,
-              originChannel: c.channel,
-              phone: c.externalId,
-              productInterest: d.productSummary!,
-              estimatedAmount: d.confirmedAmount!,
-              modality: 'FINANCED',
+          // Reutilizar el interés recogido en el mismo hilo para esta compra.
+          // Una oportunidad con otro pedido o ya cerrada conserva su historia.
+          const previousProspect = await tx.prospect.findFirst({
+            where: {
               conversationId: c.id,
-              syncStatus: 'PENDING',
-              crmData: this.json({
-                sheet: {
-                  Comercio: d.business || '',
-                  Localidad: d.locality || '',
-                },
-              }),
+              phone: c.externalId,
+              closedAt: null,
+              status: { in: ['NUEVO', 'EN_CONTACTO', 'CALIFICA'] },
+              productInterest: d.productSummary!,
+              purchaseRequests: { none: {} },
             },
+            orderBy: { createdAt: 'desc' },
           });
+          const prospectData = {
+            name: d.name!,
+            dni: d.dni,
+            comercio: d.business,
+            localidad: d.locality,
+            originChannel: c.channel,
+            phone: c.externalId,
+            productInterest: d.productSummary!,
+            estimatedAmount: d.confirmedAmount!,
+            modality: 'FINANCED' as const,
+            conversationId: c.id,
+            syncStatus: 'PENDING' as const,
+            crmData: this.json({
+              ...((previousProspect?.crmData as any) || {}),
+              sheet: {
+                ...((previousProspect?.crmData as any)?.sheet || {}),
+                Comercio: d.business || '',
+                Localidad: d.locality || '',
+              },
+            }),
+          };
+          const prospect = previousProspect
+            ? await tx.prospect.update({
+                where: { id: previousProspect.id },
+                data: prospectData,
+              })
+            : await tx.prospect.create({ data: prospectData });
+          const startedAt = new Date();
           const req = await tx.purchaseRequest.create({
             data: {
               clientId: client.id,
@@ -549,9 +569,9 @@ export class FinancingService {
                       stage: 'REVIEW',
                       revision: 0,
                       offers: [],
-                      startedAt: new Date().toISOString(),
+                      startedAt: startedAt.toISOString(),
                       expiresAt: new Date(
-                        Date.now() + OFFER_VALIDITY_MS,
+                        startedAt.getTime() + OFFER_VALIDITY_MS,
                       ).toISOString(),
                     }),
                   }

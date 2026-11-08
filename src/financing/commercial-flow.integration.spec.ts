@@ -128,6 +128,121 @@ const enabled = !!process.env.TEST_DATABASE_URL;
       }),
     ).toBe(0);
   });
+  it.each([false, true])(
+    'conserva producto e identidad en WhatsApp (prospecto previo: %s)',
+    async (withProspect) => {
+      const c = await prisma.conversation.create({
+        data: {
+          externalId: '549' + String(Date.now()).slice(-10) + '88',
+          channel: 'WHATSAPP',
+        },
+      });
+      const product = 'Heladera Exhibidora Vertical Inelro 420 Litros Forzador';
+      await prisma.message.createMany({
+        data: [
+          {
+            conversationId: c.id,
+            role: 'USER',
+            content:
+              'me gusta la opcion Exhibidora Vertical Inelro 420 Litros Forzador',
+          },
+          {
+            conversationId: c.id,
+            role: 'ASSISTANT',
+            content:
+              'Genial, la Inelro de 420 litros está disponible. ¿Preferís financiación?',
+          },
+        ],
+      });
+      const prospect = withProspect
+        ? await prisma.prospect.create({
+            data: {
+              phone: c.externalId,
+              name: 'Cliente',
+              productInterest: product,
+              conversationId: c.id,
+              originChannel: 'WHATSAPP',
+              notes: 'Interés recogido durante la conversación',
+            },
+          })
+        : null;
+      if (withProspect)
+        await prisma.message.createMany({
+          data: Array.from({ length: 14 }, (_, i) => ({
+            conversationId: c.id,
+            role: 'USER' as const,
+            content: 'Consulta anterior ' + i,
+          })),
+        });
+      const invoke = jest.fn();
+      const handler = new FinancingConversationService(
+        prisma as any,
+        { classifierChat: { withStructuredOutput: () => ({ invoke }) } } as any,
+        financing,
+        { create: jest.fn() } as any,
+        commercial,
+        stock,
+      );
+      const customer = { userType: 'CLIENTE' } as any;
+      invoke.mockResolvedValueOnce({ intent: 'REQUEST' });
+      await handler.handle(
+        c.id,
+        randomUUID(),
+        'quiero la financiacion',
+        customer,
+      );
+      let draft = await financing.getDraft(c.id);
+      expect(draft.sku).toBe('EXH-INH-420');
+      expect(draft.confirmedAmount).toBe('840000.00');
+      invoke.mockResolvedValueOnce({
+        intent: 'PROVIDE_DATA',
+        name: { value: 'Mauro Armas', evidence: 'Mauro Armas' },
+        dni: { value: '90000001', evidence: '90000001' },
+      });
+      await handler.handle(
+        c.id,
+        randomUUID(),
+        'Mauro Armas - DNI: 90000001',
+        customer,
+      );
+      // La identidad debe sobrevivir aunque la extracción confunda el producto con un nombre.
+      await prisma.message.createMany({
+        data: Array.from({ length: 14 }, (_, i) => ({
+          conversationId: c.id,
+          role: 'USER' as const,
+          content: 'Consulta intermedia ' + i,
+        })),
+      });
+      invoke.mockResolvedValueOnce({
+        intent: 'PROVIDE_DATA',
+        name: { value: product, evidence: product },
+        productSummary: { value: product, evidence: product },
+      });
+      await handler.handle(c.id, randomUUID(), product, customer);
+      draft = await financing.getDraft(c.id);
+      expect(draft.name).toBe('Mauro Armas');
+      expect(draft.sku).toBe('EXH-INH-420');
+      invoke.mockResolvedValueOnce({
+        intent: 'PROVIDE_DATA',
+        business: { value: 'Comercio Mauro', evidence: 'Comercio Mauro' },
+        locality: { value: 'Concepción', evidence: 'Concepción' },
+      });
+      await handler.handle(
+        c.id,
+        randomUUID(),
+        'Comercio Mauro - Concepción',
+        customer,
+      );
+      const order = await prisma.purchaseRequest.findFirstOrThrow({
+        where: { conversationId: c.id },
+      });
+      if (prospect) expect(order.prospectId).toBe(prospect.id);
+      expect((order.inputSnapshot as any).name).toBe('Mauro Armas');
+      expect(
+        await prisma.prospect.count({ where: { conversationId: c.id } }),
+      ).toBe(1);
+    },
+  );
   async function start() {
     const conversation = await prisma.conversation.create({
       data: {

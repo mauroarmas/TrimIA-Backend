@@ -41,7 +41,7 @@ const extracted = z
   })
   .strict();
 export const explicitFinancingRequest = (s: string) =>
-  /\b(?:quiero|quisiera|gustar[ií]a|solicito|necesito|deseo)\s+(?:financiar(?:la|lo|le|los|las)?|(?:solicitar|pedir)\s+(?:una\s+)?financiaci[oó]n|financiaci[oó]n|pagar\s+(?:en\s+)?cuotas)|\bme gustar[ií]a\s+(?:comprar|sacar).{0,80}(?:financi|cuotas)|\b(me interesa|estoy interesado en)\s+(?:financiar(?:la|lo|le|los|las)?|pagar.{0,20}en cuotas|la financiaci[oó]n)|\b(?:solicitar|pedir)\s+(?:una\s+)?financiaci[oó]n|\bfinanciar(?:la|lo|le|los|las)\b/i.test(
+  /\b(?:quiero|quisiera|gustar[ií]a|solicito|necesito|deseo)\s+(?:financiar(?:la|lo|le|los|las)?|(?:solicitar|pedir)\s+(?:una\s+)?financiaci[oó]n|(?:la\s+)?financiaci[oó]n|pagar\s+(?:en\s+)?cuotas)|\bme gustar[ií]a\s+(?:comprar|sacar).{0,80}(?:financi|cuotas)|\b(me interesa|estoy interesado en)\s+(?:financiar(?:la|lo|le|los|las)?|pagar.{0,20}en cuotas|la financiaci[oó]n)|\b(?:solicitar|pedir)\s+(?:una\s+)?financiaci[oó]n|\bfinanciar(?:la|lo|le|los|las)\b/i.test(
     s,
   );
 @Injectable()
@@ -115,6 +115,11 @@ export class FinancingConversationService {
               'comprar',
               'producto',
               'modelo',
+              'me',
+              'gusta',
+              'opcion',
+              'esa',
+              'ese',
             ].includes(t),
         );
       const matches = catalog.filter(
@@ -154,15 +159,43 @@ export class FinancingConversationService {
             content,
           ),
       );
-    const selectedProduct = assistantHistory
-      .map((content: string) => {
-        if (!/elegiste|seleccionaste/i.test(content)) return null;
-        const matches = catalog.filter((item) =>
-          compact(content).includes(compact(item.name)),
-        );
-        return matches.length === 1 ? matches[0] : null;
-      })
-      .find(Boolean);
+    const selectedFromHistory = previousMessages
+      .filter(
+        (entry) =>
+          entry.role === 'USER' &&
+          /me gusta|quiero|elijo|prefiero|opci[oó]n|modelo/i.test(
+            entry.content,
+          ),
+      )
+      .map((entry) => matchProduct(entry.content))
+      .find((matches) => matches.length === 1)?.[0];
+    const opportunity =
+      modern && !draft?.purchaseRequestId && this.prisma.prospect?.findFirst
+        ? await this.prisma.prospect.findFirst({
+            where: {
+              conversationId,
+              closedAt: null,
+              status: { in: ['NUEVO', 'EN_CONTACTO', 'CALIFICA'] },
+              purchaseRequests: { none: {} },
+            },
+            orderBy: { createdAt: 'desc' },
+          })
+        : null;
+    const opportunityMatches = opportunity
+      ? matchProduct(opportunity.productInterest)
+      : [];
+    const selectedProduct =
+      selectedFromHistory ||
+      (opportunityMatches.length === 1 ? opportunityMatches[0] : undefined) ||
+      assistantHistory
+        .map((content: string) => {
+          if (!/elegiste|seleccionaste/i.test(content)) return null;
+          const matches = catalog.filter((item) =>
+            compact(content).includes(compact(item.name)),
+          );
+          return matches.length === 1 ? matches[0] : null;
+        })
+        .find(Boolean);
     const submitted =
       modern && draft?.purchaseRequestId
         ? await this.prisma.purchaseRequest.findUnique({
@@ -319,11 +352,11 @@ export class FinancingConversationService {
       input.flowVersion = 2;
     if (
       modern &&
-      explicitFinancingRequest(message) &&
+      (explicitFinancingRequest(message) || financingContext) &&
       !draft?.purchaseRequestId
     ) {
       input.flowVersion = 2;
-      if (!input.productSummary && selectedProduct) {
+      if (!draft?.sku && !input.productSummary && selectedProduct) {
         input.sku = selectedProduct.sku;
         input.productSummary = selectedProduct.name;
       }
@@ -367,7 +400,7 @@ export class FinancingConversationService {
       const unlabelledDni = message.match(/(?:^|\D)(\d{7,8})(?:\D|$)/)?.[1];
       if (unlabelledDni) input.dni = unlabelledDni;
     }
-    if (financingContext && !input.name) {
+    if (financingContext && !input.name && input.dni) {
       const candidateName = message
         .replace(/\b\d{7,8}\b/g, '')
         .replace(/\b(?:DNI|documento)(?:\s+(?:es|n[uú]mero))?\b/gi, '')
@@ -375,6 +408,18 @@ export class FinancingConversationService {
         .trim();
       if (/\p{L}{2}/u.test(candidateName)) input.name = candidateName;
     }
+    // Un producto o un comercio no es el nombre de la persona. El fallback
+    // de identidad solo se usa en mensajes que también aportan el DNI.
+    if (
+      input.name &&
+      (matchProduct(input.name).length > 0 ||
+        (draft?.name &&
+          !input.dni &&
+          !/me llamo|mi nombre|nombre\s*[:=]|corr(?:ijo|egir).*nombre/i.test(
+            message,
+          )))
+    )
+      delete input.name;
     if (input.dni && !/^\d{7,8}$/.test(input.dni)) delete input.dni;
     if (input.observedAmount && !/^\d+\.\d{2}$/.test(input.observedAmount))
       delete input.observedAmount;

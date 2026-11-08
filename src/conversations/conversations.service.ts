@@ -163,7 +163,7 @@ export class ConversationsService {
    */
   async getRecentHistory(
     conversationId: string,
-    limit = 6,
+    limit = 10,
     excludeMessageId?: string,
   ): Promise<ConversationTurn[]> {
     const rows = await this.prisma.message.findMany({
