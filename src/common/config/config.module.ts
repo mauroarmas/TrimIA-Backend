@@ -14,6 +14,7 @@ import * as Joi from 'joi';
           .default('development'),
         PORT: Joi.number().default(3000),
         FINANCING_NOTICE_TRANSPORT: financingTransportSchema,
+        FINANCING_WHATSAPP_NOTICES_ENABLED: Joi.boolean().default(false),
         TRUST_PROXY_HOPS: Joi.number().integer().min(0).default(0),
         CORS_ORIGINS: Joi.string().when('NODE_ENV', {
           is: 'production',

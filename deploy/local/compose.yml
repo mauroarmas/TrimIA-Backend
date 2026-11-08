@@ -44,6 +44,7 @@ services:
       CORS_ORIGINS: ${DEMO_PUBLIC_URL:?Configurar deploy/local/.env}
       TRUST_PROXY_HOPS: '1'
       FINANCING_NOTICE_TRANSPORT: simulated
+      FINANCING_WHATSAPP_NOTICES_ENABLED: 'true'
       REDIS_URL: redis://redis:6379
       CHROMA_URL: http://chromadb:8000
       N8N_BASE_URL: http://n8n:5678

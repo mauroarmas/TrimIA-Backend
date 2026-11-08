@@ -8,9 +8,15 @@ import { FinancingConversationService } from './financing-conversation.service';
 import { FinancingEvaluationService } from './financing-evaluation.service';
 import { FinancingNoticeService } from './financing-notice.service';
 import { FINANCING_NOTICE_PORT } from './financing-notice.port';
-import { SimulatedFinancingNoticeAdapter } from './simulated-financing-notice.adapter';
+import { ChannelFinancingNoticeAdapter } from './channel-financing-notice.adapter';
+import { WhatsappSenderModule } from '../messaging/whatsapp-sender.module';
 @Module({
-  imports: [PrismaModule, IntegrationsModule, EscalationsModule],
+  imports: [
+    PrismaModule,
+    IntegrationsModule,
+    EscalationsModule,
+    WhatsappSenderModule,
+  ],
   providers: [
     CommercialFlowService,
     FinancingService,
@@ -19,7 +25,7 @@ import { SimulatedFinancingNoticeAdapter } from './simulated-financing-notice.ad
     FinancingNoticeService,
     {
       provide: FINANCING_NOTICE_PORT,
-      useClass: SimulatedFinancingNoticeAdapter,
+      useClass: ChannelFinancingNoticeAdapter,
     },
   ],
   exports: [

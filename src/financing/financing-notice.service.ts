@@ -1,3 +1,4 @@
+import { usesWhatsAppNotice } from './channel-financing-notice.adapter';
 import { Inject, Injectable, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'crypto';
@@ -40,10 +41,15 @@ export class FinancingNoticeService {
         });
         return null;
       }
+      const whatsappNotice = usesWhatsAppNotice(this.config, {
+        channel: notice.conversation.channel as any,
+        purpose: notice.purpose,
+      });
       if (
         this.config.get('FINANCING_NOTICE_TRANSPORT', 'disabled') !==
           'simulated' ||
-        notice.transportMode !== 'simulated'
+        (notice.transportMode !== 'simulated' &&
+          !(whatsappNotice && notice.transportMode === 'whatsapp'))
       ) {
         await tx.outboundCommunication.updateMany({
           where: { id, status: 'PENDING', version: notice.version },
@@ -69,6 +75,7 @@ export class FinancingNoticeService {
         where: { id, status: 'PENDING', version: notice.version },
         data: {
           status: 'SENDING',
+          transportMode: whatsappNotice ? 'whatsapp' : 'simulated',
           attemptToken: token,
           attemptStartedAt: new Date(),
           attemptCount: { increment: 1 },
@@ -105,6 +112,9 @@ export class FinancingNoticeService {
         },
       });
       return {
+        channel: notice.conversation.channel,
+        purpose: notice.purpose,
+        transportMode: whatsappNotice ? 'whatsapp' : 'simulated',
         noticeId: id,
         attemptToken: token,
         body: notice.body,
@@ -123,7 +133,9 @@ export class FinancingNoticeService {
       result?.kind === 'ACCEPTED' &&
       result.noticeId === id &&
       result.attemptToken === claimed.attemptToken &&
-      /^sim:.+/.test(result.providerMessageId);
+      (claimed.transportMode === 'whatsapp'
+        ? result.providerMessageId === `n8n:${id}:${claimed.attemptToken}`
+        : /^sim:.+/.test(result.providerMessageId));
     const failed = result?.kind === 'NOT_ACCEPTED';
     const status = accepted ? 'ACCEPTED' : failed ? 'FAILED' : 'UNCERTAIN';
     await this.prisma.$transaction(async (tx) => {

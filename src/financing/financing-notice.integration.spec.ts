@@ -1,3 +1,4 @@
+import { ChannelFinancingNoticeAdapter } from './channel-financing-notice.adapter';
 import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'crypto';
 import { financingTestPrisma } from './testing/financing-test-harness';
@@ -96,6 +97,33 @@ const enabled = !!process.env.TEST_DATABASE_URL;
         }),
       };
     }
+    it('envía la decisión a WhatsApp una sola vez y conserva la aceptación de n8n', async () => {
+      const { notice, conversation } = await resolved();
+      const realConfig = new ConfigService({
+        FINANCING_NOTICE_TRANSPORT: 'simulated',
+        FINANCING_WHATSAPP_NOTICES_ENABLED: true,
+      });
+      const sender = { send: jest.fn().mockResolvedValue(undefined) };
+      const service = new FinancingNoticeService(
+        prisma as any,
+        realConfig,
+        new ChannelFinancingNoticeAdapter(realConfig, sender as any),
+      );
+      await service.dispatch(notice.id);
+      await service.dispatch(notice.id);
+      const saved = await prisma.outboundCommunication.findUniqueOrThrow({
+        where: { id: notice.id },
+      });
+      expect(saved.status).toBe('ACCEPTED');
+      expect(saved.transportMode).toBe('whatsapp');
+      expect(saved.providerMessageId).toMatch(/^n8n:/);
+      expect(sender.send).toHaveBeenCalledTimes(1);
+      expect(sender.send).toHaveBeenCalledWith(
+        conversation.externalId,
+        notice.body,
+        'WHATSAPP',
+      );
+    });
     it('FAILED admite retry conservando decisión, aviso y mensaje', async () => {
       const { request, notice } = await resolved();
       const transport: any = {

@@ -1,5 +1,7 @@
 export const FINANCING_NOTICE_PORT = Symbol('FINANCING_NOTICE_PORT');
 export interface FinancingNoticeInput {
+  channel?: 'WHATSAPP' | 'WEB';
+  purpose?: string;
   noticeId: string;
   attemptToken: string;
   destinationFromThread: string;
