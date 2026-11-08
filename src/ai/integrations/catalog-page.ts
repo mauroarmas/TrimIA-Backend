@@ -10,6 +10,24 @@ const normalize = (value: string) =>
     .replace(/[^a-z0-9]+/g, ' ')
     .trim();
 
+/** Una elección explícita de un modelo completo no vuelve a ser una consulta de familia. */
+export function explicitCatalogSelection(
+  catalog: StockItem[],
+  message: string,
+) {
+  const selection = message
+    .trim()
+    .match(
+      /^(?:quiero|elijo|prefiero|me quedo con|me interesa|me gusta)\s+(?:(?:la|el|una|un|opci[oó]n)\s+)?(.+?)[.!\s]*$/i,
+    );
+  if (!selection) return undefined;
+  const value = normalize(selection[1]);
+  const matches = catalog.filter(
+    (item) => normalize(item.name) === value || normalize(item.sku) === value,
+  );
+  return matches.length === 1 ? matches[0] : undefined;
+}
+
 /** Busca todos los modelos; una consulta de familia nunca toma solo el primero. */
 export function searchCatalog(catalog: StockItem[], query: string) {
   const exact = catalog.find(

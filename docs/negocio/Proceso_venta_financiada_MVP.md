@@ -6,7 +6,7 @@ Vigente desde el 7 de noviembre de 2026. Describe el circuito acordado para la d
 
 ### Quiero comprar con financiación: ¿cómo empiezo?
 
-Podés indicar «quiero financiación», «es para financiación» o «quiero financiar este producto». Elegí un producto y un modelo concreto del catálogo. Cada pedido corresponde a una unidad de un producto. El inventario informa los productos, existencias y precios vigentes; no se inventan modelos, precios ni cuotas. Las opciones se muestran en una lista con un máximo de cinco por respuesta; si quedan más, se informa que hay otras opciones.
+Podés indicar «quiero financiación», «es para financiación» o «quiero financiar este producto». Elegí un producto y un modelo concreto del catálogo. Cuando elegís un modelo exacto, se consulta ese modelo y se confirma su precio y disponibilidad; no se vuelve a mostrar la lista de toda la familia. Luego se consulta si preferís contado o financiación. Cada pedido corresponde a una unidad de un producto. El inventario informa los productos, existencias y precios vigentes; no se inventan modelos, precios ni cuotas. Las opciones se muestran en una lista con un máximo de cinco por respuesta; si quedan más, se informa que hay otras opciones.
 
 ### ¿Qué datos se necesitan? ¿Hace falta tener un comercio?
 

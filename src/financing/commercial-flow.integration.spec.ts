@@ -1,3 +1,4 @@
+import { buildSalesGraph } from '../ai/agents/sales/sales.graph';
 import { randomUUID } from 'crypto';
 import { ConfigService } from '@nestjs/config';
 import { financingTestPrisma } from './testing/financing-test-harness';
@@ -62,6 +63,105 @@ const enabled = !!process.env.TEST_DATABASE_URL;
   afterAll(() => prisma.$disconnect());
   const firstDate = () =>
     new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+  it('recorre catálogo → modelo elegido → financiación → datos → Administración sin repetir opciones', async () => {
+    const c = await prisma.conversation.create({
+      data: {
+        externalId: '549' + String(Date.now()).slice(-10) + '53',
+        channel: 'WHATSAPP',
+      },
+    });
+    const create = jest.fn();
+    const llm: any = {
+      classifierChat: {
+        withStructuredOutput: () => ({
+          invoke: async () => ({ intent: 'OTHER' }),
+        }),
+      },
+      chat: {
+        bindTools: () => ({
+          invoke: async () => ({
+            tool_calls: [{ name: 'check_stock', args: { query: 'heladeras' } }],
+          }),
+        }),
+        withStructuredOutput: () => ({
+          invoke: async () => ({
+            parsed: { response: 'Lista', needsHuman: false },
+            raw: {},
+          }),
+        }),
+      },
+    };
+    const handler = new FinancingConversationService(
+      prisma as any,
+      llm,
+      financing,
+      { create } as any,
+      commercial,
+      stock,
+    );
+    const graph = buildSalesGraph({
+      llm,
+      stockPort: stock,
+      knowledge: { search: async () => [] } as any,
+      confidenceThreshold: 0.7,
+      logger: { log() {}, warn() {} } as any,
+      escalations: { create } as any,
+    });
+    const history: any[] = [];
+    const turn = async (content: string) => {
+      const message = await prisma.message.create({
+        data: { conversationId: c.id, role: 'USER', content },
+      });
+      let result: any = await handler.handle(c.id, message.id, content, {
+        userType: 'CLIENTE',
+      } as any);
+      if (!result.handled)
+        result = await graph.invoke({
+          message: content,
+          conversationId: c.id,
+          userType: 'CLIENTE',
+          history,
+        });
+      expect(result.response).toBeTruthy();
+      await prisma.message.create({
+        data: {
+          conversationId: c.id,
+          role: 'ASSISTANT',
+          content: result.response,
+        },
+      });
+      history.push(
+        { role: 'USER', content },
+        { role: 'ASSISTANT', content: result.response },
+      );
+      return result.response as string;
+    };
+    expect(await turn('quisiera comprar una heladera')).toContain(
+      '3. Heladera Exhibidora Inelro 600 Litros',
+    );
+    const selected = await turn(
+      'quiero la Heladera Exhibidora Inelro 600 Litros',
+    );
+    expect(selected).toContain(
+      'Elegiste Heladera Exhibidora Inelro 600 Litros',
+    );
+    expect(selected).not.toContain('Briket');
+    expect(await turn('quiero financiación')).toMatch(/nombre.*DNI/);
+    const submitted = await turn(
+      'Nombre: Mauro Armas\nDNI: 90000001\nComercio: Almacén Mauro\nLocalidad: Posadas',
+    );
+    expect(submitted).toContain('creamos el pedido de financiación');
+    const request = await prisma.purchaseRequest.findFirstOrThrow({
+      where: { conversationId: c.id },
+    });
+    expect(request.status).toBe('PENDING_REVIEW');
+    expect(request.productSummary).toContain('Inelro 600');
+    expect(request.amount?.toString()).toBe('1180000');
+    expect(
+      await prisma.prospect.count({ where: { conversationId: c.id } }),
+    ).toBe(1);
+    expect(create).not.toHaveBeenCalled();
+  });
   it.each([true, false])(
     'recuerda «es para financiación» y recopila datos sin prometer un pedido inexistente (personal: %s)',
     async (personal) => {

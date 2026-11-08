@@ -1,3 +1,4 @@
+import { explicitCatalogSelection } from '../../integrations/catalog-page';
 import { ConversationContactService } from '../../integrations/conversation-contact.service';
 import {
   integrationEvidence,
@@ -133,6 +134,15 @@ export function buildRagAgentGraph(
     // Sprint 6 (Herramientas fácticas): Si el agente dispone de tools, evaluar si invocarlas
     if (config.tools && config.tools.length > 0) {
       try {
+        const selectedProduct =
+          agentType === 'SALES' &&
+          state.userType === 'CLIENTE' &&
+          deps.stockPort
+            ? explicitCatalogSelection(
+                await deps.stockPort.listCatalog(),
+                state.message,
+              )
+            : undefined;
         const modelWithTools = llm.chat.bindTools(config.tools);
         const toolCheckPrompt = [
           new SystemMessage(
@@ -157,7 +167,15 @@ export function buildRagAgentGraph(
             : []),
           new HumanMessage(state.message),
         ];
-        const toolRes = await modelWithTools.invoke(toolCheckPrompt);
+        const toolRes =
+          selectedProduct &&
+          config.tools.some((t: any) => t.name === 'check_stock')
+            ? {
+                tool_calls: [
+                  { name: 'check_stock', args: { query: selectedProduct.sku } },
+                ],
+              }
+            : await modelWithTools.invoke(toolCheckPrompt);
         if (toolRes.tool_calls && toolRes.tool_calls.length > 0) {
           logger.log(
             `${tag} invocando ${toolRes.tool_calls.length} herramientas`,
@@ -173,8 +191,14 @@ export function buildRagAgentGraph(
                   prospect,
                 },
               });
-              const facts = integrationEvidence(tc.name, res);
+              const facts = integrationEvidence(
+                tc.name,
+                res,
+                selectedProduct?.sku,
+              );
               evidence.hasFacts ||= facts.hasFacts;
+              if (facts.selectionReply)
+                evidence.selectionReply = facts.selectionReply;
               if (facts.catalogReply)
                 evidence.catalogReply = facts.catalogReply;
               evidence.stockPrices.push(...facts.stockPrices);
@@ -224,6 +248,13 @@ export function buildRagAgentGraph(
 
   // --- NODO: generate_response — Gemini responde con el contexto recuperado ---
   const generateResponse = async (state: OrchestratorStateType) => {
+    if (state.integrationEvidence?.selectionReply)
+      return {
+        response: state.integrationEvidence.selectionReply,
+        needsHuman: false,
+        handoffReason: null,
+        internalNote: null,
+      };
     // Historial de turnos previos inyectado como mensajes de chat.
     // Permite que el agente resuelva referencias como "¿y esa en cuotas?".
     const historyMessages: BaseMessage[] = (state.history ?? []).map((turn) =>

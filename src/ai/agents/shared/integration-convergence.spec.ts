@@ -10,10 +10,12 @@ describe('Grafos: evidencia de integraciones y resumen comercial', () => {
     calls: any[],
     parsed: any = { response: 'Respuesta', needsHuman: false },
     score = 0,
+    extraDeps: any = {},
   ) {
     const generate = jest.fn(async () => ({ parsed, raw: {} }));
     const select = jest.fn(async () => ({ tool_calls: calls }));
     const deps: any = {
+      ...extraDeps,
       llm: {
         chat: {
           bindTools: () => ({ invoke: select }),
@@ -105,6 +107,38 @@ describe('Grafos: evidencia de integraciones y resumen comercial', () => {
     expect(result.response).toMatch(/1\..*Briket/);
     expect(result.response).toMatch(/\n3\..*600/);
     expect(result.escalated).not.toBe(true);
+  });
+  it('confirma el modelo exacto elegido sin volver a consultar la familia ni depender del generador', async () => {
+    const stock = new MockStockAdapter();
+    const f = fixture(
+      [createCheckStockTool(stock)],
+      [{ name: 'check_stock', args: { query: 'heladeras' } }],
+      { response: '¿Cuál modelo te interesa?', needsHuman: true },
+      0,
+      { stockPort: stock },
+    );
+    const result = await f.graph.invoke({
+      message: 'quiero la Heladera Exhibidora Inelro 600 Litros',
+      history: [
+        {
+          role: 'ASSISTANT',
+          content:
+            '1. Briket 390\n2. Inelro 420\n3. Heladera Exhibidora Inelro 600 Litros. ¿Cuál modelo te interesa?',
+        },
+      ],
+      userType: 'CLIENTE',
+      conversationId: 'c1',
+    });
+    expect(result.response).toContain(
+      'Elegiste Heladera Exhibidora Inelro 600 Litros',
+    );
+    expect(result.response).toContain('$1.180.000');
+    expect(result.response).toContain('$995.000');
+    expect(result.response).toContain('solicitar financiación');
+    expect(result.response).not.toContain('Briket');
+    expect(result.response).not.toContain('¿Cuál modelo');
+    expect(result.escalated).not.toBe(true);
+    expect(f.generate).not.toHaveBeenCalled();
   });
   it('valida y persiste el resumen en la nota del escalado sin precio inventado', async () => {
     const f = fixture(

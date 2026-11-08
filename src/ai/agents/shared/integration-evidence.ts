@@ -49,10 +49,12 @@ export interface IntegrationEvidence {
   stockPrices: number[];
   creditVerdict?: string;
   catalogReply?: string;
+  selectionReply?: string;
 }
 export function integrationEvidence(
   name: string,
   output: unknown,
+  selectedSku?: string,
 ): IntegrationEvidence {
   let data: unknown;
   try {
@@ -102,6 +104,15 @@ export function integrationEvidence(
           : [parsed.data];
       return {
         hasFacts: true,
+        ...(selectedSku &&
+        'sku' in parsed.data &&
+        parsed.data.sku === selectedSku &&
+        parsed.data.precioLista !== null &&
+        parsed.data.precioContado !== null
+          ? {
+              selectionReply: `Elegiste ${parsed.data.producto}. Está disponible. Precio de lista: $${parsed.data.precioLista.toLocaleString('es-AR')}; contado: $${parsed.data.precioContado.toLocaleString('es-AR')}. ¿Preferís pagar de contado o solicitar financiación?`,
+            }
+          : {}),
         stockPrices: items
           .flatMap((i) => [i.precioLista, i.precioContado])
           .filter((p): p is number => typeof p === 'number'),
