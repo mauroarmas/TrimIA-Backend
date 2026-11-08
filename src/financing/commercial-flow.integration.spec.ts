@@ -197,12 +197,11 @@ const enabled = !!process.env.TEST_DATABASE_URL;
       invoke.mockResolvedValueOnce({
         intent: 'PROVIDE_DATA',
         name: { value: 'Mauro Armas', evidence: 'Mauro Armas' },
-        dni: { value: '90000001', evidence: '90000001' },
       });
       await handler.handle(
         c.id,
         randomUUID(),
-        'Mauro Armas - DNI: 90000001',
+        'Mauro Armas - 90000005',
         customer,
       );
       // La identidad debe sobrevivir aunque la extracción confunda el producto con un nombre.
@@ -224,13 +223,12 @@ const enabled = !!process.env.TEST_DATABASE_URL;
       expect(draft.sku).toBe('EXH-INH-420');
       invoke.mockResolvedValueOnce({
         intent: 'PROVIDE_DATA',
-        business: { value: 'Comercio Mauro', evidence: 'Comercio Mauro' },
         locality: { value: 'Concepción', evidence: 'Concepción' },
       });
       await handler.handle(
         c.id,
         randomUUID(),
-        'Comercio Mauro - Concepción',
+        'Mi dni es: 90000005 - Comercio Maurito - Concepción ,Tucumán',
         customer,
       );
       const order = await prisma.purchaseRequest.findFirstOrThrow({
@@ -238,6 +236,8 @@ const enabled = !!process.env.TEST_DATABASE_URL;
       });
       if (prospect) expect(order.prospectId).toBe(prospect.id);
       expect((order.inputSnapshot as any).name).toBe('Mauro Armas');
+      expect((order.inputSnapshot as any).dni).toBe('90000005');
+      expect((order.inputSnapshot as any).business).toBe('Comercio Maurito');
       expect(
         await prisma.prospect.count({ where: { conversationId: c.id } }),
       ).toBe(1);

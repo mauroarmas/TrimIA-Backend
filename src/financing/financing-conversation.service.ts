@@ -1,3 +1,4 @@
+import { literalFinancingDetails } from './literal-financing-details';
 import { formatCatalogPage } from '../ai/integrations/catalog-page';
 import { Optional } from '@nestjs/common';
 import { CommercialFlowService } from './commercial-flow.service';
@@ -396,17 +397,13 @@ export class FinancingConversationService {
       )?.[1]
       .replace(/\D/g, '');
     if (labeledDni && /^\d{7,8}$/.test(labeledDni)) input.dni = labeledDni;
-    if (financingContext && !input.dni) {
-      const unlabelledDni = message.match(/(?:^|\D)(\d{7,8})(?:\D|$)/)?.[1];
-      if (unlabelledDni) input.dni = unlabelledDni;
-    }
-    if (financingContext && !input.name && input.dni) {
-      const candidateName = message
-        .replace(/\b\d{7,8}\b/g, '')
-        .replace(/\b(?:DNI|documento)(?:\s+(?:es|n[uú]mero))?\b/gi, '')
-        .replace(/[\s,;:|–—-]+$/g, '')
-        .trim();
-      if (/\p{L}{2}/u.test(candidateName)) input.name = candidateName;
+    if (financingContext || (active && draft?.flowVersion === 2)) {
+      const literal = literalFinancingDetails(message);
+      if (literal.dni && (literal.name || !draft?.dni)) input.dni = literal.dni;
+      if (literal.name) input.name = literal.name;
+      if (literal.business) input.business = literal.business;
+      if (literal.locality && !input.locality)
+        input.locality = literal.locality;
     }
     // Un producto o un comercio no es el nombre de la persona. El fallback
     // de identidad solo se usa en mensajes que también aportan el DNI.
