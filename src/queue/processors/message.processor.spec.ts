@@ -850,6 +850,109 @@ describe('⭐ MessageProcessor — el aviso de fallo se registra (RF-012)', () =
   });
 });
 
+describe('MessageProcessor — preferencia de no contacto (spec 022 US1)', () => {
+  it('registra baja explícita sobre el teléfono del hilo, envía confirmación breve y no invoca al orquestador', async () => {
+    const conversations = {
+      findById: jest.fn().mockResolvedValue({
+        id: 'conv-optout',
+        status: 'ACTIVE',
+        currentAgent: 'SALES',
+        userType: 'CLIENTE',
+      }),
+      addMessage: jest.fn(),
+    };
+    const sender = { send: jest.fn() };
+    const orchestrator = { invoke: jest.fn() };
+    const contactPreference = {
+      recordOptOut: jest.fn().mockResolvedValue({ optOut: true }),
+    };
+
+    const proc = new MessageProcessor(
+      conversations as any,
+      sender as any,
+      orchestrator as any,
+      { findByPhone: jest.fn() } as any,
+      { trackRetrievals: jest.fn() } as any,
+      callerResolver(),
+      undefined,
+      contactPreference as any,
+    );
+
+    await proc.process({
+      data: {
+        conversationId: 'conv-optout',
+        externalId: '+5493764000777',
+        channel: 'WHATSAPP',
+        message: 'No me contacten más',
+        messageId: 'msg-baja-777',
+      },
+      attemptsMade: 0,
+      opts: { attempts: 3 },
+    } as any);
+
+    expect(contactPreference.recordOptOut).toHaveBeenCalledWith({
+      phone: '+5493764000777',
+      reason: 'No me contacten más',
+      sourceMessageId: 'msg-baja-777',
+      sourceConversationId: 'conv-optout',
+    });
+    expect(orchestrator.invoke).not.toHaveBeenCalled();
+    expect(sender.send).toHaveBeenCalledWith(
+      '+5493764000777',
+      expect.stringContaining('detuvimos todos los avisos'),
+      'WHATSAPP',
+    );
+  });
+
+  it('pide aclaración cuando el pedido de baja es ambiguo o menciona un teléfono de terceros, sin registrar baja', async () => {
+    const conversations = {
+      findById: jest.fn().mockResolvedValue({
+        id: 'conv-amb',
+        status: 'ACTIVE',
+        currentAgent: 'SALES',
+        userType: 'CLIENTE',
+      }),
+      addMessage: jest.fn(),
+    };
+    const sender = { send: jest.fn() };
+    const orchestrator = { invoke: jest.fn() };
+    const contactPreference = {
+      recordOptOut: jest.fn(),
+    };
+
+    const proc = new MessageProcessor(
+      conversations as any,
+      sender as any,
+      orchestrator as any,
+      { findByPhone: jest.fn() } as any,
+      { trackRetrievals: jest.fn() } as any,
+      callerResolver(),
+      undefined,
+      contactPreference as any,
+    );
+
+    await proc.process({
+      data: {
+        conversationId: 'conv-amb',
+        externalId: '+5493764000777',
+        channel: 'WHATSAPP',
+        message: 'No me contacten más al +5493764999888',
+        messageId: 'msg-amb-1',
+      },
+      attemptsMade: 0,
+      opts: { attempts: 3 },
+    } as any);
+
+    expect(contactPreference.recordOptOut).not.toHaveBeenCalled();
+    expect(orchestrator.invoke).not.toHaveBeenCalled();
+    expect(sender.send).toHaveBeenCalledWith(
+      '+5493764000777',
+      expect.stringContaining('respondé BAJA'),
+      'WHATSAPP',
+    );
+  });
+});
+
 /**
  * `CallerResolver` REAL con un prisma de juguete (spec 005).
  *

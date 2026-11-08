@@ -1,5 +1,11 @@
 import { Optional } from '@nestjs/common';
 import { FinancingConversationService } from '../../financing/financing-conversation.service';
+import {
+  AMBIGUOUS_OPT_OUT_CLARIFICATION_MESSAGE,
+   classifyIncomingOptOutText,
+  ContactPreferenceService,
+  OPT_OUT_CONFIRMATION_MESSAGE,
+} from '../../financing/contact-preference.service';
 import { botMayRespond } from '../bot-response-policy';
 import { Processor, WorkerHost } from '@nestjs/bullmq';
 import { Logger } from '@nestjs/common';
@@ -57,6 +63,7 @@ export class MessageProcessor extends WorkerHost {
     private readonly orchestrationLogger: OrchestrationLogger,
     private readonly callerResolver: CallerResolver,
     @Optional() private readonly financing?: FinancingConversationService,
+    @Optional() private readonly contactPreference?: ContactPreferenceService,
   ) {
     super();
   }
@@ -117,6 +124,50 @@ export class MessageProcessor extends WorkerHost {
     try {
       // Sticky + historial: una sola query trae todo lo que necesita el orquestador.
       const conversation = await this.conversations.findById(conversationId);
+
+      // Spec 022 (US1, FR-001..FR-003): detectar solicitud explícita de no contacto
+      // sobre el teléfono titular del hilo antes de invocar automatismos.
+      const optOutIntent = classifyIncomingOptOutText(message, externalId);
+      if (optOutIntent === 'OPT_OUT' && this.contactPreference) {
+        await this.contactPreference.recordOptOut({
+          phone: externalId,
+          reason: message,
+          sourceMessageId: messageId ?? null,
+          sourceConversationId: conversationId,
+        });
+        if (!conversation || botMayRespond(conversation.status)) {
+          await this.conversations.addMessage(
+            conversationId,
+            'ASSISTANT',
+            OPT_OUT_CONFIRMATION_MESSAGE,
+            'SALES',
+          );
+          await this.sender.send(
+            externalId,
+            OPT_OUT_CONFIRMATION_MESSAGE,
+            channel,
+          );
+        }
+        return;
+      }
+      if (
+        optOutIntent === 'AMBIGUOUS_OPT_OUT' &&
+        this.contactPreference &&
+        (!conversation || botMayRespond(conversation.status))
+      ) {
+        await this.conversations.addMessage(
+          conversationId,
+          'ASSISTANT',
+          AMBIGUOUS_OPT_OUT_CLARIFICATION_MESSAGE,
+          'SALES',
+        );
+        await this.sender.send(
+          externalId,
+          AMBIGUOUS_OPT_OUT_CLARIFICATION_MESSAGE,
+          channel,
+        );
+        return;
+      }
 
       // Human-in-the-loop (Sprint 3): mientras un caso está pendiente de un
       // supervisor (WAITING_HUMAN) o alguien tiene el control manual

@@ -51,6 +51,8 @@ const publicNotice = {
   attemptCount: true,
   lastErrorCode: true,
   acceptedAt: true,
+  deliveredAt: true,
+  deliverySource: true,
 } as const;
 export const financingSelection = {
   id: true,

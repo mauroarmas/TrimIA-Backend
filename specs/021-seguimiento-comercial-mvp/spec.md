@@ -4,7 +4,7 @@
 
 **Created**: 2026-11-04
 
-**Updated**: 2026-11-06
+**Updated**: 2026-11-07
 
 **Status**: Especificada para planificar. No implementada por esta revisión.
 
@@ -30,6 +30,14 @@ Habrá una única regla global, inicialmente desactivada, con **48 horas de inac
 | 022 | No contacto, resultado del envío, reintentos acotados y evidencia de entrega simulada. |
 
 Cubre el seguimiento automático de **RF03**, el registro comercial de **RI-03** y su relación con **RI-04**. Se vincula con OE-1/OE-2/OE-9/OE-11 y E2/E7. No declara terminadas las integraciones productivas ni la aceptación global del proyecto.
+
+## Clarifications
+
+### Session 2026-11-07
+
+- Q: ¿Cómo debe poder probarse el vencimiento del plazo de 48 horas desde el panel durante una demostración en vivo sin esperar 48 horas reales ni bajar el plazo configurado? (SC-002) → A: Incluir una acción de demostración en el panel para simular el cumplimiento del plazo de inactividad y disparar la evaluación en el acto conservando la regla en 48 h.
+- Q: Cuando un mismo teléfono abre una oportunidad comercial más reciente, ¿el seguimiento pendiente de la oportunidad anterior debe cancelarse de forma definitiva o quedar solo suspendido por si la nueva se cancela? (FR-003) → A: Cancelar definitivamente el seguimiento automático de las oportunidades anteriores del mismo teléfono con motivo visible ("Reemplazado por consulta más reciente").
+- Q: Cuando la actualización del seguimiento en Google Sheets falla y queda pendiente, ¿la resincronización debe ejecutarse de forma automática en segundo plano, mediante un botón manual en Ventas o con ambos mecanismos? (FR-011) → A: Ambos: reintento automático en segundo plano (dentro de 5 min) y acción manual desde la oportunidad en Ventas sin repetir el mensaje al cliente.
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -102,16 +110,16 @@ Como vendedor quiero ver si el seguimiento está programado, bloqueado o ya se i
 ### Functional Requirements
 
 - **FR-001**: Supervisión general DEBE poder activar/suspender una única regla global y ajustar un plazo positivo en horas. La regla comienza desactivada y su valor inicial propuesto es 48 horas.
-- **FR-002**: La demostración DEBE usar contactos y transporte simulados, claramente identificables. Habilitar la regla no contacta por sí solo a personas reales.
-- **FR-003**: DEBE considerar una oportunidad abierta de cliente externo con interés conocido, teléfono e hilo verificables. Por teléfono solo es candidata la compra explícita más reciente.
+- **FR-002**: La demostración DEBE usar contactos y transporte simulados, claramente identificables, e incluir en el panel una acción de demostración que permita simular el cumplimiento del plazo de inactividad y evaluar en el acto sin alterar las 48 horas configuradas en la regla global. Habilitar la regla no contacta por sí solo a personas reales.
+- **FR-003**: DEBE considerar una oportunidad abierta de cliente externo con interés conocido, teléfono e hilo verificables. Por teléfono solo es candidata la compra explícita más reciente; el seguimiento automático pendiente de oportunidades anteriores del mismo teléfono se cancela de forma definitiva con motivo visible de haber sido reemplazado por una consulta más reciente.
 - **FR-004**: DEBE contar inactividad desde el último mensaje comercial del cliente o del personal en el hilo, excluyendo avisos automáticos, notas privadas y sincronizaciones. Una interacción anterior al envío reemplaza su vencimiento pendiente. Al habilitar la regla, cambiar su plazo o terminar un bloqueo temporal, el nuevo período comienza desde ese evento si es posterior a la última interacción; no se reescribe la fecha real del último mensaje.
 - **FR-005**: DEBE existir como máximo un seguimiento aceptado por oportunidad. Los reintentos de esa misma gestión se rigen por 022 y no crean un segundo seguimiento.
-- **FR-006**: DEBE cancelar por cierre, pérdida o cancelación y bloquear por baja de contacto, intervención humana, escalado, revisión administrativa, condiciones financieras vencidas o cierre pendiente del equipo. Al terminar un bloqueo temporal comienza un plazo nuevo si corresponde.
+- **FR-006**: DEBE cancelar de forma definitiva por cierre, pérdida, cancelación o reemplazo por una oportunidad más reciente del mismo teléfono, y bloquear temporalmente por baja de contacto, intervención humana, escalado, revisión administrativa, condiciones financieras vencidas o cierre pendiente del equipo. Al terminar un bloqueo temporal comienza un plazo nuevo si corresponde.
 - **FR-007**: DEBE comprobar elegibilidad y restricciones de nuevo inmediatamente antes de contactar. No recupera automáticamente contactos vencidos durante un bloqueo o suspensión global.
 - **FR-008**: DEBE usar un texto de seguimiento aprobado y limitado al interés conocido, sin inventar precio, promoción, disponibilidad ni condiciones. No renueva el pedido de 020 ni sustituye revisión o aceptación del cliente.
 - **FR-009**: DEBE conservar el hilo de empresa de origen. Si el cliente responde, continúa la atención existente; no abre el WhatsApp personal del vendedor ni fusiona canales.
 - **FR-010**: Ventas y supervisión general DEBEN consultar la programación, causa de bloqueo y resultado de cada oportunidad desde las pantallas actuales. Solo supervisión general modifica la regla global.
-- **FR-011**: DEBE actualizar seguimiento y fechas del registro comercial existente en las 17 columnas acordadas, sin crear una fila por intento ni exportar DNI, dictámenes, deudas o notas privadas. Un fallo de sincronización no repite el contacto.
+- **FR-011**: DEBE actualizar seguimiento y fechas del registro comercial existente en las 17 columnas acordadas, sin crear una fila por intento ni exportar DNI, dictámenes, deudas o notas privadas. Si la hoja no está disponible, conserva la sincronización pendiente y permite recuperarla tanto por reintento automático en segundo plano (dentro de la ventana de cinco minutos) como mediante una acción manual desde la oportunidad en Ventas, sin repetir el contacto al cliente.
 - **FR-012**: DEBE reutilizar los controles y estados comunes de 022, conservando una sola preferencia de contacto por teléfono y una gestión identificable por seguimiento. No duplicará esas reglas dentro del flujo comercial.
 
 ### Key Entities

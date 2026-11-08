@@ -1763,30 +1763,32 @@ model SimulationFeedback {
 
 // Prospecto comercial sincronizado con CRM / Google Sheets (Sprint 6, Feature 019)
 model Prospect {
-  purchaseRequests PurchaseRequest[]
-  crmData          Json?
-  closedAt         DateTime?
-  id               String             @id @default(uuid())
-  phone            String
-  name             String
-  dni              String?
-  comercio         String?
-  rubro            String?
-  localidad        String?
-  productInterest  String
-  modality         PaymentModality    @default(CASH)
-  estimatedAmount  Decimal?
-  status           String             @default("NUEVO")
-  creditVerdict    CreditVerdict?
-  sellerId         String?
-  seller           Employee?          @relation("ProspectSeller", fields: [sellerId], references: [id])
-  originChannel    Channel            @default(WHATSAPP)
-  conversationId   String?
-  notes            String?
-  syncStatus       ProspectSyncStatus @default(SYNCED)
-  lastSyncedAt     DateTime?
-  createdAt        DateTime           @default(now())
-  updatedAt        DateTime           @updatedAt
+  purchaseRequests       PurchaseRequest[]
+  outboundCommunications OutboundCommunication[]
+  followUp               CommercialFollowUp?
+  crmData                Json?
+  closedAt               DateTime?
+  id                     String                  @id @default(uuid())
+  phone                  String
+  name                   String
+  dni                    String?
+  comercio               String?
+  rubro                  String?
+  localidad              String?
+  productInterest        String
+  modality               PaymentModality         @default(CASH)
+  estimatedAmount        Decimal?
+  status                 String                  @default("NUEVO")
+  creditVerdict          CreditVerdict?
+  sellerId               String?
+  seller                 Employee?               @relation("ProspectSeller", fields: [sellerId], references: [id])
+  originChannel          Channel                 @default(WHATSAPP)
+  conversationId         String?
+  notes                  String?
+  syncStatus             ProspectSyncStatus      @default(SYNCED)
+  lastSyncedAt           DateTime?
+  createdAt              DateTime                @default(now())
+  updatedAt              DateTime                @updatedAt
 
   @@index([phone])
   @@index([status])
@@ -1803,33 +1805,101 @@ enum OutboundCommunicationStatus {
   PENDING
   SENDING
   ACCEPTED
+  DELIVERED
   FAILED
   UNCERTAIN
 }
 
 model OutboundCommunication {
-  id                String                      @id @default(uuid())
-  purpose           String                      @default("FINANCING_DECISION")
-  dedupeKey         String                      @unique
-  purchaseRequestId String
-  purchaseRequest   PurchaseRequest             @relation(fields: [purchaseRequestId], references: [id])
-  conversationId    String
-  conversation      Conversation                @relation(fields: [conversationId], references: [id])
-  messageId         String?                     @unique
-  message           Message?                    @relation(fields: [messageId], references: [id])
-  body              String
-  status            OutboundCommunicationStatus @default(PENDING)
-  version           Int                         @default(1)
-  transportMode     String                      @default("disabled")
-  providerMessageId String?
-  attemptToken      String?
-  attemptStartedAt  DateTime?
-  attemptCount      Int                         @default(0)
-  lastErrorCode     String?
-  createdAt         DateTime                    @default(now())
-  updatedAt         DateTime                    @updatedAt
-  acceptedAt        DateTime?
+  id                 String                      @id @default(uuid())
+  purpose            String                      @default("FINANCING_DECISION")
+  dedupeKey          String                      @unique
+  purchaseRequestId  String?
+  purchaseRequest    PurchaseRequest?            @relation(fields: [purchaseRequestId], references: [id])
+  prospectId         String?
+  prospect           Prospect?                   @relation(fields: [prospectId], references: [id])
+  commercialFollowUp CommercialFollowUp?
+  conversationId     String
+  conversation       Conversation                @relation(fields: [conversationId], references: [id])
+  messageId          String?                     @unique
+  message            Message?                    @relation(fields: [messageId], references: [id])
+  body               String
+  status             OutboundCommunicationStatus @default(PENDING)
+  version            Int                         @default(1)
+  transportMode      String                      @default("disabled")
+  providerMessageId  String?
+  attemptToken       String?
+  attemptStartedAt   DateTime?
+  attemptCount       Int                         @default(0)
+  lastErrorCode      String?
+  createdAt          DateTime                    @default(now())
+  updatedAt          DateTime                    @updatedAt
+  acceptedAt         DateTime?
+  deliveredAt        DateTime?
+  deliverySource     String?
 
   @@index([status, updatedAt])
   @@index([purchaseRequestId])
+  @@index([prospectId])
+}
+
+// ============================================================================
+// Spec 021 & 022 — Seguimiento comercial automático y preferencia de contacto
+// ============================================================================
+
+enum CommercialFollowUpState {
+  SCHEDULED
+  BLOCKED
+  SENDING
+  COMPLETED
+  CANCELLED
+}
+
+model CommercialFollowUpRule {
+  id              String    @id @default("default")
+  enabled         Boolean   @default(false)
+  inactivityHours Int       @default(48)
+  version         Int       @default(1)
+  effectiveSince  DateTime?
+  updatedById     String?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+}
+
+model CommercialFollowUp {
+  id                      String                  @id @default(uuid())
+  prospectId              String                  @unique
+  prospect                Prospect                @relation(fields: [prospectId], references: [id], onDelete: Cascade)
+  conversationId          String?
+  outboundCommunicationId String?                 @unique
+  outboundCommunication   OutboundCommunication?  @relation(fields: [outboundCommunicationId], references: [id])
+  status                  CommercialFollowUpState @default(SCHEDULED)
+  reasonCode              String?
+  reasonLabel             String?
+  lastInteractionAt       DateTime?
+  lastUnblockedAt         DateTime?
+  scheduledFor            DateTime?
+  evaluatedAt             DateTime?
+  completedAt             DateTime?
+  cancelledAt             DateTime?
+  version                 Int                     @default(1)
+  createdAt               DateTime                @default(now())
+  updatedAt               DateTime                @updatedAt
+
+  @@index([status, scheduledFor])
+  @@index([conversationId])
+}
+
+model ContactPreference {
+  phone                String    @id
+  optOut               Boolean   @default(false)
+  reason               String?
+  sourceMessageId      String?
+  sourceConversationId String?
+  optOutAt             DateTime?
+  reactivatedAt        DateTime?
+  updatedById          String?
+  history              Json      @default("[]")
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 }

@@ -10,3 +10,11 @@ export const financingVerdictFixtures = [
   ['30000001', 'REJECTED'],
   ['00000000', 'UNAVAILABLE'],
 ] as const;
+
+export const commercialFollowUpFixtures = {
+  phone: '+5493764000211',
+  altPhone: '+5493764000212',
+  customerName: 'Comercio Demo Seguimiento',
+  productInterest: 'Cortadora de Fiambre Berkley 300',
+  locality: 'Posadas',
+} as const;

@@ -1,5 +1,6 @@
 import { Injectable, OnModuleInit, Optional } from '@nestjs/common';
 import { CommercialFlowService } from '../../financing/commercial-flow.service';
+import { CommercialFollowUpService } from '../../financing/commercial-followup.service';
 import { InjectQueue, Processor, WorkerHost } from '@nestjs/bullmq';
 import { Job, Queue } from 'bullmq';
 import { PrismaService } from '../../database/prisma.service';
@@ -17,6 +18,7 @@ export class FinancingProcessor extends WorkerHost implements OnModuleInit {
     private readonly evaluation: FinancingEvaluationService,
     private readonly notices: FinancingNoticeService,
     @Optional() private readonly commercial?: CommercialFlowService,
+    @Optional() private readonly followUps?: CommercialFollowUpService,
   ) {
     super();
   }
@@ -43,6 +45,7 @@ export class FinancingProcessor extends WorkerHost implements OnModuleInit {
     if (job.name === 'notice') return this.notices.dispatch(job.data.id);
     await this.notices.expireClaims();
     await this.commercial?.expireOrders();
+    await this.followUps?.processDueFollowUps();
     for (const r of await this.prisma.purchaseRequest.findMany({
       where: { status: 'PENDING_REVIEW', evaluationState: 'PENDING' },
       select: { id: true, version: true },

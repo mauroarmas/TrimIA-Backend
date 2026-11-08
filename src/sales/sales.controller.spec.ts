@@ -37,6 +37,58 @@ describe('SalesController', () => {
     completeFinancingDraft: jest.fn().mockResolvedValue({ version: 2 }),
     listFinancingRequests: jest.fn().mockResolvedValue([]),
     reviewFinancingRequest: jest.fn().mockResolvedValue({ status: 'APPROVED' }),
+    getFollowUpRule: jest.fn().mockResolvedValue({
+      id: 'default',
+      enabled: false,
+      inactivityHours: 48,
+      version: 1,
+      transportMode: 'simulated',
+    }),
+    updateFollowUpRule: jest.fn().mockResolvedValue({
+      id: 'default',
+      enabled: true,
+      inactivityHours: 48,
+      version: 2,
+      transportMode: 'simulated',
+    }),
+    getProspectFollowUpStatus: jest.fn().mockResolvedValue({
+      prospectId: 'p-1',
+      status: 'SCHEDULED',
+      crmSyncStatus: 'SYNCED',
+    }),
+    simulateProspectFollowUpDue: jest.fn().mockResolvedValue({
+      prospectId: 'p-1',
+      status: 'COMPLETED',
+      crmSyncStatus: 'SYNCED',
+    }),
+    syncProspectCrm: jest.fn().mockResolvedValue({
+      prospectId: 'p-1',
+      syncStatus: 'SYNCED',
+      remoteSynced: true,
+    }),
+    getContactPreference: jest.fn().mockResolvedValue({
+      phone: '+5493764000222',
+      optOut: true,
+      history: [{ action: 'OPT_OUT', reason: 'BAJA' }],
+    }),
+    optOutContactPreference: jest.fn().mockResolvedValue({
+      phone: '+5493764000222',
+      optOut: true,
+      history: [{ action: 'OPT_OUT', reason: 'BAJA' }],
+    }),
+    reactivateContactPreference: jest.fn().mockResolvedValue({
+      phone: '+5493764000222',
+      optOut: false,
+      history: [
+        { action: 'OPT_OUT', reason: 'BAJA' },
+        { action: 'REACTIVATED', reason: 'Solicitud expresa del contacto' },
+      ],
+    }),
+    simulateFinancingNoticeDelivery: jest.fn().mockResolvedValue({
+      id: 'notice-1',
+      status: 'DELIVERED',
+      deliverySource: 'simulated',
+    }),
   };
 
   beforeEach(async () => {
@@ -221,5 +273,104 @@ describe('SalesController', () => {
     );
     expect(res.success).toBe(true);
     expect(salesService.closeSale).toHaveBeenCalled();
+  });
+
+  describe('Seguimiento comercial 021 — permisos y contratos de controlador (US3)', () => {
+    it('permite consultar la regla global y el estado de seguimiento a Ventas y a supervisión general', async () => {
+      await expect(controller.getFollowUpRule(salesUser)).resolves.toMatchObject(
+        {
+          inactivityHours: 48,
+        },
+      );
+      await expect(
+        controller.getFollowUpRule(supervisorGeneral),
+      ).resolves.toMatchObject({
+        inactivityHours: 48,
+      });
+      await expect(
+        controller.getProspectFollowUpStatus('p-1', salesUser),
+      ).resolves.toMatchObject({
+        prospectId: 'p-1',
+        status: 'SCHEDULED',
+      });
+    });
+
+    it('rechaza con 403 la modificación de la regla global por parte de un vendedor o supervisor de sector sin supervisión general (US3.5)', () => {
+      const dto = { enabled: true, inactivityHours: 48, expectedVersion: 1 };
+      expect(() => controller.updateFollowUpRule(dto, salesUser)).toThrow(
+        ForbiddenException,
+      );
+      expect(() =>
+        controller.updateFollowUpRule(dto, {
+          user: {
+            id: 'sales-sup',
+            role: 'SUPERVISOR',
+            sectorName: 'Ventas',
+            isGeneralSupervisor: false,
+          },
+        }),
+      ).toThrow(ForbiddenException);
+    });
+
+    it('permite a supervisión general modificar la regla global y ejercitar simulate-due y crm-sync desde Ventas (FR-001, FR-002, FR-011)', async () => {
+      const dto = { enabled: true, inactivityHours: 48, expectedVersion: 1 };
+      const updated = await controller.updateFollowUpRule(
+        dto,
+        supervisorGeneral,
+      );
+      expect(updated.enabled).toBe(true);
+      expect(mockSalesService.updateFollowUpRule).toHaveBeenCalledWith(
+        dto,
+        'emp-diego',
+      );
+
+      const sim = await controller.simulateProspectFollowUpDue(
+        'p-1',
+        salesUser,
+      );
+      expect(sim.status).toBe('COMPLETED');
+
+      const synced = await controller.syncProspectCrm('p-1', salesUser);
+      expect(synced.syncStatus).toBe('SYNCED');
+    });
+
+    it('022: permite consultar preferencia, registrar baja y simular confirmación de entrega, y restringe la reactivación a supervisión general (FR-004, FR-006)', async () => {
+      const pref = await controller.getContactPreference(
+        '+5493764000222',
+        salesUser,
+      );
+      expect(pref.optOut).toBe(true);
+
+      const optOut = await controller.optOutContactPreference(
+        '+5493764000222',
+        { reason: 'BAJA' },
+        salesUser,
+      );
+      expect(optOut.optOut).toBe(true);
+
+      expect(() =>
+        controller.reactivateContactPreference(
+          '+5493764000222',
+          { reason: 'Solicitud expresa del contacto' },
+          salesUser,
+        ),
+      ).toThrow(ForbiddenException);
+
+      const reactivated = await controller.reactivateContactPreference(
+        '+5493764000222',
+        { reason: 'Solicitud expresa del contacto' },
+        supervisorGeneral,
+      );
+      expect(reactivated.optOut).toBe(false);
+      expect(reactivated.history).toHaveLength(2);
+
+      const delivered = await controller.simulateFinancingNoticeDelivery(
+        'notice-1',
+        { providerMessageId: 'sim:notice-1' },
+        salesUser,
+      );
+      expect(delivered.status).toBe('DELIVERED');
+      expect(delivered.deliverySource).toBe('simulated');
+    });
   });
 });

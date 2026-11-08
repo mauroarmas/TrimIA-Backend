@@ -93,4 +93,56 @@ const enabled = !!process.env.TEST_DATABASE_URL;
     expect(JSON.stringify(detail)).not.toContain('PRIVADO-FINANCE-020');
     expect(detail.conversation).not.toHaveProperty('financingDraft');
   });
+  it('soporta seguimiento comercial único por oportunidad y OutboundCommunication sin purchaseRequestId (021)', async () => {
+    const conv = await prisma.conversation.create({
+      data: { externalId: '+5493764999111', channel: 'WHATSAPP' },
+    });
+    const prospect = await prisma.prospect.create({
+      data: {
+        phone: '+5493764999111',
+        name: 'Prospecto 021',
+        productInterest: 'Heladera Exhibidora',
+        conversationId: conv.id,
+      },
+    });
+    const out = await prisma.outboundCommunication.create({
+      data: {
+        purpose: 'COMMERCIAL_FOLLOWUP',
+        dedupeKey: `commercial-followup:${prospect.id}`,
+        prospectId: prospect.id,
+        conversationId: conv.id,
+        body: 'Recordatorio comercial',
+      },
+    });
+    expect(out.purchaseRequestId).toBeNull();
+    await prisma.commercialFollowUp.create({
+      data: {
+        prospectId: prospect.id,
+        conversationId: conv.id,
+        outboundCommunicationId: out.id,
+      },
+    });
+    await expect(
+      prisma.commercialFollowUp.create({
+        data: {
+          prospectId: prospect.id,
+          conversationId: conv.id,
+        },
+      }),
+    ).rejects.toMatchObject({ code: 'P2002' });
+
+    const phone = `+5493764${Math.floor(100000 + Math.random() * 900000)}`;
+    const pref = await prisma.contactPreference.create({
+      data: {
+        phone,
+        optOut: true,
+        reason: 'BAJA',
+        sourceConversationId: conv.id,
+        optOutAt: new Date(),
+        history: [{ action: 'OPT_OUT', reason: 'BAJA' }],
+      },
+    });
+    expect(pref.optOut).toBe(true);
+    expect(Array.isArray(pref.history)).toBe(true);
+  });
 });

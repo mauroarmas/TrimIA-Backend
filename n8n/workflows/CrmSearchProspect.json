@@ -1,13 +1,14 @@
 {
+  "id": "CrmSearchPros01",
   "name": "CRM: Búsqueda de Prospecto por Teléfono",
+  "active": true,
   "nodes": [
     {
       "parameters": {
         "httpMethod": "GET",
         "path": "crm-prospect-search",
         "responseMode": "responseNode",
-        "options": {},
-        "authentication": "headerAuth"
+        "options": {}
       },
       "type": "n8n-nodes-base.webhook",
       "typeVersion": 2.1,
@@ -16,20 +17,14 @@
         112
       ],
       "id": "webhook-crm-prospect-search",
-      "name": "Webhook Prospect Search",
-      "credentials": {
-        "httpHeaderAuth": {
-          "id": "CONFIGURAR_AUTH",
-          "name": "TrimIA x-n8n-secret"
-        }
-      }
+      "name": "Webhook Prospect Search"
     },
     {
       "parameters": {
         "operation": "read",
         "documentId": {
           "__rl": true,
-          "value": "CONFIGURAR_SPREADSHEET_ID",
+          "value": "1eU8lXoA6mcSh-s02NElqr8EWl1R2rR3TZAIFX1cENu4",
           "mode": "id"
         },
         "sheetName": {
@@ -57,8 +52,8 @@
       "name": "Google Sheets Read",
       "credentials": {
         "googleSheetsOAuth2Api": {
-          "id": "CONFIGURAR_GOOGLE",
-          "name": "Google Sheets CRM"
+          "id": "PSBd2QQ3ePFjvOeF",
+          "name": "Google Sheets account"
         }
       },
       "alwaysOutputData": true

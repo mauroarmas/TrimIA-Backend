@@ -1,5 +1,14 @@
 import { FinancingService } from '../financing/financing.service';
 import { FinancingNoticeService } from '../financing/financing-notice.service';
+import { CommercialFollowUpService } from '../financing/commercial-followup.service';
+import { ContactPreferenceService } from '../financing/contact-preference.service';
+import { CrmSyncService } from '../ai/integrations/crm-sync.service';
+import { UpdateFollowUpRuleDto } from './dto/followup-rule.dto';
+import {
+  OptOutContactPreferenceDto,
+  ReactivateContactPreferenceDto,
+  SimulateDeliveryDto,
+} from './dto/contact-preference.dto';
 import {
   ConflictException,
   BadRequestException,
@@ -43,7 +52,62 @@ export class SalesService {
     @Optional() private readonly conversations?: ConversationsService,
     @Optional() private readonly finance?: FinancingService,
     @Optional() private readonly financeNotices?: FinancingNoticeService,
+    @Optional() private readonly followUps?: CommercialFollowUpService,
+    @Optional() private readonly crmSync?: CrmSyncService,
+    @Optional() private readonly contactPrefs?: ContactPreferenceService,
   ) {}
+
+  getContactPreference(phone: string) {
+    return this.contactPrefs!.getByPhone(phone);
+  }
+  optOutContactPreference(
+    phone: string,
+    dto: OptOutContactPreferenceDto,
+    actorId?: string,
+  ) {
+    return this.contactPrefs!.recordOptOut({
+      phone,
+      reason: dto.reason,
+      sourceMessageId: dto.sourceMessageId ?? null,
+      sourceConversationId: dto.sourceConversationId ?? null,
+      actorId: actorId ?? null,
+    });
+  }
+  reactivateContactPreference(
+    phone: string,
+    dto: ReactivateContactPreferenceDto,
+    actorId: string,
+  ) {
+    return this.contactPrefs!.reactivate({
+      phone,
+      reason: dto.reason,
+      sourceMessageId: dto.sourceMessageId ?? null,
+      sourceConversationId: dto.sourceConversationId ?? null,
+      actorId,
+    });
+  }
+  simulateFinancingNoticeDelivery(id: string, dto?: SimulateDeliveryDto) {
+    return this.financeNotices!.confirmDelivery(id, {
+      providerMessageId: dto?.providerMessageId,
+      source: 'simulated',
+    });
+  }
+
+  getFollowUpRule() {
+    return this.followUps!.getRule();
+  }
+  updateFollowUpRule(dto: UpdateFollowUpRuleDto, actorId: string) {
+    return this.followUps!.updateRule(dto, actorId);
+  }
+  getProspectFollowUpStatus(id: string) {
+    return this.followUps!.getProspectFollowUpStatus(id);
+  }
+  simulateProspectFollowUpDue(id: string) {
+    return this.followUps!.simulateDue(id);
+  }
+  syncProspectCrm(id: string) {
+    return this.crmSync!.syncProspectById(id);
+  }
 
   async listFinancingRequests() {
     return this.finance!.list();
@@ -135,7 +199,7 @@ export class SalesService {
           orderBy: { createdAt: 'desc' },
         })
       : [];
-    return prospects.map((p) => {
+    const mapped = prospects.map((p) => {
       let handoff = null;
       for (const note of notes.filter(
         (n) => n.conversationId === p.conversationId,
@@ -151,6 +215,15 @@ export class SalesService {
       }
       return { ...p, handoff };
     });
+    if (!this.followUps) return mapped;
+    return Promise.all(
+      mapped.map(async (p) => ({
+        ...p,
+        followUp: await this.followUps!.getProspectFollowUpStatus(p.id).catch(
+          () => null,
+        ),
+      })),
+    );
   }
 
   /**

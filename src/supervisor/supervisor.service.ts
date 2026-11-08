@@ -284,7 +284,10 @@ export class SupervisorService {
       totalCalls += calls;
       totalDurationMs += duration;
 
-      if (row._min.createdAt && (!periodFrom || row._min.createdAt < periodFrom)) {
+      if (
+        row._min.createdAt &&
+        (!periodFrom || row._min.createdAt < periodFrom)
+      ) {
         periodFrom = row._min.createdAt;
       }
       if (row._max.createdAt && (!periodTo || row._max.createdAt > periodTo)) {
@@ -331,7 +334,8 @@ export class SupervisorService {
         calls: acc.calls,
         input: acc.input,
         output: acc.output,
-        avgDurationMs: acc.calls > 0 ? Math.round(acc.durationSum / acc.calls) : 0,
+        avgDurationMs:
+          acc.calls > 0 ? Math.round(acc.durationSum / acc.calls) : 0,
         models: Array.from(acc.models),
       };
     }
@@ -342,7 +346,8 @@ export class SupervisorService {
         calls: acc.calls,
         input: acc.input,
         output: acc.output,
-        avgDurationMs: acc.calls > 0 ? Math.round(acc.durationSum / acc.calls) : 0,
+        avgDurationMs:
+          acc.calls > 0 ? Math.round(acc.durationSum / acc.calls) : 0,
       }))
       .sort((a, b) => b.calls - a.calls);
 
@@ -365,10 +370,13 @@ export class SupervisorService {
         totalInput: totals.reduce((a, b) => a + b.input, 0),
         totalOutput: totals.reduce((a, b) => a + b.output, 0),
         totalCalls,
-        avgDurationMs: totalCalls > 0 ? Math.round(totalDurationMs / totalCalls) : null,
+        avgDurationMs:
+          totalCalls > 0 ? Math.round(totalDurationMs / totalCalls) : null,
         conversationsCount: distinctTokenConvs.length,
         configuredModel:
-          this.llm?.activeModel ?? this.config.get<string>('GEMINI_MODEL') ?? 'gemini-3.5-flash-lite',
+          this.llm?.activeModel ??
+          this.config.get<string>('GEMINI_MODEL') ??
+          'gemini-3.5-flash-lite',
         embeddingModel:
           this.config.get<string>('EMBEDDING_MODEL') ?? 'gemini-embedding-001',
         ttsModel: this.config.get<string>('GEMINI_TTS_MODEL') ?? null,
@@ -552,9 +560,16 @@ export class SupervisorService {
       conversation.currentAgent &&
       !allowedAgents.includes(conversation.currentAgent)
     ) {
-      throw new ForbiddenException(
-        'No tiene permisos para ver conversaciones fuera de su área supervisada',
-      );
+      const hasAdminFinancingAccess =
+        allowedAgents.includes(AgentType.ADMIN) &&
+        (await this.prisma.purchaseRequest?.count?.({
+          where: { conversationId },
+        })) > 0;
+      if (!hasAdminFinancingAccess) {
+        throw new ForbiddenException(
+          'No tiene permisos para ver conversaciones fuera de su área supervisada',
+        );
+      }
     }
 
     return {

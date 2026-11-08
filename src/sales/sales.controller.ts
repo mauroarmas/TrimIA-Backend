@@ -4,6 +4,12 @@ import { CorrectFinancingDto } from '../financing/dto/correct-financing.dto';
 import { CancelFinancingDto } from '../financing/dto/cancel-financing.dto';
 import { RetryFinancingNoticeDto } from '../financing/dto/retry-financing-notice.dto';
 import { CommercialFollowupDto } from './dto/commercial-followup.dto';
+import { UpdateFollowUpRuleDto } from './dto/followup-rule.dto';
+import {
+  OptOutContactPreferenceDto,
+  ReactivateContactPreferenceDto,
+  SimulateDeliveryDto,
+} from './dto/contact-preference.dto';
 import {
   Body,
   Controller,
@@ -13,6 +19,7 @@ import {
   Param,
   ParseUUIDPipe,
   Post,
+  Put,
   Query,
   Req,
   UseGuards,
@@ -231,6 +238,74 @@ export class SalesController {
     );
   }
 
+  @Post('financing/notices/:id/simulate-delivery')
+  @HttpCode(200)
+  @ApiOperation({
+    summary:
+      'Registra confirmación de entrega simulada asociada a un aviso aceptado (022)',
+  })
+  simulateFinancingNoticeDelivery(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Body() dto: SimulateDeliveryDto,
+    @Req() req: any,
+  ) {
+    if (req.user?.sectorName !== SALES_SECTOR) {
+      assertCanAccessFinancing(req.user);
+    }
+    return this.salesService.simulateFinancingNoticeDelivery(id, dto);
+  }
+
+  @Get('contact-preferences/:phone')
+  @ApiOperation({
+    summary:
+      'Consulta la preferencia de no contacto e historial de decisiones de un teléfono (022)',
+  })
+  getContactPreference(@Param('phone') phone: string, @Req() req: any) {
+    if (req.user?.sectorName !== SALES_SECTOR) {
+      assertCanAccessFinancing(req.user);
+    }
+    return this.salesService.getContactPreference(phone);
+  }
+
+  @Post('contact-preferences/:phone/opt-out')
+  @HttpCode(200)
+  @ApiOperation({
+    summary: 'Registra una baja de comunicaciones automáticas con evidencia (022)',
+  })
+  optOutContactPreference(
+    @Param('phone') phone: string,
+    @Body() dto: OptOutContactPreferenceDto,
+    @Req() req: any,
+  ) {
+    if (req.user?.sectorName !== SALES_SECTOR) {
+      assertCanAccessFinancing(req.user);
+    }
+    return this.salesService.optOutContactPreference(phone, dto, req.user?.id);
+  }
+
+  @Post('contact-preferences/:phone/reactivate')
+  @HttpCode(200)
+  @ApiOperation({
+    summary:
+      'Reactiva comunicaciones automáticas con evidencia del propio contacto (solo supervisión general, 022)',
+  })
+  reactivateContactPreference(
+    @Param('phone') phone: string,
+    @Body() dto: ReactivateContactPreferenceDto,
+    @Req() req: any,
+  ) {
+    if (!req.user?.isGeneralSupervisor) {
+      throw new ForbiddenException(
+        'Solo supervisión general puede confirmar la reactivación de avisos automáticos',
+      );
+    }
+    return this.salesService.reactivateContactPreference(
+      phone,
+      dto,
+      req.user.id,
+    );
+  }
+
   /** POST /sales/clients — alta de cliente con su plan de cuotas. */
   @Post('clients')
   @ApiOperation({
@@ -261,6 +336,67 @@ export class SalesController {
     return this.salesService.getProspects(status);
   }
 
+  @Get('followup-rule')
+  @ApiOperation({
+    summary: 'Consulta la única regla global de seguimiento comercial (021)',
+  })
+  getFollowUpRule(@Req() req: any) {
+    assertCanAccessSales(req.user);
+    return this.salesService.getFollowUpRule();
+  }
+
+  @Put('followup-rule')
+  @ApiOperation({
+    summary:
+      'Activa/suspende la regla global o modifica el plazo de inactividad (solo supervisión general)',
+  })
+  updateFollowUpRule(@Body() dto: UpdateFollowUpRuleDto, @Req() req: any) {
+    if (!req.user?.isGeneralSupervisor) {
+      throw new ForbiddenException(
+        'Solo supervisión general puede modificar la regla global de seguimiento',
+      );
+    }
+    return this.salesService.updateFollowUpRule(dto, req.user.id);
+  }
+
+  @Get('prospects/:id/followup-status')
+  @ApiOperation({
+    summary:
+      'Consulta el estado detallado de seguimiento de una oportunidad comercial (021)',
+  })
+  getProspectFollowUpStatus(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: any,
+  ) {
+    assertCanAccessSales(req.user);
+    return this.salesService.getProspectFollowUpStatus(id);
+  }
+
+  @Post('prospects/:id/followup/simulate-due')
+  @HttpCode(200)
+  @ApiOperation({
+    summary:
+      'Simula en modo demostración el cumplimiento del plazo de inactividad de 48 h (021)',
+  })
+  simulateProspectFollowUpDue(
+    @Param('id', ParseUUIDPipe) id: string,
+    @Req() req: any,
+  ) {
+    assertCanAccessSales(req.user);
+    return this.salesService.simulateProspectFollowUpDue(id);
+  }
+
+  @Post('prospects/:id/crm-sync')
+  @HttpCode(200)
+  @ApiOperation({
+    summary:
+      'Reintenta manualmente la sincronización pendiente de una oportunidad con Google Sheets (021)',
+  })
+  syncProspectCrm(@Param('id', ParseUUIDPipe) id: string, @Req() req: any) {
+    assertCanAccessSales(req.user);
+    return this.salesService.syncProspectCrm(id);
+  }
+
   @Post('prospects/:id/followup')
   @HttpCode(200)
   followUp(
@@ -277,14 +413,16 @@ export class SalesController {
     @Param('id', ParseUUIDPipe) id: string,
     @Req() req: any,
   ) {
-    assertCanAccessSales(req.user);
+    if (req.user.sectorName !== SALES_SECTOR)
+      assertCanAccessFinancing(req.user);
     return this.salesService.getProspectConversation(id);
   }
 
   @Post('prospects/:id/takeover')
   @HttpCode(200)
   takeProspect(@Param('id', ParseUUIDPipe) id: string, @Req() req: any) {
-    assertCanAccessSales(req.user);
+    if (req.user.sectorName !== SALES_SECTOR)
+      assertCanAccessFinancing(req.user);
     return this.salesService.takeProspect(id, req.user.id);
   }
 
@@ -295,14 +433,16 @@ export class SalesController {
     @Body() dto: CommercialFollowupDto,
     @Req() req: any,
   ) {
-    assertCanAccessSales(req.user);
+    if (req.user.sectorName !== SALES_SECTOR)
+      assertCanAccessFinancing(req.user);
     return this.salesService.replyProspect(id, req.user.id, dto.message);
   }
 
   @Post('prospects/:id/release')
   @HttpCode(200)
   releaseProspect(@Param('id', ParseUUIDPipe) id: string, @Req() req: any) {
-    assertCanAccessSales(req.user);
+    if (req.user.sectorName !== SALES_SECTOR)
+      assertCanAccessFinancing(req.user);
     return this.salesService.releaseProspect(id, req.user.id);
   }
 

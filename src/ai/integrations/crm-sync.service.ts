@@ -1,4 +1,4 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { CRM_PORT, CrmPort } from './ports/crm.port';
 import { PrismaService } from '../../database/prisma.service';
 import { localCrmRecord } from './crm-sheet.mapper';
@@ -10,6 +10,7 @@ export class CrmSyncService {
     @Inject(CRM_PORT) private readonly crmPort: CrmPort,
     private readonly prisma: PrismaService,
   ) {}
+
   async syncPendingProspects(): Promise<number> {
     const pending = await this.prisma.prospect.findMany({
       where: { syncStatus: 'PENDING' },
@@ -28,5 +29,40 @@ export class CrmSyncService {
       }
     }
     return synced;
+  }
+
+  async syncProspectById(id: string) {
+    const local = await this.prisma.prospect.findUnique({ where: { id } });
+    if (!local) throw new NotFoundException('Prospecto no encontrado');
+    if (local.syncStatus === 'SYNCED') {
+      return {
+        prospectId: local.id,
+        syncStatus: local.syncStatus,
+        remoteSynced: true,
+        lastSyncedAt: local.lastSyncedAt
+          ? local.lastSyncedAt.toISOString()
+          : null,
+      };
+    }
+    let remoteSynced = false;
+    try {
+      const result = await this.crmPort.createProspect(localCrmRecord(local));
+      remoteSynced = !!result.remoteSynced;
+    } catch {
+      this.logger.warn(
+        `Prospecto ${local.id} sigue pendiente de sincronización tras intento manual.`,
+      );
+    }
+    const refreshed = await this.prisma.prospect.findUniqueOrThrow({
+      where: { id },
+    });
+    return {
+      prospectId: refreshed.id,
+      syncStatus: refreshed.syncStatus,
+      remoteSynced,
+      lastSyncedAt: refreshed.lastSyncedAt
+        ? refreshed.lastSyncedAt.toISOString()
+        : null,
+    };
   }
 }

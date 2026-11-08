@@ -1,10 +1,14 @@
 import { Processor, WorkerHost } from '@nestjs/bullmq';
-import { Logger } from '@nestjs/common';
+import { Logger, Optional } from '@nestjs/common';
 import { Job } from 'bullmq';
 import { PrismaService } from '../../database/prisma.service';
 import { ReminderConfigService } from '../../collections/reminder-config.service';
 import { WhatsappSenderService } from '../../messaging/whatsapp-sender.service';
 import { OrchestrationLogger } from '../../ai/orchestrator/orchestration-logger.service';
+import {
+  ContactPreferenceService,
+  phoneVariants,
+} from '../../financing/contact-preference.service';
 import {
   shouldSendReminder,
   hasBecomeOverdue,
@@ -27,8 +31,21 @@ export class RemindersProcessor extends WorkerHost {
     private readonly reminderConfig: ReminderConfigService,
     private readonly sender: WhatsappSenderService,
     private readonly orchestrationLogger: OrchestrationLogger,
+    @Optional() private readonly contactPreference?: ContactPreferenceService,
   ) {
     super();
+  }
+
+  private async isPhoneOptedOut(phone: string): Promise<boolean> {
+    if (this.contactPreference) {
+      return this.contactPreference.isOptedOut(phone);
+    }
+    const cp = (this.prisma as any).contactPreference;
+    if (!cp?.findMany) return false;
+    const rows = await cp.findMany({
+      where: { phone: { in: phoneVariants(phone) }, optOut: true },
+    });
+    return Array.isArray(rows) && rows.length > 0;
   }
 
   async process(_job: Job): Promise<void> {
@@ -70,6 +87,18 @@ export class RemindersProcessor extends WorkerHost {
       }
 
       if (!shouldSendReminder(quota, config, now)) {
+        continue;
+      }
+
+      if (await this.isPhoneOptedOut(quota.client.phone)) {
+        await this.orchestrationLogger.logEvent({
+          eventType: 'quota_reminder_blocked',
+          payload: {
+            quotaId: quota.id,
+            phone: quota.client.phone,
+            reason: 'CONTACT_OPT_OUT',
+          },
+        });
         continue;
       }
 

@@ -23,26 +23,37 @@ export type CrmSheetRow = Record<(typeof CRM_COLUMNS)[number], string>;
 
 /** Transporte exclusivo de las 17 columnas; DNI, scoring y notas internas no salen. */
 export function toCrmSheet(record: CrmProspectRecord): CrmSheetRow {
-  const row = Object.fromEntries(
-    CRM_COLUMNS.map((column) => [column, record.sheet?.[column] ?? '']),
-  ) as CrmSheetRow;
-  if (record.sheet) return row;
-  return {
-    ...row,
-    'Fecha primer contacto': record.fechaContacto,
-    Nombre: record.nombreApellido,
-    Teléfono: record.telefono,
+  const base: CrmSheetRow = {
+    'Fecha primer contacto': record.fechaContacto ?? '',
+    Nombre: record.nombreApellido ?? '',
+    Teléfono: record.telefono ?? '',
     Comercio: record.comercio ?? '',
     Rubro: record.rubro ?? '',
     Localidad: record.localidad ?? '',
-    'Canal origen': record.canalOrigen,
-    'Producto/s': record.productoInteres,
+    'Canal origen': record.canalOrigen ?? '',
+    'Producto/s': record.productoInteres ?? '',
     'Consulta/Venta':
       record.estado === ProspectStatus.VENTA_CERRADA ? 'Venta' : 'Consulta',
+    'Medio de pago': '',
     Planes: record.modalidad === 'CUOTAS_SEMANALES' ? 'Cuotas semanales' : '',
-    Seguimiento: record.notasSeguimiento,
-    'Fecha último contacto': record.ultimaInteraccion,
+    Objeciones: '',
+    Observaciones: '',
+    'Rebatir Objeción': '',
+    Seguimiento: record.notasSeguimiento ?? '',
+    'Fecha último contacto': record.ultimaInteraccion ?? '',
+    'Fecha próximo contacto': '',
   };
+
+  if (record.sheet && typeof record.sheet === 'object') {
+    for (const column of CRM_COLUMNS) {
+      const val = record.sheet[column];
+      if (val !== undefined && val !== null && String(val).trim() !== '') {
+        base[column] = String(val);
+      }
+    }
+  }
+
+  return base;
 }
 export function fromCrmSheet(
   input: Record<string, unknown>,
@@ -87,6 +98,7 @@ export function localCrmRecord(local: any): CrmProspectRecord {
             ...stored.sheet,
             'Producto/s': local.productInterest,
             Planes: local.modality === 'FINANCED' ? 'Cuotas semanales' : '',
+            Seguimiento: local.notes ?? stored.sheet.Seguimiento ?? '',
           },
         }
       : {}),

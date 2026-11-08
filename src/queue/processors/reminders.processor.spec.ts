@@ -123,4 +123,43 @@ describe('RemindersProcessor', () => {
     expect(sender.sendTemplate).not.toHaveBeenCalled();
     expect(prisma.quota.update).not.toHaveBeenCalled();
   });
+
+  it('bloquea el recordatorio de cuota si el teléfono tiene baja de contacto vigente (022 US1, FR-001, SC-001)', async () => {
+    const dueToday = new Date();
+    prisma.quota.findMany.mockResolvedValue([
+      {
+        id: 'inst-optout',
+        status: 'PENDING',
+        dueDate: dueToday,
+        reminderAttempts: 0,
+        amount: { toString: () => '42000' },
+        client: { phone: '5491100000000', name: 'Juan' },
+      },
+    ]);
+    const contactPreference = {
+      isOptedOut: jest.fn().mockResolvedValue(true),
+    };
+    const procWithPref = new RemindersProcessor(
+      prisma as unknown as PrismaService,
+      reminderConfig as unknown as ReminderConfigService,
+      sender as unknown as WhatsappSenderService,
+      logger as unknown as OrchestrationLogger,
+      contactPreference as any,
+    );
+
+    await procWithPref.process({} as any);
+
+    expect(contactPreference.isOptedOut).toHaveBeenCalledWith('5491100000000');
+    expect(sender.sendTemplate).not.toHaveBeenCalled();
+    expect(prisma.quota.update).not.toHaveBeenCalled();
+    expect(logger.logEvent).toHaveBeenCalledWith(
+      expect.objectContaining({
+        eventType: 'quota_reminder_blocked',
+        payload: expect.objectContaining({
+          quotaId: 'inst-optout',
+          reason: 'CONTACT_OPT_OUT',
+        }),
+      }),
+    );
+  });
 });

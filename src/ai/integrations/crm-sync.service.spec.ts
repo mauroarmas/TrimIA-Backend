@@ -19,6 +19,8 @@ describe('CrmSyncService', () => {
   const mockPrismaService = {
     prospect: {
       findMany: jest.fn(),
+      findUnique: jest.fn(),
+      findUniqueOrThrow: jest.fn(),
       update: jest.fn(),
     },
   };
@@ -63,5 +65,35 @@ describe('CrmSyncService', () => {
       expect.objectContaining({ localId: 'p-1' }),
     );
     expect(prisma.prospect.update).not.toHaveBeenCalled();
+  });
+
+  it('permite sincronizar manualmente una oportunidad pendiente por ID sin repetir envíos al cliente (021 FR-011)', async () => {
+    const now = new Date('2026-11-07T19:00:00.000Z');
+    mockPrismaService.prospect.findUnique.mockResolvedValue({
+      id: 'p-2',
+      name: 'Comercio Demo',
+      phone: '+5493764000211',
+      productInterest: 'Cortadora Berkley',
+      modality: 'CASH',
+      status: 'EN_CONTACTO',
+      syncStatus: 'PENDING',
+      createdAt: now,
+      updatedAt: now,
+      notes: '[SEGUIMIENTO AUTOMÁTICO] Recordatorio enviado',
+    });
+    mockPrismaService.prospect.findUniqueOrThrow.mockResolvedValue({
+      id: 'p-2',
+      syncStatus: 'SYNCED',
+      lastSyncedAt: now,
+    });
+
+    const res = await service.syncProspectById('p-2');
+    expect(res).toEqual({
+      prospectId: 'p-2',
+      syncStatus: 'SYNCED',
+      remoteSynced: true,
+      lastSyncedAt: now.toISOString(),
+    });
+    expect(crmPort.createProspect).toHaveBeenCalledTimes(1);
   });
 });

@@ -1,0 +1,204 @@
+{
+  "openapi": "3.0.3",
+  "info": {
+    "title": "TrimIA — 022 Mensajería del MVP: resultado y no contacto",
+    "version": "1.0.0"
+  },
+  "paths": {
+    "/sales/contact-preferences/{phone}": {
+      "get": {
+        "summary": "Consultar preferencia e historial de no contacto por teléfono",
+        "parameters": [
+          {
+            "name": "phone",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Estado e historial de preferencia de contacto",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ContactPreferenceResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sales/contact-preferences/{phone}/opt-out": {
+      "post": {
+        "summary": "Registrar baja de comunicaciones automáticas para un teléfono",
+        "parameters": [
+          {
+            "name": "phone",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["reason"],
+                "properties": {
+                  "reason": { "type": "string", "minLength": 1 },
+                  "sourceMessageId": { "type": "string", "nullable": true },
+                  "sourceConversationId": { "type": "string", "nullable": true }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Baja registrada",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ContactPreferenceResponse" }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/sales/contact-preferences/{phone}/reactivate": {
+      "post": {
+        "summary": "Reactivar comunicaciones automáticas con evidencia (solo supervisión general)",
+        "parameters": [
+          {
+            "name": "phone",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string" }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["reason"],
+                "properties": {
+                  "reason": { "type": "string", "minLength": 3 },
+                  "sourceMessageId": { "type": "string", "nullable": true },
+                  "sourceConversationId": { "type": "string", "nullable": true }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Preferencia reactivada conservando historial",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/ContactPreferenceResponse" }
+              }
+            }
+          },
+          "403": {
+            "description": "Requiere supervisión general"
+          }
+        }
+      }
+    },
+    "/sales/financing/notices/{id}/simulate-delivery": {
+      "post": {
+        "summary": "Confirmar entrega simulada de una comunicación aceptada",
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": { "type": "string", "format": "uuid" }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "providerMessageId": { "type": "string" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Comunicación marcada como DELIVERED (idempotente)",
+            "content": {
+              "application/json": {
+                "schema": { "$ref": "#/components/schemas/OutboundNoticeResponse" }
+              }
+            }
+          },
+          "409": {
+            "description": "Comunicación no elegible para confirmación o providerMessageId inválido"
+          }
+        }
+      }
+    }
+  },
+  "components": {
+    "schemas": {
+      "ContactPreferenceResponse": {
+        "type": "object",
+        "required": ["phone", "optOut", "history"],
+        "properties": {
+          "phone": { "type": "string" },
+          "optOut": { "type": "boolean" },
+          "reason": { "type": "string", "nullable": true },
+          "sourceMessageId": { "type": "string", "nullable": true },
+          "sourceConversationId": { "type": "string", "nullable": true },
+          "optOutAt": { "type": "string", "format": "date-time", "nullable": true },
+          "reactivatedAt": { "type": "string", "format": "date-time", "nullable": true },
+          "updatedById": { "type": "string", "nullable": true },
+          "history": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "required": ["action", "at", "reason"],
+              "properties": {
+                "action": { "type": "string", "enum": ["OPT_OUT", "REACTIVATED"] },
+                "at": { "type": "string", "format": "date-time" },
+                "reason": { "type": "string" },
+                "sourceMessageId": { "type": "string", "nullable": true },
+                "sourceConversationId": { "type": "string", "nullable": true },
+                "actorId": { "type": "string", "nullable": true }
+              }
+            }
+          }
+        }
+      },
+      "OutboundNoticeResponse": {
+        "type": "object",
+        "required": ["id", "version", "status", "transportMode", "attemptCount"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "version": { "type": "integer" },
+          "status": {
+            "type": "string",
+            "enum": ["PENDING", "SENDING", "ACCEPTED", "DELIVERED", "FAILED", "UNCERTAIN"]
+          },
+          "transportMode": { "type": "string", "enum": ["disabled", "simulated"] },
+          "attemptCount": { "type": "integer", "maximum": 3 },
+          "lastErrorCode": { "type": "string", "nullable": true },
+          "providerMessageId": { "type": "string", "nullable": true },
+          "acceptedAt": { "type": "string", "format": "date-time", "nullable": true },
+          "deliveredAt": { "type": "string", "format": "date-time", "nullable": true },
+          "deliverySource": { "type": "string", "nullable": true }
+        }
+      }
+    }
+  }
+}

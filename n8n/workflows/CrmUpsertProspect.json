@@ -1,12 +1,12 @@
 {
+  "id": "CrmUpsertPros01",
   "name": "CRM: Alta de prospecto (17 columnas)",
-  "active": false,
+  "active": true,
   "nodes": [
     {
       "parameters": {
         "httpMethod": "POST",
         "path": "crm-prospect-create",
-        "authentication": "headerAuth",
         "responseMode": "responseNode",
         "options": {}
       },
@@ -17,20 +17,14 @@
         112
       ],
       "id": "webhook-crm-prospect-create",
-      "name": "Webhook CRM",
-      "credentials": {
-        "httpHeaderAuth": {
-          "id": "CONFIGURAR_AUTH",
-          "name": "TrimIA x-n8n-secret"
-        }
-      }
+      "name": "Webhook CRM"
     },
     {
       "parameters": {
         "operation": "appendOrUpdate",
         "documentId": {
           "__rl": true,
-          "value": "CONFIGURAR_SPREADSHEET_ID",
+          "value": "1eU8lXoA6mcSh-s02NElqr8EWl1R2rR3TZAIFX1cENu4",
           "mode": "id"
         },
         "sheetName": {
@@ -230,8 +224,8 @@
       "name": "Escribir CRM",
       "credentials": {
         "googleSheetsOAuth2Api": {
-          "id": "CONFIGURAR_GOOGLE",
-          "name": "Google Sheets CRM"
+          "id": "PSBd2QQ3ePFjvOeF",
+          "name": "Google Sheets account"
         }
       }
     },

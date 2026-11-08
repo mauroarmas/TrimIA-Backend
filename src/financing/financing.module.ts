@@ -1,5 +1,7 @@
 import { RealtimeModule } from '../realtime/realtime.module';
 import { CommercialFlowService } from './commercial-flow.service';
+import { CommercialFollowUpService } from './commercial-followup.service';
+import { ContactPreferenceService } from './contact-preference.service';
 import { EscalationsModule } from '../escalations/escalations.module';
 import { Module } from '@nestjs/common';
 import { PrismaModule } from '../database/prisma.module';
@@ -21,6 +23,8 @@ import { WhatsappSenderModule } from '../messaging/whatsapp-sender.module';
   ],
   providers: [
     CommercialFlowService,
+    CommercialFollowUpService,
+    ContactPreferenceService,
     FinancingService,
     FinancingConversationService,
     FinancingEvaluationService,
@@ -32,6 +36,8 @@ import { WhatsappSenderModule } from '../messaging/whatsapp-sender.module';
   ],
   exports: [
     CommercialFlowService,
+    CommercialFollowUpService,
+    ContactPreferenceService,
     FinancingService,
     FinancingConversationService,
     FinancingEvaluationService,
