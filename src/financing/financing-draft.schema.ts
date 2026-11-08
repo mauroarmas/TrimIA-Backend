@@ -15,6 +15,7 @@ export const fieldsSchema = z
       .optional(),
     productSummary: z.string().trim().min(1).max(500).optional(),
     sku: z.string().min(1).max(120).optional(),
+    purchaseUse: z.enum(['PERSONAL', 'BUSINESS']).optional(),
     business: z.string().trim().min(1).max(160).optional(),
     locality: z.string().trim().min(1).max(120).optional(),
   })

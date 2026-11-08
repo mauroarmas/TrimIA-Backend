@@ -25,6 +25,7 @@ import { financingConflict } from './financing.types';
 import { financingNoticeBody } from './financing-notice.template';
 export interface FinancingInput {
   flowVersion?: 2;
+  purchaseUse?: 'PERSONAL' | 'BUSINESS';
   business?: string;
   locality?: string;
   intent:
@@ -154,7 +155,9 @@ export class FinancingService {
       'dni',
       'productSummary',
       'confirmedAmount',
-      ...(d.flowVersion === 2 ? ['business', 'locality'] : []),
+      ...(d.flowVersion === 2
+        ? [...(d.purchaseUse === 'PERSONAL' ? [] : ['business']), 'locality']
+        : []),
     ].filter((k) => !d[k as keyof FinancingDraft]);
   }
   private summary(d: FinancingDraft) {
@@ -227,6 +230,7 @@ export class FinancingService {
               'productSummary',
               'sku',
               'business',
+              'purchaseUse',
               'locality',
             ].includes(k),
           ),
@@ -312,7 +316,7 @@ export class FinancingService {
     const prospectData = {
       name: d.name || previousProspect?.name || 'Cliente',
       dni: d.dni,
-      comercio: d.business,
+      comercio: d.purchaseUse === 'PERSONAL' ? null : d.business,
       localidad: d.locality,
       originChannel: c.channel,
       phone: c.externalId,
@@ -328,7 +332,10 @@ export class FinancingService {
           Nombre: d.name || previousProspect?.name || 'Cliente',
           Teléfono: c.externalId,
           'Producto/s': d.productSummary!,
-          Comercio: d.business ?? previousProspect?.comercio ?? '',
+          Comercio:
+            d.purchaseUse === 'PERSONAL'
+              ? ''
+              : (d.business ?? previousProspect?.comercio ?? ''),
           Localidad: d.locality ?? previousProspect?.localidad ?? '',
         },
       }),
@@ -470,6 +477,7 @@ export class FinancingService {
               'productSummary',
               'sku',
               'business',
+              'purchaseUse',
               'locality',
             ].includes(k),
           ),
@@ -494,6 +502,8 @@ export class FinancingService {
         ...changes,
         sourceMessageIds: [...d.sourceMessageIds.slice(-30), messageId],
       };
+      if (changes.purchaseUse === 'PERSONAL') delete d.business;
+      else if (changes.business) d.purchaseUse = 'BUSINESS';
       if (input.observedAmount)
         d.observedAmount = amountSchema.parse(input.observedAmount);
       const priceChanged = !!price && d.confirmedAmount !== price;
@@ -546,6 +556,7 @@ export class FinancingService {
           };
         }
         const snapshot = {
+          purchaseUse: d.purchaseUse ?? (d.business ? 'BUSINESS' : undefined),
           business: d.business,
           locality: d.locality,
           name: d.name!,
@@ -646,7 +657,7 @@ export class FinancingService {
       if (missing.length) {
         d.stage = 'COLLECTING';
         const labels: Record<string, string> = {
-          business: 'el nombre de tu comercio',
+          business: 'saber si la compra es personal o el nombre de tu comercio',
           locality: 'tu localidad',
           name: 'tu nombre',
           dni: 'tu DNI',

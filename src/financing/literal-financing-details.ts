@@ -5,7 +5,15 @@ export function literalFinancingDetails(message: string) {
     name?: string;
     business?: string;
     locality?: string;
+    productSummary?: string;
+    purchaseUse?: 'PERSONAL' | 'BUSINESS';
   } = {};
+  if (
+    /\b(?:compra personal|uso personal|soy particular|no tengo (?:un )?(?:comercio|negocio)|(?:es |ser[ií]a |lo quiero |la quiero )?para (?:m[ií](?: mismo| misma)?|mi casa|mi hogar))\b/i.test(
+      message,
+    )
+  )
+    result.purchaseUse = 'PERSONAL';
   const identity = message
     .trim()
     .match(/^([\p{L}][\p{L} .'’]{2,100})\s*[-–—]\s*(\d{7,8})[.!\s]*$/u);
@@ -38,7 +46,7 @@ export function literalFinancingDetails(message: string) {
   // normalice comas, tildes o nombres de provincia de una forma distinta.
   const labels = [
     ...message.matchAll(
-      /(?:^|[\n;]|[ \t]+(?:[-–—][ \t]+)?)(?:mi[ \t]+)?(nombre(?: y apellido)?|dni|documento|comercio|negocio|localidad|ciudad)[ \t]*(?::|=|[ \t]+es[ \t]*:?)[ \t]*/giu,
+      /(?:^|[\n;]|[ \t]+(?:[-–—][ \t]+)?)(?:mi[ \t]+)?(nombre(?: y apellido)?|dni|documento|comercio|negocio|localidad|ciudad|modelo|producto)[ \t]*(?::|=|[ \t]+es[ \t]*:?)[ \t]*/giu,
     ),
   ];
   for (let i = 0; i < labels.length; i++) {
@@ -58,6 +66,8 @@ export function literalFinancingDetails(message: string) {
       if (/^\d{7,8}$/.test(dni)) result.dni = dni;
     } else if (/^nombre/.test(label)) {
       if (value.length <= 120 && /\p{L}/u.test(value)) result.name = value;
+    } else if (label === 'modelo' || label === 'producto') {
+      if (value.length <= 500) result.productSummary = value;
     } else if (label === 'comercio' || label === 'negocio') {
       if (result.locality && value.endsWith(result.locality)) {
         value = value

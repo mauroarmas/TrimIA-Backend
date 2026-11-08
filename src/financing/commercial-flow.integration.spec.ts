@@ -62,6 +62,82 @@ const enabled = !!process.env.TEST_DATABASE_URL;
   afterAll(() => prisma.$disconnect());
   const firstDate = () =>
     new Date(Date.now() + 7 * 86400000).toISOString().slice(0, 10);
+  it.each([true, false])(
+    'recuerda «es para financiación» y recopila datos sin prometer un pedido inexistente (personal: %s)',
+    async (personal) => {
+      const c = await prisma.conversation.create({
+        data: {
+          externalId: '549' + randomUUID().replace(/\D/g, '').slice(0, 10),
+          channel: 'WHATSAPP',
+        },
+      });
+      const invoke = jest
+        .fn()
+        .mockRejectedValue(new Error('extractor unavailable'));
+      const create = jest.fn();
+      const handler = new FinancingConversationService(
+        prisma as any,
+        { classifierChat: { withStructuredOutput: () => ({ invoke }) } } as any,
+        financing,
+        { create } as any,
+        commercial,
+        stock,
+      );
+      const turn = async (content: string) => {
+        const m = await prisma.message.create({
+          data: { conversationId: c.id, role: 'USER', content },
+        });
+        const result = await handler.handle(c.id, m.id, content, {
+          userType: 'CLIENTE',
+        } as any);
+        if (result.response)
+          await prisma.message.create({
+            data: {
+              conversationId: c.id,
+              role: 'ASSISTANT',
+              content: result.response,
+            },
+          });
+        return result;
+      };
+      const start = await turn('es para financiación.');
+      expect(start.handled).toBe(true);
+      const details = await turn(
+        'mi nombre es: Mauro Armas\nDNI: 90000001\nModelo: Heladera Exhibidora Vertical Briket 390 Litros Led',
+      );
+      expect(details.response).toMatch(/personal.*comercio.*localidad/);
+      expect(details.response).not.toMatch(/creamos|aprobación/);
+      const draft = await financing.getDraft(c.id);
+      expect(draft).toMatchObject({
+        name: 'Mauro Armas',
+        dni: '90000001',
+        sku: 'EXH-BRI-390',
+      });
+      expect(
+        await prisma.purchaseRequest.count({ where: { conversationId: c.id } }),
+      ).toBe(0);
+      const result = await turn(
+        personal
+          ? 'Es para mi casa. Localidad: Posadas'
+          : 'Comercio: Almacén Mauro\nLocalidad: Posadas',
+      );
+      expect(result.response).toContain('creamos el pedido de financiación');
+      const request = await prisma.purchaseRequest.findFirstOrThrow({
+        where: { conversationId: c.id },
+      });
+      expect(request.status).toBe('PENDING_REVIEW');
+      expect(request.inputSnapshot).toMatchObject({
+        purchaseUse: personal ? 'PERSONAL' : 'BUSINESS',
+        locality: 'Posadas',
+      });
+      const prospect = await prisma.prospect.findUniqueOrThrow({
+        where: { id: request.prospectId! },
+      });
+      expect(prospect.name).toBe('Mauro Armas');
+      expect(prospect.comercio).toBe(personal ? null : 'Almacén Mauro');
+      expect(create).not.toHaveBeenCalled();
+    },
+  );
   it('inicia financiación al decir «me interesa financiarla» y no deriva la respuesta con nombre y DNI', async () => {
     const conversation = await prisma.conversation.create({
       data: {

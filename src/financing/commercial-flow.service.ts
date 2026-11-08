@@ -404,6 +404,8 @@ export class CommercialFlowService {
       client: { ...row.client, name: snapshot.name, dni: snapshot.dni },
       collector,
       sku: snapshot.sku,
+      purchaseUse:
+        snapshot.purchaseUse ?? (snapshot.business ? 'BUSINESS' : null),
       business: snapshot.business,
       locality: snapshot.locality,
       flow,
@@ -451,7 +453,7 @@ export class CommercialFlowService {
       return '¿Cuál es la dirección de entrega? Incluí calle, número y referencias. El envío se paga aparte al contado.';
     const s = row.inputSnapshot as any;
     const offer = flow.offers.find((o) => o.id === flow.selectedOfferId)!;
-    return `Resumen del pedido: ${s.name}, DNI ${s.dni}; comercio ${s.business}, ${s.locality}. Una unidad de ${row.productSummary}. ${offerText(offer)}. ${flow.deliveryMode === 'PICKUP' ? 'Retiro en sucursal, sin costo de envío.' : `Envío a ${flow.deliveryAddress}; costo $${Number(flow.shippingCost).toLocaleString('es-AR')}, separado y al contado.`}${flow.contactName || flow.contactPhone ? ` Contacto de entrega: ${flow.contactName || s.name}, ${flow.contactPhone || s.phone}.` : ''} Vigente hasta ${new Date(flow.expiresAt).toLocaleString('es-AR', { timeZone: 'America/Argentina/Tucuman', hour12: false })}. ¿Confirmás este resumen para que Ventas prepare el cierre?`;
+    return `Resumen del pedido: ${s.name}, DNI ${s.dni}; ${s.purchaseUse === 'PERSONAL' ? 'compra personal' : `comercio ${s.business}`}, ${s.locality}. Una unidad de ${row.productSummary}. ${offerText(offer)}. ${flow.deliveryMode === 'PICKUP' ? 'Retiro en sucursal, sin costo de envío.' : `Envío a ${flow.deliveryAddress}; costo $${Number(flow.shippingCost).toLocaleString('es-AR')}, separado y al contado.`}${flow.contactName || flow.contactPhone ? ` Contacto de entrega: ${flow.contactName || s.name}, ${flow.contactPhone || s.phone}.` : ''} Vigente hasta ${new Date(flow.expiresAt).toLocaleString('es-AR', { timeZone: 'America/Argentina/Tucuman', hour12: false })}. ¿Confirmás este resumen para que Ventas prepare el cierre?`;
   }
   async customerMessage(
     id: string,

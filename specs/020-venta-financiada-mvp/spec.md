@@ -26,7 +26,7 @@ Como cliente quiero aportar los datos necesarios y saber que una persona revisar
 
 **Acceptance Scenarios**:
 
-1. **Given** una intención de financiar con datos incompletos, **When** el cliente conversa, **Then** el asistente pide únicamente nombre, DNI, comercio, localidad o selección exacta del producto con precio conocido que falten; no inventa información ni comunica aprobación.
+1. **Given** una intención de financiar con datos incompletos, **When** el cliente conversa, **Then** el asistente pide únicamente nombre, DNI, localidad, destino personal/comercial (y comercio solo si corresponde) o selección exacta del producto con precio conocido que falten; no inventa información ni comunica aprobación.
 2. **Given** datos completos y voluntad explícita de solicitar financiación, **When** se registra el caso, **Then** quedan una solicitud en Administración, su evaluación simulada y una revisión humana pendiente, con vigencia de 48 horas desde su creación; el cliente recibe un acuse sin detalles internos y no se crea un escalado normal.
 3. **Given** un evaluador simulado no disponible, **When** se presenta la solicitud, **Then** se registra el intento y se deriva a revisión manual efectiva, sin aprobar ni rechazar automáticamente.
 4. **Given** una solicitud abierta para ese pedido, **When** llega de nuevo el mismo mensaje o se procesa dos veces, **Then** se continúa el caso existente sin duplicar solicitud ni derivación.
@@ -83,7 +83,7 @@ Como cliente quiero recibir la decisión en mi hilo. Como responsable quiero dis
 ### Functional Requirements
 
 - **FR-001**: El sistema DEBE distinguir consulta informativa y solicitud explícita; no creará solicitudes por saludos o preguntas generales sobre financiación.
-- **FR-002**: DEBE reunir nombre, DNI, comercio, localidad, producto exacto y monto positivo confirmado antes de presentar el pedido para decisión. Se crea al completar esos datos, sin confirmación inicial adicional. El teléfono proviene del contacto del hilo.
+- **FR-002**: DEBE reunir nombre, DNI, localidad, destino personal/comercial, producto exacto y monto positivo confirmado antes de presentar el pedido para decisión. El comercio solo es obligatorio para una compra comercial. Se crea al completar esos datos, sin confirmación inicial adicional. El teléfono proviene del contacto del hilo.
 - **FR-003**: DEBE vincular solicitud, cliente, oportunidad e hilo, reutilizando antecedentes compatibles. La indisponibilidad del CRM externo no debe hacer perder la solicitud.
 - **FR-004**: DEBE registrar para cada solicitud el dictamen administrativo, fecha, origen simulado y datos evaluados. Aprobado, con condiciones, rechazado y no disponible son resultados preliminares, no decisiones finales.
 - **FR-005**: DEBE presentar toda solicitud completa en Administración para revisión humana, incluso con dictamen favorable. Un fallo de evaluación deja un caso revisable. No crea un caso escalado por la presentación, revisión, elección de oferta o preparación de cierre normales.
@@ -152,7 +152,7 @@ Como cliente quiero recibir la decisión en mi hilo. Como responsable quiero dis
 
 ### Decisiones confirmadas (preguntas 1–12)
 
-1. **Ingreso a Administración**: El agente reúne nombre, DNI, producto seleccionado con precio conocido, comercio y localidad. El teléfono proviene de la conversación. Una solicitud completa aparece en Aprobación de financiación; la recopilación y revisión normales no crean un caso escalado para supervisores. Elegir un modelo que el agente acaba de ofrecer debe conservar ese contexto.
+1. **Ingreso a Administración**: El agente reúne nombre, DNI, producto seleccionado con precio conocido y localidad. Consulta si la compra es personal o comercial y pide el comercio únicamente en el segundo caso. El teléfono proviene de la conversación. Una solicitud completa aparece en Aprobación de financiación; la recopilación y revisión normales no crean un caso escalado para supervisores. Elegir un modelo que el agente acaba de ofrecer debe conservar ese contexto.
 2. **Responsables**: El personal de Administración y el supervisor general pueden revisar el dictamen crediticio preliminar simulado y aprobar o rechazar. La decisión sigue siendo humana y su información crediticia interna no se expone al cliente.
 3. **Ofertas**: Administración habilita opciones de contado y cuotas precargadas en el catálogo mock, con sus importes y condiciones. El agente solo ofrece esas opciones; no inventa planes ni condiciones.
 4. **Rechazo**: El agente comunica el rechazo sin detalles crediticios internos. Puede ofrecer contado únicamente si Administración dejó esa opción habilitada.
@@ -167,7 +167,7 @@ Como cliente quiero recibir la decisión en mi hilo. Como responsable quiero dis
 
 ### Requisitos de la revisión (sustituyen el recorrido anterior para pedidos nuevos)
 
-- **RC-001**: Capturar datos literales y conservar el producto elegido del catálogo. Crear el pedido al completar nombre, DNI, comercio, localidad y producto/precio válidos, sin depender de una confirmación adicional de un resumen inicial. No iniciar un pedido por una consulta informativa.
+- **RC-001**: Capturar datos literales y conservar el producto elegido del catálogo. Crear el pedido al completar nombre, DNI, localidad y producto/precio válidos, además del comercio cuando la compra sea comercial, sin depender de una confirmación adicional de un resumen inicial. No iniciar un pedido por una consulta informativa.
 - **RC-002**: Mantener el chat activo mientras Administración revisa. Consultar su estado antes de responder; no enviar esos mensajes al RAG para que terminen en una derivación por baja confianza.
 - **RC-003**: Administración o supervisión general decide sobre la versión evaluada, habilita ofertas del mock y define cobrador y primer vencimiento para cuotas. Las ofertas incluyen modalidad, total y periodicidad. Nunca se exponen al cliente dictámenes ni notas internas.
 - **RC-004**: El cliente elige solo una oferta habilitada y retiro o envío cubierto. El agente pide dirección para envío y presenta un resumen completo con importe del producto, cuotas/vencimientos y costo separado de envío. Solo una aceptación explícita de ese resumen vigente prepara el cierre.
@@ -197,3 +197,9 @@ Como cliente quiero recibir la decisión en mi hilo. Como responsable quiero dis
 - Revisión desde la interfaz administrativa con ofertas de contado/cuotas, cobrador y primer vencimiento. Continuación real por chat con elección de 12 cuotas, envío y dirección, resumen y aceptación explícita.
 - Cierre desde la interfaz de Ventas junto al chat, prueba de toma/liberación de control y comprobación posterior de una venta, un plan con 12 cuotas que suman ARS 610.000 y envío separado de ARS 15.000. Historial de Cobranzas accesible con supervisión general.
 - Se conservaron URL, datos históricos y gestiones anteriores. Las verificaciones de escritura usaron contactos WEB ficticios; no se contactó por WhatsApp a clientes reales. El escalado generado durante la primera reproducción fallida se descartó como QA después de corregir la causa.
+
+### Ajuste por prueba real — 2026-11-07
+
+- «Es para financiación» debe iniciar y persistir el formulario aunque aún falte elegir modelo. Los datos posteriores con etiquetas Nombre, DNI y Modelo se incorporan sin depender del texto del extractor.
+- Si aún no se conoce el destino de compra, el agente consulta si es personal o pide el nombre del comercio. Una compra personal no requiere comercio; conserva localidad para determinar la entrega.
+- El agente solo anuncia que creó un pedido después de persistir una solicitud en Administración; mientras faltan datos, solicita únicamente los pendientes.
