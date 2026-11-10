@@ -99,6 +99,24 @@ export class TrainingController {
     return this.trainingService.getEmployeePill(req.user.id, id);
   }
 
+  @Post('pills/:id/ask')
+  @HttpCode(200)
+  @ApiOperation({
+    summary:
+      'Responder una duda del empleado sobre la píldora usando su contenido y la base de conocimiento del sector',
+  })
+  async askPillDoubt(
+    @Req() req: AuthenticatedRequest,
+    @Param('id') id: string,
+    @Body() body: { question: string },
+  ) {
+    return this.trainingService.answerPillDoubt(
+      req.user.id,
+      id,
+      body?.question,
+    );
+  }
+
   @Post('pills/:id/verify')
   @HttpCode(200)
   @ApiOperation({

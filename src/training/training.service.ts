@@ -1556,4 +1556,27 @@ export class TrainingService {
       };
     });
   }
+
+  async answerPillDoubt(
+    employeeId: string,
+    pillId: string,
+    question?: string,
+  ): Promise<{ text: string; source: string }> {
+    const cleanQuestion = (question ?? '').trim();
+    if (!cleanQuestion) {
+      throw new BadRequestException('Ingresá una pregunta para consultar a Trimi.');
+    }
+
+    const { pill } = await this.getAccessiblePill(employeeId, pillId);
+    const agentType = pill.module.sector?.agentType ?? undefined;
+
+    return this.generator.answerLessonDoubt({
+      question: cleanQuestion,
+      pillTitle: pill.title,
+      pillObjective: pill.objective,
+      pillContent: pill.content,
+      audioScript: pill.audioScript as any,
+      agentType,
+    });
+  }
 }

@@ -39,7 +39,7 @@ export class TtsService {
               parts: [
                 {
                   text:
-                    'Leé únicamente el siguiente diálogo con tono profesional y español rioplatense de Argentina. Respetá cada locutor y no agregues contenido.\n\n' +
+                    'Leé únicamente el siguiente diálogo como un podcast conversacional estilo NotebookLM, con entonación natural, cálida y dinámica. Usá español argentino neutro (del interior, sin acento porteño marcado ni exagerado). Respetá cada locutor y no agregues contenido.\n\n' +
                     script.dialogue
                       .map((line) => line.speaker + ': ' + line.text)
                       .join('\n'),
@@ -54,11 +54,11 @@ export class TtsService {
                 speakerVoiceConfigs: [
                   {
                     speaker: 'SPEAKER_1',
-                    voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } },
+                    voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Aoede' } },
                   },
                   {
                     speaker: 'SPEAKER_2',
-                    voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Puck' } },
+                    voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Charon' } },
                   },
                 ],
               },

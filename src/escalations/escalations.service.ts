@@ -297,21 +297,54 @@ export class EscalationsService {
       },
     });
 
+    const externalIds = Array.from(
+      new Set(
+        casos
+          .map((c) => c.conversation?.externalId)
+          .filter((ext): ext is string => Boolean(ext)),
+      ),
+    );
+    const matchedEmployees =
+      externalIds.length > 0 && (this.prisma as any).employee?.findMany
+        ? await (this.prisma as any).employee.findMany({
+            where: { phone: { in: externalIds } },
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              phone: true,
+              role: true,
+              sector: { select: { id: true, name: true, agentType: true } },
+            },
+          })
+        : [];
+    const employeeByPhone = new Map(
+      (matchedEmployees ?? []).map((emp: any) => [emp.phone, emp]),
+    );
+
     // `findMany` con `in` no garantiza el orden pedido: se rearma según los ids.
     const porId = new Map(casos.map((caso) => [caso.id, caso]));
     const data = ids
       .map((id) => porId.get(id))
       .filter((caso): caso is (typeof casos)[number] => caso !== undefined)
-      .map((caso) => ({
-        ...caso,
-        pertenencia: resolverPertenencia(
-          {
-            area: caso.conversation.currentAgent,
-            delegatedToId: caso.delegatedToId,
-          },
-          quien,
-        ),
-      }));
+      .map((caso) => {
+        const emp = caso.conversation?.externalId
+          ? employeeByPhone.get(caso.conversation.externalId)
+          : undefined;
+        return {
+          ...caso,
+          conversation: emp
+            ? { ...caso.conversation, employee: emp }
+            : caso.conversation,
+          pertenencia: resolverPertenencia(
+            {
+              area: caso.conversation.currentAgent,
+              delegatedToId: caso.delegatedToId,
+            },
+            quien,
+          ),
+        };
+      });
 
     return { data, total, page, limit, hasMore: skip + data.length < total };
   }
@@ -382,10 +415,33 @@ export class EscalationsService {
 
     const consultasPosteriores = await this.consultasPosteriores(escalation);
 
-    if (!empleadoId) return { ...escalation, consultasPosteriores };
+    const emp =
+      escalation.conversation?.externalId &&
+      (this.prisma as any).employee?.findUnique
+        ? await (this.prisma as any).employee.findUnique({
+            where: { phone: escalation.conversation.externalId },
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              phone: true,
+              role: true,
+              sector: { select: { id: true, name: true, agentType: true } },
+            },
+          })
+        : null;
+
+    const enrichedEscalation = emp
+      ? {
+          ...escalation,
+          conversation: { ...escalation.conversation, employee: emp },
+        }
+      : escalation;
+
+    if (!empleadoId) return { ...enrichedEscalation, consultasPosteriores };
 
     return {
-      ...escalation,
+      ...enrichedEscalation,
       consultasPosteriores,
       pertenencia: resolverPertenencia(
         {

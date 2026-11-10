@@ -69,11 +69,11 @@ describe('TTS real: contrato de voz y fallos', () => {
     ).toEqual([
       {
         speaker: 'SPEAKER_1',
-        voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Kore' } },
+        voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Aoede' } },
       },
       {
         speaker: 'SPEAKER_2',
-        voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Puck' } },
+        voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Charon' } },
       },
     ]);
     expect(codec.encode).toHaveBeenCalledWith(

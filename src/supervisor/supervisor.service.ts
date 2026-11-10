@@ -478,8 +478,33 @@ export class SupervisorService {
       this.prisma.conversation.count({ where }),
     ]);
 
+    const externalIds = Array.from(
+      new Set(data.map((r) => r.externalId).filter(Boolean)),
+    );
+    const matchedEmployees =
+      externalIds.length > 0 && (this.prisma as any).employee?.findMany
+        ? await (this.prisma as any).employee.findMany({
+            where: { phone: { in: externalIds } },
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              phone: true,
+              role: true,
+              sector: { select: { id: true, name: true, agentType: true } },
+            },
+          })
+        : [];
+    const employeeByPhone = new Map(
+      (matchedEmployees ?? []).map((emp: any) => [emp.phone, emp]),
+    );
+    const enrichedData = data.map((row) => {
+      const emp = employeeByPhone.get(row.externalId);
+      return emp ? { ...row, employee: emp } : row;
+    });
+
     return {
-      data,
+      data: enrichedData,
       total,
       page,
       limit,
@@ -572,8 +597,24 @@ export class SupervisorService {
       }
     }
 
+    const employee =
+      conversation.externalId && (this.prisma as any).employee?.findUnique
+        ? await (this.prisma as any).employee.findUnique({
+            where: { phone: conversation.externalId },
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              phone: true,
+              role: true,
+              sector: { select: { id: true, name: true, agentType: true } },
+            },
+          })
+        : null;
+
     return {
       ...conversation,
+      ...(employee ? { employee } : {}),
       messages,
       events,
       internalNotes,

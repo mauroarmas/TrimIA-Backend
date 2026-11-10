@@ -438,4 +438,92 @@ export class TrainingGeneratorService {
       dialogue,
     });
   }
+
+  async answerLessonDoubt(params: {
+    question: string;
+    pillTitle: string;
+    pillObjective: string;
+    pillContent: string;
+    audioScript?: { dialogue?: Array<{ speaker: string; text: string }> };
+    agentType?: any;
+  }): Promise<{ text: string; source: string }> {
+    let knowledgeHits: Array<{ title: string; content: string }> = [];
+    try {
+      const hits = await this.knowledge.search(params.question, {
+        audience: Audience.INTERNO,
+        agentType: params.agentType,
+        k: 3,
+      });
+      knowledgeHits = hits.map((h) => ({
+        title: h.title || 'Base de conocimiento de Credimisión',
+        content: h.content,
+      }));
+    } catch (err) {
+      this.logger.warn(`No se pudo consultar ChromaDB para duda en píldora: ${err}`);
+    }
+
+    const scriptText = params.audioScript?.dialogue
+      ?.map((d) => `${d.speaker}: ${d.text}`)
+      .join('\n') || '';
+
+    const contextBlock =
+      `LECCIÓN ACTUAL: "${params.pillTitle}"\n` +
+      `OBJETIVO: ${params.pillObjective}\n` +
+      `CONTENIDO DE LA LECCIÓN:\n${params.pillContent}\n\n` +
+      (scriptText ? `GUION DEL EPISODIO:\n${scriptText}\n\n` : '') +
+      (knowledgeHits.length > 0
+        ? `DOCUMENTACIÓN DE LA BASE DE CONOCIMIENTO:\n` +
+          knowledgeHits.map((h, i) => `[Doc ${i + 1}: ${h.title}]\n${h.content}`).join('\n\n')
+        : '');
+
+    const primarySource =
+      knowledgeHits[0]?.title || `Lección: ${params.pillTitle}`;
+
+    try {
+      const response = await this.llm.chat.invoke([
+        new SystemMessage(
+          `Sos Trimi, el asistente pedagógico de capacitación interna de Credimisión S.R.L. (Argentina).\n` +
+            `Tu tarea es responder de forma breve, clara y directa (máximo 2 a 3 oraciones, en español argentino neutro) la duda que tiene un colaborador sobre la lección que está estudiando.\n` +
+            `REGLA DE ESTILO: Andá directo a la respuesta. NO empieces con saludos ("¡Hola!", "Hola", "Buen día") ni cierres con frases de despedida ("¡Cualquier otra duda avisame!", "Espero que te sirva").\n` +
+            `Usá el contenido de la lección, la base de conocimiento suministrada y el contexto operativo de Credimisión (por ejemplo: Paljet es el sistema de gestión comercial / ERP de Credimisión donde se consulta el stock y precios vigentes, Ecommerce carga las Notas de Pedido y se emiten remitos y facturas).\n` +
+            `No inventes tasas, descuentos ni políticas no documentadas.`,
+        ),
+        new HumanMessage(
+          `${contextBlock}\n\nPREGUNTA DEL COLABORADOR: ${params.question}`,
+        ),
+      ]);
+
+      const rawText =
+        typeof response.content === 'string'
+          ? response.content
+          : Array.isArray(response.content)
+            ? response.content.map((c: any) => c.text || '').join(' ')
+            : '';
+
+      const cleanAnswer = rawText
+        .trim()
+        .replace(/^[¡!]*\s*(hola|buen\s+d[ií]a|buenas)[,!.\s-]*/i, '')
+        .replace(/^(\p{Ll})/u, (m) => m.toUpperCase());
+      if (cleanAnswer) {
+        return {
+          text: cleanAnswer,
+          source: primarySource,
+        };
+      }
+    } catch (err) {
+      this.logger.error(`Error respondiendo duda con Gemini: ${err}`);
+    }
+
+    if (knowledgeHits.length > 0) {
+      return {
+        text: knowledgeHits[0].content,
+        source: knowledgeHits[0].title,
+      };
+    }
+
+    return {
+      text: `En esta parada sobre «${params.pillTitle}», recordá: ${params.pillContent.split('\n\n')[0] || params.pillObjective}`,
+      source: primarySource,
+    };
+  }
 }

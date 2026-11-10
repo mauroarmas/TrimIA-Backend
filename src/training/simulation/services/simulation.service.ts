@@ -16,6 +16,7 @@ import {
   SimulationMode,
   SimulationStatus,
   SimulationSender,
+  TrainingProgressStatus,
 } from '@prisma/client';
 
 @Injectable()
@@ -364,9 +365,32 @@ export class SimulationService {
           throw new ConflictException(
             'La sesión cambió durante la evaluación. Volvé a intentarlo.',
           );
-        return tx.simulationFeedback.create({
+        const createdFeedback = await tx.simulationFeedback.create({
           data: { sessionId, ...feedbackData },
         });
+        if (tx.employeeProgress?.upsert) {
+          await tx.employeeProgress.upsert({
+            where: {
+              employeeId_pillId: {
+                employeeId,
+                pillId: session.pillId,
+              },
+            },
+            update: {
+              status: TrainingProgressStatus.COMPLETED,
+              isAudioCompleted: true,
+              completedAt: new Date(),
+            },
+            create: {
+              employeeId,
+              pillId: session.pillId,
+              status: TrainingProgressStatus.COMPLETED,
+              isAudioCompleted: true,
+              completedAt: new Date(),
+            },
+          });
+        }
+        return createdFeedback;
       });
     } catch (error) {
       if (!(error instanceof ConflictException)) throw error;
