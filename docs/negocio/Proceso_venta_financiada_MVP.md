@@ -2,6 +2,39 @@
 
 Vigente desde el 7 de noviembre de 2026. Describe el circuito acordado para la demo de TrimIA. El catálogo, la consulta crediticia y las condiciones comerciales son de prueba. Los estados de cada pedido, los mensajes y la sincronización del CRM se registran en el sistema.
 
+## Resumen del circuito
+
+Cada pedido representa una unidad de un producto. La aprobación de financiación, el cierre de venta y la carga de cuotas son hitos distintos: ninguno se presume a partir del anterior.
+
+```mermaid
+flowchart LR
+    C[Cliente consulta y elige<br/>un producto exacto] --> A[Agente de Ventas reúne<br/>los datos faltantes]
+    A --> P[Pedido de financiación<br/>y prospecto CRM]
+    P --> R[Administración revisa<br/>riesgo simulado y datos]
+    R -->|Aprueba y habilita ofertas| E[Cliente elige plan<br/>y forma de entrega]
+    R -->|Rechaza| T[Agente comunica el resultado<br/>y ofrece contado si fue habilitado]
+    E --> S[Cliente acepta el resumen]
+    S --> V[Ventas revisa, escribe el mensaje final<br/>y cierra la venta]
+    V --> Q[Se registran venta y cuotas<br/>en la cartera del cobrador]
+    A -. producto/precio no encontrado<br/>o cliente pide una persona .-> X[Casos escalados]
+```
+
+| Etapa | Responsable principal | Resultado que queda registrado |
+| --- | --- | --- |
+| Consulta y recopilación | Agente de Ventas | Borrador con producto, intención y datos recibidos; prospecto CRM cuando corresponde. |
+| Presentación | Sistema | Pedido de financiación con vigencia de 48 horas y revisión pendiente. |
+| Revisión | Administración o supervisión general | Aprobación o rechazo, nota de decisión y ofertas habilitadas. |
+| Elección del cliente | Agente de Ventas | Plan o contado, entrega y aceptación del resumen vigente. |
+| Cierre | Ventas o supervisión general | Venta cerrada, mensaje final y, si corresponde, cuotas para el cobrador asignado. |
+
+### Reglas que evitan confusiones
+
+- Entregar datos no implica aprobación.
+- Aprobar una financiación no implica que la venta esté cerrada.
+- Cerrar la venta no acredita que el cliente haya recibido el aviso; se registra el estado de envío por separado.
+- La revisión habitual de Administración no crea un caso escalado.
+- Las condiciones vencen a las 48 horas desde la creación del pedido con evaluación preliminar. Si cambian producto, precio o plan, se debe revisar nuevamente y pedir una nueva aceptación al cliente.
+
 ## Guía para conversar con el cliente
 
 ### Quiero comprar con financiación: ¿cómo empiezo?
