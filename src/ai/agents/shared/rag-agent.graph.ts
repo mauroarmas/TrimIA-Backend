@@ -1,4 +1,7 @@
-import { explicitCatalogSelection } from '../../integrations/catalog-page';
+import {
+  explicitCatalogSelection,
+  searchCatalog,
+} from '../../integrations/catalog-page';
 import { ConversationContactService } from '../../integrations/conversation-contact.service';
 import {
   integrationEvidence,
@@ -135,15 +138,18 @@ export function buildRagAgentGraph(
     if (config.tools && config.tools.length > 0) {
       try {
         const selectedProduct =
-          agentType === 'SALES' &&
-          state.userType === 'CLIENTE' &&
-          deps.stockPort
+          agentType === 'SALES' && deps.stockPort
             ? explicitCatalogSelection(
                 await deps.stockPort.listCatalog(),
                 state.message,
+                state.history,
               )
             : undefined;
-        const modelWithTools = llm.chat.bindTools(config.tools);
+        const availableTools =
+          state.userType === 'EMPLEADO'
+            ? config.tools.filter((t: any) => t.name === 'check_stock')
+            : config.tools;
+        const modelWithTools = llm.chat.bindTools(availableTools);
         const toolCheckPrompt = [
           new SystemMessage(
             `Sos el componente de integraciones del agente ${agentType}. Tu única tarea es decidir si la consulta del usuario necesita invocar una herramienta (como consultar existencias de stock, registrar un prospecto o evaluar crédito). Para consultas de productos disponibles, modelos, catálogo o precios, consultá siempre check_stock con la familia o modelo solicitado; no respondas con ejemplos del conocimiento. Para «más opciones», recuperá del historial la familia y usá el siguiente offset (5, 10, etc.). Si la consulta NO requiere herramientas, no invoques ninguna.`,
@@ -182,7 +188,7 @@ export function buildRagAgentGraph(
           );
           const toolOutputs: string[] = [];
           for (const tc of toolRes.tool_calls) {
-            const matched = config.tools.find((t: any) => t.name === tc.name);
+            const matched = availableTools.find((t: any) => t.name === tc.name);
             if (matched) {
               const res = await matched.invoke(tc.args, {
                 configurable: {
@@ -197,9 +203,9 @@ export function buildRagAgentGraph(
                 selectedProduct?.sku,
               );
               evidence.hasFacts ||= facts.hasFacts;
-              if (facts.selectionReply)
+              if (facts.selectionReply && state.userType !== 'EMPLEADO')
                 evidence.selectionReply = facts.selectionReply;
-              if (facts.catalogReply)
+              if (facts.catalogReply && state.userType !== 'EMPLEADO')
                 evidence.catalogReply = facts.catalogReply;
               evidence.stockPrices.push(...facts.stockPrices);
               if (facts.creditVerdict)
@@ -216,6 +222,54 @@ export function buildRagAgentGraph(
         logger.warn(
           `${tag} evaluación de herramientas omitida por error: ${err.message}`,
         );
+      }
+    }
+
+    // Si quien habla es un empleado o supervisor en el Chat con el Asistente y menciona un
+    // producto del catálogo o simula un pedido de compra/financiación en primera persona,
+    // enriquecemos el contexto con el catálogo de Paljet y el flujo interno de venta financiada.
+    if (state.userType === 'EMPLEADO') {
+      const esSimulacionCompraEmpleado =
+        /\b(?:quiero|quisiera|necesito|solicito|busco|me gustar[ií]a)\s+(?:que\s+me\s+financien|financiar|comprar|sacar|(?:un|una)\s+(?:cr[eé]dito|financiaci[oó]n|cortadora|maquina|m[aá]quina|heladera|televisor|smart\s*tv|balanza|horno|amasadora|sobadora|freidora|freezer))\b|\b(?:mediante|con|por)\s+financiaci[oó]n\b|\bme\s+van\s+a\s+financiar\b|\b(?:una?\s+)?(?:m[aá]quina\s+para\s+cortar\s+fiambres?|cortadoras?\s+de\s+fiambres?)\b/i.test(
+          state.message,
+        );
+      if (deps.stockPort && !evidence.hasFacts) {
+        try {
+          const catalog = await deps.stockPort.listCatalog();
+          const candidateQueries = [
+            state.message,
+            ...[...(state.history ?? [])]
+              .reverse()
+              .filter((t) => t.role === 'USER')
+              .slice(0, 2)
+              .map((t) => t.content),
+          ];
+          for (const q of candidateQueries) {
+            const matches = searchCatalog(catalog, q);
+            if (matches.length > 0 && matches.length <= 10) {
+              const itemsText = matches
+                .slice(0, 5)
+                .map(
+                  (item) =>
+                    `- ${item.name} (SKU: ${item.sku})${item.listPrice != null ? ` — Precio lista: $${item.listPrice.toLocaleString('es-AR')}` : ''}${item.cashPrice != null ? ` / Contado: $${item.cashPrice.toLocaleString('es-AR')}` : ''} — Stock disponible: ${item.stock}`,
+                )
+                .join('\n');
+              context += `\n\n[Catálogo Paljet - Productos encontrados]:\n${itemsText}`;
+              evidence.hasFacts = true;
+              break;
+            }
+          }
+        } catch {
+          // Ignorar si stockPort no está disponible en tests
+        }
+      }
+      if (esSimulacionCompraEmpleado) {
+        evidence.hasFacts = true;
+        context +=
+          `\n\n[Guía interna para el empleado en Chat con el Asistente]: ` +
+          `Quien escribe es personal interno de la empresa (${state.caller?.name ?? 'empleado'}) desde el "Chat con el Asistente". ` +
+          `Para una venta financiada real a un cliente se relevan 5 datos obligatorios (1. Nombre completo, 2. DNI de 7 u 8 dígitos, 3. Producto específico del catálogo Paljet con stock, 4. Nombre del comercio o indicación de uso personal, 5. Localidad), luego se evalúa automáticamente en Riesgo Online y Administración habilita las ofertas (Contado, 12 o 24 cuotas semanales) desde la pestaña «Aprobación Financiación». ` +
+          `Recordale amablemente que si desea simular la compra o solicitud de financiación como si fuera un cliente externo, debe hacerlo desde la pestaña «Simulador de Chat» del menú lateral usando un número de teléfono de prueba.`;
       }
     }
 
@@ -319,8 +373,10 @@ export function buildRagAgentGraph(
     const parsed = agentResponseSchema
       .extend({ salesHandoff: salesHandoffSchema.optional() })
       .parse(result.parsed);
-    let internalNote = parsed.internalNote ?? null;
-    if (agentType === 'SALES' && parsed.needsHuman && parsed.salesHandoff) {
+    const esSupervisorOGerente = esResponsableDeArea(state.caller);
+    const shouldEscalate = parsed.needsHuman && !esSupervisorOGerente;
+    let internalNote = shouldEscalate ? (parsed.internalNote ?? null) : null;
+    if (agentType === 'SALES' && shouldEscalate && parsed.salesHandoff) {
       const handoff = salesHandoffSchema.parse(parsed.salesHandoff);
       if (
         handoff.precioEstimado !== undefined &&
@@ -337,16 +393,18 @@ export function buildRagAgentGraph(
 
     logger.log(
       `${tag} respuesta generada con RAG` +
-        (parsed.needsHuman ? ` → pide intervención humana` : ''),
+        (shouldEscalate ? ` → pide intervención humana` : ''),
     );
 
     return {
       response:
-        !parsed.needsHuman && state.integrationEvidence?.catalogReply
+        !shouldEscalate &&
+        state.userType !== 'EMPLEADO' &&
+        state.integrationEvidence?.catalogReply
           ? state.integrationEvidence.catalogReply
           : parsed.response,
-      needsHuman: parsed.needsHuman,
-      handoffReason: parsed.handoffReason ?? null,
+      needsHuman: shouldEscalate,
+      handoffReason: shouldEscalate ? (parsed.handoffReason ?? null) : null,
       internalNote,
       // Acumula los tokens de la generación sobre los del orquestador (clasificación/scope).
       inputTokens: (state.inputTokens ?? 0) + (usage?.input_tokens ?? 0),
@@ -462,8 +520,9 @@ export function buildRagAgentGraph(
   };
 
   // --- ROUTER: needsHuman (sin LLM — lee el flag de generate_response) ---
+  // Un supervisor o gerente nunca se escala automáticamente a sí mismo.
   const evaluateHandoff = (state: OrchestratorStateType): string =>
-    state.needsHuman ? 'escalate' : 'end';
+    state.needsHuman && !esResponsableDeArea(state.caller) ? 'escalate' : 'end';
 
   return new StateGraph(OrchestratorState)
     .addNode('retrieve_context', retrieveContext)

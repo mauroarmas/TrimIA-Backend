@@ -162,5 +162,22 @@ describe('CallerResolver', () => {
       expect(caller.areas).toEqual([]);
       expect(caller.esGerente).toBe(false);
     });
+
+    it('conserva el nombre del empleado para que el asistente lo trate por su nombre', async () => {
+      const caller = await resolver.resolve({
+        name: 'Diego Bazán',
+        role: 'SUPERVISOR',
+        isActive: true,
+        areasSupervisadas: [
+          'Ventas',
+          'Cobranzas',
+          'Administración',
+          'Logística',
+          'Depósito',
+        ].map(area),
+      });
+
+      expect(caller.name).toBe('Diego Bazán');
+    });
   });
 });

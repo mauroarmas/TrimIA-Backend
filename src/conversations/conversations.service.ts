@@ -150,6 +150,52 @@ export class ConversationsService {
   }
 
   /**
+   * Contexto de intervención humana (eventos de takeover/release/reply/resolución y
+   * supervisor asignado) para que el chat web identifique cuándo responde un humano
+   * y cuándo el caso fue resuelto.
+   */
+  async getWebConversationContext(conversationId: string) {
+    const [conv, events] = await Promise.all([
+      this.prisma.conversation.findUnique({
+        where: { id: conversationId },
+        select: {
+          userType: true,
+          handledAt: true,
+          handledById: true,
+          handledBy: { select: { id: true, name: true, role: true } },
+        },
+      }),
+      this.prisma.orchestrationEvent.findMany({
+        where: {
+          conversationId,
+          eventType: {
+            in: [
+              'conversation_takeover',
+              'conversation_release',
+              'conversation_manual_reply',
+              'escalation_created',
+              'escalation_resolved',
+              'ESCALATED',
+            ],
+          },
+        },
+        orderBy: { createdAt: 'asc' },
+        select: {
+          id: true,
+          createdAt: true,
+          eventType: true,
+          agentType: true,
+          payload: true,
+        },
+      }),
+    ]);
+    return {
+      ...(conv ?? {}),
+      events,
+    };
+  }
+
+  /**
    * Devuelve los últimos `limit` turnos USER/ASSISTANT de la conversación,
    * ordenados del más antiguo al más reciente (orden natural para el LLM).
    * Se excluyen roles SYSTEM y TOOL para no filtrar internos al modelo.

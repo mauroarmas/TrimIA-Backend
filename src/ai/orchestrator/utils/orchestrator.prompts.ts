@@ -29,7 +29,7 @@ ${opciones}
   ¿qué es la empresa?", "gracias, ¿y en cuotas cuánto sale?".
   Es greeting: "hola", "buen día", "gracias!", "dale, saludos".
 
-  Distinción clave: SALES asesora sobre QUÉ productos y planes existen y responde disponibilidad/stock; ADMIN (si está disponible) decide si un cliente concreto puede acceder a un crédito.
+  Distinción clave: SALES asesora sobre QUÉ productos y planes existen, responde disponibilidad/stock (heladeras, cortadoras de fiambre, televisores, balanzas, hornos, amasadoras, sobadoras) y explica cómo iniciar una venta al contado o financiada; ADMIN (si está disponible) atiende políticas internas de evaluación crediticia, Riesgo Online, facturación y administración. Si el mensaje nombra o pide un producto o máquina comercial (aunque sea para financiarlo), elegí SALES.
   Si la consulta no encaja claramente en ninguna, elegí SALES.
 
   Respondé con la opción más apropiada. Si elegís greeting, indicá también
@@ -61,7 +61,7 @@ Decidí si el siguiente mensaje del usuario sigue correspondiendo al agente ACTU
 - "mismo": SOLO si encaja claramente en el dominio del agente actual.
 - "cambio": si corresponde mejor a otra área, o es ambiguo / no relacionado.
 
-Ejemplo: si el agente actual es de stock/depósito y el usuario dice "quiero comprar" o pregunta precios, eso es Ventas → "cambio".
+Ejemplo: si el agente actual es de stock/depósito o de administración (ADMIN) y el usuario nombra un producto comercial (ej. cortadora de fiambre, heladera, televisor, balanza, horno), dice "quiero comprar", "quiero que me financien una máquina" o pregunta modelos/precios, eso es Ventas (SALES) → "cambio" con targetAgent: "SALES".
 Ante la duda, respondé "cambio".
 
 Si respondés "cambio" y el mensaje tiene una consulta real (no es un saludo),

@@ -192,6 +192,7 @@ export class FinancingService {
           where: { id: d.purchaseRequestId },
           select: {
             id: true,
+            version: true,
             status: true,
             productSummary: true,
             amount: true,
@@ -658,19 +659,27 @@ export class FinancingService {
       let response: string;
       if (missing.length) {
         d.stage = 'COLLECTING';
+        const needsSpecificModel = d.flowVersion === 2 && !d.sku;
         const labels: Record<string, string> = {
           business: 'saber si la compra es personal o el nombre de tu comercio',
           locality: 'tu localidad',
           name: 'tu nombre',
           dni: 'tu DNI',
           productSummary: 'el producto',
-          confirmedAmount: 'el importe confirmado por un responsable',
+          confirmedAmount: needsSpecificModel
+            ? 'elegir el modelo específico del catálogo'
+            : 'el importe confirmado por un responsable',
         };
+        const visibleMissing = needsSpecificModel
+          ? missing.filter(
+              (k) => !(k === 'confirmedAmount' && missing.includes('productSummary')),
+            )
+          : missing;
         response =
           'Para continuar falta ' +
-          missing.map((k) => labels[k]).join(', ') +
+          visibleMissing.map((k) => labels[k]).join(', ') +
           '.' +
-          (missing.includes('confirmedAmount')
+          (visibleMissing.includes('confirmedAmount') && !needsSpecificModel
             ? ' Un responsable debe confirmar ese importe.'
             : '');
       } else {

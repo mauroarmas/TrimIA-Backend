@@ -288,6 +288,25 @@ export class CommercialFlowService {
         requestVersion: row.version + 1,
       });
     });
+    if (this.notices) {
+      const notice = await this.prisma.outboundCommunication.findFirst({
+        where: {
+          purchaseRequestId: id,
+          purpose: 'FINANCING_DECISION',
+          status: 'PENDING',
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+      if (notice) {
+        try {
+          await this.notices.dispatch(notice.id);
+        } catch (error) {
+          this.logger.warn(
+            `Decisión ${id} registrada; el aviso continúa pendiente de recuperación.`,
+          );
+        }
+      }
+    }
     return this.commercial(id);
   }
   private async collector(tx: Tx, clientId: string, collectorId: string) {
@@ -517,11 +536,13 @@ export class CommercialFlowService {
         choice = flow.offers.find(
           (o) =>
             o.modality === 'FINANCED' &&
-            new RegExp(`\\b${o.quotaCount}\\s*(?:cuotas|semanas)\\b`).test(
-              normalized,
-            ),
+            new RegExp(
+              `\\b${o.quotaCount}\\s*(?:cuotas|semanas)\\b|\\b(?:la de|el de|plan de|en)\\s+${o.quotaCount}\\b`,
+            ).test(normalized),
         );
-      const numbered = normalized.match(/^(?:opcion\s*)?([123])(?:[.!\s]|$)/);
+      const numbered = normalized.match(
+        /^(?:(?:quiero|elijo|prefiero|me quedo con|dame)\s+)?(?:(?:la|el)\s+)?(?:opcion\s*)?([123])(?:[.!\s]|$)/,
+      );
       if (!choice && numbered) choice = flow.offers[Number(numbered[1]) - 1];
       if (choice && next.selectedOfferId !== choice.id) {
         if (flow.acceptedRevision !== undefined) {
@@ -539,12 +560,18 @@ export class CommercialFlowService {
         }
         next.selectedOfferId = choice.id;
       }
-      if (/\b(retiro|retirar|busco en|paso por)\b/.test(normalized)) {
+      if (
+        /\b(retiro|retirar|busco en|paso por|por sucursal|en sucursal|en el local)\b/.test(
+          normalized,
+        )
+      ) {
         next.deliveryMode = 'PICKUP';
         next.shippingCost = '0.00';
         delete next.deliveryAddress;
       }
-      if (/\b(envio|enviar|entrega a domicilio)\b/.test(normalized)) {
+      if (
+        /\b(envio|enviar|entrega a domicilio|a domicilio)\b/.test(normalized)
+      ) {
         const delivery = deliveryFor((row.inputSnapshot as any).locality || '');
         if (!delivery)
           return {
@@ -557,6 +584,18 @@ export class CommercialFlowService {
       }
       if (input.deliveryAddress && next.deliveryMode === 'SHIPPING')
         next.deliveryAddress = input.deliveryAddress;
+      else if (
+        flow.deliveryMode === 'SHIPPING' &&
+        !flow.deliveryAddress &&
+        next.deliveryMode === 'SHIPPING' &&
+        !choice &&
+        !/\b(retiro|retirar|envio|enviar|contado|cuotas|semanas|como seguimos|confirmo|acepto)\b/.test(
+          normalized,
+        ) &&
+        message.trim().length >= 4
+      ) {
+        next.deliveryAddress = message.trim();
+      }
       if (input.contactName) next.contactName = input.contactName;
       if (input.contactPhone) next.contactPhone = input.contactPhone;
       const changed = JSON.stringify(next) !== JSON.stringify(flow);
@@ -572,7 +611,7 @@ export class CommercialFlowService {
         !!next.deliveryMode &&
         (next.deliveryMode === 'PICKUP' || !!next.deliveryAddress);
       const confirming =
-        /^(?:si(?:,?\s+confirmo)?|confirmo|acepto|de acuerdo)(?:[.!\s]|$)/i.test(
+        /^(?:si(?:,?\s+(?:confirmo|acepto|de acuerdo))?|confirmo|confirmado|acepto|de acuerdo|(?:dale|ok|perfecto|todo bien|correcto),?\s+(?:confirmo|acepto))(?:[.!\s]|$)/i.test(
           normalized,
         ) && !/\b(?:pero|cambi|no |excepto|salvo)\b/.test(normalized);
       if (!changed && complete && flow.summaryMessageId && confirming) {

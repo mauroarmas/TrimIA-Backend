@@ -36,6 +36,37 @@ describe('datos literales del formulario', () => {
       });
     },
   );
+  it('reconoce Local:, coma Nombre, DNI y uso personal corto', () => {
+    expect(literalFinancingDetails('Local: Abel electro')).toEqual({
+      business: 'Abel electro',
+    });
+    expect(literalFinancingDetails('Juan Perez, 90000003')).toEqual({
+      name: 'Juan Perez',
+      dni: '90000003',
+    });
+    expect(literalFinancingDetails('Es personal')).toEqual({
+      purchaseUse: 'PERSONAL',
+    });
+    expect(literalFinancingDetails('Particular, sin comercio')).toEqual({
+      purchaseUse: 'PERSONAL',
+    });
+    expect(
+      literalFinancingDetails('Mi negocio se llama Kiosco Sol en Posadas'),
+    ).toEqual({
+      business: 'Kiosco Sol',
+      locality: 'Posadas',
+    });
+    expect(
+      literalFinancingDetails(
+        'Quiero la 2. Me llamo Sofia Pereyra, DNI 90000006, Local: Fiambreria Norte, vivo en Concepcion, Tucuman',
+      ),
+    ).toEqual({
+      name: 'Sofia Pereyra',
+      dni: '90000006',
+      business: 'Fiambreria Norte',
+      locality: 'Concepcion, Tucuman',
+    });
+  });
   it.each([
     'La heladera cuesta 90000005',
     'Mi comercio',

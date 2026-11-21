@@ -29,6 +29,7 @@ import {
   CLOSING_REPLY,
 } from './utils/trivial-filter';
 import { allowedAgentsFor } from '../agents/agent-domains';
+import { primerNombreDe } from '../caller/caller.types';
 
 const AGENT_KEYS: SpecializedAgent[] = [
   'SALES',
@@ -200,7 +201,10 @@ export function buildOrchestratorGraph(
   // --- NODO: respuesta a saludo trivial (sin LLM) ---
   const trivialResponse = async (state: OrchestratorStateType) => {
     logger.log(`[trivial] "${state.message}" → respuesta canned`);
-    return { response: cannedReply(state.message), isTrivial: true };
+    return {
+      response: cannedReply(state.message, primerNombreDe(state.caller)),
+      isTrivial: true,
+    };
   };
 
   // --- NODO: respuesta a greeting no trivial (lo resuelve el orquestador) ---
@@ -209,8 +213,18 @@ export function buildOrchestratorGraph(
     // isTrivial — por eso lo clasificó el LLM. greetingType sale de la misma
     // llamada estructurada que decidió isGreeting (classify_intent/scope_check),
     // así que no adivinamos con un regex que ya sabemos que no matchea.
+    const firstName = primerNombreDe(state.caller);
+    if (state.greetingType === 'cierre') {
+      return {
+        response: firstName
+          ? `¡Gracias a vos, ${firstName}! Cualquier cosa, escribime. 👋`
+          : CLOSING_REPLY,
+      };
+    }
     return {
-      response: state.greetingType === 'cierre' ? CLOSING_REPLY : OPENING_REPLY,
+      response: firstName
+        ? `¡Hola, ${firstName}! 👋 ¿En qué puedo ayudarte hoy?`
+        : OPENING_REPLY,
     };
   };
 

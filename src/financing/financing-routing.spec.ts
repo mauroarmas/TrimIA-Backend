@@ -184,16 +184,142 @@ describe('financial operation routing boundary', () => {
   it.each([
     'quisiera financiar un smart tv',
     'me gustaría comprar un televisor en cuotas',
-  ])('inicia formulario con una petición cortés: %s', async (message) => {
+    'Quiero que me financien una máquina para cortar fiambres',
+    'Mediante financiación',
+  ])('inicia formulario con una petición cortés o directa: %s', async (message) => {
     invoke.mockResolvedValue({
       intent: 'REQUEST',
-      productSummary: { value: 'televisor', evidence: 'televisor' },
+      productSummary: { value: 'televisor', evidence: message },
     });
     await service.handle('c', 'm', message, client);
     expect(applyInput).toHaveBeenCalledWith(
       'c',
       'm',
       expect.objectContaining({ intent: 'REQUEST' }),
+    );
+  });
+  it('acepta valores con tildes devueltos por Gemini aunque la evidencia del usuario no tenga tildes', async () => {
+    prisma.conversation.findUnique.mockResolvedValue({
+      channel: 'WEB',
+      status: 'ACTIVE',
+      financingDraft: { stage: 'COLLECTING' },
+    });
+    invoke.mockResolvedValue({
+      intent: 'PROVIDE_DATA',
+      name: { value: 'Martín Gómez', evidence: 'Martin Gomez' },
+      locality: { value: 'Concepción, Tucumán', evidence: 'Concepcion, Tucuman' },
+      business: { value: 'Almacén Don José', evidence: 'Almacen Don Jose' },
+    });
+    await service.handle(
+      'c',
+      'm',
+      'Martin Gomez, Almacen Don Jose, Concepcion, Tucuman',
+      client,
+    );
+    expect(applyInput).toHaveBeenCalledWith(
+      'c',
+      'm',
+      expect.objectContaining({
+        intent: 'PROVIDE_DATA',
+        name: 'Martín Gómez',
+        locality: 'Concepción, Tucumán',
+        business: 'Almacén Don José',
+      }),
+    );
+  });
+  it('recupera datos dados por el cliente en turnos anteriores de la misma conversación', async () => {
+    prisma.conversation.findUnique.mockResolvedValue({
+      channel: 'WEB',
+      status: 'ACTIVE',
+      financingDraft: { stage: 'COLLECTING' },
+    });
+    invoke.mockResolvedValue({
+      intent: 'PROVIDE_DATA',
+      locality: { value: 'Oberá', evidence: 'Obera' },
+    });
+    prisma.message = {
+      findMany: jest.fn().mockResolvedValue([
+        { role: 'USER', content: 'Me llamo Laura Silva, DNI 90000001' },
+        { role: 'ASSISTANT', content: '¿De qué localidad sos y tenés comercio?' },
+        { role: 'USER', content: 'Local: Despensa El Sol' },
+      ]),
+    };
+    await service.handle('c', 'm', 'Vivo en Obera', client);
+    delete prisma.message;
+    expect(applyInput).toHaveBeenCalledWith(
+      'c',
+      'm',
+      expect.objectContaining({
+        name: 'Laura Silva',
+        dni: '90000001',
+        business: 'Despensa El Sol',
+        locality: 'Oberá',
+      }),
+    );
+  });
+  it('resuelve opción numerada del catálogo combinada con datos personales en el mismo mensaje', async () => {
+    const stockMock = {
+      listCatalog: jest.fn().mockResolvedValue([
+        {
+          sku: 'COR-MAR-330',
+          name: 'Cortadora de Fiambre Marani 330mm Hoja Acero Inox',
+          stock: 0,
+          listPrice: 650000,
+          cashPrice: 540000,
+        },
+        {
+          sku: 'COR-TRI-300',
+          name: 'Cortadora de Fiambre Trinidad 300mm Transmisión Sin Fin',
+          stock: 3,
+          listPrice: 580000,
+          cashPrice: 485000,
+        },
+      ]),
+    };
+    const modernService = new FinancingConversationService(
+      prisma,
+      llm,
+      { applyInput, getDraft } as any,
+      escalations as any,
+      {} as any,
+      stockMock as any,
+    );
+    prisma.conversation.findUnique.mockResolvedValue({
+      channel: 'WEB',
+      status: 'ACTIVE',
+      financingDraft: { stage: 'COLLECTING', flowVersion: 2 },
+    });
+    prisma.message = {
+      findMany: jest.fn().mockResolvedValue([
+        {
+          role: 'ASSISTANT',
+          content:
+            'Estas son las opciones:\n1. Cortadora de Fiambre Marani 330mm Hoja Acero Inox — sin stock\n2. Cortadora de Fiambre Trinidad 300mm Transmisión Sin Fin — disponible',
+        },
+      ]),
+    };
+    invoke.mockResolvedValue({
+      intent: 'PROVIDE_DATA',
+    });
+    await modernService.handle(
+      'c',
+      'm',
+      'Quiero la 2. Me llamo Sofia Pereyra, DNI 90000006, Local: Fiambreria Norte, vivo en Concepcion, Tucuman',
+      client,
+    );
+    delete prisma.message;
+    expect(applyInput).toHaveBeenCalledWith(
+      'c',
+      'm',
+      expect.objectContaining({
+        sku: 'COR-TRI-300',
+        productSummary:
+          'Cortadora de Fiambre Trinidad 300mm Transmisión Sin Fin',
+        name: 'Sofia Pereyra',
+        dni: '90000006',
+        business: 'Fiambreria Norte',
+        locality: 'Concepcion, Tucuman',
+      }),
     );
   });
   it('una pregunta cortés sobre requisitos sigue siendo informativa', async () => {

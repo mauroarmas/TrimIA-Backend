@@ -776,7 +776,7 @@ export class EscalationsService {
       input.message,
       conversation.channel,
     );
-    await this.conversations.addMessage(
+    const createdMessage = await this.conversations.addMessage(
       conversation.id,
       'ASSISTANT',
       input.message,
@@ -877,6 +877,7 @@ export class EscalationsService {
       eventType: 'escalation_resolved',
       payload: {
         resolvedById,
+        ...(createdMessage?.id ? { messageId: createdMessage.id } : {}),
         teachAgent: !!input.teachAgent,
         corregido: corregido ?? undefined,
         // Tres estados, no un booleano: responder un caso SIN_AREA es lo

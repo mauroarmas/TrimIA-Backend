@@ -42,4 +42,11 @@ describe('Páginas del catálogo actual', () => {
     expect(data.disponible).toBe(false);
     expect(data.alternativasSugeridas).toHaveLength(2);
   });
+  it('encuentra cortadoras de fiambre con frase natural en plural ("máquina para cortar fiambres")', async () => {
+    const data = JSON.parse(
+      await tool.invoke({ query: 'Una máquina para cortar fiambres' }),
+    );
+    expect(data.productos.length).toBeGreaterThanOrEqual(4);
+    expect(data.productos.map((i: any) => i.sku)).toContain('COR-BER-300');
+  });
 });

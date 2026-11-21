@@ -7,6 +7,7 @@ import { esResponsableDeTodasLasAreas } from '../../employees/area-responsibilit
 /** Lo que necesita el resolver del empleado ya buscado por teléfono. */
 export interface EmpleadoParaCaller {
   id?: string;
+  name?: string;
   role: EmployeeRole;
   isActive: boolean;
   areasSupervisadas?: CallerArea[];
@@ -54,6 +55,7 @@ export class CallerResolver {
     return {
       userType: 'EMPLEADO',
       ...(empleado.id ? { employeeId: empleado.id } : {}),
+      ...(empleado.name ? { name: empleado.name } : {}),
       role: empleado.role,
       areas,
       esGerente: esResponsableDeTodasLasAreas(areas.length, totalAreas),

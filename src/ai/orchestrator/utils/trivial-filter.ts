@@ -97,7 +97,17 @@ export const TRANSCRIPTION_FAILED_REPLY =
   'o grabás otro hablando un poco más cerca del micrófono?';
 
 /** Respuesta canned para un mensaje que no requiere LLM. */
-export function cannedReply(message: string): string {
+export function cannedReply(
+  message: string,
+  firstName?: string | null,
+): string {
   if (isUntranscribableAudio(message)) return TRANSCRIPTION_FAILED_REPLY;
-  return CLOSING_RE.test(message) ? CLOSING_REPLY : OPENING_REPLY;
+  if (CLOSING_RE.test(message)) {
+    return firstName
+      ? `¡Gracias a vos, ${firstName}! Cualquier cosa, escribime. 👋`
+      : CLOSING_REPLY;
+  }
+  return firstName
+    ? `¡Hola, ${firstName}! 👋 ¿En qué puedo ayudarte hoy?`
+    : OPENING_REPLY;
 }

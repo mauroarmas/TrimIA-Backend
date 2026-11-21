@@ -1,8 +1,9 @@
 import { usesWhatsAppNotice } from './channel-financing-notice.adapter';
-import { Inject, Injectable, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, NotFoundException, Optional } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { randomUUID } from 'crypto';
 import { PrismaService } from '../database/prisma.service';
+import { RealtimeService } from '../realtime/realtime.service';
 import {
   localCrmRecord,
   toCrmSheet,
@@ -31,6 +32,7 @@ export class FinancingNoticeService {
     private readonly config: ConfigService,
     @Inject(FINANCING_NOTICE_PORT)
     private readonly transport: FinancingNoticePort,
+    @Optional() private readonly realtime?: RealtimeService,
   ) {}
 
   async dispatch(id: string) {
@@ -145,18 +147,18 @@ export class FinancingNoticeService {
         },
       });
       if (result.count !== 1) return null;
-      const messageId =
-        notice.messageId ||
-        (
-          await tx.message.create({
+      const hadExistingMessage = Boolean(notice.messageId);
+      const createdMessage = notice.messageId
+        ? null
+        : await tx.message.create({
             data: {
               conversationId: notice.conversationId,
               role: 'ASSISTANT',
               content: notice.body,
               agentType: 'SALES',
             },
-          })
-        ).id;
+          });
+      const messageId = notice.messageId || createdMessage!.id;
       await tx.outboundCommunication.update({
         where: { id },
         data: { messageId },
@@ -181,9 +183,25 @@ export class FinancingNoticeService {
         destinationFromThread: notice.conversation.externalId,
         version: notice.version + 1,
         purpose: notice.purpose,
+        conversationId: notice.conversationId,
+        createdMessage: !hadExistingMessage ? createdMessage : null,
       };
     });
     if (!claimed) return;
+    if ((claimed as any).createdMessage && this.realtime) {
+      const msg = (claimed as any).createdMessage;
+      void this.realtime.publish((claimed as any).conversationId, {
+        type: 'message',
+        conversationId: (claimed as any).conversationId,
+        data: {
+          id: msg.id,
+          role: 'ASSISTANT',
+          content: msg.content,
+          agentType: msg.agentType,
+          createdAt: msg.createdAt.toISOString(),
+        },
+      });
+    }
     let result: FinancingNoticeResult;
     try {
       result = await this.transport.send(claimed);

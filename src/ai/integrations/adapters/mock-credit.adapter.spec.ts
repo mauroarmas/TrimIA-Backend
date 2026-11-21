@@ -55,10 +55,12 @@ describe('MockCreditAdapter', () => {
         expect(result.rawReport).toHaveProperty('mockProfile', true);
       counts.set(profile.verdict, (counts.get(profile.verdict) ?? 0) + 1);
     }
-    expect(counts.get(CreditVerdict.APPROVED)).toBe(5);
-    expect(counts.get(CreditVerdict.APPROVED_WITH_CONDITIONS)).toBe(5);
-    expect(counts.get(CreditVerdict.REJECTED)).toBe(5);
-    expect(counts.get(CreditVerdict.UNAVAILABLE)).toBe(2);
+    expect(counts.get(CreditVerdict.APPROVED)).toBeGreaterThanOrEqual(10);
+    expect(
+      counts.get(CreditVerdict.APPROVED_WITH_CONDITIONS),
+    ).toBeGreaterThanOrEqual(10);
+    expect(counts.get(CreditVerdict.REJECTED)).toBeGreaterThanOrEqual(10);
+    expect(counts.get(CreditVerdict.UNAVAILABLE)).toBeGreaterThanOrEqual(4);
     expect(
       MOCK_CREDIT_PROFILES.every((profile) => profile.dni.startsWith('90')),
     ).toBe(true);

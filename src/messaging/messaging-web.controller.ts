@@ -79,11 +79,15 @@ export class MessagingWebController {
   ) {
     const conversation = await this.assertOwnership(convId, req.user.id);
 
-    const messages = await this.conversations.listMessages(convId, {
-      page: page ? Number(page) : undefined,
-      limit: limit ? Number(limit) : undefined,
-      after,
-    });
+    const [messages, extra] = await Promise.all([
+      this.conversations.listMessages(convId, {
+        page: page ? Number(page) : undefined,
+        limit: limit ? Number(limit) : undefined,
+        after,
+      }),
+      (this.conversations as any).getWebConversationContext?.(convId) ??
+        Promise.resolve({}),
+    ]);
 
     return {
       ...messages,
@@ -92,6 +96,7 @@ export class MessagingWebController {
         status: conversation.status,
         currentAgent: conversation.currentAgent,
         channel: conversation.channel,
+        ...extra,
       },
     };
   }

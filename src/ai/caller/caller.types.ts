@@ -25,6 +25,8 @@ export interface CallerArea {
 export interface Caller {
   /** Identidad verificada del empleado; se usa solo en operaciones, no en lectura RAG. */
   employeeId?: string;
+  /** Nombre del empleado autenticado o identificado por whitelist. */
+  name?: string;
   /** Lo que ya existía: define audiencia del RAG y agentes permitidos. */
   userType: UserType;
   /** `null` para un CLIENTE: no está en la whitelist, no hay de dónde sacarlo. */
@@ -37,6 +39,14 @@ export interface Caller {
    * que pueden contradecirse.
    */
   esGerente: boolean;
+}
+
+/** Extrae el nombre de pila de un empleado para saludarlo con naturalidad. */
+export function primerNombreDe(caller: Caller | null | undefined): string | null {
+  if (!caller || caller.userType !== 'EMPLEADO' || !caller.name) return null;
+  const limpio = caller.name.replace(/^\[[^\]]+\]\s*/, '').trim();
+  const primero = limpio.split(/\s+/)[0];
+  return primero && primero.length >= 2 ? primero : null;
 }
 
 /** Cómo se le habla a cada uno. Lo consume el prompt (US1). */
@@ -62,18 +72,22 @@ export function interlocutorDe(caller: Caller): Interlocutor {
  * en cada prompt, cada agente terminaría tratando distinto a la misma persona.
  */
 export function descriptorDe(caller: Caller): string {
+  const firstName = primerNombreDe(caller);
+  const nombreInfo = caller.name
+    ? ` Se llama ${caller.name}${firstName ? ` (podés llamarlo por su nombre de pila, ${firstName})` : ''}.`
+    : '';
   switch (interlocutorDe(caller)) {
     case 'CLIENTE':
       return 'un CLIENTE (o alguien que todavía no es cliente). No trabaja en la empresa.';
     case 'GERENTE':
-      return 'el GERENTE: el dueño de la empresa, responsable de TODAS las áreas.';
+      return `el GERENTE: el dueño de la empresa, responsable de TODAS las áreas.${nombreInfo}`;
     case 'SUPERVISOR': {
       const areas = caller.areas.map((a) => a.name).join(' y ');
       return areas
-        ? `un SUPERVISOR de la empresa, responsable de ${areas}.`
-        : 'un SUPERVISOR de la empresa.';
+        ? `un SUPERVISOR de la empresa, responsable de ${areas}.${nombreInfo}`
+        : `un SUPERVISOR de la empresa.${nombreInfo}`;
     }
     default:
-      return 'un EMPLEADO de la empresa.';
+      return `un EMPLEADO de la empresa.${nombreInfo}`;
   }
 }

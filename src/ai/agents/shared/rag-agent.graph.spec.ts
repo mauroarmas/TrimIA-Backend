@@ -428,6 +428,20 @@ describe('buildRagAgentGraph', () => {
 
       expect(prompt).toContain('un CLIENTE');
     });
+
+    it('incluye el nombre del empleado/supervisor en el prompt y guía al Simulador de Chat si simula una compra', async () => {
+      const prompt = await promptDe({
+        name: 'Diego Bazán',
+        userType: 'EMPLEADO',
+        role: 'SUPERVISOR',
+        areas: [{ id: 's1', name: 'Ventas', agentType: 'SALES' }],
+        esGerente: true,
+      });
+
+      expect(prompt).toContain('Diego Bazán');
+      expect(prompt).toContain('Diego');
+      expect(prompt).toContain('Simulador de Chat');
+    });
   });
 
   describe('escalate_to_human (baja confianza del RAG)', () => {
@@ -1003,6 +1017,53 @@ describe('buildRagAgentGraph', () => {
       // mock) vive en el system message, separado del texto del cliente.
       expect(systemMessage.content).toContain('contexto');
       expect(systemMessage.content).not.toContain(forgedMessage);
+    });
+
+    it('nunca escala automáticamente la conversación de un SUPERVISOR o GERENTE aunque el modelo marque needsHuman=true', async () => {
+      const { graph, escalations } = buildGraph(0.9, {
+        response: 'Hola, Diego. Te paso el detalle interno.',
+        needsHuman: true,
+        handoffReason: 'consulta',
+      });
+
+      const result = await graph.invoke({
+        ...baseState,
+        userType: 'EMPLEADO',
+        caller: {
+          name: 'Diego Bazán',
+          userType: 'EMPLEADO',
+          role: 'SUPERVISOR',
+          areas: [{ id: 's1', name: 'Ventas', agentType: 'SALES' }],
+          esGerente: true,
+        },
+      });
+
+      expect(escalations.create).not.toHaveBeenCalled();
+      expect(result.escalated).toBeFalsy();
+      expect(result.needsHuman).toBe(false);
+    });
+
+    it('sí escala la conversación de un EMPLEADO común (no supervisor) si el agente no puede contestar y marca needsHuman=true', async () => {
+      const { graph, escalations } = buildGraph(0.9, {
+        response: 'Lo consulto con un responsable y te confirmo.',
+        needsHuman: true,
+        handoffReason: 'duda operativa de empleado',
+      });
+
+      const result = await graph.invoke({
+        ...baseState,
+        userType: 'EMPLEADO',
+        caller: {
+          name: 'Lucas empleado',
+          userType: 'EMPLEADO',
+          role: 'EMPLEADO',
+          areas: [],
+          esGerente: false,
+        },
+      });
+
+      expect(escalations.create).toHaveBeenCalledTimes(1);
+      expect(result.escalated).toBe(true);
     });
   });
 });
