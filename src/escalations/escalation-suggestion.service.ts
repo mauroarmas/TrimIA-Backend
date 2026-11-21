@@ -23,14 +23,16 @@ const RESPALDO_DEBIL_REASON =
   'fuentes antes de enviarla.';
 
 const SUGGESTION_PROMPT =
-  'Sos un asistente que le propone a un supervisor de una empresa comercial argentina ' +
-  'cómo responder una consulta que el sistema no pudo resolver solo. ' +
-  'Redactá una respuesta clara y cordial en español rioplatense, en segunda persona, ' +
-  'usando ÚNICAMENTE la información del contexto que se te da. ' +
-  'Si el contexto no alcanza para responder alguna parte de la consulta, no la respondas: ' +
-  'es preferible una propuesta incompleta que una inventada, porque el supervisor la va a ' +
-  'mandar tal cual y no tiene cómo saber qué parte salió del conocimiento cargado. ' +
-  'No saludes ni te despidas: el supervisor edita el texto antes de enviarlo.';
+  'Sos un asistente que le propone a un supervisor de Credimisión (empresa comercial argentina) ' +
+  'cómo responder una consulta escalada en WhatsApp o Chat Web.\n' +
+  'Reglas estrictas:\n' +
+  '1. Redactá una respuesta breve, clara, natural y cordial en español rioplatense (vos), lista para enviar al contacto.\n' +
+  '2. Usá ÚNICAMENTE los datos del contexto documental y del borrador comercial/conversación provistos. Nunca inventes precios, cuotas, stock ni apruebes créditos.\n' +
+  '3. REGLA CRÍTICA DE RELEVANCIA: Si los fragmentos del contexto documental tratan sobre OTRO tema que NO responde la consulta real del usuario ' +
+  '(por ejemplo, el usuario pide un producto o cotización y los fragmentos hablan de horarios de atención o ubicación) y tampoco hay datos comerciales concretos para responderle, ' +
+  'devolvé EXACTAMENTE una cadena vacía (sin texto, sin explicaciones, sin comillas). JAMÁS rellenes con información irrelevante.\n' +
+  '4. Si hay datos de un producto o cotización comercial en el borrador, redactá una respuesta útil que confirme esos datos y guíe el siguiente paso concreto (por ejemplo, pedir los datos faltantes o confirmar el resumen) sin aprobar el crédito.\n' +
+  '5. No incluyas saludos largos ni despedidas genéricas, ni menciones "según el contexto" o "documentos".';
 
 export interface SuggestionSource {
   documentId: string;
@@ -118,9 +120,7 @@ export class EscalationSuggestionService {
     const escalation = await this.prisma.escalation.findUnique({
       where: { id: escalationId },
       include: {
-        conversation: {
-          omit: { financingDraft: true, financingVersion: true },
-        },
+        conversation: true,
       },
     });
     if (!escalation) {
@@ -148,18 +148,26 @@ export class EscalationSuggestionService {
       score: Number((h.score * 100).toFixed(1)),
     }));
 
+    const financingDraft = (conversation as { financingDraft?: Record<string, unknown> | null })
+      .financingDraft ?? null;
+    const hasCommercialDraft = Boolean(
+      financingDraft &&
+        (financingDraft.productSummary || financingDraft.amount || financingDraft.sku),
+    );
+    const recentHistory = await this.loadRecentHistory(
+      escalation.conversationId,
+      escalation.createdAt,
+    );
+
     // Dos filtros, no uno. El score dice si hay material *del tema*; que el
     // modelo devuelva texto dice si ese material *responde la consulta*.
-    //
-    // El segundo no sobra: probando con datos reales, un CLIENTE preguntando
-    // por adelanto de cuotas recuperó documentos de medios de pago con score
-    // suficiente, ninguno de los cuales contestaba la pregunta. El modelo hizo
-    // lo correcto —no inventó, devolvió vacío— y sin este chequeo la pantalla
-    // habría mostrado `hasContext: true` con un cuadro en blanco: el
-    // supervisor sin saber si el sistema falló o si no hay nada que decir.
     const suggestion =
-      confidence >= this.suggestionThreshold
-        ? await this.draft(query, hits)
+      confidence >= this.suggestionThreshold || hasCommercialDraft
+        ? await this.draft(query, hits, {
+            reason: escalation.reason,
+            recentHistory,
+            financingDraft,
+          })
         : '';
 
     // Por debajo del umbral del AGENTE, aunque se haya redactado. El caso
@@ -271,15 +279,71 @@ export class EscalationSuggestionService {
     return escalatingMessage?.content ?? fallback;
   }
 
-  private async draft(query: string, hits: SearchHit[]): Promise<string> {
-    const context = hits.map((h) => `- ${h.content}`).join('\n');
+  private async loadRecentHistory(
+    conversationId: string,
+    escalatedAt: Date,
+  ): Promise<string> {
+    if (typeof this.prisma.message?.findMany !== 'function') {
+      return '';
+    }
+    const rows = await this.prisma.message.findMany({
+      where: { conversationId, createdAt: { lte: escalatedAt } },
+      orderBy: { createdAt: 'desc' },
+      take: 6,
+      select: { role: true, content: true },
+    });
+    if (!rows?.length) return '';
+    return rows
+      .reverse()
+      .map((m) => `${m.role === 'USER' ? 'Contacto' : 'Asistente'}: ${m.content}`)
+      .join('\n');
+  }
+
+  private async draft(
+    query: string,
+    hits: SearchHit[],
+    extra?: {
+      reason?: string | null;
+      recentHistory?: string;
+      financingDraft?: Record<string, unknown> | null;
+    },
+  ): Promise<string> {
+    const sections: string[] = [];
+    if (extra?.reason) {
+      sections.push(`Motivo de derivación:\n${extra.reason}`);
+    }
+    if (extra?.recentHistory) {
+      sections.push(`Historial reciente de la conversación:\n${extra.recentHistory}`);
+    }
+    sections.push(`Consulta principal del contacto:\n${query}`);
+
+    if (extra?.financingDraft) {
+      const d = extra.financingDraft;
+      const draftLines = [
+        d.productSummary ? `Producto: ${String(d.productSummary)}` : null,
+        d.amount != null ? `Precio/importe registrado: $${Number(d.amount).toLocaleString('es-AR')} ARS` : null,
+        d.name ? `Nombre: ${String(d.name)}` : 'Nombre: pendiente',
+        d.dni ? `DNI: ${String(d.dni)}` : 'DNI: pendiente',
+        d.business ? `Comercio: ${String(d.business)}` : 'Comercio: pendiente',
+        d.locality ? `Localidad: ${String(d.locality)}` : 'Localidad: pendiente',
+      ].filter(Boolean);
+      sections.push(`Datos del borrador comercial actual:\n${draftLines.join('\n')}`);
+    }
+
+    const context = hits.length
+      ? hits.map((h) => `- [${h.title} (${Math.round(h.score * 100)}%)]: ${h.content}`).join('\n')
+      : '(Sin documentos relevantes)';
+    sections.push(`Contexto documental disponible:\n${context}`);
+
     const response = await this.llm.chat.invoke([
       new SystemMessage(SUGGESTION_PROMPT),
-      new HumanMessage(
-        `Consulta del usuario:\n${query}\n\nContexto disponible:\n${context}`,
-      ),
+      new HumanMessage(sections.join('\n\n')),
     ]);
-    return String(response.content).trim();
+    const raw = String(response.content ?? '').trim();
+    if (!raw || raw === '""' || raw === "''" || /^sin contexto/i.test(raw)) {
+      return '';
+    }
+    return raw;
   }
 
   private async logEvent(
