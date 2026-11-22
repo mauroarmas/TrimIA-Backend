@@ -15,7 +15,9 @@ import { RedisService } from '../../redis/redis.service';
 export const CHAT_MODELS = [
   { id: 'gemini-3.5-flash-lite', label: 'Gemini 3.5 Flash-Lite' },
   { id: 'gemini-3.8-flash', label: 'Gemini 3.8 Flash' },
+  { id: 'gemini-4-hydrogen', label: 'Gemini 4 Hydrogen' },
 ] as const;
+const THINKING_LOW_MODELS = new Set(['gemini-3.8-flash', 'gemini-4-hydrogen']);
 const SETTING_KEY = 'trimia:ai:chat-model:v1';
 type Clients = {
   model: string;
@@ -41,18 +43,19 @@ export class LlmService implements OnModuleInit {
   }
   private clients(model: string): Clients {
     const base = { apiKey: this.config.get<string>('GOOGLE_API_KEY'), model };
-    // Gemini 3.8 no admite los parámetros de muestreo de las versiones previas.
+    const usesThinkingLow = THINKING_LOW_MODELS.has(model);
+    // Gemini 3.8 y Gemini 4 no admiten los parámetros de muestreo de versiones previas.
     return {
       model,
       chat: new ChatGoogleGenerativeAI({
         ...base,
-        ...(model === 'gemini-3.8-flash'
+        ...(usesThinkingLow
           ? { thinkingConfig: { thinkingLevel: 'LOW' as const }, maxRetries: 0 }
           : { temperature: 0.7 }),
       }),
       classifierChat: new ChatGoogleGenerativeAI({
         ...base,
-        ...(model === 'gemini-3.8-flash'
+        ...(usesThinkingLow
           ? { thinkingConfig: { thinkingLevel: 'LOW' as const }, maxRetries: 0 }
           : { temperature: 0 }),
       }),

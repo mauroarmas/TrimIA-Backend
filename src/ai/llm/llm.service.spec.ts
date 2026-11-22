@@ -48,6 +48,28 @@ describe('selección persistida del modelo conversacional', () => {
     await restarted.onModuleInit();
     expect((await restarted.getSettings()).model).toBe('gemini-3.8-flash');
   });
+  it('permite seleccionar gemini-4-hydrogen sin parámetros de muestreo', async () => {
+    const { llm } = fixture();
+    const settings = await llm.selectModel(
+      'gemini-4-hydrogen',
+      llm.model,
+      'actor',
+    );
+    expect(settings.model).toBe('gemini-4-hydrogen');
+    expect(settings.options).toContainEqual({
+      id: 'gemini-4-hydrogen',
+      label: 'Gemini 4 Hydrogen',
+    });
+    expect((llm.chat as any).options).toEqual(
+      expect.objectContaining({
+        model: 'gemini-4-hydrogen',
+        thinkingConfig: { thinkingLevel: 'LOW' },
+        maxRetries: 0,
+      }),
+    );
+    expect((llm.chat as any).options.temperature).toBeUndefined();
+    expect((llm.classifierChat as any).options.temperature).toBeUndefined();
+  });
   it('un turno en curso conserva su modelo y atribución aunque cambie el activo', async () => {
     const { llm } = fixture();
     let release!: () => void;
