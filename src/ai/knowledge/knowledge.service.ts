@@ -37,7 +37,6 @@ type ChunkMetadata = Record<string, string | number | boolean>;
 export interface IngestInput {
   title: string;
   content: string;
-  category: string;
   audience?: Audience; // por defecto INTERNO (lo más restrictivo)
   agentType?: AgentType | null; // null = documento general (todos los agentes)
   /**
@@ -110,7 +109,6 @@ export interface SearchHit {
 /** Filtros del listado del panel (Sprint 5A). */
 export interface ListFilter {
   agentType?: AgentType;
-  category?: string;
   isActive?: boolean;
   /** Texto libre: busca en título o contenido, sin distinguir mayúsculas (fix buscador de documentos). */
   search?: string;
@@ -122,7 +120,6 @@ export interface ListFilter {
 export interface UpdateInput {
   title?: string;
   content?: string;
-  category?: string;
   audience?: Audience;
   agentType?: AgentType;
   /** MANUAL por defecto; AI_ACCEPTED lo usa "Editar con la IA" (US6). */
@@ -601,7 +598,6 @@ export class KnowledgeService implements OnModuleInit {
       data: {
         title: input.title,
         content: input.content,
-        category: input.category,
         audience,
         agentType: input.agentType ?? null,
         checksum,
@@ -661,7 +657,6 @@ export class KnowledgeService implements OnModuleInit {
       metadatas: chunks.map((_, idx) => ({
         documentId: doc.id,
         title: input.title,
-        category: input.category,
         audience,
         agentType: agentTag,
         chunkIndex: idx,
@@ -829,7 +824,6 @@ export class KnowledgeService implements OnModuleInit {
     }
 
     const where: any = {
-      ...(filter.category ? { category: filter.category } : {}),
       ...(filter.isActive === undefined ? {} : { isActive: filter.isActive }),
       ...(filter.search
         ? {
@@ -1018,7 +1012,7 @@ export class KnowledgeService implements OnModuleInit {
     }
 
     const changedFields = (
-      ['title', 'content', 'category', 'audience', 'agentType'] as const
+      ['title', 'content', 'audience', 'agentType'] as const
     ).filter(
       (field) => input[field] !== undefined && input[field] !== current[field],
     );
@@ -1074,7 +1068,6 @@ export class KnowledgeService implements OnModuleInit {
         data: {
           ...(input.title !== undefined ? { title: input.title } : {}),
           ...(input.content !== undefined ? { content: input.content } : {}),
-          ...(input.category !== undefined ? { category: input.category } : {}),
           ...(input.audience !== undefined ? { audience: input.audience } : {}),
           ...(input.agentType !== undefined
             ? { agentType: input.agentType }
@@ -1226,7 +1219,6 @@ export class KnowledgeService implements OnModuleInit {
       metadatas: chunks.map((_, idx) => ({
         documentId: doc.id,
         title: doc.title,
-        category: doc.category,
         audience: doc.audience,
         agentType: doc.agentType ?? 'GENERAL',
         chunkIndex: idx,

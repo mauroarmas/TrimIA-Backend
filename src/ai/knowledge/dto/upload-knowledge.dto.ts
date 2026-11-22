@@ -1,6 +1,6 @@
 import { ApiPropertyOptional, ApiProperty } from '@nestjs/swagger';
 import { AgentType, Audience } from '@prisma/client';
-import { IsEnum, IsNotEmpty, IsOptional, IsString } from 'class-validator';
+import { IsEnum, IsOptional, IsString } from 'class-validator';
 
 /**
  * Campos que acompañan al archivo en el multipart de `POST /knowledge/upload`.
@@ -19,11 +19,6 @@ export class UploadKnowledgeDto {
   @IsOptional()
   @IsString()
   title?: string;
-
-  @ApiProperty({ example: 'politica' })
-  @IsString()
-  @IsNotEmpty()
-  category!: string;
 
   @ApiPropertyOptional({
     enum: Audience,

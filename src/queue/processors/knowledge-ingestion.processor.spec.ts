@@ -21,7 +21,6 @@ function buildJob(attemptsMade = 0, attempts = 3) {
       fileId: FILE_ID,
       storagePath: 'uuid.pdf',
       title: 'Manual de financiación',
-      category: 'politica',
       audience: 'INTERNO',
       agentType: 'SALES',
     },

@@ -90,7 +90,6 @@ function buildService(
 const SAVE_INPUT = {
   message: 'La baja se pide por escrito en cualquier sucursal.',
   title: 'Baja de un plan',
-  category: 'procedimientos',
 };
 
 describe('Los tres cierres son terminales (FR-040)', () => {
@@ -384,7 +383,7 @@ describe('responder un caso de otra área queda registrado (spec 013, FR-015 a F
     await expect(
       service.resolve(
         ID,
-        { ...RESPUESTA, teachAgent: true, title: 'x', category: 'y' },
+        { ...RESPUESTA, teachAgent: true, title: 'x' },
         'emp-silvia',
       ),
     ).rejects.toBeInstanceOf(ForbiddenException);
@@ -405,7 +404,7 @@ describe('responder un caso de otra área queda registrado (spec 013, FR-015 a F
     await expect(
       service.resolve(
         ID,
-        { ...RESPUESTA, teachAgent: true, title: 'x', category: 'y' },
+        { ...RESPUESTA, teachAgent: true, title: 'x' },
         'emp-silvia',
       ),
     ).rejects.toBeInstanceOf(ForbiddenException);

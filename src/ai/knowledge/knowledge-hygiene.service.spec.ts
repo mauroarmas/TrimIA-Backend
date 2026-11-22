@@ -31,7 +31,6 @@ function doc(
     id,
     title: overrides.title ?? `Doc ${id}`,
     content: overrides.content ?? `contenido de ${id}`,
-    category: 'general',
     audience: overrides.audience ?? 'INTERNO',
     agentType:
       overrides.agentType === undefined ? 'SALES' : overrides.agentType,

@@ -274,7 +274,6 @@ describe('TrainingService', () => {
 
       expect(mockKnowledge.ingest).toHaveBeenCalledWith(
         expect.objectContaining({
-          category: 'CAPACITACION',
           audience: Audience.INTERNO,
           agentType: AgentType.COLLECTIONS,
         }),

@@ -32,7 +32,6 @@ function buildService() {
     id: DOC_ID,
     title: TITULO,
     content: CUERPO,
-    category: 'politica',
     audience: Audience.PUBLICO,
     agentType: 'SALES',
     version: 1,
@@ -65,7 +64,6 @@ function buildService() {
 const entrada = {
   title: TITULO,
   content: CUERPO,
-  category: 'politica',
   audience: Audience.PUBLICO,
 };
 

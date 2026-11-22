@@ -673,7 +673,6 @@ model KnowledgeDocument {
   id        String     @id @default(uuid())
   title     String
   content   String
-  category  String
   audience  Audience   @default(INTERNO) // público/interno para filtrar el RAG
   agentType AgentType? // agente dueño del doc (null = general, para todos)
   vectorId  String?
@@ -731,8 +730,6 @@ model KnowledgeDocument {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  @@index([category])
-  @@index([category, version])
   @@index([audience])
   @@index([isActive]) // el listado del panel filtra por esto
   @@index([syncStatus]) // encontrar los desincronizados
@@ -1318,11 +1315,6 @@ model InterviewCandidate {
   status InterviewCandidateStatus @default(PENDIENTE)
 
   title           String
-  /// `KnowledgeDocument.category` es obligatoria al ingestar (spec 5A) y
-  /// ningún otro camino de esta feature la deriva sola. Se prellena con la
-  /// etiqueta del tema cuando la pregunta vino de cobertura, y es editable
-  /// como el resto de la ficha.
-  category        String
   /// Lo que redactó el modelo. Se conserva aunque se edite, para poder
   /// comparar qué cambió la persona.
   proposedContent String

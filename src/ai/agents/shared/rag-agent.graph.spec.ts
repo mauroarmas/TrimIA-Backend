@@ -77,8 +77,14 @@ describe('buildRagAgentGraph', () => {
       parsed,
       raw: { usage_metadata: { input_tokens: 10, output_tokens: 5 } },
     });
+    const chatInvoke = jest.fn().mockResolvedValue({
+      content:
+        'El cliente pregunta si la heladera está disponible en 12 cuotas. No se pudo responder porque falta información confirmada sobre financiación para ese producto.',
+      usage_metadata: { input_tokens: 25, output_tokens: 15 },
+    });
     const llm = {
       chat: {
+        invoke: chatInvoke,
         withStructuredOutput: jest
           .fn()
           .mockReturnValue({ invoke: structuredInvoke }),
@@ -98,7 +104,7 @@ describe('buildRagAgentGraph', () => {
         escalations: escalations as any,
       },
     );
-    return { graph, escalations, structuredInvoke, knowledge };
+    return { graph, escalations, structuredInvoke, chatInvoke, knowledge };
   }
 
   /**
@@ -445,15 +451,117 @@ describe('buildRagAgentGraph', () => {
   });
 
   describe('escalate_to_human (baja confianza del RAG)', () => {
-    it('resume consultas largas sin perder el texto original del estado', async () => {
-      const { graph, escalations } = buildGraph(0.3);
+    it('genera la nota interna con IA resumiendo qué necesita el cliente y por qué no pudo responder', async () => {
+      const { graph, escalations, structuredInvoke, chatInvoke } =
+        buildGraph(0.3);
+      chatInvoke.mockResolvedValueOnce({
+        content:
+          'El cliente consulta de dónde es la empresa. No se pudo responder porque no hay información confirmada sobre la ubicación.',
+        usage_metadata: { input_tokens: 40, output_tokens: 18 },
+      });
+
+      const result = await graph.invoke({
+        ...baseState,
+        message: 'Hola! de donde son?',
+        inputTokens: 10,
+        outputTokens: 5,
+      });
+
+      expect(chatInvoke).toHaveBeenCalledTimes(1);
+      // Confianza baja → nunca debió llamarse a generate_response para contestarle al cliente.
+      expect(structuredInvoke).not.toHaveBeenCalled();
+
+      const [messages] = chatInvoke.mock.calls[0];
+      expect(messages[0].content).toContain('Área del agente: SALES');
+      expect(messages[0].content).toContain(
+        'Tipo de persona que escribe: CLIENTE',
+      );
+      expect(messages[1].content).toContain('Hola! de donde son?');
+
+      const { internalNote, agentType } = escalations.create.mock.calls[0][0];
+      expect(agentType).toBe('SALES');
+      expect(internalNote).toBe(
+        'El cliente consulta de dónde es la empresa. No se pudo responder porque no hay información confirmada sobre la ubicación.',
+      );
+      expect(internalNote).not.toContain(
+        'Pendiente: confirmar la información y responder al cliente.',
+      );
+      expect(result.internalNote).toBe(internalNote);
+      expect(result.inputTokens).toBe(50);
+      expect(result.outputTokens).toBe(23);
+    });
+
+    it('incluye el historial reciente al generar la nota interna con IA', async () => {
+      const { graph, chatInvoke } = buildGraph(0.3);
+
+      await graph.invoke({
+        ...baseState,
+        message: '¿hacen envíos hasta allá?',
+        history: [
+          { role: 'USER', content: 'Hola, soy de Posadas' },
+          {
+            role: 'ASSISTANT',
+            content: '¡Hola! ¿En qué producto estás interesado?',
+          },
+        ],
+      });
+
+      const [messages] = chatInvoke.mock.calls[0];
+      expect(messages[1].content).toContain('Persona: Hola, soy de Posadas');
+      expect(messages[1].content).toContain('¿hacen envíos hasta allá?');
+    });
+
+    it('limpia bloques de pensamiento, prefijos y comillas de la respuesta de la IA', async () => {
+      const { graph, escalations, chatInvoke } = buildGraph(0.3);
+      chatInvoke.mockResolvedValueOnce({
+        content: [
+          { type: 'thinking', thinking: 'Analizando la consulta...' },
+          {
+            type: 'text',
+            text: 'Nota interna: "El cliente consulta la ubicación del local y no cuento con la dirección confirmada."',
+          },
+        ],
+        usage_metadata: { input_tokens: 20, output_tokens: 12 },
+      });
+
+      await graph.invoke(baseState);
+
+      const { internalNote } = escalations.create.mock.calls[0][0];
+      expect(internalNote).toBe(
+        'El cliente consulta la ubicación del local y no cuento con la dirección confirmada.',
+      );
+    });
+
+    it('cae a la nota factual de respaldo si falla la llamada a la IA y trunca consultas largas sin alterar el estado', async () => {
+      const { graph, escalations, chatInvoke } = buildGraph(0.3);
+      chatInvoke.mockRejectedValueOnce(new Error('429 rate limit'));
       const message = 'Quiero consultar por un producto. '.repeat(30);
+
       const result = await graph.invoke({ ...baseState, message });
+
+      expect(result.escalated).toBe(true);
       expect(result.message).toBe(message);
       const note = escalations.create.mock.calls[0][0].internalNote;
       expect(note.length).toBeLessThan(300);
       expect(note).toContain('…');
+      expect(note).toContain(
+        'Pendiente: confirmar la información y responder al cliente.',
+      );
+      expect(note).not.toMatch(/0\.30|umbral|confianza|base de conocimiento/i);
       expect(message.length).toBeGreaterThan(300);
+    });
+
+    it('cae a la nota factual de respaldo si la IA devuelve texto vacío', async () => {
+      const { graph, escalations, chatInvoke } = buildGraph(0.3);
+      chatInvoke.mockResolvedValueOnce({ content: '   ' });
+
+      await graph.invoke(baseState);
+
+      const { internalNote } = escalations.create.mock.calls[0][0];
+      expect(internalNote).toContain('¿tienen la heladera en 12 cuotas?');
+      expect(internalNote).toContain(
+        'Pendiente: confirmar la información y responder al cliente.',
+      );
     });
 
     it('crea un caso pendiente cuando la confianza cae bajo el umbral', async () => {
@@ -485,24 +593,6 @@ describe('buildRagAgentGraph', () => {
       const result = await graph.invoke(baseState);
 
       expect(result.escalationId).toBe('esc-1');
-    });
-
-    // El supervisor que toma el caso no debería tener que abrir la
-    // conversación para saber qué preguntó el cliente.
-    it('deja una nota interna factual, sin gastar una llamada extra al LLM', async () => {
-      const { graph, escalations } = buildGraph(0.3);
-
-      await graph.invoke(baseState);
-
-      const { internalNote, agentType } = escalations.create.mock.calls[0][0];
-      expect(agentType).toBe('SALES');
-      expect(internalNote).toContain('¿tienen la heladera en 12 cuotas?');
-      expect(internalNote).toContain(
-        'Pendiente: confirmar la información y responder al cliente.',
-      );
-      expect(internalNote).not.toMatch(
-        /0\.30|umbral|confianza|base de conocimiento/i,
-      );
     });
   });
 

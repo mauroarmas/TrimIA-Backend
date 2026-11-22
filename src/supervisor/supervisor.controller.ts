@@ -480,6 +480,27 @@ export class SupervisorController {
     return this.suggestions.suggest(id);
   }
 
+  /**
+   * POST /supervisor/escalations/:id/knowledge-draft — genera un borrador de
+   * documento nuevo para la Base de Conocimiento tras una atención manual.
+   */
+  @Post('escalations/:id/knowledge-draft')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('SUPERVISOR')
+  @ApiOperation({
+    summary:
+      'Genera un borrador de documento nuevo con IA a partir de la consulta escalada, notas internas y respuestas del supervisor',
+  })
+  generateEscalationKnowledgeDraft(
+    @Param('id') id: string,
+    @Body() body?: { supervisorReplies?: string[] },
+  ) {
+    const replies = Array.isArray(body?.supervisorReplies)
+      ? body.supervisorReplies
+      : [];
+    return this.suggestions.generateKnowledgeDraft(id, replies);
+  }
+
   /** POST /supervisor/escalations/:id/save-unsent — aprueba y guarda sin enviar. */
   @Post('escalations/:id/save-unsent')
   @UseGuards(JwtAuthGuard, RolesGuard)
@@ -509,6 +530,29 @@ export class SupervisorController {
     @Req() req: any,
   ) {
     return this.escalations.discard(id, dto.reason, req.user.id);
+  }
+
+  /**
+   * POST /supervisor/escalations/:id/resolve-manual — cierra el caso como
+   * resuelto tras haberlo atendido en vivo mediante Tomar control.
+   */
+  @Post('escalations/:id/resolve-manual')
+  @UseGuards(JwtAuthGuard, RolesGuard)
+  @Roles('SUPERVISOR')
+  @ApiOperation({
+    summary:
+      'Marca el caso como resuelto tras la atención manual en vivo sin reenviar mensajes',
+  })
+  resolveEscalationManual(
+    @Param('id') id: string,
+    @Body() body: { resolution?: string } | undefined,
+    @Req() req: any,
+  ) {
+    return this.escalations.resolveFromTakeover(
+      id,
+      req.user.id,
+      body?.resolution,
+    );
   }
 
   /** POST /supervisor/escalations/:id/delegate — reasigna el caso a otro supervisor. */

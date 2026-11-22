@@ -42,7 +42,6 @@ function buildService(
     id: DOC_ID,
     title: 'Política de financiación',
     content: 'El anticipo mínimo es del 20%.',
-    category: 'politica',
     audience: 'PUBLICO',
     agentType: opts.docAgentType === undefined ? 'SALES' : opts.docAgentType,
     version: 1,

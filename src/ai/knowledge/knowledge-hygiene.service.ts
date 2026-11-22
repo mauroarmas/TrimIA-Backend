@@ -39,7 +39,6 @@ export interface PairDocumentView {
   id: string;
   title: string;
   content: string;
-  category: string;
   audience: Audience;
   agentType: AgentType | null;
   version: number;
@@ -373,7 +372,6 @@ export class KnowledgeHygieneService {
         id: doc.id,
         title: doc.title,
         content: doc.content,
-        category: doc.category,
         audience: doc.audience,
         agentType: doc.agentType,
         version: doc.version,

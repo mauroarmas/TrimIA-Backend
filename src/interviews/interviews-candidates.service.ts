@@ -91,7 +91,6 @@ export class InterviewsCandidatesService {
               questionId: pregunta.id,
               status: InterviewCandidateStatus.FALLIDO,
               title: '',
-              category: pregunta.themeLabel ?? 'Entrevista',
               proposedContent: '',
               failureReason:
                 'No se pudo redactar una ficha a partir de esta respuesta.',
@@ -107,7 +106,6 @@ export class InterviewsCandidatesService {
             questionId: pregunta.id,
             status: InterviewCandidateStatus.PENDIENTE,
             title: ficha.title,
-            category: pregunta.themeLabel ?? 'Entrevista',
             proposedContent: ficha.content,
             targetDocumentId: esCorreccion ? pregunta.documentId : null,
             targetVersion: esCorreccion ? pregunta.documentVersion : null,
@@ -532,7 +530,6 @@ export class InterviewsCandidatesService {
     candidate: {
       id: string;
       title: string;
-      category: string;
       audience: Audience;
     },
     contenido: string,
@@ -543,7 +540,6 @@ export class InterviewsCandidatesService {
     const { documentId } = await this.knowledge.ingest({
       title: candidate.title,
       content: contenido,
-      category: candidate.category,
       audience: candidate.audience,
       agentType: agentType as never,
       sourceType: 'ENTREVISTA' as never,

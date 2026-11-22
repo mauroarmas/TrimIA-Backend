@@ -73,9 +73,7 @@ export const DETECTOR_PROMPT =
 /** El documento tal como se le muestra al modelo. */
 export function armarEntradaDocumento(doc: {
   title: string;
-  category?: string | null;
   content: string;
 }): string {
-  const categoria = doc.category ? `\nCategoría: ${doc.category}` : '';
-  return `Título: ${doc.title}${categoria}\n\nContenido:\n${doc.content}`;
+  return `Título: ${doc.title}\n\nContenido:\n${doc.content}`;
 }

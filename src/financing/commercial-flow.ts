@@ -43,7 +43,7 @@ export const normalizeCommercial = (value: string) =>
 
 /** Condiciones ficticias de la demo, habilitadas expresamente por Administración. */
 export function mockOffers(
-  item: StockItem,
+  item: StockItem | { listPrice: number | null; cashPrice: number | null },
   confirmedAmount?: string,
 ): CommercialOffer[] {
   const list =

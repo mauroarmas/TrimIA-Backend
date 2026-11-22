@@ -1,4 +1,5 @@
 import { ConversationContactService } from '../integrations/conversation-contact.service';
+import { ClientAccountService } from '../integrations/client-account.service';
 import { AdministrativeCreditService } from '../integrations/administrative-credit.service';
 import { Inject, Optional } from '@nestjs/common';
 import { STOCK_PORT, StockPort } from '../integrations/ports/stock.port';
@@ -50,6 +51,8 @@ export class AgentsService implements OnModuleInit {
     private readonly administrativeCredit?: AdministrativeCreditService,
     @Optional()
     private readonly conversationContact?: ConversationContactService,
+    @Optional()
+    private readonly clientAccount?: ClientAccountService,
   ) {}
 
   onModuleInit() {
@@ -69,6 +72,7 @@ export class AgentsService implements OnModuleInit {
       crmPort: this.crmPort,
       administrativeCredit: this.administrativeCredit,
       conversationContact: this.conversationContact,
+      clientAccount: this.clientAccount,
     };
 
     this.graphs = {

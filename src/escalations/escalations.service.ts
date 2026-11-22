@@ -56,9 +56,8 @@ export interface ListEscalationsFilter {
 export interface ResolveEscalationInput {
   message: string;
   teachAgent?: boolean;
-  /** Requeridos si teachAgent=true; ver ResolveEscalationDto. */
+  /** Requerido si teachAgent=true; ver ResolveEscalationDto. */
   title?: string;
-  category?: string;
   audience?: Audience;
   agentType?: AgentType;
   /**
@@ -85,15 +84,14 @@ export interface ResolveEscalationInput {
 }
 
 /**
- * "Aprobar y guardar" (FR-039). A diferencia de `resolve`, el título y la
- * categoría son obligatorios: acá la ingesta al RAG no es opcional — es el
- * único efecto de la acción, así que no tiene sentido permitirla sin los
- * datos que el documento necesita.
+ * "Aprobar y guardar" (FR-039). A diferencia de `resolve`, el título es
+ * obligatorio: acá la ingesta al RAG no es opcional — es el único efecto de la
+ * acción, así que no tiene sentido permitirla sin los datos que el documento
+ * necesita.
  */
 export interface SaveUnsentInput {
   message: string;
   title: string;
-  category: string;
   agentType?: AgentType;
 }
 
@@ -911,7 +909,6 @@ export class EscalationsService {
         await this.knowledge.ingest({
           title: input.title!,
           content: input.message,
-          category: input.category!,
           audience,
           agentType: input.agentType ?? conversation.currentAgent,
           // Sprint 5A: el documento queda trazable hasta el caso que lo originó
@@ -1015,7 +1012,6 @@ export class EscalationsService {
       ({ documentId } = await this.knowledge.ingest({
         title: input.title,
         content: input.message,
-        category: input.category,
         audience,
         agentType: areaDelDocumento,
         sourceType: KnowledgeSourceType.ESCALADO,
@@ -1098,6 +1094,60 @@ export class EscalationsService {
     });
 
     return { id: discarded.id, status: discarded.status };
+  }
+
+  /**
+   * Marca un caso escalado como RESOLVED tras una atención directa en vivo
+   * (Tomar control → responder manualmente → Liberar control), sin reenviar
+   * otro mensaje al cliente porque las respuestas ya se enviaron en el chat.
+   */
+  async resolveFromTakeover(
+    id: string,
+    resolvedById: string,
+    resolution?: string,
+  ): Promise<{ id: string; status: EscalationStatus }> {
+    const escalation = await this.prisma.escalation.findUnique({
+      where: { id },
+    });
+    if (!escalation) {
+      throw new NotFoundException('Caso pendiente no encontrado');
+    }
+    if (escalation.status !== EscalationStatus.PENDING) {
+      return { id: escalation.id, status: escalation.status };
+    }
+
+    const conversation = await this.conversations.findById(
+      escalation.conversationId,
+    );
+    if (conversation) {
+      await this.releaseConversation(conversation);
+    }
+
+    const cleanResolution =
+      resolution?.trim() ||
+      'Atendido y resuelto mediante control manual en vivo.';
+
+    const resolved = await this.prisma.escalation.update({
+      where: { id },
+      data: {
+        status: EscalationStatus.RESOLVED,
+        resolvedById,
+        resolvedAt: new Date(),
+        resolution: cleanResolution,
+      },
+    });
+
+    await this.logger.logEvent({
+      conversationId: escalation.conversationId,
+      eventType: 'escalation_resolved',
+      payload: {
+        escalationId: id,
+        resolvedById,
+        via: 'manual_takeover',
+      },
+    });
+
+    return { id: resolved.id, status: resolved.status };
   }
 
   /**

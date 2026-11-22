@@ -16,7 +16,6 @@ interface KnowledgeIngestionJob {
   fileId: string;
   storagePath: string;
   title: string;
-  category: string;
   audience?: Audience;
   agentType?: AgentType | null;
 }
@@ -86,7 +85,6 @@ export class KnowledgeIngestionProcessor extends WorkerHost {
         await this.knowledge.ingest({
           title: job.data.title,
           content: text,
-          category: job.data.category,
           audience: job.data.audience,
           agentType: job.data.agentType ?? null,
           sourceType: 'DOCUMENTO',

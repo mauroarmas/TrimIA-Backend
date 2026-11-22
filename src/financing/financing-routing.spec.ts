@@ -427,6 +427,200 @@ describe('financial operation routing boundary', () => {
     ).toContain('ya figura cerrada');
     expect(escalations.create).not.toHaveBeenCalled();
   });
+  it('libera la conversación al orquestador para consultas posteriores una vez cerrada la venta del flujo comercial moderno', async () => {
+    const commercialStub = { customerMessage: jest.fn() };
+    const stockStub = { listCatalog: jest.fn().mockResolvedValue([]) };
+    prisma.purchaseRequest = {
+      findUnique: jest.fn().mockResolvedValue({
+        id: 'req-closed',
+        status: 'APPROVED',
+        closedAt: new Date('2026-11-21T23:16:00Z'),
+        commercialFlow: { version: 2, stage: 'CLOSED', offers: [] },
+      }),
+    };
+    const modernService = new FinancingConversationService(
+      prisma,
+      llm,
+      { applyInput, getDraft } as any,
+      escalations as any,
+      commercialStub as any,
+      stockStub as any,
+    );
+    prisma.conversation.findUnique.mockResolvedValue({
+      channel: 'WEB',
+      status: 'ACTIVE',
+      financingDraft: {
+        stage: 'SUBMITTED',
+        flowVersion: 2,
+        purchaseRequestId: 'req-closed',
+      },
+    });
+    for (const msg of [
+      'ok! para mandarte la transferencia a que CBU?',
+      'quiero hacer el pago',
+      '¿en qué horario puedo pasar a retirar por sucursal?',
+    ]) {
+      expect(await modernService.handle('c', 'm', msg, client)).toEqual({
+        handled: false,
+      });
+    }
+    expect(commercialStub.customerMessage).not.toHaveBeenCalled();
+    expect(invoke).not.toHaveBeenCalled();
+
+    // Si después de cerrar la venta pide iniciar otra financiación, sí debe abrir un nuevo pedido
+    invoke.mockResolvedValueOnce({
+      intent: 'OTHER',
+      productSummary: { value: 'heladera', evidence: 'heladera' },
+    });
+    stockStub.listCatalog.mockResolvedValueOnce([
+      {
+        sku: 'EXH-BRI-390',
+        name: 'Heladera Exhibidora Vertical Briket 390 Litros Led',
+        stock: 2,
+        listPrice: 720000,
+        cashPrice: 600000,
+      },
+    ]);
+    await modernService.handle('c', 'm2', 'Quiero financiar una heladera', client);
+    expect(applyInput).toHaveBeenCalledWith(
+      'c',
+      'm2',
+      expect.objectContaining({
+        intent: 'REQUEST',
+        flowVersion: 2,
+        sku: 'EXH-BRI-390',
+      }),
+    );
+    delete prisma.purchaseRequest;
+  });
+  it('acumula múltiples productos cuando el cliente elige uno y pide agregar otro, preguntando si necesita algo más', async () => {
+    const stockMock = {
+      listCatalog: jest.fn().mockResolvedValue([
+        {
+          sku: 'COR-BER-300',
+          name: 'Cortadora de Fiambre Berkley 300mm Profesional',
+          stock: 3,
+          listPrice: 610000,
+          cashPrice: 510000,
+        },
+        {
+          sku: 'BAL-SYS-CUORA',
+          name: 'Balanza Electrónica Systel Cuora 30kg con Impresor',
+          stock: 4,
+          listPrice: 420000,
+          cashPrice: 350000,
+        },
+        {
+          sku: 'BAL-MOR-40',
+          name: 'Balanza Comercial Moretti 40kg con Batería',
+          stock: 5,
+          listPrice: 165000,
+          cashPrice: 140000,
+        },
+      ]),
+    };
+    const modernService = new FinancingConversationService(
+      prisma,
+      llm,
+      { applyInput, getDraft } as any,
+      escalations as any,
+      {} as any,
+      stockMock as any,
+    );
+    prisma.conversation.findUnique.mockResolvedValue({
+      channel: 'WEB',
+      status: 'ACTIVE',
+      financingDraft: { stage: 'COLLECTING', flowVersion: 2 },
+    });
+    prisma.message = {
+      findMany: jest.fn().mockResolvedValue([
+        {
+          role: 'ASSISTANT',
+          content:
+            'Estas son las opciones del catálogo de prueba:\n3. Cortadora de Fiambre Berkley 300mm Profesional — disponible. Lista: $610.000; contado: $510.000\n¿Cuál modelo te interesa?',
+        },
+      ]),
+    };
+    invoke.mockResolvedValueOnce({
+      intent: 'PROVIDE_DATA',
+      productSummary: { value: 'balanza', evidence: 'balanza' },
+    });
+    const step1 = await modernService.handle(
+      'c',
+      'm1',
+      'me interesa la 3 y también quiero una balanza',
+      client,
+    );
+    expect(step1.response).toContain('Balanza Comercial Moretti 40kg con Batería');
+    expect(applyInput).toHaveBeenCalledWith(
+      'c',
+      'm1',
+      expect.objectContaining({
+        items: [
+          {
+            sku: 'COR-BER-300',
+            productSummary: 'Cortadora de Fiambre Berkley 300mm Profesional',
+            listPrice: '610000.00',
+            cashPrice: '510000.00',
+          },
+        ],
+      }),
+    );
+
+    // Ahora el cliente elige la balanza de la segunda lista ("2" en nuestra lista reducida)
+    prisma.conversation.findUnique.mockResolvedValue({
+      channel: 'WEB',
+      status: 'ACTIVE',
+      financingDraft: {
+        stage: 'COLLECTING',
+        flowVersion: 2,
+        sku: 'COR-BER-300',
+        productSummary: 'Cortadora de Fiambre Berkley 300mm Profesional',
+        items: [
+          {
+            sku: 'COR-BER-300',
+            productSummary: 'Cortadora de Fiambre Berkley 300mm Profesional',
+            listPrice: '610000.00',
+            cashPrice: '510000.00',
+          },
+        ],
+      },
+    });
+    prisma.message.findMany.mockResolvedValue([
+      {
+        role: 'ASSISTANT',
+        content:
+          'Estas son las opciones del catálogo de prueba:\n1. Balanza Electrónica Systel Cuora 30kg con Impresor — disponible\n2. Balanza Comercial Moretti 40kg con Batería — disponible\n¿Cuál modelo te interesa?',
+      },
+    ]);
+    invoke.mockResolvedValueOnce({ intent: 'PROVIDE_DATA' });
+    await modernService.handle('c', 'm2', '2', client);
+    expect(applyInput).toHaveBeenLastCalledWith(
+      'c',
+      'm2',
+      expect.objectContaining({
+        addMoreProductsPrompt: true,
+        sku: 'COR-BER-300 + BAL-MOR-40',
+        productSummary:
+          'Cortadora de Fiambre Berkley 300mm Profesional + Balanza Comercial Moretti 40kg con Batería',
+        items: [
+          {
+            sku: 'COR-BER-300',
+            productSummary: 'Cortadora de Fiambre Berkley 300mm Profesional',
+            listPrice: '610000.00',
+            cashPrice: '510000.00',
+          },
+          {
+            sku: 'BAL-MOR-40',
+            productSummary: 'Balanza Comercial Moretti 40kg con Batería',
+            listPrice: '165000.00',
+            cashPrice: '140000.00',
+          },
+        ],
+      }),
+    );
+    delete prisma.message;
+  });
   it('no acepta dictamen inyectado por extractor', async () => {
     invoke.mockResolvedValue({
       intent: 'REQUEST',

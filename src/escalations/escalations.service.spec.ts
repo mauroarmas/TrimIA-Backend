@@ -884,7 +884,6 @@ describe('EscalationsService', () => {
               message: 'Sí.',
               teachAgent: true,
               title: 't',
-              category: 'c',
               correctKnowledge: correccion,
             },
             'employee-1',
@@ -991,7 +990,6 @@ describe('EscalationsService', () => {
             message: 'Sí, la tenemos.',
             teachAgent: true,
             title: 'Ya cargado',
-            category: 'c',
           },
           'employee-1',
         );
@@ -1024,7 +1022,7 @@ describe('EscalationsService', () => {
 
         await service.resolve(
           'esc-1',
-          { message: 'Sí.', teachAgent: true, title: 't', category: 'c' },
+          { message: 'Sí.', teachAgent: true, title: 't' },
           'employee-1',
         );
 
@@ -1339,7 +1337,6 @@ describe('EscalationsService', () => {
             message: 'El recargo es del 10%.',
             teachAgent: true,
             title: 'Recargo por mora',
-            category: 'politica',
             agentType: 'COLLECTIONS',
           },
           'sup-ventas',
@@ -1358,7 +1355,6 @@ describe('EscalationsService', () => {
             message: 'El recargo es del 10%.',
             teachAgent: true,
             title: 'Recargo por mora',
-            category: 'politica',
           },
           'sup-ventas',
         );
@@ -1389,7 +1385,6 @@ describe('EscalationsService', () => {
               message: 'El recargo es del 10%.',
               teachAgent: true,
               title: 'Recargo por mora',
-              category: 'politica',
               agentType: 'COLLECTIONS',
             },
             'sup-ventas',
@@ -1430,7 +1425,6 @@ describe('EscalationsService', () => {
           {
             message: 'El recargo es del 10%.',
             title: 'Recargo por mora',
-            category: 'politica',
             agentType: 'COLLECTIONS',
           },
           'sup-ventas',
@@ -1455,7 +1449,6 @@ describe('EscalationsService', () => {
             {
               message: 'El recargo es del 10%.',
               title: 'Recargo por mora',
-              category: 'politica',
               agentType: 'COLLECTIONS',
             },
             'sup-ventas',
@@ -1472,7 +1465,6 @@ describe('EscalationsService', () => {
           {
             message: 'El anticipo mínimo es del 20%.',
             title: 'Anticipo mínimo',
-            category: 'politica',
             agentType: 'SALES',
           },
           'sup-ventas',
@@ -1499,7 +1491,6 @@ describe('EscalationsService', () => {
           {
             message: 'El anticipo mínimo es del 20%.',
             title: 'Anticipo mínimo',
-            category: 'politica',
             agentType: 'SALES',
           },
           'sup-ventas',
@@ -1526,7 +1517,6 @@ describe('EscalationsService', () => {
             {
               message: 'x',
               title: 't',
-              category: 'c',
               agentType: 'SALES',
             },
             'sup-ventas',

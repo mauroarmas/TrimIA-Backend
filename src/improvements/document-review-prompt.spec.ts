@@ -80,10 +80,4 @@ describe('armarEntradaDocumento', () => {
     expect(entrada).toContain('Envíos al interior');
     expect(entrada).toContain('Se despacha los martes.');
   });
-
-  it('omite la categoría cuando no hay', () => {
-    expect(
-      armarEntradaDocumento({ title: 'X', content: 'Y', category: null }),
-    ).not.toContain('Categoría');
-  });
 });

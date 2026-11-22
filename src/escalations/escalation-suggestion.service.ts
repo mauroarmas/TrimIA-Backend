@@ -1,6 +1,6 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
-import { Audience, UserType } from '@prisma/client';
+import { AgentType, Audience, UserType } from '@prisma/client';
 import { HumanMessage, SystemMessage } from '@langchain/core/messages';
 import { PrismaService } from '../database/prisma.service';
 import { LlmService } from '../ai/llm/llm.service';
@@ -33,6 +33,28 @@ const SUGGESTION_PROMPT =
   'devolvé EXACTAMENTE una cadena vacía (sin texto, sin explicaciones, sin comillas). JAMÁS rellenes con información irrelevante.\n' +
   '4. Si hay datos de un producto o cotización comercial en el borrador, redactá una respuesta útil que confirme esos datos y guíe el siguiente paso concreto (por ejemplo, pedir los datos faltantes o confirmar el resumen) sin aprobar el crédito.\n' +
   '5. No incluyas saludos largos ni despedidas genéricas, ni menciones "según el contexto" o "documentos".';
+
+const KNOWLEDGE_DRAFT_PROMPT =
+  'Sos un especialista en gestión del conocimiento de Credimisión (empresa comercial argentina).\n' +
+  'A partir de un caso que fue escalado a un supervisor y resuelto manualmente en el chat, redactá un borrador de documento NUEVO para la Base de Conocimiento (RAG) para que en el futuro el asistente IA pueda responder consultas similares sin escalar.\n' +
+  'Reglas estrictas:\n' +
+  '1. Basate ÚNICAMENTE en la pregunta que provocó la derivación, las notas internas del equipo y las respuestas que dio el supervisor. Nunca inventes precios, cuotas, políticas ni datos no mencionados.\n' +
+  '2. Generalizá la información para que sirva a futuros casos: eliminá nombres propios, DNI, teléfonos u otros datos personales del cliente puntual.\n' +
+  '3. Redactá en español rioplatense claro, directo y estructurado (podés usar subtítulos breves o viñetas).\n' +
+  '4. Devolvé EXCLUSIVAMENTE un objeto JSON válido (sin texto adicional ni explicaciones) con exactamente estas 2 claves:\n' +
+  '   {"title": "Título claro y buscable (máx 90 caracteres)", "content": "Texto completo del documento listo para indexar"}';
+
+export interface KnowledgeDraftResult {
+  title: string;
+  audience: Audience;
+  agentType: AgentType | null;
+  content: string;
+  basedOn: {
+    triggerQuestion: string;
+    notesCount: number;
+    supervisorRepliesCount: number;
+  };
+}
 
 export interface SuggestionSource {
   documentId: string;
@@ -241,6 +263,166 @@ export class EscalationSuggestionService {
   }
 
   /**
+   * Redacta un borrador de documento nuevo para la Base de Conocimiento a partir
+   * de la pregunta que provocó la derivación, las notas internas y las respuestas
+   * que acaba de dar el supervisor durante el control manual.
+   *
+   * No persiste nada en la base: devuelve el borrador para que el supervisor lo
+   * revise, edite y confirme.
+   */
+  async generateKnowledgeDraft(
+    escalationId: string,
+    extraSupervisorReplies: string[] = [],
+  ): Promise<KnowledgeDraftResult> {
+    const escalation = await this.prisma.escalation.findUnique({
+      where: { id: escalationId },
+      include: {
+        conversation: {
+          include: {
+            internalNotes: {
+              orderBy: { createdAt: 'asc' },
+              select: { content: true, createdAt: true },
+            },
+          },
+        },
+      },
+    });
+    if (!escalation) {
+      throw new NotFoundException('Caso pendiente no encontrado');
+    }
+
+    const { conversation } = escalation;
+    const audience = audienceFor(conversation.userType);
+    const fallbackQuery = await this.buildQuery(
+      escalation.conversationId,
+      escalation.createdAt,
+      escalation.reason,
+    );
+
+    const preEscalationRows =
+      typeof this.prisma.message?.findMany === 'function'
+        ? await this.prisma.message.findMany({
+            where: {
+              conversationId: escalation.conversationId,
+              createdAt: { lte: escalation.createdAt },
+            },
+            orderBy: { createdAt: 'desc' },
+            take: 10,
+            select: { role: true, content: true },
+          })
+        : [];
+    const preEscalationHistory = [...preEscalationRows].reverse();
+
+    // Si el último mensaje del usuario fue una confirmación breve ("si", "ok", "dale"),
+    // buscamos el último mensaje sustantivo anterior para identificar la consulta real.
+    const userMessagesDesc = preEscalationRows
+      .filter((m) => m.role === 'USER' && typeof m.content === 'string')
+      .map((m) => m.content.trim())
+      .filter(Boolean);
+    const isShortAck = (text: string) =>
+      text.length < 6 ||
+      /^(s[ií]|ok|dale|bueno|claro|perfecto|gracias|por favor|si por favor)[.!?]*$/i.test(
+        text,
+      );
+    const triggerQuestion =
+      userMessagesDesc.find((m) => !isShortAck(m)) ??
+      userMessagesDesc[0] ??
+      fallbackQuery;
+
+    const postEscalationMessages =
+      typeof this.prisma.message?.findMany === 'function'
+        ? await this.prisma.message.findMany({
+            where: {
+              conversationId: escalation.conversationId,
+              role: 'ASSISTANT',
+              createdAt: { gt: escalation.createdAt },
+            },
+            orderBy: { createdAt: 'asc' },
+            select: { content: true },
+          })
+        : [];
+
+    const dbSupervisorReplies = postEscalationMessages
+      .map((m) => (typeof m.content === 'string' ? m.content.trim() : ''))
+      .filter(Boolean);
+
+    const supervisorReplies = Array.from(
+      new Set([
+        ...dbSupervisorReplies,
+        ...extraSupervisorReplies.map((r) => String(r ?? '').trim()).filter(Boolean),
+      ]),
+    );
+
+    const internalNotes = (conversation.internalNotes ?? [])
+      .map((n) => n.content.trim())
+      .filter(Boolean);
+
+    const sections: string[] = [
+      `Consulta principal que provocó la derivación al supervisor:\n${triggerQuestion}`,
+    ];
+    if (preEscalationHistory.length > 0) {
+      const historyText = preEscalationHistory
+        .filter((m) => typeof m.content === 'string' && m.content.trim())
+        .map((m) => `${m.role === 'USER' ? 'Contacto' : 'Asistente'}: ${m.content.trim()}`)
+        .join('\n');
+      if (historyText) {
+        sections.push(`Contexto de la conversación previa a la derivación:\n${historyText}`);
+      }
+    }
+    if (escalation.reason) {
+      sections.push(`Motivo técnico de la derivación:\n${escalation.reason}`);
+    }
+    if (conversation.currentAgent) {
+      sections.push(`Área / agente involucrado:\n${conversation.currentAgent}`);
+    }
+    if (internalNotes.length > 0) {
+      sections.push(
+        `Notas internas del equipo:\n${internalNotes.map((n, i) => `${i + 1}. ${n}`).join('\n')}`,
+      );
+    } else {
+      sections.push('Notas internas del equipo:\n(Sin notas internas registradas)');
+    }
+    if (supervisorReplies.length > 0) {
+      sections.push(
+        `Respuestas que dio el supervisor al contacto:\n${supervisorReplies.map((r, i) => `${i + 1}. ${r}`).join('\n')}`,
+      );
+    } else {
+      sections.push('Respuestas que dio el supervisor al contacto:\n(Sin respuestas manuales registradas)');
+    }
+
+    const response = await this.llm.chat.invoke([
+      new SystemMessage(KNOWLEDGE_DRAFT_PROMPT),
+      new HumanMessage(sections.join('\n\n')),
+    ]);
+    const raw = String(response.content ?? '').trim();
+    const parsed = parseKnowledgeDraftJson(raw, triggerQuestion, supervisorReplies, internalNotes);
+
+    await this.logger.logEvent({
+      conversationId: escalation.conversationId,
+      eventType: 'escalation_knowledge_draft_generated',
+      payload: {
+        escalationId,
+        audience,
+        agentType: conversation.currentAgent ?? null,
+        notesCount: internalNotes.length,
+        supervisorRepliesCount: supervisorReplies.length,
+      },
+    });
+
+    return {
+      title: parsed.title,
+      audience,
+      agentType: conversation.currentAgent ?? null,
+      content: parsed.content,
+      basedOn: {
+        triggerQuestion,
+        notesCount: internalNotes.length,
+        supervisorRepliesCount: supervisorReplies.length,
+      },
+    };
+  }
+
+  /**
    * La consulta a buscar es el mensaje del usuario **que provocó el escalado**.
    *
    * Dos precisiones, y las dos costaron un defecto:
@@ -385,4 +567,47 @@ export class EscalationSuggestionService {
  */
 function audienceFor(userType: UserType): Audience {
   return userType === UserType.EMPLEADO ? Audience.INTERNO : Audience.PUBLICO;
+}
+
+function parseKnowledgeDraftJson(
+  raw: string,
+  triggerQuestion: string,
+  supervisorReplies: string[],
+  internalNotes: string[],
+): { title: string; content: string } {
+  const cleaned = raw
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .trim();
+
+  try {
+    const obj = JSON.parse(cleaned) as Record<string, unknown>;
+    const title = typeof obj.title === 'string' && obj.title.trim()
+      ? obj.title.trim().slice(0, 120)
+      : triggerQuestion.slice(0, 80);
+    const content = typeof obj.content === 'string' && obj.content.trim()
+      ? obj.content.trim()
+      : buildFallbackDraftContent(triggerQuestion, supervisorReplies, internalNotes);
+    return { title, content };
+  } catch {
+    return {
+      title: triggerQuestion.slice(0, 80) || 'Nuevo documento desde atención manual',
+      content: cleaned || buildFallbackDraftContent(triggerQuestion, supervisorReplies, internalNotes),
+    };
+  }
+}
+
+function buildFallbackDraftContent(
+  triggerQuestion: string,
+  supervisorReplies: string[],
+  internalNotes: string[],
+): string {
+  const parts = [`Consulta de referencia:\n${triggerQuestion}`];
+  if (supervisorReplies.length > 0) {
+    parts.push(`Respuesta aprobada:\n${supervisorReplies.join('\n\n')}`);
+  }
+  if (internalNotes.length > 0) {
+    parts.push(`Consideraciones internas:\n${internalNotes.join('\n')}`);
+  }
+  return parts.join('\n\n');
 }

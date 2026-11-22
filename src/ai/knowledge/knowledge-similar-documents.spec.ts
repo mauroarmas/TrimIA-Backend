@@ -72,7 +72,6 @@ function buildService(
 const entrada = {
   title: 'Sobre Nosotros',
   content: 'Somos una empresa de electrodomésticos.',
-  category: 'general',
   audience: Audience.PUBLICO,
 };
 

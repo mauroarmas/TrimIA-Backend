@@ -39,6 +39,13 @@ export interface FinancingInput {
   dni?: string;
   productSummary?: string;
   sku?: string;
+  items?: {
+    sku: string;
+    productSummary: string;
+    listPrice: string;
+    cashPrice?: string;
+  }[];
+  addMoreProductsPrompt?: boolean;
   observedAmount?: string;
 }
 type Tx = Prisma.TransactionClient;
@@ -479,6 +486,7 @@ export class FinancingService {
               'dni',
               'productSummary',
               'sku',
+              'items',
               'business',
               'purchaseUse',
               'locality',
@@ -486,8 +494,15 @@ export class FinancingService {
           ),
         ),
       );
+      if (changes.items && changes.items.length > 0) {
+        changes.sku = changes.items.map((i) => i.sku).join(' + ');
+        changes.productSummary = changes.items
+          .map((i) => i.productSummary)
+          .join(' + ');
+      }
       const changed = Object.entries(changes).some(
-        ([k, v]) => d[k as keyof FinancingDraft] !== v,
+        ([k, v]) =>
+          JSON.stringify(d[k as keyof FinancingDraft]) !== JSON.stringify(v),
       );
       if (
         (changes.productSummary &&
@@ -509,11 +524,18 @@ export class FinancingService {
       else if (changes.business) d.purchaseUse = 'BUSINESS';
       if (input.observedAmount)
         d.observedAmount = amountSchema.parse(input.observedAmount);
-      const priceChanged = !!price && d.confirmedAmount !== price;
-      if (price) {
+      const effectivePrice =
+        d.items && d.items.length > 0
+          ? d.items
+              .reduce((sum, item) => sum + Number(item.listPrice), 0)
+              .toFixed(2)
+          : price;
+      const priceChanged =
+        !!effectivePrice && d.confirmedAmount !== effectivePrice;
+      if (effectivePrice) {
         delete d.priceConfirmedById;
         delete d.priceConfirmationNote;
-        d.confirmedAmount = price;
+        d.confirmedAmount = effectivePrice;
         d.priceSource = 'STOCK';
         d.priceConfirmedAt = new Date().toISOString();
       }
@@ -566,6 +588,7 @@ export class FinancingService {
           dni: d.dni!,
           productSummary: d.productSummary!,
           sku: d.sku,
+          ...(d.items && d.items.length > 0 ? { items: d.items } : {}),
           amount: d.confirmedAmount!,
           currency: 'ARS',
           priceSource: d.priceSource!,
@@ -675,8 +698,14 @@ export class FinancingService {
               (k) => !(k === 'confirmedAmount' && missing.includes('productSummary')),
             )
           : missing;
+        const selectedPrefix =
+          d.flowVersion === 2 &&
+          input.addMoreProductsPrompt &&
+          d.productSummary
+            ? `Agregamos ${d.productSummary} a tu pedido. ¿Necesitás sumar algún otro producto? Si querés agregar otro, decime cuál; si no, para continuar falta `
+            : 'Para continuar falta ';
         response =
-          'Para continuar falta ' +
+          selectedPrefix +
           visibleMissing.map((k) => labels[k]).join(', ') +
           '.' +
           (visibleMissing.includes('confirmedAmount') && !needsSpecificModel

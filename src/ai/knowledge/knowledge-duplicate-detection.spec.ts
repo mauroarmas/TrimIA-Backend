@@ -49,7 +49,6 @@ function buildService(duplicado: { id: string; title: string } | null) {
 const entrada = {
   title: 'Garantía',
   content: CONTENIDO,
-  category: 'politica',
   audience: Audience.PUBLICO,
 };
 

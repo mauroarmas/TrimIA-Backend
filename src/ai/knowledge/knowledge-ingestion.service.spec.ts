@@ -18,7 +18,7 @@ import { UploadKnowledgeDto } from './dto/upload-knowledge.dto';
 const MB = 1024 * 1024;
 const UPLOADER = '22222222-2222-4222-8222-222222222222';
 
-const DTO: UploadKnowledgeDto = { category: 'politica' };
+const DTO: UploadKnowledgeDto = {};
 
 function buildFile(
   mimetype: string,

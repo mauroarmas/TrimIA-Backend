@@ -104,7 +104,6 @@ export class KnowledgeIngestionService {
         fileId: record.id,
         storagePath, // la ruta real, aunque en la fila quede NULL
         title: dto.title?.trim() || file.originalname,
-        category: dto.category,
         audience: dto.audience,
         agentType: dto.agentType ?? null,
       },

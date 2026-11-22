@@ -29,7 +29,6 @@ function buildService(vectores: number[][]) {
     id: DOC_ID,
     title: 'Garantía extendida',
     content: 'Los electrodomésticos grandes tienen 12 meses de garantía.',
-    category: 'politica',
     audience: Audience.PUBLICO,
     agentType: 'SALES',
     version: 1,
@@ -74,7 +73,6 @@ function buildService(vectores: number[][]) {
 const entrada = {
   title: 'Garantía extendida',
   content: 'Los electrodomésticos grandes tienen 12 meses de garantía.',
-  category: 'politica',
   audience: Audience.PUBLICO,
 };
 

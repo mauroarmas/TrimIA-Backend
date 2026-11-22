@@ -93,17 +93,6 @@ export class ResolveEscalationDto {
 
   @ApiProperty({
     required: false,
-    example: 'productos',
-    description:
-      'Categoría del documento de conocimiento (igual que en POST /knowledge). Requerida si teachAgent=true.',
-  })
-  @ValidateIf((o: ResolveEscalationDto) => o.teachAgent === true)
-  @IsString()
-  @IsNotEmpty()
-  category?: string;
-
-  @ApiProperty({
-    required: false,
     enum: Audience,
     description:
       'Por defecto INTERNO (el más restrictivo), sin importar el tipo de ' +

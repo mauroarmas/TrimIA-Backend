@@ -27,12 +27,6 @@ export class UpdateKnowledgeDto {
   @IsOptional()
   content?: string;
 
-  @ApiProperty({ required: false, example: 'politica' })
-  @IsString()
-  @MinLength(1)
-  @IsOptional()
-  category?: string;
-
   @ApiProperty({ required: false, enum: Audience })
   @IsEnum(Audience)
   @IsOptional()

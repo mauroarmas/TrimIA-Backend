@@ -27,11 +27,6 @@ export class ListKnowledgeQueryDto {
   @IsOptional()
   agentType?: AgentType;
 
-  @ApiProperty({ required: false, example: 'politica' })
-  @IsString()
-  @IsOptional()
-  category?: string;
-
   @ApiProperty({
     required: false,
     example: 'garantía',

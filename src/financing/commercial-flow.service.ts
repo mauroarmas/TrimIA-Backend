@@ -77,7 +77,39 @@ export class CommercialFlowService {
     });
   }
   private async item(row: PurchaseRequest): Promise<StockItem | null> {
-    const sku = (row.inputSnapshot as any)?.sku;
+    const snapshot = row.inputSnapshot as any;
+    const rawItems = Array.isArray(snapshot?.items) ? snapshot.items : null;
+    if (rawItems && rawItems.length > 1) {
+      let totalList = 0;
+      let totalCash = 0;
+      let minStock = Infinity;
+      let firstItem: StockItem | null = null;
+      for (const entry of rawItems) {
+        if (!entry?.sku) return null;
+        try {
+          const found = (await this.stock.checkAvailability(entry.sku, 'CLIENTE')).item;
+          if (!found) return null;
+          if (!firstItem) firstItem = found;
+          minStock = Math.min(minStock, found.stock);
+          totalList += Number(found.listPrice ?? entry.listPrice ?? 0);
+          totalCash += Number(
+            found.cashPrice ?? entry.cashPrice ?? found.listPrice ?? entry.listPrice ?? 0,
+          );
+        } catch {
+          return null;
+        }
+      }
+      if (!firstItem) return null;
+      return {
+        ...firstItem,
+        sku: rawItems.map((i: any) => i.sku).join(' + '),
+        name: rawItems.map((i: any) => i.productSummary || i.name).join(' + '),
+        stock: Number.isFinite(minStock) ? minStock : 0,
+        listPrice: totalList,
+        cashPrice: totalCash > 0 ? totalCash : null,
+      };
+    }
+    const sku = rawItems?.[0]?.sku ?? snapshot?.sku;
     if (!sku) return null;
     try {
       return (await this.stock.checkAvailability(sku, 'CLIENTE')).item;
@@ -494,7 +526,12 @@ export class CommercialFlowService {
       return '¿Cuál es la dirección de entrega? Incluí calle, número y referencias. El envío se paga aparte al contado.';
     const s = row.inputSnapshot as any;
     const offer = flow.offers.find((o) => o.id === flow.selectedOfferId)!;
-    return `Resumen del pedido: ${s.name}, DNI ${s.dni}; ${s.purchaseUse === 'PERSONAL' ? 'compra personal' : `comercio ${s.business}`}, ${s.locality}. Una unidad de ${row.productSummary}. ${offerText(offer)}. ${flow.deliveryMode === 'PICKUP' ? 'Retiro en sucursal, sin costo de envío.' : `Envío a ${flow.deliveryAddress}; costo $${Number(flow.shippingCost).toLocaleString('es-AR')}, separado y al contado.`}${flow.contactName || flow.contactPhone ? ` Contacto de entrega: ${flow.contactName || s.name}, ${flow.contactPhone || s.phone}.` : ''} Vigente hasta ${new Date(flow.expiresAt).toLocaleString('es-AR', { timeZone: 'America/Argentina/Tucuman', hour12: false })}. ¿Confirmás este resumen para que Ventas prepare el cierre?`;
+    const itemCount = Array.isArray(s?.items) && s.items.length > 1 ? s.items.length : 1;
+    const productText =
+      itemCount > 1
+        ? `Productos (${itemCount}): ${row.productSummary}`
+        : `Una unidad de ${row.productSummary}`;
+    return `Resumen del pedido: ${s.name}, DNI ${s.dni}; ${s.purchaseUse === 'PERSONAL' ? 'compra personal' : `comercio ${s.business}`}, ${s.locality}. ${productText}. ${offerText(offer)}. ${flow.deliveryMode === 'PICKUP' ? 'Retiro en sucursal, sin costo de envío.' : `Envío a ${flow.deliveryAddress}; costo $${Number(flow.shippingCost).toLocaleString('es-AR')}, separado y al contado.`}${flow.contactName || flow.contactPhone ? ` Contacto de entrega: ${flow.contactName || s.name}, ${flow.contactPhone || s.phone}.` : ''} Vigente hasta ${new Date(flow.expiresAt).toLocaleString('es-AR', { timeZone: 'America/Argentina/Tucuman', hour12: false })}. ¿Confirmás este resumen para que Ventas prepare el cierre?`;
   }
   async customerMessage(
     id: string,
@@ -720,6 +757,7 @@ export class CommercialFlowService {
                 sku: product.sku,
                 productSummary: product.name,
                 amount: new Prisma.Decimal(product.listPrice!).toFixed(2),
+                items: undefined,
               }
             : {}),
           inputVersion: row.version + 1,

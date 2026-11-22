@@ -371,7 +371,6 @@ export class TrainingService {
         const result = await this.knowledge.ingest({
           title: 'Capacitación: ' + pill.title,
           content: pill.objective + '\n\n' + pill.content,
-          category: 'CAPACITACION',
           audience: Audience.INTERNO,
           agentType: pill.module.sector?.agentType ?? null,
           sourceId: pill.id,

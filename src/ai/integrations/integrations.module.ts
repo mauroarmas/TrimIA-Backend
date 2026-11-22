@@ -1,4 +1,5 @@
 import { ConversationContactService } from './conversation-contact.service';
+import { ClientAccountService } from './client-account.service';
 import { BullModule } from '@nestjs/bullmq';
 import { CrmSyncProcessor } from './crm-sync.processor';
 import { AdministrativeCreditService } from './administrative-credit.service';
@@ -23,6 +24,7 @@ import { CrmSyncService } from './crm-sync.service';
     CrmSyncProcessor,
     AdministrativeCreditService,
     ConversationContactService,
+    ClientAccountService,
     MockStockAdapter,
     MockCreditAdapter,
     N8nCrmAdapter,
@@ -46,6 +48,7 @@ import { CrmSyncService } from './crm-sync.service';
     CRM_PORT,
     AdministrativeCreditService,
     ConversationContactService,
+    ClientAccountService,
     MockStockAdapter,
     MockCreditAdapter,
     N8nCrmAdapter,

@@ -6,6 +6,14 @@ export const amountSchema = z
     (v) => Number(v) > 0 && Number.isFinite(Number(v)),
     'Importe positivo en ARS',
   );
+export const selectedItemSchema = z
+  .object({
+    sku: z.string().min(1).max(120),
+    productSummary: z.string().trim().min(1).max(500),
+    listPrice: amountSchema,
+    cashPrice: amountSchema.optional(),
+  })
+  .strict();
 export const fieldsSchema = z
   .object({
     name: z.string().trim().min(1).max(120).optional(),
@@ -15,6 +23,7 @@ export const fieldsSchema = z
       .optional(),
     productSummary: z.string().trim().min(1).max(500).optional(),
     sku: z.string().min(1).max(120).optional(),
+    items: z.array(selectedItemSchema).optional(),
     purchaseUse: z.enum(['PERSONAL', 'BUSINESS']).optional(),
     business: z.string().trim().min(1).max(160).optional(),
     locality: z.string().trim().min(1).max(120).optional(),

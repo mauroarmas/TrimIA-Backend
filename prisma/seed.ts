@@ -256,7 +256,6 @@ async function main() {
         'confirmar el precio vigente y generar la ficha de venta. El cliente abona en efectivo o con tarjeta ' +
         'de débito en el acto. El producto se entrega inmediatamente si está en depósito, o se coordina ' +
         'la entrega con logística.',
-      category: 'procedimientos',
       audience: 'INTERNO' as const,
       agentType: AgentType.SALES,
     },
@@ -268,7 +267,6 @@ async function main() {
         'situación crediticia. Si el resultado es "Aprobado" o "Aprobado con condiciones", se deriva ' +
         'al supervisor para confirmación final. El cliente NO debe conocer los detalles del análisis ' +
         'crediticio. Las cuotas son semanales (plan de 10 semanas) o mensuales.',
-      category: 'procedimientos',
       audience: 'INTERNO' as const,
       agentType: AgentType.SALES,
     },
@@ -279,7 +277,6 @@ async function main() {
         '3 y 0 días antes del vencimiento. Si el cliente no responde después de 3 intentos, se escala ' +
         'al supervisor. Cuando el cliente envía un comprobante de pago, el cobrador lo revisa y confirma ' +
         'o rechaza. Los comprobantes quedan asociados al cliente con código de operación único.',
-      category: 'procedimientos',
       audience: 'INTERNO' as const,
       agentType: AgentType.COLLECTIONS,
     },
@@ -289,7 +286,6 @@ async function main() {
         'Credimisión atiende de lunes a viernes de 8:00 a 18:00 y sábados de 8:00 a 13:00. ' +
         'El local principal está en Posadas, Misiones. Teléfono de contacto: (0376) 444-XXXX. ' +
         'Las consultas por WhatsApp se responden en horario comercial.',
-      category: 'general',
       audience: 'PUBLICO' as const,
       agentType: null,
     },
@@ -299,7 +295,6 @@ async function main() {
         'Credimisión ofrece heladeras, freezers, lavarropas y secarropas de las marcas Samsung, LG, ' +
         'Whirlpool, Drean y Briket. Los precios varían según el modelo. Consultar disponibilidad ' +
         'actualizada. Se aceptan pagos en efectivo, tarjeta y plan de financiación propio.',
-      category: 'productos',
       audience: 'PUBLICO' as const,
       agentType: AgentType.SALES,
     },
@@ -309,7 +304,6 @@ async function main() {
         'Al recibir mercadería, el encargado de depósito debe verificar la cantidad contra el remito, ' +
         'inspeccionar el estado de los productos y registrar el ingreso en Paljet. Si hay diferencias ' +
         'o daños, se reporta al área administrativa para gestionar el reclamo con el proveedor.',
-      category: 'procedimientos',
       audience: 'INTERNO' as const,
       agentType: AgentType.DEPOSITS,
     },
@@ -320,7 +314,6 @@ async function main() {
         'la dirección, contactar al cliente 30 minutos antes de llegar y obtener firma de conformidad. ' +
         'Si el cliente no se encuentra, se reprograma la entrega. Las zonas de cobertura incluyen ' +
         'Posadas, Garupá y localidades cercanas de Misiones.',
-      category: 'procedimientos',
       audience: 'INTERNO' as const,
       agentType: AgentType.LOGISTICS,
     },
@@ -330,7 +323,6 @@ async function main() {
         'Toda venta debe facturarse a través de Paljet. Para ventas contado se emite factura B (consumidor final) ' +
         'o A (responsable inscripto). Para ventas financiadas se emite factura al momento del primer pago. ' +
         'Los comprobantes de pago de cuotas se archivan digitalmente.',
-      category: 'procedimientos',
       audience: 'INTERNO' as const,
       agentType: AgentType.ADMIN,
     },

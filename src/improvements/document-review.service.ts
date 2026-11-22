@@ -243,7 +243,6 @@ export class DocumentReviewService {
         id: true,
         title: true,
         content: true,
-        category: true,
         version: true,
         agentType: true,
       },
@@ -254,7 +253,6 @@ export class DocumentReviewService {
   private async analizar(doc: {
     title: string;
     content: string;
-    category: string | null;
   }): Promise<Senalamiento | null> {
     // `classifierChat` (temp 0) y no `chat`: esto es juicio sobre un texto,
     // no redacción. El mismo criterio del resto del proyecto.

@@ -434,3 +434,83 @@ describe('EscalationSuggestionService — la propuesta no resuelve el caso', () 
     );
   });
 });
+
+describe('EscalationSuggestionService — generateKnowledgeDraft (borrador IA post-control)', () => {
+  it('combina pregunta que provocó la derivación, notas internas y respuestas del supervisor', async () => {
+    const { service, prisma, invoke } = buildService({ userType: 'CLIENTE' });
+    prisma.escalation.findUnique.mockResolvedValue({
+      id: ESCALATION_ID,
+      conversationId: 'conv-1',
+      reason: 'Confianza insuficiente (0.58)',
+      createdAt: new Date('2026-10-01T10:00:00Z'),
+      conversation: {
+        id: 'conv-1',
+        userType: 'CLIENTE',
+        currentAgent: 'SALES',
+        internalNotes: [
+          { content: 'Confirmado por gerencia: enviamos a todo Misiones', createdAt: new Date('2026-10-01T10:02:00Z') },
+        ],
+      },
+    });
+    prisma.message.findFirst.mockResolvedValue({ content: 'si' });
+    (prisma.message as Record<string, unknown>).findMany = jest
+      .fn()
+      .mockResolvedValueOnce([
+        { role: 'USER', content: 'si' },
+        { role: 'ASSISTANT', content: '¿Querés que consulte con un responsable?' },
+        { role: 'USER', content: '¿Hacen envíos al interior de Misiones?' },
+      ])
+      .mockResolvedValueOnce([
+        {
+          content: 'Sí, hacemos envíos a todo el interior de Misiones desde Posadas.',
+        },
+      ]);
+    invoke.mockResolvedValue({
+      content: '```json\n{"title":"Envíos al interior de Misiones","content":"Realizamos envíos a todo el interior de Misiones desde nuestra sucursal en Posadas."}\n```',
+    });
+
+    const draft = await service.generateKnowledgeDraft(ESCALATION_ID, [
+      'Podés coordinar el envío al confirmar tu compra.',
+    ]);
+
+    expect(draft.title).toBe('Envíos al interior de Misiones');
+    expect(draft.audience).toBe('PUBLICO');
+    expect(draft.agentType).toBe('SALES');
+    expect(draft.content).toContain('Posadas');
+    expect(draft.basedOn).toEqual({
+      triggerQuestion: '¿Hacen envíos al interior de Misiones?',
+      notesCount: 1,
+      supervisorRepliesCount: 2,
+    });
+    const promptSent = String(invoke.mock.calls[0][0][1].content);
+    expect(promptSent).toContain('¿Hacen envíos al interior de Misiones?');
+    expect(promptSent).toContain('Confirmado por gerencia: enviamos a todo Misiones');
+    expect(promptSent).toContain('Podés coordinar el envío al confirmar tu compra.');
+  });
+
+  it('asigna audiencia INTERNO cuando el contacto escalado es EMPLEADO', async () => {
+    const { service, prisma, invoke } = buildService({ userType: 'EMPLEADO' });
+    prisma.escalation.findUnique.mockResolvedValue({
+      id: ESCALATION_ID,
+      conversationId: 'conv-2',
+      reason: 'Sin respaldo',
+      createdAt: new Date('2026-10-01T10:00:00Z'),
+      conversation: {
+        id: 'conv-2',
+        userType: 'EMPLEADO',
+        currentAgent: 'ADMIN',
+        internalNotes: [],
+      },
+    });
+    prisma.message.findFirst.mockResolvedValue({ content: '¿Cómo cargo un cheque rechazado?' });
+    (prisma.message as Record<string, unknown>).findMany = jest.fn().mockResolvedValue([]);
+    invoke.mockResolvedValue({
+      content: '{"title":"Carga de cheques rechazados","content":"Procedimiento interno..."}',
+    });
+
+    const draft = await service.generateKnowledgeDraft(ESCALATION_ID);
+
+    expect(draft.audience).toBe('INTERNO');
+    expect(draft.agentType).toBe('ADMIN');
+  });
+});

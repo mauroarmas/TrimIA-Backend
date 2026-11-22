@@ -5,10 +5,10 @@ import { IsEnum, IsNotEmpty, IsOptional, IsString } from 'class-validator';
 /**
  * "Aprobar y guardar sin enviar" (FR-039).
  *
- * A diferencia de `ResolveEscalationDto`, acá `title` y `category` son
- * obligatorios y no condicionales: incorporar la respuesta al conocimiento no
- * es una opción de esta acción, es la acción entera. Un `saveUnsent` sin
- * ingesta sería indistinguible de un `discard`.
+ * A diferencia de `ResolveEscalationDto`, acá `title` es obligatorio y no
+ * condicional: incorporar la respuesta al conocimiento no es una opción de esta
+ * acción, es la acción entera. Un `saveUnsent` sin ingesta sería indistinguible
+ * de un `discard`.
  *
  * **No lleva `audience`**: se deriva del `userType` de la conversación
  * escalada, no la elige quien guarda (research §12).
@@ -27,11 +27,6 @@ export class SaveUnsentDto {
   @IsString()
   @IsNotEmpty()
   title: string;
-
-  @ApiProperty({ example: 'procedimientos' })
-  @IsString()
-  @IsNotEmpty()
-  category: string;
 
   @ApiProperty({
     required: false,

@@ -285,15 +285,11 @@ export class FinancingConversationService {
         messageId,
         message,
       );
-    if (
-      isModernRequest &&
-      submitted?.closedAt &&
-      !explicitFinancingRequest(message)
-    )
-      return this.commercial!.customerMessage(submitted.id, messageId, message);
     const asksCatalog =
       modern &&
-      !isModernRequest &&
+      (!isModernRequest ||
+        !!submitted?.closedAt ||
+        submitted?.status === 'CANCELLED') &&
       draft &&
       /model|opcion|precio|stock|disponib/i.test(message) &&
       !/(?:^|[\n;])\s*(?:modelo|producto)\s*[:=]/i.test(message);
@@ -348,7 +344,10 @@ export class FinancingConversationService {
         };
     }
     const active =
-      draft && !['CANCELLED', 'IDENTITY_CONFLICT'].includes(draft.stage);
+      draft &&
+      !['CANCELLED', 'IDENTITY_CONFLICT'].includes(draft.stage) &&
+      !submitted?.closedAt &&
+      submitted?.status !== 'CANCELLED';
     if (!active && !explicitFinancingRequest(message) && !financingContext)
       return { handled: false };
     const literalDetails =
@@ -440,14 +439,27 @@ export class FinancingConversationService {
     if (
       modern &&
       (explicitFinancingRequest(message) || financingContext) &&
-      !draft?.purchaseRequestId
+      (!draft?.purchaseRequestId ||
+        !!submitted?.closedAt ||
+        submitted?.status === 'CANCELLED')
     ) {
       input.flowVersion = 2;
-      if (!draft?.sku && !input.productSummary && selectedProduct) {
+      const isNewAfterResolved =
+        !!submitted?.closedAt || submitted?.status === 'CANCELLED';
+      if (
+        (!draft?.sku || isNewAfterResolved) &&
+        !input.productSummary &&
+        selectedProduct &&
+        !isNewAfterResolved
+      ) {
         input.sku = selectedProduct.sku;
         input.productSummary = selectedProduct.name;
       }
-      if (input.intent === 'INFORMATION' || input.intent === 'OTHER')
+      if (
+        input.intent === 'INFORMATION' ||
+        input.intent === 'OTHER' ||
+        (isNewAfterResolved && explicitFinancingRequest(message))
+      )
         input.intent = 'REQUEST';
     }
     const normEvidence = (s: string) =>
@@ -580,13 +592,47 @@ export class FinancingConversationService {
     )
       delete input.sku;
     // Si el asistente acaba de mostrar una lista numerada del catálogo y el cliente elige por número ("1", "opción 2", "la 2", o "Quiero la 2. Me llamo...")
+    const existingItems: {
+      sku: string;
+      productSummary: string;
+      listPrice: string;
+      cashPrice?: string;
+    }[] =
+      !isModernRequest && Array.isArray(draft?.items) && draft.items.length > 0
+        ? [...draft.items]
+        : !isModernRequest && draft?.sku
+          ? (() => {
+              const catItem = catalog.find(
+                (i) => i.sku.toLowerCase() === String(draft.sku).toLowerCase(),
+              );
+              return catItem && catItem.listPrice
+                ? [
+                    {
+                      sku: catItem.sku,
+                      productSummary: catItem.name,
+                      listPrice: Number(catItem.listPrice).toFixed(2),
+                      ...(catItem.cashPrice
+                        ? { cashPrice: Number(catItem.cashPrice).toFixed(2) }
+                        : {}),
+                    },
+                  ]
+                : [];
+            })()
+          : [];
+    const wantsAdditionalProduct = /\b(?:tambi[eé]n|adem[aá]s|otro|otra|sumar|agregar)\b/i.test(
+      message,
+    );
+    const replaceProduct = /\b(?:en vez de|cambiar|reemplazar|mejor la|mejor el)\b/i.test(
+      message,
+    );
+    let chosenFromNumberedList: (typeof catalog)[number] | undefined;
     const numberedCatalogChoice =
       modern &&
       !isModernRequest &&
       message
         .trim()
         .match(
-          /^(?:(?:quiero|prefiero|elijo|dame|me quedo con|me interesa|me gusta)(?:\s+financiar|\s+comprar)?\s+)?(?:(?:la|el)\s+)?(?:opci[oó]n\s*|n[uú]mero\s*|nro\.?\s*|#\s*)?([1-9]\d*)(?=[.!?\s]*$|[.,;:\n-]|\s+(?:me\s+llamo|mi\s+nombre|nombre|dni|comercio|negocio|local|soy|vivo|es\s+personal|para\s+uso))/i,
+          /^(?:(?:quiero|prefiero|elijo|dame|me quedo con|me interesa|me gusta)(?:\s+financiar|\s+comprar)?\s+)?(?:(?:la|el)\s+)?(?:opci[oó]n\s*|n[uú]mero\s*|nro\.?\s*|#\s*)?([1-9]\d*)(?=[.!?\s]*$|[.,;:\n-]|\s+(?:y\s+|tambi[eé]n\s+|adem[aá]s\s+|me\s+llamo|mi\s+nombre|nombre|dni|comercio|negocio|local|soy|vivo|es\s+personal|para\s+uso))/i,
         );
     if (numberedCatalogChoice && assistantHistory.length > 0) {
       const chosenNum = Number(numberedCatalogChoice[1]);
@@ -600,8 +646,29 @@ export class FinancingConversationService {
         if (lineMatch?.[1]) {
           const matchedItems = matchProduct(lineMatch[1].trim());
           if (matchedItems.length === 1) {
-            input.sku = matchedItems[0].sku;
-            input.productSummary = matchedItems[0].name;
+            chosenFromNumberedList = matchedItems[0];
+            // Si en el mismo mensaje pide otro producto ("me interesa la 3 y también quiero una balanza"),
+            // conservar la búsqueda del producto adicional en input.productSummary si difiere del elegido.
+            const remainder = message
+              .trim()
+              .slice(numberedCatalogChoice[0].length)
+              .replace(/^[.,;:\s-]+|(?:^|\s)(?:y\s+)?(?:tambi[eé]n|adem[aá]s)\b/gi, ' ')
+              .trim();
+            const extraMatches = remainder ? matchProduct(remainder) : [];
+            if (
+              wantsAdditionalProduct &&
+              extraMatches.length > 0 &&
+              !(
+                extraMatches.length === 1 &&
+                extraMatches[0].sku === chosenFromNumberedList.sku
+              )
+            ) {
+              input.productSummary = remainder;
+              delete input.sku;
+            } else {
+              input.sku = chosenFromNumberedList.sku;
+              input.productSummary = chosenFromNumberedList.name;
+            }
             input.intent = 'PROVIDE_DATA';
           }
         }
@@ -740,13 +807,78 @@ export class FinancingConversationService {
         input,
       );
     }
-    if (modern && (input.productSummary || input.sku)) {
-      const found = matchProduct(input.sku || input.productSummary!);
+    const addCatalogItemToCart = (catItem: (typeof catalog)[number]) => {
+      if (!catItem.listPrice || catItem.stock < 1) return;
+      const base = replaceProduct ? [] : [...existingItems];
+      if (!base.some((i) => i.sku === catItem.sku)) {
+        base.push({
+          sku: catItem.sku,
+          productSummary: catItem.name,
+          listPrice: Number(catItem.listPrice).toFixed(2),
+          ...(catItem.cashPrice
+            ? { cashPrice: Number(catItem.cashPrice).toFixed(2) }
+            : {}),
+        });
+      }
+      if (base.length > 1) {
+        input.items = base;
+        input.sku = base.map((i) => i.sku).join(' + ');
+        input.productSummary = base.map((i) => i.productSummary).join(' + ');
+      } else if (base.length === 1) {
+        input.sku = base[0].sku;
+        input.productSummary = base[0].productSummary;
+      }
+    };
+    const nextSearchQuery = input.sku || input.productSummary;
+    if (modern && nextSearchQuery) {
+      const found = matchProduct(nextSearchQuery);
       if (found.length === 1) {
         input.sku = found[0].sku;
         input.productSummary = found[0].name;
+        if (found[0].stock > 0) {
+          if (
+            chosenFromNumberedList &&
+            chosenFromNumberedList.stock > 0 &&
+            chosenFromNumberedList.sku !== found[0].sku
+          ) {
+            addCatalogItemToCart(chosenFromNumberedList);
+            if (input.items) existingItems.splice(0, existingItems.length, ...input.items);
+            else if (input.sku && chosenFromNumberedList.listPrice) {
+              existingItems.push({
+                sku: chosenFromNumberedList.sku,
+                productSummary: chosenFromNumberedList.name,
+                listPrice: Number(chosenFromNumberedList.listPrice).toFixed(2),
+                ...(chosenFromNumberedList.cashPrice
+                  ? { cashPrice: Number(chosenFromNumberedList.cashPrice).toFixed(2) }
+                  : {}),
+              });
+            }
+          }
+          addCatalogItemToCart(found[0]);
+          input.addMoreProductsPrompt = true;
+        }
       } else if (found.length > 1) {
         delete input.sku;
+        if (chosenFromNumberedList && chosenFromNumberedList.stock > 0) {
+          addCatalogItemToCart(chosenFromNumberedList);
+          if (!input.items && chosenFromNumberedList.listPrice) {
+            input.items = [
+              {
+                sku: chosenFromNumberedList.sku,
+                productSummary: chosenFromNumberedList.name,
+                listPrice: Number(chosenFromNumberedList.listPrice).toFixed(2),
+                ...(chosenFromNumberedList.cashPrice
+                  ? {
+                      cashPrice: Number(chosenFromNumberedList.cashPrice).toFixed(2),
+                    }
+                  : {}),
+              },
+            ];
+          }
+          delete input.sku;
+        } else if (existingItems.length > 0) {
+          input.items = existingItems;
+        }
         const saved = await this.service.applyInput(
           conversationId,
           messageId,
@@ -772,7 +904,7 @@ export class FinancingConversationService {
     if (modern && input.sku) {
       const item = catalog.find((i) => i.sku === input.sku);
       if (item && item.stock < 1) {
-        const { sku: _s, productSummary: _p, ...personalOnly } = input;
+        const { sku: _s, productSummary: _p, items: _items, ...personalOnly } = input;
         if (Object.keys(personalOnly).length > 1) {
           await this.service.applyInput(conversationId, messageId, personalOnly);
         }

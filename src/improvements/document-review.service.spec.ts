@@ -24,7 +24,6 @@ function doc(id: string, version = 1, agentType: string | null = 'SALES') {
     id,
     title: `Documento ${id}`,
     content: 'contenido',
-    category: null,
     version,
     agentType,
   };

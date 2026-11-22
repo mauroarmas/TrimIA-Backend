@@ -25,7 +25,6 @@ function buildService(current: Record<string, unknown> = {}) {
     id: DOC_ID,
     title: 'Política de financiación',
     content: 'El anticipo mínimo es del 20%.',
-    category: 'politica',
     audience: 'PUBLICO',
     agentType: 'SALES',
     version: 1,
@@ -125,18 +124,6 @@ describe('KnowledgeService.update — qué dispara reindexación', () => {
     expect(data.syncStatus).toBe(KnowledgeSyncStatus.PENDING_REINDEX);
   });
 
-  it('la categoría, en cambio, NO reindexa: no está en el vector ni filtra nada', async () => {
-    // El contraste importa. Si "reindexar por las dudas ante cualquier
-    // cambio" fuera la regla, cada corrección de una categoría pagaría una
-    // tanda de embeddings sin que ninguna búsqueda cambie. Se reindexa por lo
-    // que entra al vector o filtra la recuperación, no por editar.
-    const { service, queueAdd } = buildService();
-
-    await service.update(DOC_ID, { category: 'otra-categoria' }, AUTHOR);
-
-    expect(queueAdd).not.toHaveBeenCalled();
-  });
-
   it('editar el contenido versiona Y encola la reindexación', async () => {
     const { service, update, queueAdd } = buildService();
 
@@ -181,7 +168,7 @@ describe('KnowledgeService.update — qué dispara reindexación', () => {
 
     await service.update(
       DOC_ID,
-      { title: 'Política de financiación', category: 'politica' },
+      { title: 'Política de financiación' },
       AUTHOR,
     );
 
