@@ -76,6 +76,7 @@ docs/*/*.jsonl
 # Entornos aislados y credenciales locales
 .env*
 !.env.example
+n8n-curso-*.json
 
 # Artefactos temporales
 *.tmp

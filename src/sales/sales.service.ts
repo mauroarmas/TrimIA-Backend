@@ -108,6 +108,9 @@ export class SalesService {
   syncProspectCrm(id: string) {
     return this.crmSync!.syncProspectById(id);
   }
+  syncAllProspectsCrm() {
+    return this.crmSync!.syncAllPendingProspects();
+  }
 
   async listFinancingRequests() {
     return this.finance!.list();

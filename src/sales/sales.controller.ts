@@ -386,6 +386,17 @@ export class SalesController {
     return this.salesService.simulateProspectFollowUpDue(id);
   }
 
+  @Post('prospects/crm-sync')
+  @HttpCode(200)
+  @ApiOperation({
+    summary:
+      'Sincroniza en lote todos los prospectos pendientes con el CRM en Google Sheets',
+  })
+  syncAllProspectsCrm(@Req() req: any) {
+    assertCanAccessSales(req.user);
+    return this.salesService.syncAllProspectsCrm();
+  }
+
   @Post('prospects/:id/crm-sync')
   @HttpCode(200)
   @ApiOperation({

@@ -66,6 +66,13 @@ describe('SalesController', () => {
       syncStatus: 'SYNCED',
       remoteSynced: true,
     }),
+    syncAllProspectsCrm: jest.fn().mockResolvedValue({
+      totalPending: 2,
+      synced: 2,
+      failed: 0,
+      remainingPending: 0,
+      lastSyncedAt: '2026-11-22T23:00:00.000Z',
+    }),
     getContactPreference: jest.fn().mockResolvedValue({
       phone: '+5493764000222',
       optOut: true,
@@ -332,6 +339,10 @@ describe('SalesController', () => {
 
       const synced = await controller.syncProspectCrm('p-1', salesUser);
       expect(synced.syncStatus).toBe('SYNCED');
+
+      const bulkSynced = await controller.syncAllProspectsCrm(salesUser);
+      expect(bulkSynced.synced).toBe(2);
+      expect(bulkSynced.remainingPending).toBe(0);
     });
 
     it('022: permite consultar preferencia, registrar baja y simular confirmación de entrega, y restringe la reactivación a supervisión general (FR-004, FR-006)', async () => {

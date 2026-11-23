@@ -96,4 +96,45 @@ describe('CrmSyncService', () => {
     });
     expect(crmPort.createProspect).toHaveBeenCalledTimes(1);
   });
+
+  it('sincroniza en lote todos los prospectos pendientes y reporta resumen (sync global)', async () => {
+    const now = new Date('2026-11-22T23:00:00.000Z');
+    mockPrismaService.prospect.findMany.mockResolvedValue([
+      {
+        id: 'p-1',
+        name: 'Cliente 1',
+        phone: '+5493764111111',
+        productInterest: 'Balanza',
+        modality: 'CASH',
+        status: 'NUEVO',
+        syncStatus: 'PENDING',
+        createdAt: now,
+        updatedAt: now,
+      },
+      {
+        id: 'p-2',
+        name: 'Cliente 2',
+        phone: '+5493764222222',
+        productInterest: 'Cortadora',
+        modality: 'CASH',
+        status: 'EN_CONTACTO',
+        syncStatus: 'PENDING',
+        createdAt: now,
+        updatedAt: now,
+      },
+    ]);
+    mockCrmPort.createProspect
+      .mockResolvedValueOnce({ success: true, id: 'p-1', remoteSynced: true })
+      .mockResolvedValueOnce({ success: true, id: 'p-2', remoteSynced: false });
+
+    const summary = await service.syncAllPendingProspects();
+    expect(summary).toMatchObject({
+      totalPending: 2,
+      synced: 1,
+      failed: 1,
+      remainingPending: 1,
+    });
+    expect(summary.lastSyncedAt).toBeTruthy();
+    expect(crmPort.createProspect).toHaveBeenCalledTimes(2);
+  });
 });
