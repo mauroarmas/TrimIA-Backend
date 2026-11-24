@@ -1,3 +1,9 @@
+import {
+  Caller,
+  interlocutorDe,
+  primerNombreDe,
+} from '../../caller/caller.types';
+
 /**
  * Pre-filtro de mensajes triviales (saludos/despedidas/cortesías).
  *
@@ -16,6 +22,9 @@ const GREETING_RE =
 const CLOSING_RE =
   /^\s*(gracias(?:[\s,!;.]+(?:quedo|quedamos)\s+atent[oa]s?)?|muchas\s*gracias|mil\s*gracias|ok+|oka+|okey+|dale|listo|perfecto|joya|barbaro|bárbaro|chau+|chao|adi[oó]s|nos\s*vemos|hasta\s*luego|👍|🙏|👌)[\s!.]*$/i;
 
+const IDENTITY_QUESTION_RE =
+  /^[\s¡¿]*(?:(?:hola+|buenas?(?:\s+(?:d[ií]as?|tardes?|noches?))?)[\s,!.]*)?(?:soy\s+(?:un\s+|una\s+)?(?:emplead[oa]|cliente|personal(?:\s+interno)?|supervisor[a]?)(?:\s+o\s+(?:un\s+|una\s+)?(?:emplead[oa]|cliente|personal(?:\s+interno)?|supervisor[a]?))?|c[oó]mo\s+me\s+(?:reconoc[eé]s|ves|identific[aá]s|tom[aá]s)|me\s+(?:reconoc[eé]s|ves|identific[aá]s|tom[aá]s)\s+como\s+(?:emplead[oa]|cliente|supervisor[a]?)(?:\s+o\s+(?:emplead[oa]|cliente))?|qui[eé]n\s+soy(?:\s+ac[aá]|\s+para\s+vos)?|qu[eé]\s+(?:rol|perfil|tipo\s+de\s+usuario)\s+tengo)[\s!.¿?]*$/i;
+
 export function isClosingCourtesy(message: string): boolean {
   return CLOSING_RE.test(message);
 }
@@ -23,6 +32,48 @@ export function isClosingCourtesy(message: string): boolean {
 /** Un saludo aislado no confirma una acción pendiente, incluso con agente fijado. */
 export function isOpeningGreeting(message: string): boolean {
   return GREETING_RE.test(message);
+}
+
+/** True si la persona pregunta directamente cómo la identifica el asistente (empleado vs. cliente). */
+export function isIdentityQuestion(message: string): boolean {
+  return IDENTITY_QUESTION_RE.test(message);
+}
+
+/** Respuesta determinística e instantánea sobre la identidad reconocida en el canal. */
+export function identityReply(caller?: Caller | null): string {
+  if (!caller || caller.userType === 'CLIENTE') {
+    return (
+      'Te estoy atendiendo como cliente. Puedo ayudarte con consultas sobre ' +
+      'productos, stock, precios, financiación o tus pagos. ¿En qué te puedo ayudar?'
+    );
+  }
+
+  const firstName = primerNombreDe(caller);
+  const prefijo = firstName ? `${firstName}, te ` : 'Te ';
+  const tipo = interlocutorDe(caller);
+
+  if (tipo === 'GERENTE') {
+    return (
+      `${prefijo}reconozco como personal interno de la empresa (supervisión general, ` +
+      'con alcance a todas las áreas). Podés hacerme consultas operativas usando ' +
+      'el conocimiento interno. ¿Qué necesitás revisar?'
+    );
+  }
+
+  if (tipo === 'SUPERVISOR') {
+    const areas = caller.areas.map((a) => a.name).join(' y ');
+    return (
+      `${prefijo}reconozco como personal interno de la empresa (supervisor` +
+      `${areas ? ` de ${areas}` : ''}). Podés consultarme procedimientos y reglas ` +
+      'con acceso al conocimiento interno. ¿En qué te ayudo?'
+    );
+  }
+
+  return (
+    `${prefijo}reconozco como empleado de la empresa (personal interno). ` +
+    'Respondo tus consultas usando los procedimientos y la base de conocimiento ' +
+    'interna. ¿En qué te puedo ayudar?'
+  );
 }
 
 /** True si el mensaje es un saludo/despedida obvio que no requiere LLM. */

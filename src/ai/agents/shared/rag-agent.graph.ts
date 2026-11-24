@@ -73,6 +73,22 @@ const DEFAULT_ESCALATION =
 
 const MAX_NOTE_CONTEXT_CHARS = 1500;
 const MAX_NOTE_HISTORY_TURNS = 6;
+const INTERNAL_NOTE_TIMEOUT_MS = 4500;
+
+const EMPLOYEE_STOCK_HINT_RE =
+  /\b(stock|disponib\w*|cat[aá]logo|precios?|cu[aá]nto\s+(?:sale|cuesta|vale)|qu[eé]\s+(?:hay|tenemos|modelos)|modelos?|marcas?|m[aá]s\s+opciones|heladeras?|exhibidoras?|cortadoras?|fiambres?|balanzas?|hornos?|televisores?|smart\s*tv|\btv\b|freezers?|freidoras?|amasadoras?|sobadoras?|cocinas?|m[aá]quinas?|equipos?|sku)\b/i;
+
+function shouldInvokeEmployeeStockTool(
+  message: string,
+  history: OrchestratorStateType['history'],
+): boolean {
+  if (EMPLOYEE_STOCK_HINT_RE.test(message)) return true;
+  if (/\bm[aá]s\b|\botr[oa]s?\b/i.test(message)) {
+    const recent = (history ?? []).slice(-2).map((t) => t.content).join(' ');
+    return EMPLOYEE_STOCK_HINT_RE.test(recent);
+  }
+  return false;
+}
 
 /** Extrae el texto visible de un AIMessage (string o bloques de contenido). */
 function extractMessageText(content: unknown): string {
@@ -215,39 +231,47 @@ export function buildRagAgentGraph(
           state.userType === 'EMPLEADO'
             ? config.tools.filter((t: any) => t.name === 'check_stock')
             : config.tools;
-        const modelWithTools = llm.chat.bindTools(availableTools);
-        const toolCheckPrompt = [
-          new SystemMessage(
-            `Sos el componente de integraciones del agente ${agentType}. Tu única tarea es decidir si la consulta del usuario necesita invocar una herramienta (como consultar existencias de stock, registrar un prospecto o evaluar crédito). Para consultas de productos disponibles, modelos, catálogo o precios, consultá siempre check_stock con la familia o modelo solicitado; no respondas con ejemplos del conocimiento. Para «más opciones», recuperá del historial la familia y usá el siguiente offset (5, 10, etc.). Si la consulta NO requiere herramientas, no invoques ninguna.`,
-          ),
-          ...(state.history ?? []).map((turn) =>
-            turn.role === 'USER'
-              ? new HumanMessage(turn.content)
-              : new AIMessage(turn.content),
-          ),
-          ...(prospect
-            ? [
-                new SystemMessage(
-                  'Datos comerciales ya relevados: ' +
-                    JSON.stringify({
-                      nombre: prospect.nombreApellido,
-                      producto: prospect.productoInteres,
-                      localidad: prospect.localidad,
-                    }),
-                ),
-              ]
-            : []),
-          new HumanMessage(state.message),
-        ];
+        const skipEmployeeToolLlm =
+          state.userType === 'EMPLEADO' &&
+          !selectedProduct &&
+          !shouldInvokeEmployeeStockTool(state.message, state.history);
+
         const toolRes =
-          selectedProduct &&
-          config.tools.some((t: any) => t.name === 'check_stock')
-            ? {
-                tool_calls: [
-                  { name: 'check_stock', args: { query: selectedProduct.sku } },
-                ],
-              }
-            : await modelWithTools.invoke(toolCheckPrompt);
+          availableTools.length === 0 || skipEmployeeToolLlm
+            ? { tool_calls: [] }
+            : selectedProduct &&
+                availableTools.some((t: any) => t.name === 'check_stock')
+              ? {
+                  tool_calls: [
+                    {
+                      name: 'check_stock',
+                      args: { query: selectedProduct.sku },
+                    },
+                  ],
+                }
+              : await llm.chat.bindTools(availableTools).invoke([
+                  new SystemMessage(
+                    `Sos el componente de integraciones del agente ${agentType}. Tu única tarea es decidir si la consulta del usuario necesita invocar una herramienta (como consultar existencias de stock, registrar un prospecto o evaluar crédito). Para consultas de productos disponibles, modelos, catálogo o precios, consultá siempre check_stock con la familia o modelo solicitado; no respondas con ejemplos del conocimiento. Para «más opciones», recuperá del historial la familia y usá el siguiente offset (5, 10, etc.). Si la consulta NO requiere herramientas, no invoques ninguna.`,
+                  ),
+                  ...(state.history ?? []).map((turn) =>
+                    turn.role === 'USER'
+                      ? new HumanMessage(turn.content)
+                      : new AIMessage(turn.content),
+                  ),
+                  ...(prospect
+                    ? [
+                        new SystemMessage(
+                          'Datos comerciales ya relevados: ' +
+                            JSON.stringify({
+                              nombre: prospect.nombreApellido,
+                              producto: prospect.productoInteres,
+                              localidad: prospect.localidad,
+                            }),
+                        ),
+                      ]
+                    : []),
+                  new HumanMessage(state.message),
+                ]);
         if (toolRes.tool_calls && toolRes.tool_calls.length > 0) {
           logger.log(
             `${tag} invocando ${toolRes.tool_calls.length} herramientas`,
@@ -560,7 +584,7 @@ export function buildRagAgentGraph(
             ? `Historial reciente:\n${recentTurns}\n\nÚltimo mensaje que no se pudo responder:\n${state.message}`
             : `Mensaje que no se pudo responder:\n${state.message}`;
 
-          const aiNoteRes = await llm.chat.invoke([
+          const noteCall = llm.chat.invoke([
             new SystemMessage(
               `${LOW_CONFIDENCE_INTERNAL_NOTE_PROMPT}\n\n` +
                 `Área del agente: ${agentType}\n` +
@@ -569,6 +593,28 @@ export function buildRagAgentGraph(
             ),
             new HumanMessage(humanContent),
           ]);
+
+          let noteTimer: ReturnType<typeof setTimeout> | undefined;
+          const aiNoteRes =
+            process.env.NODE_ENV === 'test'
+              ? await noteCall
+              : await Promise.race([
+                  noteCall,
+                  new Promise<never>((_, reject) => {
+                    noteTimer = setTimeout(
+                      () =>
+                        reject(
+                          new Error(
+                            `Timeout (${INTERNAL_NOTE_TIMEOUT_MS}ms) generando nota interna`,
+                          ),
+                        ),
+                      INTERNAL_NOTE_TIMEOUT_MS,
+                    );
+                    noteTimer.unref?.();
+                  }),
+                ]).finally(() => {
+                  if (noteTimer) clearTimeout(noteTimer);
+                });
 
           const usage = (aiNoteRes as AIMessage).usage_metadata as
             | { input_tokens?: number; output_tokens?: number }

@@ -45,6 +45,13 @@ function buildController(
       currentAgent: 'SALES',
       channel: 'WEB',
     }),
+    findActiveByExternalId: jest.fn().mockResolvedValue({
+      id: CONV_ID,
+      externalId: options.conversationExternalId ?? '5493865505362',
+      status: 'ACTIVE',
+      currentAgent: 'SALES',
+      channel: 'WEB',
+    }),
     listMessages: jest.fn().mockResolvedValue({
       data: [],
       page: 1,
@@ -632,5 +639,28 @@ describe('⭐ MessagingWebController.close — solo el dueño (US6, RF-024)', ()
     await expect(
       controller.close(CONV_ID, { user: { id: 'emp-1' } }),
     ).rejects.toBeInstanceOf(NotFoundException);
+  });
+});
+
+describe('MessagingWebController.getActive — pre-conexión del chat web', () => {
+  it('devuelve el conversationId abierto del empleado autenticado', async () => {
+    const { controller, conversations } = buildController({
+      employeePhone: '+54 9 3865 505362',
+    });
+
+    const res = await controller.getActive({ user: { id: 'emp-1' } });
+
+    expect(conversations.findActiveByExternalId).toHaveBeenCalledWith(
+      '5493865505362',
+      'WEB',
+    );
+    expect(res).toEqual({ conversationId: CONV_ID });
+  });
+
+  it('devuelve null si el empleado no tiene teléfono o no hay conversación activa', async () => {
+    const sinTel = buildController({ employeePhone: null });
+    await expect(
+      sinTel.controller.getActive({ user: { id: 'emp-1' } }),
+    ).resolves.toEqual({ conversationId: null });
   });
 });

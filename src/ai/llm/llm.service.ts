@@ -18,7 +18,24 @@ export const CHAT_MODELS = [
   { id: 'gemini-4-hydrogen', label: 'Gemini 4 Hydrogen' },
 ] as const;
 const THINKING_LOW_MODELS = new Set(['gemini-3.8-flash', 'gemini-4-hydrogen']);
+const FALLBACK_MODELS = [
+  'gemini-2.5-flash',
+  'gemini-4-hydrogen',
+  'gemini-3.5-flash-lite',
+] as const;
 const SETTING_KEY = 'trimia:ai:chat-model:v1';
+
+function isTransientModelError(err: unknown): boolean {
+  const status = (err as { status?: number })?.status;
+  if (status === 503 || status === 429 || status === 500 || status === 502 || status === 504) {
+    return true;
+  }
+  const msg = String((err as Error)?.message ?? err ?? '');
+  return /\b(503|429|502|504)\b|high demand|overloaded|UNAVAILABLE|RESOURCE_EXHAUSTED|ETIMEDOUT|ECONNRESET|fetch failed|AbortError/i.test(
+    msg,
+  );
+}
+
 type Clients = {
   model: string;
   chat: ChatGoogleGenerativeAI;
@@ -33,6 +50,7 @@ export class LlmService implements OnModuleInit {
   private current: Clients;
   private selection: Selection | null = null;
   private readonly defaultModel: string;
+  private readonly fallbackClients = new Map<string, ChatGoogleGenerativeAI>();
 
   constructor(
     private readonly config: ConfigService,
@@ -41,24 +59,159 @@ export class LlmService implements OnModuleInit {
     this.defaultModel = config.get<string>('GEMINI_MODEL')!;
     this.current = this.clients(this.defaultModel);
   }
-  private clients(model: string): Clients {
+
+  private rawClient(
+    model: string,
+    kind: 'chat' | 'classifier',
+  ): ChatGoogleGenerativeAI {
     const base = { apiKey: this.config.get<string>('GOOGLE_API_KEY'), model };
     const usesThinkingLow = THINKING_LOW_MODELS.has(model);
+    // maxRetries: 0 evita que @langchain/google-genai duerma >60s reintentando un 503;
+    // el failover inmediato y BullMQ se encargan de la resiliencia sin bloquear el hilo.
+    return new ChatGoogleGenerativeAI({
+      ...base,
+      ...(usesThinkingLow
+        ? { thinkingConfig: { thinkingLevel: 'LOW' as const }, maxRetries: 0 }
+        : { temperature: kind === 'chat' ? 0.7 : 0, maxRetries: 0 }),
+    });
+  }
+
+  private getFallbackClient(
+    model: string,
+    kind: 'chat' | 'classifier',
+  ): ChatGoogleGenerativeAI {
+    const key = `${kind}:${model}`;
+    let cached = this.fallbackClients.get(key);
+    if (!cached) {
+      cached = this.rawClient(model, kind);
+      this.fallbackClients.set(key, cached);
+    }
+    return cached;
+  }
+
+  private wrapRunnerWithFailover<T extends { invoke?: (...args: any[]) => Promise<any> }>(
+    primaryRunner: T,
+    primaryModel: string,
+    kind: 'chat' | 'classifier',
+    buildFallbackRunner: (fallbackClient: ChatGoogleGenerativeAI) => T,
+  ): T {
+    if (!primaryRunner || typeof primaryRunner.invoke !== 'function') {
+      return primaryRunner;
+    }
+    return new Proxy(primaryRunner, {
+      get: (target, prop, receiver) => {
+        if (prop !== 'invoke') {
+          const val = Reflect.get(target, prop, receiver);
+          return typeof val === 'function' ? val.bind(target) : val;
+        }
+        return async (...args: any[]) => {
+          try {
+            return await target.invoke!(...args);
+          } catch (primaryErr) {
+            if (!isTransientModelError(primaryErr)) {
+              throw primaryErr;
+            }
+            const candidates = FALLBACK_MODELS.filter((m) => m !== primaryModel);
+            for (const candidate of candidates) {
+              try {
+                this.logger.warn(
+                  `Modelo ${primaryModel} no disponible temporalmente (${(primaryErr as Error)?.message?.slice(0, 120) ?? primaryErr}); reintentando al instante con ${candidate}`,
+                );
+                const fbRunner = buildFallbackRunner(
+                  this.getFallbackClient(candidate, kind),
+                );
+                if (typeof fbRunner?.invoke === 'function') {
+                  return await fbRunner.invoke(...args);
+                }
+              } catch (fbErr) {
+                if (!isTransientModelError(fbErr)) {
+                  throw fbErr;
+                }
+              }
+            }
+            throw primaryErr;
+          }
+        };
+      },
+    });
+  }
+
+  private resilientClient(
+    primary: ChatGoogleGenerativeAI,
+    model: string,
+    kind: 'chat' | 'classifier',
+  ): ChatGoogleGenerativeAI {
+    return new Proxy(primary, {
+      get: (target, prop, receiver) => {
+        if (prop === 'invoke' && typeof target.invoke === 'function') {
+          return async (...args: Parameters<ChatGoogleGenerativeAI['invoke']>) => {
+            try {
+              return await target.invoke(...args);
+            } catch (primaryErr) {
+              if (!isTransientModelError(primaryErr)) {
+                throw primaryErr;
+              }
+              const candidates = FALLBACK_MODELS.filter((m) => m !== model);
+              for (const candidate of candidates) {
+                try {
+                  this.logger.warn(
+                    `Modelo ${model} saturado (${(primaryErr as Error)?.message?.slice(0, 120) ?? primaryErr}); usando respaldo ${candidate}`,
+                  );
+                  const fb = this.getFallbackClient(candidate, kind);
+                  if (typeof fb.invoke === 'function') {
+                    return await fb.invoke(...args);
+                  }
+                } catch (fbErr) {
+                  if (!isTransientModelError(fbErr)) {
+                    throw fbErr;
+                  }
+                }
+              }
+              throw primaryErr;
+            }
+          };
+        }
+        if (
+          prop === 'withStructuredOutput' &&
+          typeof target.withStructuredOutput === 'function'
+        ) {
+          return (...soArgs: Parameters<ChatGoogleGenerativeAI['withStructuredOutput']>) => {
+            const primaryRunner = target.withStructuredOutput(...soArgs);
+            return this.wrapRunnerWithFailover(
+              primaryRunner as any,
+              model,
+              kind,
+              (fb) => fb.withStructuredOutput(...soArgs) as any,
+            );
+          };
+        }
+        if (prop === 'bindTools' && typeof target.bindTools === 'function') {
+          return (...btArgs: Parameters<ChatGoogleGenerativeAI['bindTools']>) => {
+            const primaryBound = target.bindTools(...btArgs);
+            return this.wrapRunnerWithFailover(
+              primaryBound as any,
+              model,
+              kind,
+              (fb) => fb.bindTools(...btArgs) as any,
+            );
+          };
+        }
+        const value = Reflect.get(target, prop, receiver);
+        return typeof value === 'function' ? value.bind(target) : value;
+      },
+    });
+  }
+
+  private clients(model: string): Clients {
     // Gemini 3.8 y Gemini 4 no admiten los parámetros de muestreo de versiones previas.
     return {
       model,
-      chat: new ChatGoogleGenerativeAI({
-        ...base,
-        ...(usesThinkingLow
-          ? { thinkingConfig: { thinkingLevel: 'LOW' as const }, maxRetries: 0 }
-          : { temperature: 0.7 }),
-      }),
-      classifierChat: new ChatGoogleGenerativeAI({
-        ...base,
-        ...(usesThinkingLow
-          ? { thinkingConfig: { thinkingLevel: 'LOW' as const }, maxRetries: 0 }
-          : { temperature: 0 }),
-      }),
+      chat: this.resilientClient(this.rawClient(model, 'chat'), model, 'chat'),
+      classifierChat: this.resilientClient(
+        this.rawClient(model, 'classifier'),
+        model,
+        'classifier',
+      ),
     };
   }
   get chat() {

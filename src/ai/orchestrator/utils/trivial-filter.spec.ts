@@ -1,5 +1,7 @@
 import {
   isTrivial,
+  isIdentityQuestion,
+  identityReply,
   isUntranscribableAudio,
   cannedReply,
   messageForStorage,
@@ -151,5 +153,42 @@ describe('cannedReply con el marcador de audio', () => {
   it('ofrece la salida por texto, no solo repetir el audio', () => {
     // Si el problema es el micrófono o el ruido, repetir hablado da lo mismo.
     expect(TRANSCRIPTION_FAILED_REPLY).toMatch(/escrito/i);
+  });
+});
+
+describe('isIdentityQuestion + identityReply', () => {
+  it.each([
+    'soy empleado o cliente?',
+    '¿Soy empleada o cliente?',
+    'hola, soy empleado o cliente?',
+    '¿cómo me reconocés?',
+    '¿quién soy?',
+    'qué rol tengo?',
+  ])('detecta consulta directa de identidad: "%s"', (msg) => {
+    expect(isIdentityQuestion(msg)).toBe(true);
+  });
+
+  it.each([
+    'soy cliente nuevo y quiero financiar una heladera',
+    'cuáles son los requisitos para empleados?',
+    'quiero consultar un producto',
+  ])('NO intercepta consultas operativas o comerciales: "%s"', (msg) => {
+    expect(isIdentityQuestion(msg)).toBe(false);
+  });
+
+  it('responde con identidad de empleado cuando caller es EMPLEADO', () => {
+    const reply = identityReply({
+      name: 'Laura Gómez',
+      userType: 'EMPLEADO',
+      role: 'EMPLEADO',
+      areas: [],
+      esGerente: false,
+    });
+    expect(reply).toContain('Laura');
+    expect(reply).toMatch(/empleado|personal interno/i);
+  });
+
+  it('responde como cliente cuando caller es CLIENTE o null', () => {
+    expect(identityReply(null)).toMatch(/como cliente/i);
   });
 });

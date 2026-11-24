@@ -191,29 +191,24 @@ export class MessageProcessor extends WorkerHost {
             channel,
           );
         }
+        // Re-emitir estado actual por SSE para apagar de inmediato "preparando respuesta..."
+        // en pestañas desfasadas cuando el acuse ya se había enviado antes.
+        this.conversations.notifyStatus?.(conversation);
         return;
       }
 
       const currentAgent = conversation?.currentAgent ?? null;
       // Sin el messageId, el mensaje actual vendría también dentro del
       // historial y el agente lo leería duplicado.
-      const history = await this.conversations.getRecentHistory(
-        conversationId,
-        undefined,
-        messageId,
-      );
-
-      // Determinar userType real: buscar el teléfono en la whitelist de
-      // empleados (RF12), que ES la tabla Employee (phone único + isActive).
-      //
-      // Se consulta en CADA mensaje, no solo cuando la conversación figura
-      // como CLIENTE. Antes se salteaba el lookup si ya era EMPLEADO "para no
-      // buscar en cada mensaje", y eso volvía imposible la dirección de
-      // bajada: a un empleado dado de baja se le seguía sirviendo
-      // conocimiento INTERNO hasta que la conversación se cerrara
-      // (OE-10 / RNF-02). El costo es un findUnique indexado al lado de una
-      // llamada al LLM que tarda segundos.
-      const employee = await this.employees.findByPhone(externalId);
+      // Se consultan en paralelo historial reciente y whitelist de empleados para ahorrar round-trips.
+      const [history, employee] = await Promise.all([
+        this.conversations.getRecentHistory(
+          conversationId,
+          undefined,
+          messageId,
+        ),
+        this.employees.findByPhone(externalId),
+      ]);
 
       // Quién habla (spec 005): rol y áreas de las que es responsable, además del
       // userType. Se arma acá porque acá ya se busca el empleado por teléfono —y
@@ -269,21 +264,18 @@ export class MessageProcessor extends WorkerHost {
       );
       const response = result.response ?? MessageProcessor.FALLBACK;
 
-      // Si se resolvió un agente, queda fijado como sticky de la conversación.
-      // (saludos triviales y greeting no tienen agentType → no lo modifican.)
-      if (result.agentType) {
-        await this.conversations.setCurrentAgent(
+      // Persistir agente sticky (si corresponde) y mensaje en paralelo para emitir SSE cuanto antes.
+      await Promise.all([
+        result.agentType
+          ? this.conversations.setCurrentAgent(conversationId, result.agentType)
+          : Promise.resolve(),
+        this.conversations.addMessage(
           conversationId,
-          result.agentType,
-        );
-      }
-
-      await this.conversations.addMessage(
-        conversationId,
-        'ASSISTANT',
-        response,
-        result.agentType ?? undefined,
-      );
+          'ASSISTANT',
+          response,
+          result.agentType ?? undefined,
+        ),
+      ]);
       await this.sender.send(externalId, response, channel);
 
       // Recién acá se sabe cómo terminó el turno, que es el dato que le da

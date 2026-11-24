@@ -9,6 +9,12 @@ jest.mock('@langchain/google-genai', () => ({
 }));
 describe('selección persistida del modelo conversacional', () => {
   const originalFetch = global.fetch;
+  beforeEach(() => {
+    (ChatGoogleGenerativeAI as unknown as jest.Mock).mockReset();
+    (ChatGoogleGenerativeAI as unknown as jest.Mock).mockImplementation(
+      (options) => ({ options }),
+    );
+  });
   afterEach(() => {
     global.fetch = originalFetch;
   });
@@ -117,5 +123,38 @@ describe('selección persistida del modelo conversacional', () => {
       llm.selectModel('gemini-3.8-flash', llm.model, 'actor'),
     ).rejects.toThrow('Otro supervisor cambió');
     expect(llm.model).toBe('gemini-3.5-flash-lite');
+  });
+  it('hace failover inmediato ante un 503 de alta demanda sin bloquear el turno', async () => {
+    (ChatGoogleGenerativeAI as unknown as jest.Mock).mockImplementation(
+      (options: { model: string }) => ({
+        options,
+        invoke: jest.fn(async () => {
+          if (options.model === 'gemini-3.5-flash-lite') {
+            const err: any = new Error(
+              '[503 Service Unavailable] This model is currently experiencing high demand.',
+            );
+            err.status = 503;
+            throw err;
+          }
+          return { content: `ok:${options.model}` };
+        }),
+        withStructuredOutput: jest.fn(() => ({
+          invoke: jest.fn(async () => {
+            if (options.model === 'gemini-3.5-flash-lite') {
+              const err: any = new Error('503 high demand');
+              err.status = 503;
+              throw err;
+            }
+            return { parsed: { intent: 'SALES' }, raw: {} };
+          }),
+        })),
+      }),
+    );
+    const { llm } = fixture();
+    const res = await llm.chat.invoke('hola' as any);
+    expect(res).toEqual({ content: 'ok:gemini-2.5-flash' });
+    const structured = llm.classifierChat.withStructuredOutput({} as any);
+    const parsed = await structured.invoke('hola' as any);
+    expect(parsed).toEqual({ parsed: { intent: 'SALES' }, raw: {} });
   });
 });

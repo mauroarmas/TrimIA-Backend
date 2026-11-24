@@ -21,11 +21,18 @@ function proxy(req, res, destination, body) {
   // El listener público se publica por HTTPS. No aceptar X-Forwarded-For del visitante.
   headers['x-forwarded-proto'] = 'https';
   headers['x-forwarded-for'] = req.socket.remoteAddress;
+  req.socket?.setNoDelay?.(true);
   const upstream = (target.protocol === 'https:' ? https : http).request({
     protocol: target.protocol, hostname: target.hostname, port: target.port,
     path: req.url, method: req.method, headers,
   }, (incoming) => {
-    res.writeHead(incoming.statusCode, cleanHeaders(incoming.headers));
+    incoming.socket?.setNoDelay?.(true);
+    const outHeaders = cleanHeaders(incoming.headers);
+    if (String(outHeaders['content-type'] || '').includes('text/event-stream')) {
+      outHeaders['cache-control'] = 'no-cache, no-transform';
+      outHeaders['x-accel-buffering'] = 'no';
+    }
+    res.writeHead(incoming.statusCode, outHeaders);
     res.flushHeaders();
     incoming.pipe(res); // No acumular ni comprimir SSE o descargas de audio.
     incoming.on('error', () => res.destroy());

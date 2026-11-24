@@ -68,6 +68,22 @@ export class MessagingWebController {
     return { queued: true, conversationId };
   }
 
+  @Get('active')
+  @ApiOperation({
+    summary: 'Conversación web abierta del empleado autenticado, si existe',
+  })
+  async getActive(@Req() req: AuthenticatedRequest) {
+    const employee = await this.employees.findById(req.user.id);
+    if (!employee?.phone) {
+      return { conversationId: null };
+    }
+    const active = await this.conversations.findActiveByExternalId(
+      normalizePhone(employee.phone),
+      'WEB',
+    );
+    return { conversationId: active?.id ?? null };
+  }
+
   @Get(':convId/messages')
   @ApiOperation({ summary: 'Historial de una conversación web (FR-015)' })
   async getMessages(

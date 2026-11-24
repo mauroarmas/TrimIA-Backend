@@ -23,6 +23,8 @@ import {
 import {
   isTrivial,
   isOpeningGreeting,
+  isIdentityQuestion,
+  identityReply,
   isUntranscribableAudio,
   cannedReply,
   OPENING_REPLY,
@@ -198,8 +200,17 @@ export function buildOrchestratorGraph(
     return {};
   };
 
-  // --- NODO: respuesta a saludo trivial (sin LLM) ---
+  // --- NODO: respuesta a saludo trivial o identidad directa (sin LLM) ---
   const trivialResponse = async (state: OrchestratorStateType) => {
+    if (isIdentityQuestion(state.message)) {
+      logger.log(
+        `[trivial:identity] "${state.message}" → respuesta directa de identidad`,
+      );
+      return {
+        response: identityReply(state.caller),
+        isTrivial: true,
+      };
+    }
     logger.log(`[trivial] "${state.message}" → respuesta canned`);
     return {
       response: cannedReply(state.message, primerNombreDe(state.caller)),
@@ -303,6 +314,10 @@ export function buildOrchestratorGraph(
     // "Hola" no confirma una acción previa: no necesita scope_check ni Gemini.
     // "Dale"/"ok" con sticky mantienen el análisis contextual de abajo.
     if (isOpeningGreeting(state.message)) return 'trivial';
+
+    // Consultas directas de identidad ("¿soy empleado o cliente?", "¿quién soy?")
+    // se responden al instante con `state.caller`, sin gastar LLM ni escalar por RAG.
+    if (isIdentityQuestion(state.message)) return 'trivial';
 
     // Para cierres/cortesías, el atajo solo es seguro sin agente sticky: con uno
     // fijado, un "dale"/"listo"/"ok" corto puede ser la confirmación a una

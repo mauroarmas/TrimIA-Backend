@@ -156,12 +156,19 @@ export interface UpdateInput {
  * - La búsqueda aplica el filtro de confidencialidad: un cliente nunca
  *   recupera documentos marcados como INTERNO.
  */
+const QUERY_EMBEDDING_CACHE_MAX = 250;
+const QUERY_EMBEDDING_CACHE_TTL_MS = 10 * 60 * 1000;
+
 @Injectable()
 export class KnowledgeService implements OnModuleInit {
   private readonly logger = new Logger(KnowledgeService.name);
   private readonly client: ChromaClient;
   private readonly embeddings: GoogleGenerativeAIEmbeddings;
   private collection!: Collection;
+  private queryEmbeddingCache?: Map<
+    string,
+    { vector: number[]; expiresAt: number }
+  >;
 
   constructor(
     private readonly config: ConfigService,
@@ -717,7 +724,7 @@ export class KnowledgeService implements OnModuleInit {
         }
       : { $and: [audienceFilter, activeFilter] };
 
-    const queryVector = await this.embeddings.embedQuery(query);
+    const queryVector = await this.embedQueryCached(query);
     const res = await this.collection.query({
       queryEmbeddings: [queryVector],
       nResults: k,
@@ -743,6 +750,27 @@ export class KnowledgeService implements OnModuleInit {
         ...(typeof meta.version === 'number' ? { version: meta.version } : {}),
       };
     });
+  }
+
+  private async embedQueryCached(query: string): Promise<number[]> {
+    const cache = (this.queryEmbeddingCache ??= new Map());
+    const key = query.trim().toLowerCase();
+    const now = Date.now();
+    const hit = cache.get(key);
+    if (hit && hit.expiresAt > now) {
+      cache.delete(key);
+      cache.set(key, hit);
+      return hit.vector;
+    }
+    const vector = await this.embeddings.embedQuery(query);
+    if (Array.isArray(vector) && vector.length > 0) {
+      if (cache.size >= QUERY_EMBEDDING_CACHE_MAX) {
+        const oldestKey = cache.keys().next().value;
+        if (oldestKey !== undefined) cache.delete(oldestKey);
+      }
+      cache.set(key, { vector, expiresAt: now + QUERY_EMBEDDING_CACHE_TTL_MS });
+    }
+    return vector;
   }
 
   /**

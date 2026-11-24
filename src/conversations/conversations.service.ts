@@ -73,6 +73,22 @@ export class ConversationsService {
   }
 
   /**
+   * Busca la conversación abierta más reciente de un contacto en el canal dado,
+   * sin crear una nueva si no existe. Permite que el panel web recupere y
+   * conecte el stream SSE apenas el empleado abre la pantalla.
+   */
+  async findActiveByExternalId(
+    externalId: string,
+    channel: Channel,
+  ): Promise<Omit<Conversation, 'financingDraft' | 'financingVersion'> | null> {
+    return this.prisma.conversation.findFirst({
+      omit: { financingDraft: true, financingVersion: true },
+      where: { externalId, channel, status: { not: 'CLOSED' } },
+      orderBy: { updatedAt: 'desc' },
+    });
+  }
+
+  /**
    * Único punto por el que se persiste un mensaje, y por eso el único que emite
    * (spec 004). Hay siete caminos que agregan mensajes —el webhook, el worker,
    * el acuse de espera, la resolución de un escalamiento, cuotas, comprobantes y
@@ -147,6 +163,13 @@ export class ConversationsService {
       omit: { financingDraft: true, financingVersion: true },
       where: { id: conversationId },
     });
+  }
+
+  /** Re-emite el estado actual al bus SSE (útil cuando el turno se omite por pausa humana). */
+  notifyStatus(
+    conversation: Pick<Conversation, 'id' | 'status' | 'currentAgent'>,
+  ) {
+    this.publishStatus(conversation);
   }
 
   /**
